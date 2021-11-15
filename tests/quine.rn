@@ -1,0 +1,28 @@
+q = chr(34)      // Quotation mark character
+c = chr(44)      // Comma character
+l = [    // Array of source code
+"q = chr(34)      // Quotation mark character",
+"c = chr(44)      // Comma character",
+"l = [    // Array of source code",
+"]",
+"for i = 0, i < 3, i+=1 {   // Print opening code",
+"  println l[i]",
+"}",
+"for i = 0, i < l.length()-1, i+=1 {   // Print string array",
+"  println q + l[i] + q + c",
+"}",
+"println q + l[l.length()-1] + q",
+"for i = 3, i < l.length(), i+=1 {   // Print this code",
+"  println l[i]",
+"}"
+]
+for i = 0, i < 3, i+=1 {   // Print opening code
+  println l[i]
+}
+for i = 0, i < l.length()-1, i+=1 {   // Print string array
+  println q + l[i] + q + c
+}
+println q + l[l.length()-1] + q
+for i = 3, i < l.length(), i+=1 {   // Print this code
+  println l[i]
+}

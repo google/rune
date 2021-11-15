@@ -1,0 +1,383 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Bigints represent integer constants in the Rune syntax tree.  They are also
+// used in the Rune interpreter, which is part of the Rune compiler, to
+// represent integers.
+
+import runtime
+
+// Values wider than this are automatically represented as with bigints in the
+// LLVM output of the Rune compiler.  Values equal or narrower than this are
+// represented with LLVM native integers.  The runtime expects this convention
+// to be followed when passing variable arguments to functions like rnVsprintf.
+kBigintSizeThreshold = 64u32
+
+// The largest width supported.  Integers bigger than this will result in a
+// compiler error.  Currently it is set to 2^24, or about 16 million bits.
+kMaxBigintWidth = 0x1000000u32
+
+// Determine if a value is secret or not.  This is not a native feature of
+// Rune, e.g. issecret(value), because it is dangerous.  It would be too easy
+// to say if issecret(foo) { ... which can cause timing leak due to aggressive
+// speculative execution.
+func isSecret(value) -> bool {
+  switch typeof(value) {
+    case typeof(reveal(value)) {
+      return false
+    }
+    case typeof(secret(value)) {
+      return true
+    }
+  }
+}
+
+// Determine if the value is signed or not.
+func isSigned(value: Int | Uint) {
+  switch typeof(value) {
+    case Int {
+      return true
+    }
+    case Uint {
+      return false
+    }
+  }
+}
+
+// Represent fixed-sized integers of any width up to the limit of the runtime bigint
+// code.
+class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
+  switch typeof(value) {
+    case Int | Uint {
+      if widthof(value) > kMaxBigintWidth {
+        throw "Integer width too large.  Pass in BigintArray instead."
+      }
+      if width != 0 {
+        self.width = width
+      } else {
+        self.width = widthof(value)
+      }
+      self.isSigned = isSigned(value)
+      self.isSecret = isSecret(value)
+      if self.isSigned {
+        // Sign extend.
+        extendedValue = !<u64><i64>value
+      } else {
+        extendedValue = <u64>value
+     }
+     self.bigint = runtime.integerToBigint(!<u64>value, self.width,
+         self.isSigned, self.isSecret)
+    }
+    case runtime.BigintArray {
+      if width != 0 {
+        throw "Can't change bigint width in Bigint constructor.  Use cast instead."
+      }
+      self.isSigned = runtime.bigintSigned(value)
+      self.width = runtime.bigintWidth(value)
+      self.isSecret = runtime.bigintSecret(value)
+      self.bigint = value
+    }
+  }
+
+  // Return a string in the base set by |base|.
+  func toString(self, base = 10u32) -> string {
+    text = runtime.bigintToString(self.bigint, base)
+    text += self.isSigned? "i" : "u"
+    text += self.width.toString()
+    return text
+  }
+
+  // Cast the bigint to a different width, sign, or even secret status.
+  export func cast(self, newWidth: u32, isSigned: bool, isSecret: bool, truncate: bool) {
+    return Bigint(runtime.bigintCast(self.bigint, newWidth, isSigned, isSecret, truncate))
+  }
+}
+
+// Overload the + operator.
+operator + (a: Bigint, b: Bigint) -> Bigint {
+  if a.width != b.width || a.isSigned != b.isSigned {
+    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  }
+  return Bigint(runtime.bigintAdd(a.bigint, b.bigint))
+}
+
+// Overload the !+ operator.
+operator !+ (a: Bigint, b: Bigint) -> Bigint {
+  if a.width != b.width || a.isSigned != b.isSigned {
+    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  }
+  return Bigint(runtime.bigintAddTrunc(a.bigint, b.bigint))
+}
+
+// Overload the - operator.
+operator - (a: Bigint, b: Bigint) -> Bigint {
+  if a.width != b.width || a.isSigned != b.isSigned {
+    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  }
+  return Bigint(runtime.bigintSub(a.bigint, b.bigint))
+}
+
+// Overload the !- operator.
+operator !- (a: Bigint, b: Bigint) -> Bigint {
+  if a.width != b.width || a.isSigned != b.isSigned {
+    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  }
+  return Bigint(runtime.bigintSubTrunc(a.bigint, b.bigint))
+}
+
+// Overload the * operator.
+operator * (a: Bigint, b: Bigint) -> Bigint {
+  if a.width != b.width || a.isSigned != b.isSigned {
+    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  }
+  return Bigint(runtime.bigintMul(a.bigint, b.bigint))
+}
+
+// Overload the !* operator.
+operator !* (a: Bigint, b: Bigint) -> Bigint {
+  if a.width != b.width || a.isSigned != b.isSigned {
+    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  }
+  return Bigint(runtime.bigintMulTrunc(a.bigint, b.bigint))
+}
+
+// Overload the / operator.
+operator / (a: Bigint, b: Bigint) -> Bigint {
+  if a.width != b.width || a.isSigned != b.isSigned {
+    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  }
+  return Bigint(runtime.bigintDiv(a.bigint, b.bigint))
+}
+
+// Overload the % operator.
+operator % (a: Bigint, b: Bigint) -> Bigint {
+  if a.width != b.width || a.isSigned != b.isSigned {
+    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  }
+  return Bigint(runtime.bigintMod(a.bigint, b.bigint))
+}
+
+// Overload the == operator.
+operator == (a: Bigint, b: Bigint) -> bool {
+  if a.width != b.width || a.isSigned != b.isSigned {
+    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  }
+  return runtime.compareBigints(runtime.ComparisonType.Equal, a.bigint, b.bigint)
+}
+
+// Overload the != operator.
+operator != (a: Bigint, b: Bigint) -> bool {
+  if a.width != b.width || a.isSigned != b.isSigned {
+    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  }
+  return runtime.compareBigints(runtime.ComparisonType.NotEqual, a.bigint, b.bigint)
+}
+
+// Overload the < operator.
+operator < (a: Bigint, b: Bigint) -> bool {
+  if a.width != b.width || a.isSigned != b.isSigned {
+    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  }
+  return runtime.compareBigints(runtime.ComparisonType.Lt, a.bigint, b.bigint)
+}
+
+// Overload the <= operator.
+operator <= (a: Bigint, b: Bigint) -> bool {
+  if a.width != b.width || a.isSigned != b.isSigned {
+    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  }
+  return runtime.compareBigints(runtime.ComparisonType.Le, a.bigint, b.bigint)
+}
+
+// Overload the > operator.
+operator > (a: Bigint, b: Bigint) -> bool {
+  if a.width != b.width || a.isSigned != b.isSigned {
+    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  }
+  return runtime.compareBigints(runtime.ComparisonType.Gt, a.bigint, b.bigint)
+}
+
+// Overload the >= operator.
+operator >= (a: Bigint, b: Bigint) -> bool {
+  if a.width != b.width || a.isSigned != b.isSigned {
+    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  }
+  return runtime.compareBigints(runtime.ComparisonType.Ge, a.bigint, b.bigint)
+}
+
+// Overload the exponentiation ^ operator.
+operator ^ (base: Bigint, exponent: u32) -> Bigint {
+  return Bigint(runtime.bigintExp(base.bigint, exponent))
+}
+
+// Overload the negate - operator.
+operator - (a: Bigint) -> Bigint {
+  return Bigint(runtime.bigintNegate(a.bigint))
+}
+
+// Overload the negate-trunc !- operator
+operator !- (a: Bigint) -> Bigint {
+  return Bigint(runtime.bigintNegateTrunc(a.bigint))
+}
+
+// Overload the complement ~ operator.
+operator ~ (a: Bigint) -> Bigint {
+  return Bigint(runtime.bigintComplement(a.bigint))
+}
+
+// Overload the << operator.
+operator << (a: Bigint, dist: u32) -> Bigint {
+  return Bigint(runtime.bigintShl(a.bigint, dist))
+}
+
+// Overload the >> operator.
+operator >> (a: Bigint, dist: u32) -> Bigint {
+  return Bigint(runtime.bigintShr(a.bigint, dist))
+}
+
+// Overload the <<< rotate-left operator.
+operator <<< (a: Bigint, dist: u32) -> Bigint {
+  return Bigint(runtime.bigintRotl(a.bigint, dist))
+}
+
+// Overload the >>> rotate-right operator.
+operator >>> (a: Bigint, dist: u32) -> Bigint {
+  return Bigint(runtime.bigintRotr(a.bigint, dist))
+}
+
+// Overload the bitwise-AND & operator.
+operator & (a: Bigint, b: Bigint) -> Bigint {
+  return Bigint(runtime.bigintBitwiseAnd(a.bigint, b.bigint))
+}
+
+// Overload the bitwise-OR | operator.
+operator | (a: Bigint, b: Bigint) -> Bigint {
+  return Bigint(runtime.bigintBitwiseOr(a.bigint, b.bigint))
+}
+
+// Overload the bitwise-XOR @ operator.
+operator @ (a: Bigint, b: Bigint) -> Bigint {
+  return Bigint(runtime.bigintBitwiseXor(a.bigint, b.bigint))
+}
+
+// Test printing and addition.
+unittest {
+  a = Bigint(1u32)
+  println a.toString()
+  b = Bigint(2u32)
+  println b.toString()
+  c = a + b
+  println c.toString()
+  d = Bigint(0xdeadbeef, 256u32)
+  println d.toString(16u32)
+  e = Bigint(1u32, 256u32)
+  f = d + e
+  println f.toString(16u32)
+}
+
+// Test casting.
+unittest {
+  a = Bigint(123u32)
+  b = a.cast(256u32, true, false, false)
+  println b, " width = ", b.width
+  c = b + Bigint(1i32, 256u32)
+  assert c.width == 256u32
+  println c
+}
+
+// Test comparison operators.
+unittest {
+  a = Bigint(123u32)
+  b = Bigint(123u32)
+  c = Bigint(124u32)
+  assert a == b
+  assert a != c
+  assert a < c
+  assert a <= b
+  assert a >= b
+  assert c > a
+  assert !(a == c)
+  assert !(a != a)
+  assert !(a < b)
+  assert !(c <= b)
+  assert !(a >= c)
+  assert !(b > c)
+}
+
+// Test arithmetic operations, -, * / and %, along with truncating versions.
+unittest {
+  // Test the !+ operator
+  a = Bigint(0xdeadbeefu32)
+  b = a !+ a
+  assert b == Bigint(0xbd5b7ddeu32)
+  // Test the - operator
+  assert a - b == Bigint(0x21524111u32)
+  // Test the !- operator
+  assert b !- a == a
+  c = Bigint(0xbeefu32)
+  d = Bigint(0xdeadu32)
+  assert c * d == Bigint(0xa6144983u32)
+  assert a !* Bigint(123u32) == Bigint(0xfd7abcd5u32)
+  assert a / c == Bigint(0x12a90u32)
+  assert a % c == Bigint(0x227fu32)
+}
+
+// Test the exponentiation ^ operator.
+unittest {
+  a = Bigint(2i32)
+  b = Bigint(4i32)
+  c = Bigint(-3i32)
+  x = Bigint(5i32)
+  y = a*x^2u32 + b*x + c
+  assert y == Bigint(67i32)
+}
+
+// Test unary operators -, !-, and ~.
+unittest {
+  assert -Bigint(123i256) == Bigint(-123i256)
+  println -Bigint(12345i32)
+  // Test truncating negation's one exceptional input.
+  assert !-Bigint(-128i8) == Bigint(-128i8)
+  assert !-Bigint(-127i8) == Bigint(127i8)
+  println (~Bigint(0x55aaau20)).toString(16u32)
+  assert ~Bigint(0x55aaau20) == Bigint(0xaa555u20);
+}
+
+// Test shift operators.
+unittest {
+  a = Bigint(0xdeadbeefu32)
+  assert a >> 16u32 == Bigint(0xdeadu32)
+  assert a << 4u32 == Bigint(0xeadbeef0u32)
+  b = Bigint(0xdeadbeefi32)
+  assert b >> 16u32 == Bigint(0xffffdeadi32)
+  assert b << 4u32 == Bigint(0xeadbeef0i32)
+}
+
+// Test rotation operators.
+unittest {
+  a = Bigint(0xdeadbeefu32)
+  assert a >>> 16u32 == Bigint(0xbeefdeadu32)
+  assert a <<< 4u32 == Bigint(0xeadbeefdu32)
+}
+
+// Test bitwise-overloaded operators.
+unittest {
+  // Overload the bitwise-AND & operator.
+  a = Bigint(0xffu16)
+  b = Bigint(0xff00u16)
+  assert a & b == Bigint(0u16)
+  assert a & (b >> 1u32) == Bigint(0x80u16)
+  assert a | b == Bigint(0xffffu16)
+  assert a @ (b >> 1u32) == Bigint(0x7f7fu16)
+}

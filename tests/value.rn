@@ -1,0 +1,74 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+enum ValueType {
+  String
+  Bool
+  Int64
+}
+
+func getValueType(value) {
+  switch typeof(value) {
+    case string {
+      return ValueType.String
+    }
+    case bool {
+      return ValueType.Bool
+    }
+    case i64 {
+      return ValueType.Int64
+    }
+  }
+}
+
+class Value(self, value: string | bool | i64) {
+  self.type = getValueType(value)
+  self.stringVal = ""
+  self.boolVal = false
+  self.intVal = 0i64
+  switch typeof(value) {
+    case string {
+      self.stringVal = value
+    }
+    case bool {
+      self.boolVal = value
+    }
+    case i64 {
+      self.intVal = value
+    }
+  }
+
+  func toString(self) -> string {
+    switch self.type {
+      case ValueType.String {
+        return self.stringVal
+      }
+      case ValueType.Bool {
+        return self.boolVal ? "true" : "false"
+      }
+      case ValueType.Int64 {
+        return "%i" % self.intVal
+      }
+    }
+  }
+}
+
+unittest {
+  a = Value(0xdeadbeefi64)
+  b = Value("This is a test")
+  c = Value(true)
+  println "0x%x" % a.intVal
+  println b.stringVal
+  println c.boolVal
+}

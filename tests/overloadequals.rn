@@ -1,0 +1,11 @@
+class Foo(self, value) {
+  self.value = value
+}
+
+operator ==(a: Foo, b: Foo) -> bool {
+  return a.value == b.value
+}
+
+a = Foo(123u32)
+b = Foo(123u32)
+println a == b

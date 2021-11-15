@@ -1,0 +1,10 @@
+operator +(a: f32, b: u32) -> f32 {
+  return a + <f32>b
+}
+
+operator +(a: f32, b: u64) -> f32 {
+  return a + <f32>b
+}
+
+println 1.0f32 + 2u32
+println 2.0f32 + 3u64

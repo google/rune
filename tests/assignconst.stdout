@@ -1,0 +1,6 @@
+Error: Assigning to const expression
+File tests/assignconst.rn, line 2: x[0][1] = 3
+Stack trace:
+In : File tests, line 0: assignconst()
+In assignconst: File tests/assignconst.rn, line 2: x[0][1] = 3
+Exiting due to error...

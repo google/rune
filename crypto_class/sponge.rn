@@ -1,0 +1,64 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use prp
+
+// A sponge class.  This sponge has absorb and squeeze methods.
+// The state, C and R, are 256 bit bigints.
+class Sponge(self) {
+  self.C = secret(12345678u256)  // Could be zero if permute can deal with that.
+  self.R = secret(0u256)  // Might as well be zero, since the attacker can control R.
+
+  // XOR block onto R, and call permute.
+  func absorbBlock(self, block: u256) {
+    self.R @= block
+    self.permute()
+  }
+
+  // Call permute and return R.
+  func squeezeBlock(self) -> u256 {
+    self.permute()
+    return self.R
+  }
+
+  // Call the PRP from session 1.
+  func permute(self) {
+    block = (<u512>self.C << 256) | <u512>self.R
+    prp.permute(block)
+    self.C = <u256>(block >> 256)
+    self.R = !<u256>block  // !<u256> means it is OK to throw away the upper bits.
+  }
+
+  // Absorb a string.
+  func absorb(self, bytes: string) {
+    // This is a simple padding scheme.  Absorb the length as a prefix.
+    self.absorbBlock(<u256>(bytes.length()))
+    for pos = 0, pos < bytes.length(), pos += 32 {
+      blockBytes = bytes[pos : min(pos + 32, bytes.length())]
+      block = blockBytes.toUintLE(u256)
+      self.absorbBlock(block)
+    }
+  }
+
+  // Squeeze length bytes as a string.
+  func squeeze(self, length: Uint) -> string {
+    bytes = secret("")
+    for i = 0, i < length, i += 32 {
+      block = self.squeezeBlock()
+      bytes.concat(block.toStringLE())
+    }
+    bytes.resize(length)
+    return bytes
+  }
+}

@@ -1,0 +1,505 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+module Rune de
+
+enum StatementType
+  DE_STATEMENT_IF
+  DE_STATEMENT_ELSEIF
+  DE_STATEMENT_ELSE
+  DE_STATEMENT_SWITCH
+  DE_STATEMENT_CASE
+  DE_STATEMENT_DEFAULT
+  DE_STATEMENT_DO
+  DE_STATEMENT_WHILE
+  DE_STATEMENT_FOR
+  DE_STATEMENT_ASSIGN
+  DE_STATEMENT_CALL
+  DE_STATEMENT_PRINT  // print "Hello, World!\n"
+  DE_STATEMENT_THROW
+  DE_STATEMENT_RETURN
+  DE_STATEMENT_GENERATE
+  DE_STATEMENT_RELATION
+  DE_STATEMENT_APPENDCODE
+  DE_STATEMENT_PREPENDCODE
+  DE_STATEMENT_USE
+  DE_STATEMENT_IMPORT
+  DE_STATEMENT_IMPORTLIB
+  DE_STATEMENT_IMPORTRPC
+  DE_STATEMENT_FOREACH
+  DE_STATEMENT_YIELD
+  DE_STATEMENT_REF  // These two are used by generators to manage reference counts.
+  DE_STATEMENT_UNREF
+
+enum ExpressionType
+  DE_EXPR_INTEGER  // 0xABCDi32 or 1i8
+  DE_EXPR_FLOAT  // 0.123 or 3e10
+  DE_EXPR_RANDUINT  // rand256
+  DE_EXPR_BOOL  // true or false
+  DE_EXPR_STRING  // "passed"
+  DE_EXPR_IDENT  // a
+  DE_EXPR_ARRAY  // [1u8, 2u8, 3u8, 4u8] or "passed"
+  DE_EXPR_MODINT  // 2 mod p
+  // If you modify the list from DE_EXPR_ADD to DE_EXPR_ROTR, also update the corresponding
+  // assignment operator types, in the same order.
+  DE_EXPR_ADD  // a + b
+  DE_EXPR_SUB  // a - b
+  DE_EXPR_MUL  // a * b
+  DE_EXPR_DIV  // a / b
+  DE_EXPR_MOD  // a % b
+  DE_EXPR_AND  // a && b
+  DE_EXPR_OR   // a || b
+  DE_EXPR_XOR  // a @@ b
+  DE_EXPR_BITAND  // a & b
+  DE_EXPR_BITOR   // a | b
+  DE_EXPR_BITXOR  // a @ b
+  DE_EXPR_EXP  // a ^ b
+  DE_EXPR_SHL  // a << b
+  DE_EXPR_SHR  // a >> b
+  DE_EXPR_ROTL  // a <<< b
+  DE_EXPR_ROTR  // a >>> b
+  DE_EXPR_ADDTRUNC  // a !+ b
+  DE_EXPR_SUBTRUNC  // a !- b
+  DE_EXPR_MULTRUNC  // a !* b
+  DE_EXPR_BITNOT  // ~a
+  DE_EXPR_LT  // a < b
+  DE_EXPR_LE  // a <= b
+  DE_EXPR_GT  // a > b
+  DE_EXPR_GE  // a >= b
+  DE_EXPR_EQUAL  // a == b
+  DE_EXPR_NOTEQUAL  // a != b
+  DE_EXPR_NEGATE  // -a
+  DE_EXPR_NEGATETRUNC  // !-a
+  DE_EXPR_NOT  // !a
+  DE_EXPR_CAST  // <b>a
+  DE_EXPR_CASTTRUNC  // !<b>a
+  DE_EXPR_SELECT  // passed? a : b
+  DE_EXPR_CALL  // fact(n)
+  DE_EXPR_INDEX  // a[i]
+  DE_EXPR_SLICE  // a[a:b]
+  DE_EXPR_SECRET  // secret(password)
+  DE_EXPR_REVEAL  // reveal(mac)
+  DE_EXPR_EQUALS  // a = b
+  // If you modify the list from DE_EXPR_ADD_EQUALS to DE_EXPR_ROTR_EQUALS, also update the
+  // corresponding operator types, in the same order.
+  DE_EXPR_ADD_EQUALS  // a += b
+  DE_EXPR_SUB_EQUALS  // a -= b
+  DE_EXPR_MUL_EQUALS  // a *= b
+  DE_EXPR_DIV_EQUALS  // a /= b
+  DE_EXPR_MOD_EQUALS  // a %= b
+  DE_EXPR_AND_EQUALS  // a &&= b
+  DE_EXPR_OR_EQUALS   // a ||= b
+  DE_EXPR_XOR_EQUALS  // a @@= b
+  DE_EXPR_BITAND_EQUALS  // a &= b
+  DE_EXPR_BITOR_EQUALS   // a |= b
+  DE_EXPR_BITXOR_EQUALS  // a @= b
+  DE_EXPR_EXP_EQUALS  // a ^= b
+  DE_EXPR_SHL_EQUALS  // a <<= b
+  DE_EXPR_SHR_EQUALS  // a >>= b
+  DE_EXPR_ROTL_EQUALS  // a <<<= b
+  DE_EXPR_ROTR_EQUALS  // a >>>= b
+  DE_EXPR_ADDTRUNC_EQUALS  // a !+ b
+  DE_EXPR_SUBTRUNC_EQUALS  // a !- b
+  DE_EXPR_MULTRUNC_EQUALS  // a !* b
+  DE_EXPR_DOT  // a.b
+  DE_EXPR_DOTDOTDOT  // case u1 ... u32
+  DE_EXPR_LIST  // fact(a, b, c)
+  DE_EXPR_TUPLE  // return (1, 2, "passed")
+  DE_EXPR_AS  // import foo as bar
+  DE_EXPR_IN  // if element in set
+  DE_EXPR_CONST  // const self.x = x
+  DE_EXPR_NULL  // null(Node())
+  DE_EXPR_NULLSELF  // n = Tree(null, null)
+  DE_EXPR_FUNCADDR  // &max(0u32, 0u32)
+  DE_EXPR_ARRAYOF  // arrayof(u32)
+  DE_EXPR_TYPEOF  // typeof a
+  DE_EXPR_UNSIGNED  // unsigned(3i32)
+  DE_EXPR_SIGNED  // signed(3u32)
+  DE_EXPR_WIDTHOF  // widthof a
+  DE_EXPR_ISNULL  // isnull(entry)
+  // Type expressions:
+  DE_EXPR_UINTTYPE  // x: u32 = y
+  DE_EXPR_INTTYPE  // x: i32 = y
+  DE_EXPR_FLOATTYPE  // x: f32 = y
+  DE_EXPR_STRINGTYPE  // x: string = y
+  DE_EXPR_BOOLTYPE  // done: bool = checkForDone()
+  DE_EXPR_TYPEINDEX  // u32[]
+  DE_EXPR_NAMEDPARAM  // Myclass(name = "me", profession = "hacker")
+
+enum DatatypeType
+  DE_TYPE_NONE  // Some expressions, such as assignments, have no type.
+  DE_TYPE_BOOL
+  DE_TYPE_STRING  // Cast to uint8[] is free, since VM has no string type.
+  DE_TYPE_UINT
+  DE_TYPE_INT
+  DE_TYPE_MODINT
+  DE_TYPE_FLOAT
+  DE_TYPE_ARRAY
+  DE_TYPE_TCLASS
+  DE_TYPE_CLASS
+  DE_TYPE_FUNCTION
+  DE_TYPE_FUNCPTR
+  DE_TYPE_TUPLE
+  DE_TYPE_STRUCT
+  DE_TYPE_ENUM
+  DE_TYPE_ENUMCLASS
+  DE_TYPE_TBDCLASS  // Returned by null(A).
+
+enum IdentType
+  DE_IDENT_FUNCTION
+  DE_IDENT_VARIABLE
+
+enum VariableType
+  DE_VAR_LOCAL
+  DE_VAR_PARAMETER
+
+enum FunctionType
+  DE_FUNC_PLAIN  // Includes methods.
+  DE_FUNC_OPERATOR  // Operatored operator.
+  DE_FUNC_CONSTRUCTOR
+  DE_FUNC_DESTRUCTOR
+  DE_FUNC_PACKAGE  // Initializes all modules in the package.
+  DE_FUNC_MODULE  // Initializes the module.
+  DE_FUNC_ITERATOR
+  DE_FUNC_FINAL
+  DE_FUNC_STRUCT
+  DE_FUNC_ENUM
+  DE_FUNC_GENERATOR
+
+enum BlockType
+  DE_BLOCK_FUNCTION
+  DE_BLOCK_STATEMENT
+  DE_BLOCK_CLASS
+
+enum BuiltinTclassType
+  DE_BUILTINTCLASS_ARRAY
+  DE_BUILTINTCLASS_FUNCPTR
+  DE_BUILTINTCLASS_FUNCTION
+  DE_BUILTINTCLASS_BOOL
+  DE_BUILTINTCLASS_STRING
+  DE_BUILTINTCLASS_UINT
+  DE_BUILTINTCLASS_INT
+  DE_BUILTINTCLASS_MODINT
+  DE_BUILTINTCLASS_FLOAT
+  DE_BUILTINTCLASS_TUPLE
+  DE_BUILTINTCLASS_STRUCT
+  DE_BUILTINTCLASS_ENUM
+
+enum BuiltinFuncType
+  DE_BUILTINFUNC_ARRAYLENGTH
+  DE_BUILTINFUNC_ARRAYRESIZE
+  DE_BUILTINFUNC_ARRAYAPPEND
+  DE_BUILTINFUNC_ARRAYCONCAT
+  DE_BUILTINFUNC_ARRAYREVERSE
+  DE_BUILTINFUNC_ARRAYTOSTRING
+  DE_BUILTINFUNC_STRINGLENGTH
+  DE_BUILTINFUNC_STRINGRESIZE
+  DE_BUILTINFUNC_STRINGAPPEND
+  DE_BUILTINFUNC_STRINGCONCAT
+  DE_BUILTINFUNC_STRINGREVERSE
+  DE_BUILTINFUNC_STRINGTOUINTBE
+  DE_BUILTINFUNC_STRINGTOUINTLE
+  DE_BUILTINFUNC_UINTTOSTRINGBE
+  DE_BUILTINFUNC_UINTTOSTRINGLE
+  DE_BUILTINFUNC_INTTOSTRING
+  DE_BUILTINFUNC_UINTTOSTRING
+  DE_BUILTINFUNC_STRINGTOHEX
+  DE_BUILTINFUNC_HEXTOSTRING
+  DE_BUILTINFUNC_FIND
+  DE_BUILTINFUNC_RFIND
+  DE_BUILTINFUNC_BOOLTOSTRING
+  DE_BUILTINFUNC_TUPLETOSTRING
+  DE_BUILTINFUNC_STRUCTTOSTRING
+  DE_BUILTINFUNC_ENUMTOSTRING
+
+enum Linkage
+  DE_LINK_MODULE  // Default, like Python, files in the same directory can access.
+  DE_LINK_PACKAGE  // Allow files in other directories to access.
+  DE_LINK_LIBCALL  // A library call API.  All params must have default values.
+  DE_LINK_RPC  // An RPC API.  All params must have default values.
+  DE_LINK_BUILTIN  // Globally visible, never a lib call or RPC.
+  DE_LINK_EXTERN_C  // An external C function.
+  DE_LINK_EXTERN_RPC  // An external RPC function.
+
+enum FloatType
+  DE_FLOAT_SINGLE
+  DE_FLOAT_DOUBLE
+
+enum SecretType
+  DE_SECTYPE_NONE  // For void types.
+  DE_SECTYPE_ALL_PUBLIC
+  DE_SECTYPE_ALL_SECRET
+  DE_SECTYPE_MIXED
+
+class Root create_only
+  Statement lastInitializerStatement
+
+// Used to keep track of statements, functions, classes, in one hash table.
+class Block
+  BlockType type
+  Line line
+  // For dead code analysis.
+  bool canReturn
+  bool canContinue
+
+class Ident
+  IdentType type
+  bool exported
+  bool imported
+
+// Template classes.  All class declarations are templates.  Template classes are owned by the function
+// that implement's the constructor.
+class Tclass array
+  Datatype datatype
+  BuiltinTclassType builtinType
+  Line line
+  uint32 numClasses
+  bool hasDefaultClass
+  bool hasFinalMethod
+  bool refCounted  // Set if this tclass is in no cascade-delete relationship.
+  bool visited  // Used in loop detection.
+  bool marked  // Used in loop detection.
+  uint32 refWidth  // Width of an object reference, 32 by default.
+
+// Fully typed version of a class.  It has a block that has typed member variables, and also copies
+// of identifiers pointing to the main class' methods and inner classes.
+class Class
+  Datatype datatype
+  uint32 number  // Used in making labels to access data members.
+  // We allocate a new uint32 array for the free list if the class does not have one already.
+  // However, if it does, we reuse it for the free list.
+  Variable freeListVariable
+  uint32 firstFreePos
+  uint32 allocatedPos
+  uint32 usedPos
+  bool bound
+  uint32 refWidth  // Width of an object reference, 32 by default.
+
+class Function
+  FunctionType type
+  Line line
+  Linkage linkage
+  bool bound
+  bool returnsValue  // Used to improve reporting of recursion errors.
+  bool needsUniquification  // Set when the function calls iterators.
+  BuiltinFuncType builtinType
+  uint32 numSignatures
+  bool Extern  // Provided by an external library or RPC.
+
+// A code generator definition.
+class Generator
+  Line line
+
+class Variable
+  VariableType type
+  Datatype datatype
+  bool const
+  bool instantiated  // Some variables are used only for their types.
+  bool isType
+  Line line
+  Variable globalArrayVariable
+  // Set if the variable is initialized in the scope-block.  This is used to
+  // determine if we should initialize it up-front or later.
+  bool initializedAtTop
+  bool inTclassSignature
+  sym savedName
+  Value value cascade  // Used in generation.
+  bool generated  // We don't reference count via generated variables.
+  uint32 entryValue  // Set for variables representing enum entries.
+  Datatype savedDatatype  // Used in matching overloaded operators.
+
+// Used during generation to compute expression values.  May also get used for constant propagation.
+class Value
+  DatatypeType type
+  Variable variable
+  union type
+    bool boolVal: DE_TYPE_BOOL
+    String stringVal: DE_TYPE_STRING  // Don't destroy immutable strings.
+    Bigint bigintVal cascade: DE_TYPE_UINT DE_TYPE_INT
+    Float floatVal cascade: DE_TYPE_FLOAT
+    Tclass tclassVal: DE_TYPE_TCLASS
+    Class classVal: DE_TYPE_CLASS
+    Function funcVal: DE_TYPE_FUNCTION
+
+class Statement
+  StatementType type
+  Line line
+  bool instantiated
+  bool executed  // Only for relation statements, so we don't execute them twice.
+  bool generated  // This statement was generated by a generator.
+  bool isFirstAssignment  // True if this is the first assignment to a variable, at top level.
+  Filepath filepath
+
+// Hash table bins for data types.
+class DatatypeBin create_only
+  uint32 hash
+
+class Datatype array
+  DatatypeType type
+  bool secret
+  bool containsArray
+  uint32 width
+  union type
+    Datatype elementType: DE_TYPE_ARRAY DE_TYPE_STRING
+    Datatype returnType: DE_TYPE_FUNCPTR
+    Tclass tclass: DE_TYPE_TCLASS DE_TYPE_TBDCLASS
+    Function function: DE_TYPE_FUNCTION DE_TYPE_STRUCT DE_TYPE_ENUM DE_TYPE_ENUMCLASS
+    Class Class: DE_TYPE_CLASS
+    Expression modulus: DE_TYPE_MODINT
+  array Datatype typeList  // For tuples, structs, and funcptr.
+  bool concrete  // Set for tyipes that can be instantiated directly.
+
+class Bigint
+  array uint8 data
+  uint32 width
+  bool signed  // Negative numbers are represented with sign-extension.
+  bool widthUnspecified
+
+class Float
+  FloatType type
+  double value
+  uint32 width
+
+class Expression array
+  ExpressionType type
+  // Set for all fully qualified types like u32.  Not set for partially
+  // qualified types like Uint.  Non-qualified types cannot be passed to
+  // functions.
+  Datatype datatype
+  Line line
+  // True for type expressions such as u32 or Uint | Int.
+  bool isType
+  bool const
+  union type
+    Bigint bigint cascade : DE_EXPR_INTEGER
+    Float Float cascade : DE_EXPR_FLOAT
+    String string: DE_EXPR_STRING  // Don't destroy immutable strings.
+    sym name : DE_EXPR_IDENT
+    bool boolVal : DE_EXPR_BOOL
+    uint32 width : DE_EXPR_RANDUINT DE_EXPR_UINTTYPE DE_EXPR_INTTYPE
+  Signature signature  // Only set on function call expressions.
+  String altString  // Don't destroy immutable strings.
+  bool autocast  // Set on integer constants without a type suffix.
+
+// A hash bin of signatures.
+class SignatureBin create_only
+  uint32 hash
+
+// A function call signature.  Like data types, these are hashed uniquely.
+class Signature
+  Datatype returnType
+  uint32 number  // The number of the signature on the function or class.
+  bool isCalledByFuncptr
+  bool binding
+  bool partial  // Set to indicated the signature is a partial class signature.
+  Line line
+  bool instantiated  // Some signatures occur in typeof(...) expressions.
+
+// Specifies the type of a parameter in a signature, along with some additional data required in
+// function binding.
+class Paramspec
+  Datatype datatype
+  Variable variable
+  bool instantiated
+
+// Strings.  The main difference vs utSym is that Rune strings can contain 0's.
+class String
+  array char text
+  uint32 used
+
+// Used to report call path to error, and also keep track of variable values in generators.
+class StackFrame
+  Statement statement
+
+// Operatored operator.
+class Operator
+  ExpressionType type
+
+// This is a directed edge between Tclasses which are built from relation statements.  Reference
+// counted "value" classes are those that have no cascade-delete parents.  These may not be in
+// relationship loops, but can form DAGs.  Tclasses in cascade-delete relationships with parent
+// tclasses are "owned" classes which are only destroyed when a cascade-delete parent is destroyed,
+// or if the destroy() method is called.  Owned classes can be in relationship loops.  They must
+// always have at least one cascade-delete parent when constructed.  An error is thrown if an owned
+// object is removed from its last owner and is not added to a new owner before its reference goes
+// out of scope.  A runtime error is thrown if an object with non-zero reference count is destroyed.
+class Relation
+  bool cascadeDelete
+  String parentLabel
+  String childLabel
+
+// Represents a non-cascade-delete 1-to-1 relationship accessed as a class member.  Children must
+// be reference counted, not owned.  MemberRels are directed edges between Class objects rather than
+// Tclass, since the child is often a class template parameter.
+class MemberRel
+
+relationship Root Block cascade
+relationship Root Tclass doubly_linked mandatory
+relationship Root StackFrame doubly_linked mandatory
+relationship Root DatatypeBin hashed hash cascade
+relationship DatatypeBin Datatype linked_list cascade
+relationship Root SignatureBin hashed hash cascade
+relationship SignatureBin Signature linked_list cascade
+relationship Root Function doubly_linked  // For easy traversal of all functions.
+relationship Root Signature doubly_linked
+relationship Root Class doubly_linked
+relationship Class Signature doubly_linked cascade
+relationship Function Signature doubly_linked cascade
+relationship Function:Default Signature:Default
+relationship Function Tclass cascade
+relationship Class:Lazy Signature:Lazy doubly_linked cascade
+relationship Signature Paramspec array mandatory
+relationship Block Ident hashed cascade
+relationship Function Ident doubly_linked cascade
+relationship Variable Ident doubly_linked cascade
+relationship Ident Expression doubly_linked
+relationship Block Function doubly_linked cascade
+relationship Block Variable doubly_linked mandatory
+relationship Block Statement doubly_linked mandatory
+relationship Tclass Class doubly_linked mandatory
+relationship Class:Owning Block:Sub cascade
+relationship Function:Owning Block:Sub cascade
+relationship Function:Type Expression:Type cascade
+relationship Function Generator cascade
+relationship Statement:Owning Block:Sub cascade
+relationship Statement Expression cascade
+relationship Expression Expression doubly_linked cascade
+relationship Variable:Initializer Expression:Initializer cascade
+relationship Variable:Type Expression:Type cascade
+relationship Root String hashed text cascade
+relationship Root Operator hashed type mandatory
+relationship Operator Function doubly_linked cascade
+relationship Tclass:Parent Relation:Child doubly_linked mandatory
+relationship Tclass:Child Relation:Parent doubly_linked mandatory
+relationship Generator Relation doubly_linked mandatory
+relationship Variable MemberRel mandatory
+relationship Class:Parent MemberRel:Child doubly_linked mandatory
+relationship Class:Child MemberRel:Parent doubly_linked mandatory
+
+schema Debug
+
+class Filepath
+  bool isPackage
+
+class Line
+  array char text
+  uint32 lineNum
+
+// Hashed by file path.
+relationship Root Filepath hashed mandatory
+relationship Filepath:Module Block:Module
+// The root block has no file.
+relationship Filepath Block doubly_linked cascade
+relationship Filepath Filepath doubly_linked cascade
+relationship Filepath Line tail_linked cascade

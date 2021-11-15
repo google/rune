@@ -1,0 +1,54 @@
+// Runtime functions.
+
+// This must match the type used in runtime/bigint.c.
+BigintElement = u32
+
+// The runtime uses rnArray datatypes for bigints.  This declaration must match
+// what the runtime does.
+BigintArray = [BigintElement]
+
+// This must match the definition in runtime/rune.h
+enum ComparisonType {
+  Lt = 0u32  // a < b
+  Le = 1u32  // a <= b
+  Gt = 2u32  // a > b
+  Ge = 3u32  // a >= b
+  Equal = 4u32  // a == b
+  NotEqual = 5u32 // a != b
+}
+
+extern "C" func integerToBigint(value: u64, width: u32,
+    isSigned: bool, isSecret: bool) -> BigintArray
+extern "C" func bigintWidth(value: BigintArray) -> u32
+extern "C" func bigintSigned(bigint: BigintArray) -> bool
+extern "C" func bigintSecret(value: BigintArray) -> bool
+extern "C" func bigintToString(bigint: BigintArray, base: u32) -> string
+extern "C" func bigintCast(source: BigintArray, newWidth: u32,
+    isSigned: bool, isSecret: bool, truncate: bool) -> BigintArray
+extern "C" func compareBigints(compareType: ComparisonType, a: BigintArray, b: BigintArray) -> bool
+extern "C" func bigintAdd(a: BigintArray, b: BigintArray) -> BigintArray
+extern "C" func bigintAddTrunc(a: BigintArray, b: BigintArray) -> BigintArray
+extern "C" func bigintSub(a: BigintArray, b: BigintArray) -> BigintArray
+extern "C" func bigintSubTrunc(a: BigintArray, b: BigintArray) -> BigintArray
+extern "C" func bigintMul(a: BigintArray, b: BigintArray) -> BigintArray
+extern "C" func bigintMulTrunc(a: BigintArray, b: BigintArray) -> BigintArray
+extern "C" func bigintDiv(a: BigintArray, b: BigintArray) -> BigintArray
+extern "C" func bigintMod(a: BigintArray, b: BigintArray) -> BigintArray
+extern "C" func bigintExp(base: BigintArray, exponent: u32) -> BigintArray
+extern "C" func bigintNegate(a: BigintArray) -> BigintArray
+extern "C" func bigintNegateTrunc(a: BigintArray) -> BigintArray
+extern "C" func bigintComplement(a: BigintArray) -> BigintArray
+extern "C" func bigintShl(source: BigintArray, dist: u32) -> BigintArray
+extern "C" func bigintShr(source: BigintArray, dist: u32) -> BigintArray
+extern "C" func bigintRotl(source: BigintArray, dist: u32) -> BigintArray
+extern "C" func bigintRotr(source: BigintArray, dist: u32) -> BigintArray
+extern "C" func bigintBitwiseAnd(a: BigintArray, b: BigintArray) -> BigintArray
+extern "C" func bigintBitwiseOr(a: BigintArray, b: BigintArray) -> BigintArray
+extern "C" func bigintBitwiseXor(a: BigintArray, b: BigintArray) -> BigintArray
+extern "C" func bigintModularAdd(a: BigintArray, b: BigintArray, modulus: BigintArray) -> BigintArray
+extern "C" func bigintModularSub(a: BigintArray, b: BigintArray, modulus: BigintArray) -> BigintArray
+extern "C" func bigintModularMul(a: BigintArray, b: BigintArray, modulus: BigintArray) -> BigintArray
+extern "C" func bigintModularDiv(a: BigintArray, b: BigintArray, modulus: BigintArray) -> BigintArray
+extern "C" func bigintModularExp(base: BigintArray, exponent: BigintArray, modulus: BigintArray) -> BigintArray
+extern "C" func bigintModularNegate(a: BigintArray, modulus: BigintArray) -> BigintArray
+extern "C" func bigintModularInverse(var dest: BigintArray, source: BigintArray, modulus: BigintArray) -> bool

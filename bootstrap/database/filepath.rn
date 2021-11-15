@@ -1,0 +1,65 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import io
+
+use line
+use root
+
+// Use Filepath.new for now to create new Filepath objects, so we can check for
+// an existing one.
+class Filepath(self, path: string, parent: Filepath, isPackage: bool) {
+  self.sym = Sym.new(path)
+  self.isPackage = isPackage
+  root = theRoot()
+  root.insertFilepath(self)
+  if !isnull(parent) {
+    parent.appendFilepath(self)
+  }
+
+  // Create a filepath object that records the path to a module or package.  If
+  // it already exists, return the old one.
+  func new(path: string, parent: Filepath, isPackage: bool) -> Filepath {
+    if false {
+      // This is a hint to the binder.  It should not be needed long-term.
+      return Filepath(path, parent, isPackage);
+    }
+    root = theRoot()
+    pathSym = Sym.new(path)
+    filepath = root.findFilepath(pathSym)
+    if !isnull(filepath) {
+      return filepath
+    }
+    return Filepath(path, parent, isPackage)
+  }
+
+  // Returns the path relative to the current working directory.
+  func getRelativePath(self) -> string {
+    path = self.sym.name
+    cwd = io.getcwd()
+    pos = 0
+    minLength = min(path.length(), cwd.length())
+    while pos < minLength && path[pos] == cwd[pos]  {
+      pos += 1
+    }
+    if pos < minLength && path[pos] == '/' {
+      pos += 1
+    }
+    return path[pos:path.length()]
+  }
+}
+
+relation Hashed Root Filepath cascade ("sym")
+relation DoublyLinked Filepath Filepath cascade
+relation TailLinked Filepath Line cascade

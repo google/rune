@@ -1,0 +1,115 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Find a square root modulo a prime number p.  Return 0 if it does not exist.
+// The other root is the negation of the root returned.
+export func msqrt(a, p) {
+  q = a mod p
+  if p == <p>2 {
+    return a
+  }
+  // First check that the square root exists.
+  if a^((p-<p>1)/<p>2) != 1 mod p {
+    return <p>0
+  }
+  if !<u2>p == 3u2{
+    // p == 3 mod 4
+    return a^((p+<p>1)/<p>4) mod p
+  }
+  if !<u3>p == 5u3 {
+    // p == 5 mod 8
+    v = (2*a)^((p-<p>5)/<p>8) mod p
+    im = 2*a*v^2 mod p
+    return a*v*(im-1) mod p
+  }
+  // Use Shanks algorithm.  Find 2^e*q == p - 1.
+  s = 1
+  q = (p-<p>1)/<p>2
+  while !<u1>q == 0u1 {
+    q /= <p>2
+    s += 1
+  }
+  // Find a non-square mod p.
+  z = 2
+  while z^((p-<p>1)/<p>2) == 1 mod p {
+    z += 1
+  }
+  m = s
+  c = z^q mod p
+  t = a^q mod p
+  r = a^((q+<p>1)/<p>2) mod p
+  while true {
+    if t == <p>0 {
+      return <p>0
+    }
+    if t == <p>1 {
+      return r
+    }
+    i = 1
+    ts = t^2 mod p
+    while ts != <p>1 mod p {
+      ts = ts^2 mod p
+      i += 1
+    }
+    b = c^(2^(m-i-1)) mod p
+    m = i
+    c = b^2 mod p
+    t = t*c mod p
+    r = r*b mod p
+  }
+  return <p>0  // Dummy return
+}
+
+unittest {
+  for i in range(5) {
+    p = findRandPrime()
+    println "Found prime ", p
+    for j in range(10) {
+      a = reveal(rand100 % p)
+      r = msqrt(a, p)
+      if r == <p>0 {
+        println "Not a square: ", a
+      } else {
+        println "a = ", a, ", r = ", r, ", r^2 = ", r^2 mod p
+        if r != <p>0 {
+          if r^2 != a mod p {
+            throw "Error: %u100^2 != %u100 mod %u100\n" % (r, a, p)
+          }
+        }
+      }
+    }
+  }
+  println "Passed"
+
+  func findRandPrime() {
+    do {
+      p = reveal(rand100)
+    } while !isPrime(p)
+    return p
+  }
+
+  func isPrime(p) {
+    if p < <p>2 {
+      return false
+    }
+    for i in range(32) {
+      w = reveal(rand100) % (p - <p>1) + <p>1
+      l = w^(p-<p>1) mod p
+      if l != <p>1 {
+        return false
+      }
+    }
+    return true
+  }
+}

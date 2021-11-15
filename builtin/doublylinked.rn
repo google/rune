@@ -1,0 +1,191 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
+    labelA: string = "", labelB: string = "", pluralB: string = "") {
+  /*
+  if pluralB == "" {
+    pluralB = labelB + B + "s"
+  }
+  */
+  prependcode A {
+    self.first$labelB$B = null(B)
+    self.last$labelB$B = null(B)
+
+    func insert$labelB$B(self, child: B) {
+      debug {
+        if !isnull(child.$labelA$A) {
+          throw "Object is already in a relation"
+        }
+      }
+      first = <child>self.first$labelB$B
+      if isnull(first) {
+        self.last$labelB$B = child
+      } else {
+        first.prev$A$labelB$B = child
+        child.next$A$labelB$B = first
+      }
+      self.first$labelB$B = child
+      child.$labelA$A = self
+      ref child
+    }
+
+    func insertAfter$labelB$B(self, prevChild: B, child: B) {
+      debug {
+        if !isnull(child.$labelA$A) {
+          throw "Object is already in a relation"
+        }
+      }
+      if isnull(prevChild) {
+        self.insert$labelB$B(child)
+      } else {
+        nextChild = <child>prevChild.next$A$labelB$B
+        if isnull(nextChild) {
+          self.append$labelB$B(child)
+        } else {
+          child.next$A$labelB$B = prevChild.next$A$labelB$B
+          child.prev$A$labelB$B = nextChild.prev$A$labelB$B
+          prevChild.next$A$labelB$B = child
+          nextChild.prev$A$labelB$B = child
+          child.$labelA$A = self
+          ref child
+        }
+      }
+    }
+
+    func append$labelB$B(self, child: B) {
+      debug {
+        if !isnull(child.$labelA$A) {
+          throw "Object is already in a relation"
+        }
+      }
+      last = <child>self.last$labelB$B
+      if isnull(last) {
+        self.first$labelB$B = child
+      } else {
+        last.next$A$labelB$B = child
+        child.prev$A$labelB$B = last
+      }
+      self.last$labelB$B = child
+      child.$labelA$A = self
+      ref child
+    }
+
+    func remove$labelB$B(self, child: B) {
+      debug {
+        if child.$labelA$A != self {
+          throw "remove$labelB$B: Object not owned by me"
+        }
+      }
+      next = child.next$A$labelB$B
+      prev = child.prev$A$labelB$B
+      if !isnull(prev) {
+        prev.next$A$labelB$B = next
+      } else if self.first$labelB$B == child {
+        self.first$labelB$B = next
+      }
+      if !isnull(next) {
+        next.prev$A$labelB$B = prev
+      } else if self.last$labelB$B == child {
+        self.last$labelB$B = prev
+      }
+      child.next$A$labelB$B = null(child)
+      child.prev$A$labelB$B = null(child)
+      child.$labelA$A = null(self)
+      unref child
+    }
+
+    func count$labelB$B_s(self) {
+      count = 0
+      for child in self.$labelB$B_s() {
+        count += 1
+      }
+      return count
+    }
+
+    func index$labelB$B(self, index) {
+      count = 0
+      for child in self.$labelB$B_s() {
+        if count == index {
+          return child
+        }
+        count += 1
+      }
+      return null(child)
+    }
+
+    iterator $labelB$B_s(self) {
+      for child = self.first$labelB$B, !isnull(child), child = child.next$A$labelB$B {
+        yield child
+      }
+    }
+
+    iterator reverse$labelB$B_s(self) {
+      for child = self.last$labelB$B, !isnull(child), child = child.prev$A$labelB$B {
+        yield child
+      }
+    }
+
+    iterator safe$labelB$B_s(self) {
+      child = self.first$labelB$B
+      while !isnull(child) {
+        next$A$labelB$B = child.next$A$labelB$B
+        yield child
+        child = next$A$labelB$B
+      }
+    }
+
+    iterator safeReverse$labelB$B_s(self) {
+      child = self.last$labelB$B
+      while !isnull(child) {
+        prevA$labelB$B = child.prev$A$labelB$B
+        yield child
+        child = prev$A$labelB$B
+      }
+    }
+  }
+
+  if cascadeDelete {
+    // If this is a cascade-delete relationship, destroy children in the destructor.
+    appendcode A.destroy {
+      do {
+        child$labelB$B = self.first$labelB$B
+      } while !isnull(child$labelB$B) {
+        child$labelB$B.destroy()
+      }
+    }
+  } else {
+    // Remove all children.
+    prependcode A.destroy {
+      do {
+        child$labelB$B = self.first$labelB$B
+      } while !isnull(child$labelB$B) {
+        self.remove(child$labelB$B)
+      }
+    }
+  }
+
+  prependcode B {
+    self.$labelA$A = null(A)
+    self.prev$A$labelB$B = null(self)
+    self.next$A$labelB$B = null(self)
+  }
+
+  // Remove self from A on destruction.
+  prependcode B.destroy {
+    if !isnull(self.$labelA$A) {
+      self.$labelA$A.remove$labelB$B(self)
+    }
+  }
+}

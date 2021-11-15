@@ -1,0 +1,29 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use kdf
+
+if argv.length() != 4 {
+  throw "Usage: gen_shared_key <theirPubkey(hex)> <yourPrivkey(hex)> <prime(hex)>"
+}
+theirPubkey = argv[1].fromHex().toUintBE(u2048)
+yourPrivkey = secret(argv[2]).fromHex().toUintBE(u2048)
+p = argv[3].fromHex().toUintBE(u2048)
+
+sharedPreKey = theirPubkey^yourPrivkey mod p
+sharedKey = KDF(sharedPreKey.toStringBE(), "Shared key", 32)
+println "sharedKey = ", reveal(sharedKey.toHex())
+fingerPrint = reveal(KDF(sharedKey, "Key fingerprint", 16))
+println "Be sure to check the recipient has the same shared key fingerprint: ",
+    fingerPrint.toHex()

@@ -1,0 +1,75 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+class Node(self) {
+  func check(self) -> u32 {
+    if false {
+      return 0u32
+    }
+    sum = 1u32
+    left = self.leftNode
+    right = self.rightNode
+    if !isnull(left) {
+      sum += left.check()
+    }
+    if !isnull(right) {
+      sum += right.check()
+    }
+    return sum
+  }
+}
+
+relation OneToOne Node:"ParentLeft" Node:"Left" cascade
+relation OneToOne Node:"ParentRight" Node:"Right" cascade
+
+func makeTree(depth) {
+  if false {
+    // This is a hint for type resolution under recursion.
+    // TODO: Enhance recursive type detection to jump ahead to later returns.
+    return Node()
+  }
+  node = Node()
+  if depth != 0 {
+    left = makeTree(depth - 1)
+    right = makeTree(depth - 1)
+    node.insertLeftNode(left)
+    node.insertRightNode(right)
+  }
+  return node
+}
+
+minDepth = 4u32
+maxDepth = 10u32
+if argv.length() > 1 {
+  passed = false
+  maxDepth = argv[1].toUint(u32, passed)
+}
+stretchDepth = maxDepth + 1
+tree = makeTree(stretchDepth)
+println "stretch tree of depth %u\t check:" % stretchDepth, tree.check()
+tree.destroy()
+longLivedTree = makeTree(maxDepth)
+iterations = 1u32 << maxDepth
+for depth in range(minDepth, stretchDepth, 2u32) {
+    checkTotal = 0u32
+    for i = 1u32, i < iterations + 1u32, i += 1 {
+        tree = makeTree(depth)
+        checkTotal += tree.check()
+        tree.destroy()
+    }
+    println "%u\t trees of depth %u\t check:" % (iterations, depth), checkTotal
+    iterations >>= 2
+}
+println "long lived tree of depth %u\t check:" % maxDepth, longLivedTree.check()
+

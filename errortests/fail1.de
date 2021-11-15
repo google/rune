@@ -1,0 +1,8 @@
+func foo(a) {
+  b = <a>1
+  print b
+  b = u32
+  return b
+}
+
+foo(2u32)

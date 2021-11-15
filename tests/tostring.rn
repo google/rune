@@ -1,0 +1,36 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+class Point1(self, x, y) {
+  self.x = x
+  self.y = y
+
+  func toString(self) {
+    return "{x = %u, y = %u}" % (self.x, self.y)
+  }
+}
+
+class Point2(self, x, y) {
+  self.x = x
+  self.y = y
+}
+
+// This one calls the user-defined toString.
+p1 = Point1(10, 15)
+println p1
+
+// This one calls the auto-generated toString.
+p2 = Point2(10, 15)
+println p2
+println "%s" % p2

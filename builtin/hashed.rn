@@ -1,0 +1,213 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Hash together two values
+func hashValues(val1: u64, val2: u64) -> u64 {
+  return ((val1 @ <val1>0xdeadbeef31415927u64) >>> 23) !* val2
+}
+
+// Hash a string.
+func hashString(value: string) -> u64 {
+  hash = 0u64
+  for i = 0, i < value.length(), i += 1 {
+    hash = hashValues(hash, <u64>value[i])
+  }
+  return hash
+}
+
+// Hash an integer of any size.
+func hashInteger(value: Uint | Int) -> u64 {
+  switch typeof(value) {
+    case (u1 ... u64) | (i1 ... i64) {
+      return hashValues(0u64, <u64>value)
+    }
+    default {
+      remaining = value
+      hash = 0u64
+      do {
+        hash = hashValues(hash, !<u64>remaining)
+        remaining >>= 64
+      } while remaining != <remaining>0
+      return hash
+    }
+  }
+}
+
+func hashValue(value) -> u64 {
+  // Only one of these cases will be instatiated per func instantiation.
+  switch typeof(value) {
+    case String {
+      return hashString(value)
+    }
+    case Uint, Int {
+      return hashInteger(value)
+    }
+    case Array {
+      hash = 0u64
+      for i in range(value.length) {
+        element = value[i]
+        hash = hashValues(hash, hashValue(element))
+      }
+      return hash
+    }
+    case Class {
+      // The hash value is just the object index itself.
+      return <u64><u32>value
+    }
+    default {
+      error = 0  // This will cause a ccompile-time error.
+      error = "hashValue: I don't know how to hash this type"
+    }
+  }
+}
+
+generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
+    labelA: string = "", labelB: string = "", keyField: string = "hash", pluralB: string = "") {
+  if pluralB == "" {
+    pluralB = labelB + "s";
+  }
+  prependcode A {
+    self.table = arrayof(B)
+    self.numEntries = 0
+
+    func find$labelB$B(self, key) {
+      if self.table.length() == 0 {
+        return null(self.table[u64])
+      }
+      hash = hashValue(key) & <u64>(self.table.length() - 1)
+      entry = self.table[hash]
+      while !isnull(entry) {
+        if key == entry.$keyField {
+          return entry
+        }
+        entry = entry.nextHashed$A$labelB$B
+      }
+      return null(entry)
+    }
+
+    func insert$labelB$B(self, entry) {
+      if self.numEntries == self.table.length() {
+        if self.table.length() == 0 {
+          self.table.resize(1)
+        } else {
+          // Double the size of the hash table.
+          self.table.resize(self.table.length() << 1)
+        }
+        for i in range(self.numEntries, self.table.length()) {
+          self.table[i] = null(entry)
+        }
+      }
+      hash = hashValue(entry.$keyField) & <u64>(self.table.length() - 1)
+      prevEntry = self.table[hash]
+      entry.nextHashed$A$labelB$B = prevEntry
+      self.table[hash] = entry
+      self.numEntries += 1
+      ref entry
+    }
+
+    func remove$labelB$B(self, child) {
+      hash = hashValue(child.$keyField) & <u64>(self.table.length() - 1)
+      entry = self.table[hash]
+      prev = null(entry)
+      while !isnull(entry) {
+        if entry == child {
+          if isnull(prev) {
+            self.table[hash] = child.nextHashed$A$labelB$B
+          } else {
+            prev.nextHashed$A$labelB$B = child.nextHashed$A$labelB$B
+          }
+          child.nextHashed$A$labelB$B = null(child)
+          unref child
+          return
+        }
+        prev = entry
+        entry = entry.nextHashed$A$labelB$B
+      }
+      throw "Entry not found in map"
+    }
+
+    iterator $labelB$pluralB(self) {
+      for i in range(self.table.length()) {
+        entry = self.table[i]
+        while !isnull(entry) {
+          yield entry
+          entry = entry.nextHashed$A$labelB$B
+        }
+      }
+    }
+  }
+
+  if cascadeDelete {
+    // If this is a cascade-delete relationship, destroy children in
+    // the destructor.
+    appendcode A.destroy {
+      for x$labelB$B in range(self.table.length()) {
+        $labelB$B_Entry = self.table[x$labelB$B]
+        while !isnull($labelB$B_Entry) {
+          next$labelB$B_Entry = $labelB$B_Entry.nextHashed$A$labelB$B
+          $labelB$B_Entry.nextHashed$A$labelB$B = null($labelB$B_Entry)
+          $labelB$B_Entry.$labelA$A = null(self)
+          $labelB$B_Entry.destroy()
+          $labelB$B_Entry = next$labelB$B_Entry
+        }
+        self.table[x$labelB$B] = null($labelB$B_Entry)
+      }
+    }
+  } else {
+    appendcode A.destroy {
+      for x$labelB$B in range(self.table.length()) {
+        $labelB$B_Entry = self.table[x$labelB$B]
+        while !isnull($labelB$B_Entry) {
+          next$labelB$B_Entry = $labelB$B_Entry.nextHashed$A$labelB$B
+          $labelB$B_Entry.nextHashed$A$labelB$B = null($labelB$B_Entry)
+          $labelB$B_Entry.$labelA$A = null(self)
+          $labelB$B_Entry = next$labelB$B_Entry
+        }
+        self.table[x$labelB$B] = null($labelB$B_Entry)
+      }
+    }
+  }
+
+  prependcode B {
+    self.$labelA$A = null(A)
+    self.nextHashed$A$labelB$B = null(self)
+  }
+  // Remove self from A on destruction.
+  appendcode B.destroy {
+    if !isnull(self.$labelA$A) {
+      self.$labelA$A.remove$labelB$B(self)
+    }
+  }
+}
+
+unittest {
+  class A(self, <idType>) {
+  }
+
+  class B(self, a: A, <id>) {
+    self.id = id
+    a.insertB(self)
+
+    final(self) {
+      println "Destroying b"
+    }
+  }
+
+  relation Hashed A B cascade ("id")
+
+  a = A(typeof(123))
+  b = B(a, 123)
+  println a.findB(123).id
+  a = null(a)
+}

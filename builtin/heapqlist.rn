@@ -1,0 +1,167 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+generator HeapqList(A: Class, B: Class, cascadeDelete:bool = false,
+    labelA: string = "", labelB: string = "", ascend: bool = true) {
+  if (ascend) {
+    prependcode A {
+      func _compare$labelB$B(self, child1: B, child2: B) -> bool {
+        return child1 < child2
+      }
+    }
+  } else {
+    prependcode A {
+      func _compare$labelB$B(self, child1: B, child2: B) -> bool {
+        return child1 > child2
+      }
+    }
+  }
+  prependcode A {
+    self.$labelB$B_s = arrayof(B)
+
+    func _swap$labelB$B(self, index1: u32, index2: u32) {
+      child1 = self.$labelB$B_s[index1]
+      child2 = self.$labelB$B_s[index2]
+      self.$labelB$B_s[index1] = child2
+      self.$labelB$B_s[index2] = child1
+      child1.$labelA$A_Index = index2
+      child2.$labelA$A_Index = index1
+    }
+
+    func _heapqDown$labelB$B(self, startX: u32) {
+      length = <u32>self.$labelB$B_s.length()
+      x = startX
+      do {
+        bestIndex = x
+        best = self.$labelB$B_s[x]
+        leftIndex = (x << 1u32) + 1u32
+        if leftIndex < length {
+          left = self.$labelB$B_s[leftIndex]
+          if self._compare$labelB$B(left, best) {
+            best = left
+            bestIndex = leftIndex
+          }
+          rightIndex = leftIndex + 1u32
+          if rightIndex < length {
+            right = self.$labelB$B_s[rightIndex]
+            if self._compare$labelB$B(right, best) {
+              best = right
+              bestIndex = rightIndex
+            }
+          }
+        }
+      } while x != bestIndex {
+        self._swap$labelB$B(x, bestIndex)
+        x = bestIndex
+      }
+    }
+
+    func _heapqUp$labelB$B(self, startX: u32) {
+      x = startX
+      do {
+        parentIndex = (x - 1u32) >> 1
+      } while x > 0u32 && self._compare$labelB$B(self.$labelB$B_s[x], self.$labelB$B_s[parentIndex]) {
+        self._swap$labelB$B(parentIndex, x)
+        x = parentIndex
+      }
+    }
+
+    func peek$labelB$B(self) {
+      if self.$labelB$B_s.length() != 0 {
+        return null(self.$labelB$B_s[0])
+      }
+      return self.$labelB$B_s[0]
+    }
+
+    func _pop$labelB$B(self, index: u32 = 0u32) {
+      retval = self.$labelB$B_s[index]
+      newNum = <u32>self.$labelB$B_s.length() - 1u32
+      retval.$labelA$A = null(self)
+      retval.$labelA$A_Index = 0xffffffffu32
+      if newNum > index {
+        cur = self.$labelB$B_s[newNum]
+        self.$labelB$B_s[index] = cur
+        cur.$labelA$A_Index = index
+        self.$labelB$B_s.resize(newNum)
+        self._heapqDown$labelB$B(index)
+      } else {
+        self.$labelB$B_s.resize(newNum)
+      }
+      unref retval
+      return retval
+    }
+
+    func pop$labelB$B(self) {
+      if self.$labelB$B_s.length() == 0 {
+        return null(self.$labelB$B_s[0])
+      }
+      return self._pop$labelB$B(0u32)
+    }
+
+    func update$labelB$B(self, child: B) {
+      index = child.$labelA$A_Index(child)
+      self._heapqUp$labelB$B(index)
+      self._heapqDown$labelB$B(index)
+    }
+
+    func push$labelB$B(self, child: B) {
+      pos = <u32>self.$labelB$B_s.length()
+      self.$labelB$B_s.append(child)
+      child.$labelA$A_Index = pos
+      child.$labelA$A = self
+      self._heapqUp$labelB$B(pos)
+    }
+
+    func remove$labelB$B(self, child: B) {
+      debug {
+        if child.$labelA$A != self {
+          throw "remove$labelB$B: Object not owned by me"
+        }
+      }
+      self._pop$labelB$B(child.$labelA$A_Index)
+    }
+  }
+
+  if cascadeDelete {
+    // If this is a cascade-delete relationship, destroy children in the destructor.
+    appendcode A.destroy {
+      do {
+        child$labelB$B = self.pop$labelB$B()
+      } while !isnull(child$labelB$B) {
+        child$labelB$B.destroy()
+      }
+    }
+  } else {
+    // Remove all children.
+    prependcode A.destroy {
+      do {
+        child$labelB$B = self.pop$labelB$B()
+      } while !isnull(child$labelB$B) {
+        self.remove$labelB$B(child$labelB$B)
+      }
+    }
+  }
+
+  prependcode B {
+    self.$labelA$A = null(A)
+    self.$labelA$A_Index = 0xffffffffu32
+  }
+
+  // Remove self from A on destruction.
+  prependcode B.destroy {
+    if !isnull(self.$labelA$A) {
+      self.$labelA$A.remove$labelB$B(self)
+    }
+  }
+}

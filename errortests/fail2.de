@@ -1,0 +1,5 @@
+func bar(a) {
+  print a
+}
+
+bar(u32)

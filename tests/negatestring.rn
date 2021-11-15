@@ -1,0 +1,7 @@
+operator -(a: string) -> string {
+  result = a
+  result.reverse()
+  return result
+}
+
+println -"abc"

@@ -1,0 +1,25 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+x = 12345u49
+s = x.toString()
+println s
+y = -<i256>(2u256^255 - 19u256)
+s = y.toString()
+println s
+z = -1i8
+println z.toString()
+println 0xdeadbeefu32.toString(16)
+println (-1i33).toString(16)
+println 0xdeadbeef.toString(2)

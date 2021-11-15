@@ -1,0 +1,6 @@
+#!/bin/bash
+runeFile="$1"
+outFile=$(echo "$runeFile" | sed 's/\.rn$//')
+llvmFile="${outFile}.ll"
+shift
+./rune -g "$runeFile" && ./"$outFile" $@

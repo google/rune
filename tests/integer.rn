@@ -1,0 +1,75 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+func isSigned(value: Int | Uint) -> bool {
+  switch typeof(value) {
+    case Int {
+      return true
+    }
+    case Uint {
+      return false
+    }
+  }
+}
+
+class Integer(self, value: Int | Uint, width = widthof(value)) {
+  self.isSigned = isSigned(value)
+  self.width = width
+  // Convert to unsigned so we can serialize with toStringLE.
+  uintValue = !<unsigned(value)>value
+  self.data = uintValue.toStringLE()
+
+  func toHex(self) {
+    data = self.data
+    data.reverse()
+    return "0x" + (<string>data).toHex()
+  }
+}
+
+operator +(a: Integer, b: Integer) -> Integer {
+  if a.width != b.width || a.isSigned != b.isSigned {
+    throw "Integers have different types: ", a.toHex(), " and ", b.toHex()
+  }
+  result = Integer(0u8, a.width)
+  len = a.data.length()
+  result.data.resize(len)
+  carry = 0u9
+  for i in range(len) {
+    sum = <u9>a.data[i] !+ <u9>b.data[i] !+ carry
+    result.data[i] = !<u8>sum
+    carry = sum >> 8
+  }
+  // Check for overflow.
+  if a.isSigned {
+    // Overflow occurs if sign(a) ==  sign(b) && sign(a) != sign(result)
+    aSign = a.data[len - 1] >> 7
+    bSign = b.data[len - 1] >> 7
+    if aSign == bSign && aSign != result.data[len - 1] >> 7 {
+      throw "Signed integer overflow"
+    }
+  } else if carry != 0u9 {
+    // Overflow is just the carry out.
+    throw "Unsigned integer overflow"
+  }
+  return result
+}
+
+unittest {
+  a = Integer(1u32)
+  b = Integer(2u32)
+  println "a + b = ", (a + b).toHex()
+  c = Integer(3u64)
+  d = Integer(4u64)
+  println "c + d = ", (c + d).toHex()
+}

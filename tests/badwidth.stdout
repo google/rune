@@ -1,0 +1,6 @@
+Error: Specified width does not match argument
+File tests/badwidth.rn, line 1: println "%x64" % 0xdeadbeefu32
+Stack trace:
+In : File tests, line 0: badwidth()
+In badwidth: File tests/badwidth.rn, line 1: println "%x64" % 0xdeadbeefu32
+Exiting due to error...

@@ -1,0 +1,51 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// First, manually generate a safe prime, and Alice and Bob's keys:
+//
+//  p -- Create using compiled version of gen_prime.rn.
+//  alicePrivkey  -- Create using compiled version of gen_key.rn
+//  alicePubkey  -- Ditto
+//  bobPrivkey  -- Ditto
+//  alicePubkey  -- Ditto
+//
+// Note that the file form of constants is in little-endian order, while constant hex values are in
+// big-endian.
+
+use kdf
+
+// The prime
+p = 0x575b83e798d37ba8f500b8da9758c74e44e55de365f09880f1fc2e34593ab74a4c9aeac6355bf4d2f8cae9aafa3b0284a3405ac52d2cbf5b9a9a8beeba3634637a445b1a674a3541c3398373b43d59d8b8b0931d8ef0df8e8e2b574212f1e371b3a2e5e2c1344769226f9711ae02a6a0343616d7f2cade68e5e1a55df002b4f67c6822a38aef128e41ce8948e8a5498ab1245d721a0f2def7d79883b577bf07d90f520bbc07ff34a9a27576b4df70f571f25ac653aa0fc640f1678ba20db6a31c400a5b2fd6649028f04d458bd56070b7cec1e12a2160226f7d717fdc04a04c3fa0e8fb98d8758994fffadb00d680936912086f9f66906d870a2ffd955c127acu2048
+
+// Alice's keys
+alicePrivkey = 0xb243be221d1a4cfd3179eb67d48bf62fb067df26b22992fdd991bf46f80c91dc57798741106703cfc8985b50b5e6008e1a10f9094cd81307fd650ebcfbaf9ba833a381195b26d7b0c1b7b9d3ef666dfb5cfd29788b489997b398b2cd014ad8515c9566b7ae07840ef22ae3e1143b1d09df35a6518104505361ac161ab5196219d2efd60679bfbe66626d91191fe0b78d71436e0d7173df01661bff6f75460b5ec78ce70621f4e64ae95b43fe5f2fe8e2da53e84a11edd9e79b9a14d45fe6006794cf3fd71f2ed31aa091e496164536e2b06a33eff6c84cd7fbc2e2b9c707374e887ffc9075f9c0f8ad62673c31433581e34729bff87e8955861c818c72870a6u2048
+alicePubkey = 0x361de2d80782e4b2dc2c56e11a88572ff00bf3c2ffbf2de92462fd671658821ed8763270c1c5fa160911c5fa0018c56cdbee4aae6024f2cb41b353a9e595f47d3a9f4bcce5cada3f472f68cd8d799f623b2630a94333ffba8a0b93e5de5aa1e88e1514a07b0b2ea009b62a0088ceaef4cabbacfb0ffa17f6343b3d9de371386058d10b1873fe87b0a2e8597769355136a128d6fbb66b56ef3f6bd2b558b5c425ebd3ed94853cbf2fc89c5eb7088f65ed06a43026f391c392c823f08fb8f873e3ab2159a14b82ae70d53c596383f8dc8891568be2c5da17cbb811cac6c075228666f9e38fdb3354db20d453329423b631a7d43f25cf147a255d2dbf0cdc33a5e0u2048
+
+// Bob's keys
+bobPrivkey = 0x2f77549780ed7a61891c838daa2104e8e2d0dce720242745a5aea6bfc2a63915f71ff19a4d65cee33f679a887bd2e7ec81c28400e095ef60d5c84410c63fe35fadca02c8429e00794aead88a32bfeeef5bcf6af0c72a703eddafef448f6912455052c91991d549c31e04dc2b6d9154df7e512c6b526823ad9ee8478fe4f8266a32e554ee0401b62a1121e897c0107e5fa444fc51171715c90809c632f097ef5adcd7be6f25242367c90f98c41f021e5c97e9f8ce5101b5324bfc0d218162523431bbc7189082716b4989f2ffba1956625371ab680e34b9aea162fec02d795a286e75cf4419c430dc504d3a25e0642e96badfb0271c03cb6275ca1ad8eadd6309u2048
+bobPubkey = 0x4a1b1e29c1340d1871bd1e27415065c7b94b413475b198ae314d8216b385fa2c15c15aea27fd4f5e53c443d95bc3688c3501f96077baaab1cbc243783aeb15416165cffab72f2a89de1951470d4994e942336964a37b7ae54079fc3107057f7cd7727c7511149009b1f2f17cb4a054580e9088c48ff4a0d2ff508b1408f271ceca510ee739ef722e9868495beb28e00bab6d14f000a337fe9b35abdffe1f907b5860337dd85bee1809616c65e90428ddeab40fc4da4b6d465e9e93ee76661774758b3886a7c270f43bdb6fd3a5c06f4488b95b824293e9f6857c5a8a19f5333c6a08b6f62937377b84cc1d751acd74d0f90affb7199c489aa8415031d5f4d3b0u2048
+
+aliceSharedPreKey = bobPubkey^alicePrivkey mod p
+aliceSharedKey = KDF(aliceSharedPreKey.toStringLE(), "Shared key", 32)
+println "aliceSharedKey = ", reveal(aliceSharedKey.toHex())
+
+bobSharedPreKey = alicePubkey^bobPrivkey mod p
+bobSharedKey = KDF(bobSharedPreKey.toStringLE(), "Shared key", 32)
+println "bobSharedKey = ", reveal(bobSharedKey.toHex())
+
+if reveal(bobSharedKey == aliceSharedKey) {
+  println "Alice and Bob successfully computed a shared secret."
+} else {
+  throw "Math no longer works!"
+}

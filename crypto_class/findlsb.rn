@@ -1,0 +1,28 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Find the LSB of an OpenSSL-style DH-secret.  This is possible because OpenSSL always uses
+// non-residues for group generators.
+
+import math.msqrt
+
+func findSecretLSB(A, m) {
+  return msqrt.msqrt(A, m) != <m>0
+}
+
+g = 2u255
+m = <u255>(2u256^255 - 19)
+a = 23736007888857889066926411552984762136200774587310032634278555383971956518710u255
+A = g^a mod m  // Compute Alice's public key.
+println "Alice's secret has LSB set = ", findSecretLSB(A, m)

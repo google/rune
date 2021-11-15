@@ -1,0 +1,12 @@
+q=chr(34);c=chr(44)
+l=[
+"q=chr(34);c=chr(44)","l=[","]","println l[0];println l[1]","for i=0,i<l.length()-1,i+=1{","  print q+l[i]+q+c","}","println q+l[l.length()-1]+q","for i=2,i<l.length(),i+=1{","  println l[i]","}"
+]
+println l[0];println l[1]
+for i=0,i<l.length()-1,i+=1{
+  print q+l[i]+q+c
+}
+println q+l[l.length()-1]+q
+for i=2,i<l.length(),i+=1{
+  println l[i]
+}

@@ -1,0 +1,67 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+println "u32: ", null(u32)
+println "u64: ", null(u64)
+println "u256: ", null(u256)
+println "i32: ", null(i32)
+println "i64: ", null(i64)
+println "i256: ", null(i256)
+println "f32: ", null(f32)
+println "f64: ", null(f64)
+println "bool: ", null(bool)
+println "string: '", null(string), "'"
+
+// Classes
+class Point(self, <x>, <y>) {
+  self.x = x
+  self.y = y
+}
+p = Point(1, 2)
+println p
+p = null(Point(u64, u64))
+// TODO: fix remaining goobers when printing class objects.
+// println "class Point(u32, u32): ", p
+println isnull(p)
+
+// Arrays
+println "[32]: ", null([u32])
+
+// Function pointers
+func bar(a) {
+  return a
+}
+// Note, we can't print function pointers.
+// fptr = null(&bar(u32))
+// TODO: Fix bugs that cause this to fail.
+// println isnull(fptr)
+
+// TODO: Fix tuple support.
+// Tuples
+// println "(u32, string, [i8]): ", null((u32, string, [i8]))
+
+// Structs
+struct MyStruct {
+  name: string
+  age: u256  // Celestial beings can be pretty old
+}
+// TODO: Fix bugs printing structs.
+// println "MyStruct(string, u256): ", null(MyStruct("the flying spaghetti monster", 10u256^100))
+
+// Enum
+enum Day {
+  Monday
+  Tuesday
+}
+println "Day.Tuesday: ", null(Day.Tuesday)

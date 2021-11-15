@@ -1,0 +1,38 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use sponge
+use mac
+
+func  encrypt(key: secret(string), info: string, plaintext: string) -> string {
+  sponge = Sponge()
+  sponge.absorb("AEAD encryption" + key)
+  sponge.absorb(info)
+  nonce = randString(16)  // A nonce is usually 96 random bits or more.
+  sponge.absorb(nonce)
+  pad = sponge.squeeze(plaintext.length())
+  ciphertext = plaintext @ pad  // XOR the plaintext and pad together.
+  mac = computeMac(key, nonce + info + ciphertext, 16)
+  return nonce + ciphertext + mac
+}
+
+unittest {
+  use decrypt
+  password = secret("password")
+  info = "info"
+  plaintext = "message"
+  ciphertext = reveal(encrypt(password, info, plaintext))
+  recoveredText = reveal(decrypt(password, info, ciphertext))
+  println recoveredText
+}

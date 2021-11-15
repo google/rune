@@ -1,0 +1,14 @@
+u32: 0
+u64: 0
+u256: 0
+i32: 0
+i64: 0
+i256: 0
+f32: 0.0
+f64: 0.0
+bool: false
+string: ''
+{x = 1, y = 2}
+true
+[32]: []
+Day.Tuesday: 0

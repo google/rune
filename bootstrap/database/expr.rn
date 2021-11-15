@@ -1,0 +1,765 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License")
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use line
+
+enum ExprType {
+  Integer  // 0xABCDi32 or 1i8
+  Float  // 0.123 or 3e10
+  Randuint  // rand256
+  Bool  // true or false
+  String  // "passed"
+  Ident  // a
+  Array  // [1u8, 2u8, 3u8, 4u8] or "passed"
+  Modint  // 2 mod p
+  // If you modify the list from Add to Rotr, also update the corresponding
+  // assignment operator types, in the same order.
+  Add  // a + b
+  Sub  // a - b
+  Mul  // a * b
+  Div  // a / b
+  Mod  // a % b
+  And  // a && b
+  Or   // a || b
+  Xor  // a @@ b
+  Bitand  // a & b
+  Bitor   // a | b
+  Bitxor  // a @ b
+  Exp  // a ^ b
+  Shl  // a << b
+  Shr  // a >> b
+  Rotl  // a <<< b
+  Rotr  // a >>> b
+  Addtrunc  // a !+ b
+  Subtrunc  // a !- b
+  Multrunc  // a !* b
+  Bitnot  // ~a
+  Lt  // a < b
+  Le  // a <= b
+  Gt  // a > b
+  Ge  // a >= b
+  Equal  // a == b
+  Notequal  // a != b
+  Negate  // -a
+  Negatetrunc  // !-a
+  Not  // !a
+  Cast  // <b>a
+  Casttrunc  // !<b>a
+  Select  // passed? a : b
+  Call  // fact(n)
+  Index  // a[i]
+  Slice  // a[a:b]
+  Secret  // secret(password)
+  Reveal  // reveal(mac)
+  Equals  // a = b
+  // If you modify the list from AddEquals to RotrEquals, also update the
+  // corresponding operator types, in the same order.
+  AddEquals  // a += b
+  SubEquals  // a -= b
+  MulEquals  // a *= b
+  DivEquals  // a /= b
+  ModEquals  // a %= b
+  AndEquals  // a &&= b
+  OrEquals   // a ||= b
+  XorEquals  // a @@= b
+  BitandEquals  // a &= b
+  BitorEquals   // a |= b
+  BitxorEquals  // a @= b
+  ExpEquals  // a ^= b
+  ShlEquals  // a <<= b
+  ShrEquals  // a >>= b
+  RotlEquals  // a <<<= b
+  RotrEquals  // a >>>= b
+  AddtruncEquals  // a !+ b
+  SubtruncEquals  // a !- b
+  MultruncEquals  // a !* b
+  Dot  // a.b
+  Dotdotdot  // case u1 ... u32
+  List  // fact(a, b, c)
+  Tuple  // return (1, 2, "passed")
+  As  // import foo as bar
+  In  // if element in set
+  Const  // const self.x = x
+  Null  // null(Node())
+  Nullself  // n = Tree(null, null)
+  Funcaddr  // &max(0u32, 0u32)
+  Arrayof  // arrayof(u32)
+  Typeof  // typeof a
+  Unsigned  // unsigned(3i32)
+  Signed  // signed(3u32)
+  Widthof  // widthof a
+  Isnull  // isnull(entry)
+  // Type expressions:
+  Uinttype  // x: u32 = y
+  Inttype  // x: i32 = y
+  Floattype  // x: f32 = y
+  Stringtype  // x: string = y
+  Booltype  // done: bool = checkForDone()
+  Typeindex  // u32[]
+  Namedparam  // Myclass(name = "me", profession = "hacker")
+}
+
+// return the operator precedence.
+export func getPrecedence(type: ExprType) -> u32 {
+  switch type {
+    case ExprType.Modint {
+      return 1u32
+    }
+    case ExprType.Select {
+      return 2u32
+    }
+    case ExprType.And {
+      return 3u32
+    }
+    case ExprType.Xor {
+      return 4u32
+    }
+    case ExprType.Or {
+      return 5u32
+    }
+    case ExprType.Lt, ExprType.Le, ExprType.Gt, ExprType.Ge,
+        ExprType.Equal, ExprType.Notequal {
+      return 6u32
+    }
+    case ExprType.Shl, ExprType.Shr, ExprType.Rotl, ExprType.Rotr {
+      return 7u32
+    }
+    case ExprType.Bitand {
+      return 8u32
+    }
+    case ExprType.Bitxor {
+      return 9u32
+    }
+    case ExprType.Bitor {
+      return 10u32
+    }
+    case ExprType.Sub, ExprType.Add {
+      return 11u32
+    }
+    case ExprType.Mul,ExprType.Div, ExprType.Mod {
+      return 12u32
+    }
+    case ExprType.Exp {
+      return 13u32
+    }
+    case ExprType.Not, ExprType.Negate, ExprType.Secret,
+        ExprType.Reveal, ExprType.Funcaddr, ExprType.Typeof,
+        ExprType.Widthof, ExprType.Arrayof, ExprType.Bitnot,
+        ExprType.Isnull {
+      return 14u32
+    }
+    case ExprType.Call,  ExprType.Cast {
+      return 15u32
+    }
+    case ExprType.Dot, ExprType.Index {
+      return 16u32
+    }
+    case ExprType.Integer, ExprType.Bool, ExprType.String,
+        ExprType.Ident, ExprType.Uinttype, ExprType.Inttype,
+        ExprType.Stringtype, ExprType.Booltype, ExprType.Typeindex {
+      return 17u32
+    }
+    default {
+      return 1u32
+    }
+  }
+}
+
+// Return the expression type's name.
+export func getExprTypeName(type: ExprType) -> string {
+  switch type {
+    case ExprType.Modint {
+      return "mod"
+    }
+    case ExprType.And {
+      return "&&"
+    }
+    case ExprType.Xor {
+      return "@@"
+    }
+    case ExprType.Or {
+      return "||"
+    }
+    case ExprType.Lt {
+      return "<"
+    }
+    case ExprType.Le {
+      return "<="
+    }
+    case ExprType.Gt {
+      return ">"
+    }
+    case ExprType.Ge {
+      return ">="
+    }
+    case ExprType.Equal {
+      return "=="
+    }
+    case ExprType.Notequal {
+      return "!="
+    }
+    case ExprType.Shl {
+      return "<<"
+    }
+    case ExprType.Shr {
+      return ">>"
+    }
+    case ExprType.Rotl {
+      return "<<<"
+    }
+    case ExprType.Rotr {
+      return ">>>"
+    }
+    case ExprType.Bitand {
+      return "&"
+    }
+    case ExprType.Bitxor {
+      return "@"
+    }
+    case ExprType.Bitor {
+      return "|"
+    }
+    case ExprType.Negate, ExprType.Sub {
+      return "-"
+    }
+    case ExprType.Add {
+      return "+"
+    }
+    case ExprType.Mul {
+      return "*"
+    }
+    case ExprType.Div {
+      return "/"
+    }
+    case ExprType.Mod {
+      return "%"
+    }
+    case ExprType.Exp {
+      return "^"
+    }
+    case ExprType.Not {
+      return "!"
+    }
+    case ExprType.Bitnot {
+      return "~"
+    }
+    case ExprType.Dot {
+      return "."
+    }
+    case ExprType.Index {
+      return "[]"
+    }
+    case ExprType.In {
+      return "in"
+    }
+    default {
+      throw "Unexpected expression type"
+    }
+  }
+}
+
+// The expression class represents all expression trees in Rune.
+class Expr(self, type: ExprType, line: Line = null(Line)) {
+  self.type = type
+  self.line = line
+  self.isType = false
+  self.isConst = false
+  self.autocast = false  // Set on integer constants without a type suffix.
+  // TODO: add datatype when ported to Rune.
+  // self.datatype = null(Datatype)
+  // TODO: When unions are supported, merge the remaining together.
+  // TODO: Add Bigint when available
+  // self.intVal = null(Bigint)
+  // TODO: add float, when available
+  // self.floatVal = null(Float)
+  self.stringVal = ""
+  self.symVal = null(Sym)
+  self.boolVal = false
+  self.width = 0u32
+
+  // Return the precedence of the expression.
+  func getPrecedence(self) -> u32 {
+    return getPrecedence(self.type)
+  }
+
+  // Return the name of this expression's type.
+  func typeName(self) {
+    return getExprTypeName(self.type)
+  }
+
+  // Dump an expression list, separated by commas.
+  func dumpList(self, var text: string) {
+    firstTime = true
+    for child in self.exprs() {
+      if !firstTime {
+        text += ", "
+      }
+      firstTime = false
+    }
+    child.dumpToString(text)
+  }
+
+  // Write out a call expression.
+  func dumpCall(self, var text: string) {
+    left = self.firstExpr
+    right = left.nextExprExpr
+    left.dumpToString(text)
+    text += "("
+    if !isnull(right) {
+      right.dumpToString(text)
+    }
+    text += ")"
+  }
+
+  // Write out an index expression.
+  func dumpIndex(self, var text: string) {
+    left = self.firstExpr
+    right = left.nextExprExpr
+    left.dumpToString(text)
+    text += "["
+    if !isnull(right) {
+      right.dumpToString(text)
+    }
+    text += "]"
+  }
+
+  // Write out a slice expression.
+  func dumpSlice(self, var text: string) {
+    left = self.firstExpr
+    lower = left.nextExprExpr
+    upper = lower.nextExprExpr
+    left.dumpToString(text)
+    text += "["
+    lower.dumpToString(text)
+    text += ":"
+    upper.dumpToString(text)
+    text += "]"
+  }
+
+  // Write out a cast expression.
+  func dumpCast(self, var text: string, parentPrecedence: u32, truncate: bool) {
+    left = self.firstExpr
+    right = left.nextExprExpr
+    precedence = self.getPrecedence()
+    if precedence <= parentPrecedence {
+      text += "("
+    }
+    if truncate {
+      text += "!"
+    }
+    text += "<"
+    left.dumpToString(text)
+    text += ">"
+    right.dumpToString(text)
+    if precedence <= parentPrecedence {
+      text += ")"
+    }
+  }
+
+  // Write out a select expression.
+  func dumpSelect(self, var text: string, parentPrecedence: u32) {
+    s = self.firstExpr
+    a = s.nextExprExpr
+    b = a.nextExprExpr
+    precedence = self.getPrecedence()
+    if precedence <= parentPrecedence {
+      text += "("
+    }
+    s.dumpToString(text)
+    text += " ? "
+    a.dumpToString(text)
+    text += " : "
+    b.dumpToString(text)
+    if precedence <= parentPrecedence {
+      text += ")"
+    }
+  }
+
+  // Write out a binary expression.
+  func dumpBinary(self, var text: string, opType: string, parentPrecedence: u32) {
+    parent = self.expr
+    left = self.firstExpr
+    right = left.nextExprExpr
+    precedence = self.getPrecedence()
+    needParens = precedence < parentPrecedence || (
+        precedence == parentPrecedence && !isnull(parent) && parent.firstExpr != self)
+    if needParens {
+      text += "("
+    }
+    left.dumpToString(text)
+    if precedence <= getPrecedence(ExprType.Add) {
+      text += " " + opType + " "
+    } else {
+      text += opType
+    }
+    right.dumpToString(text)
+    if needParens {
+      text += ")"
+    }
+  }
+
+  // Write out a prefix expression.
+  func dumpPrefix(self, var text: string, opType: string, parentPrecedence: u32) {
+    left = self.firstExpr
+    precedence = self.getPrecedence()
+    if precedence <= parentPrecedence {
+      text += "("
+    }
+    text += opType
+    left.dumpToString(text)
+    if precedence <= parentPrecedence {
+      text += ")"
+    }
+  }
+
+  // Dump a builtin function such as typeof(a).
+  func dumpBuiltin(self, var text: string, name: string) {
+    left = self.firstExpr
+    text += name + "("
+    left.dumpToString(text)
+    text += ")"
+  }
+
+  // Write out the array expression.
+  func dumpArray(self, var text: string) {
+    text += "["
+    firstTime = true
+    for child in self.exprs() {
+      if !firstTime {
+        text += ", "
+      }
+      firstTime = false
+      child.dumpToString(text)
+    }
+    text += "]"
+  }
+
+  // Write out the tuple expression.
+  func dumpTuple(self, var text: string) {
+    text += "("
+    firstTime = true
+    for child in self.exprs() {
+      if !firstTime {
+        text += ", "
+      }
+      firstTime = false
+      child.dumpToString(text)
+    }
+    text += ")"
+  }
+
+  // Write out the expression in a reasonably readable format to the end of |string|.
+  func dumpToString(self, var text: string) {
+    parent = self.expr
+    parentPrecedence = 0u32
+    if !isnull(parent) {
+      parentPrecedence = parent.getPrecedence()
+    }
+    switch self.type {
+      case ExprType.Integer {
+        // TODO: Write this when we have Bigints.
+      }
+      case ExprType.Float {
+        // TODO: Write this when we have Floats.
+      }
+      case ExprType.Bool {
+        if self.boolVal {
+          text += "true"
+        } else {
+          text += "false"
+        }
+      }
+      case ExprType.String {
+        // TODO: escape the string when we've ported util.c.
+        text += "\"" + self.stringVal + "\""
+      }
+      case ExprType.Ident {
+        text += self.symVal.name
+      }
+      case ExprType.Array {
+        self.dumpArray(text)
+      }
+      case ExprType.Tuple {
+        self.dumpTuple(text)
+      }
+      case ExprType.Randuint {
+        text += "rand%u" % self.width
+      }
+      case ExprType.Modint {
+        self.dumpBinary(text, "mod", parentPrecedence)
+      }
+      case ExprType.Add {
+        self.dumpBinary(text, "+", parentPrecedence)
+      }
+      case ExprType.Sub {
+        self.dumpBinary(text, "-", parentPrecedence)
+      }
+      case ExprType.Mul {
+        self.dumpBinary(text, "*", parentPrecedence)
+      }
+      case ExprType.Div {
+        self.dumpBinary(text, "/", parentPrecedence)
+      }
+      case ExprType.Mod {
+        self.dumpBinary(text, "%", parentPrecedence)
+      }
+      case ExprType.And {
+        self.dumpBinary(text, "&&", parentPrecedence)
+      }
+      case ExprType.Or {
+        self.dumpBinary(text, "||", parentPrecedence)
+      }
+      case ExprType.Xor {
+        self.dumpBinary(text, "@@", parentPrecedence)
+      }
+      case ExprType.Bitand {
+        self.dumpBinary(text, "&", parentPrecedence)
+      }
+      case ExprType.Bitor {
+        self.dumpBinary(text, "|", parentPrecedence)
+      }
+      case ExprType.Bitxor {
+        self.dumpBinary(text, "@", parentPrecedence)
+      }
+      case ExprType.Exp {
+        self.dumpBinary(text, "^", parentPrecedence)
+      }
+      case ExprType.Shl {
+        self.dumpBinary(text, "<<", parentPrecedence)
+      }
+      case ExprType.Shr {
+        self.dumpBinary(text, ">>", parentPrecedence)
+      }
+      case ExprType.Rotl {
+        self.dumpBinary(text, "<<<", parentPrecedence)
+      }
+      case ExprType.Rotr {
+        self.dumpBinary(text, ">>>", parentPrecedence)
+      }
+      case ExprType.Addtrunc {
+        self.dumpBinary(text, "!+", parentPrecedence)
+      }
+      case ExprType.Subtrunc {
+        self.dumpBinary(text, "!-", parentPrecedence)
+      }
+      case ExprType.Multrunc {
+        self.dumpBinary(text, "!*", parentPrecedence)
+      }
+      case ExprType.Lt {
+        self.dumpBinary(text, "<", parentPrecedence)
+      }
+      case ExprType.Le {
+        self.dumpBinary(text, "<=", parentPrecedence)
+      }
+      case ExprType.Gt {
+        self.dumpBinary(text, ">", parentPrecedence)
+      }
+      case ExprType.Ge {
+        self.dumpBinary(text, ">=", parentPrecedence)
+      }
+      case ExprType.Equal {
+        self.dumpBinary(text, "==", parentPrecedence)
+      }
+      case ExprType.Notequal {
+        self.dumpBinary(text, "!=", parentPrecedence)
+      }
+      case ExprType.Negate {
+        self.dumpPrefix(text, "-", parentPrecedence)
+      }
+      case ExprType.Negatetrunc {
+        self.dumpPrefix(text, "!-", parentPrecedence)
+      }
+      case ExprType.Not {
+        self.dumpPrefix(text, "!", parentPrecedence)
+      }
+      case ExprType.Bitnot {
+        self.dumpPrefix(text, "~", parentPrecedence)
+      }
+      case ExprType.Cast {
+        self.dumpCast(text, parentPrecedence, false)
+      }
+      case ExprType.Casttrunc {
+        self.dumpCast(text, parentPrecedence, true)
+      }
+      case ExprType.Select {
+        self.dumpSelect(text, parentPrecedence)
+      }
+      case ExprType.Call {
+        self.dumpCall(text)
+      }
+      case ExprType.Funcaddr {
+        self.dumpPrefix(text, "&", parentPrecedence)
+      }
+      case ExprType.Arrayof {
+        self.dumpBuiltin(text, "arrayof")
+      }
+      case ExprType.Typeof {
+        self.dumpBuiltin(text, "typeof")
+      }
+      case ExprType.Unsigned {
+        self.dumpBuiltin(text, "unsigned")
+      }
+      case ExprType.Signed {
+        self.dumpBuiltin(text, "signed")
+      }
+      case ExprType.Widthof {
+        self.dumpBuiltin(text, "widthof")
+      }
+      case ExprType.Isnull {
+        self.dumpBuiltin(text, "isnull")
+      }
+      case ExprType.Null {
+        self.dumpBuiltin(text, "null")
+      }
+      case ExprType.Nullself {
+        text += "null"
+      }
+      case ExprType.Index, ExprType.Typeindex {
+        self.dumpIndex(text)
+      }
+      case ExprType.Slice {
+        self.dumpSlice(text)
+      }
+      case ExprType.Secret {
+        text += "secret("
+        self.firstExpr.dumpToString(text)
+        text += ")"
+      }
+      case ExprType.Reveal {
+        text += "reveal("
+        self.firstExpr.dumpToString(text)
+        text += ")"
+      }
+      case ExprType.Const {
+        self.dumpPrefix(text, "const ", parentPrecedence)
+      }
+      case ExprType.Equals {
+        self.dumpBinary(text, "=", parentPrecedence)
+      }
+      case ExprType.AddEquals {
+        self.dumpBinary(text, "+=", parentPrecedence)
+      }
+      case ExprType.SubEquals {
+        self.dumpBinary(text, "-=", parentPrecedence)
+      }
+      case ExprType.MulEquals {
+        self.dumpBinary(text, "*=", parentPrecedence)
+      }
+      case ExprType.DivEquals {
+        self.dumpBinary(text, "/=", parentPrecedence)
+      }
+      case ExprType.ModEquals {
+        self.dumpBinary(text, "%=", parentPrecedence)
+      }
+      case ExprType.AndEquals {
+        self.dumpBinary(text, "&&=", parentPrecedence)
+      }
+      case ExprType.OrEquals {
+        self.dumpBinary(text, "||=", parentPrecedence)
+      }
+      case ExprType.XorEquals {
+        self.dumpBinary(text, "@@=", parentPrecedence)
+      }
+      case ExprType.ExpEquals {
+        self.dumpBinary(text, "^=", parentPrecedence)
+      }
+      case ExprType.ShlEquals {
+        self.dumpBinary(text, "<<=", parentPrecedence)
+      }
+      case ExprType.ShrEquals {
+        self.dumpBinary(text, ">>=", parentPrecedence)
+      }
+      case ExprType.RotlEquals {
+        self.dumpBinary(text, "<<<=", parentPrecedence)
+      }
+      case ExprType.RotrEquals {
+        self.dumpBinary(text, ">>>=", parentPrecedence)
+      }
+      case ExprType.AddtruncEquals {
+        self.dumpBinary(text, "!+=", parentPrecedence)
+      }
+      case ExprType.SubtruncEquals {
+        self.dumpBinary(text, "!-=", parentPrecedence)
+      }
+      case ExprType.MultruncEquals {
+        self.dumpBinary(text, "!*=", parentPrecedence)
+      }
+      case ExprType.BitandEquals {
+        self.dumpBinary(text, "&=", parentPrecedence)
+      }
+      case ExprType.BitorEquals {
+        self.dumpBinary(text, "|=", parentPrecedence)
+      }
+      case ExprType.BitxorEquals {
+        self.dumpBinary(text, "@=", parentPrecedence)
+      }
+      case ExprType.As {
+        self.dumpBinary(text, " as ", parentPrecedence)
+      }
+      case ExprType.In {
+        self.dumpBinary(text, " in ", parentPrecedence)
+      }
+      case ExprType.Dot {
+        self.dumpBinary(text, ".", parentPrecedence)
+      }
+      case ExprType.Dotdotdot {
+        self.dumpBinary(text, "...", parentPrecedence)
+      }
+      case ExprType.List {
+        self.dumpList(text)
+      }
+      case ExprType.Uinttype {
+        text += "u%u" % self.width
+      }
+      case ExprType.Inttype {
+        text += "i%u" % self.width
+      }
+      case ExprType.Floattype {
+        text += "f%u" % self.width
+      }
+      case ExprType.Stringtype {
+        text += self.stringVal
+      }
+      case ExprType.Booltype {
+        text += "bool"
+      }
+      case ExprType.Namedparam {
+        text += self.firstExpr.symVal.name + " = "
+        self.lastExpr.dumpToString(text)
+      }
+    }
+  }
+
+  // Convert the expression to a string in a reasonably readable format.
+  func toString(self) -> string {
+    text = ""
+    self.dumpToString(text)
+    return text
+  }
+
+  // Write out the expression in a reasonably readable format.
+  func dump(self) {
+    text = ""
+    self.dumpToString(text)
+    println text
+  }
+
+}
+
+// Expressions form a tree, with each expression having a doubly-linked list of children.
+relation DoublyLinked Expr Expr cascade
+
+unittest {
+  import exprTest
+}

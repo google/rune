@@ -1,0 +1,86 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+class Graph(self) {
+  final(self) {
+    println "Cleaned up graph ", <u32>self
+  }
+}
+
+class Node(self, graph, name) {
+  self.name = name
+  self.visited = false
+  graph.appendNode(self)
+
+  final(self) {
+    println "Cleaned up node ", <u32>self
+  }
+}
+
+class Edge(self, outNode: Node, inNode: Node) {
+  outNode.appendOutEdge(self)
+  inNode.appendInEdge(self)
+
+  final(self) {
+    println "Cleaned up edge ", <u32>self
+  }
+}
+
+relation TailLinked Graph Node cascade
+relation TailLinked Node:"From" Edge:"Out" cascade
+relation TailLinked Node:"To" Edge:"In" cascade
+
+graph = Graph()
+a = Node(graph, "A")
+b = Node(graph, "B")
+c = Node(graph, "C")
+d = Node(graph, "D")
+e = Node(graph, "E")
+f = Node(graph, "F")
+Edge(a, b)
+Edge(b, c)
+Edge(c, a)
+Edge(d, b)
+Edge(d, a)
+Edge(c, e)
+Edge(e, a)
+Edge(f, d)
+Edge(f, c)
+
+// Should print A, B, C, E.
+reachedNodes = arrayof(typeof(a))
+printReachableNodes(a, reachedNodes)
+println
+clearVisitedFlags(reachedNodes)
+graph = null(graph)
+
+// Clear the visited flags on all the nodes we reached.
+func clearVisitedFlags(reachedNodes) {
+  for i = 0, i < reachedNodes.length(), i += 1 {
+    reachedNodes[i].visited = false
+  }
+}
+
+// Print names of nodes in the graph that are reachable by traversing only forward edges.
+func printReachableNodes(node: Node, reachedNodes) {
+  print node.name
+  node.visited = true
+  reachedNodes.append(node)
+  for edge in node.outEdges() {
+    otherNode = edge.toNode
+    if !otherNode.visited {
+      printReachableNodes(otherNode, reachedNodes)
+    }
+  }
+}

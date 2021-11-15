@@ -1,0 +1,73 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Return the max of |a| and |b|.  Safe to use with secrets.
+func max(a, b) {
+  return a >= b? a : b
+}
+
+// Return the min of |a| and |b|.  Safe to use with secrets.
+func min(a, b) {
+  return a <= b? a : b
+}
+
+// Return the absolute value of |a|.  Safe to use with secrets.
+func abs(a) {
+  return a >= <a>0? a : -a
+}
+
+// Emulate the Python chr builtin.
+func chr(x: Int | Uint) -> string {
+  return <string>[<u8>x]
+}
+
+// Emulate the Python ord builtin.
+func ord(s: string | u8) {
+  switch typeof(s) {
+    case string {
+      return s[0]
+    }
+    case u8 {
+      return s
+    }
+  }
+}
+
+// Determine if a value is secret or not.  In theory, it is safe to branch on
+// the result, because this compiles into a function that is constant,
+// returning either true or false.  We can expect the compiler to optimize the
+// if statement away.  TODO: Have Rune remove unreachable code after constant
+// propagation.
+func issecret(value) -> bool {
+  switch typeof(value) {
+    case typeof(reveal(value)) {
+      return false
+    }
+    case typeof(secret(value)) {
+      return true
+    }
+  }
+}
+
+// Determine if the value is signed or not.
+func issigned(value: Int | Uint) {
+  switch typeof(value) {
+    case Int {
+      return true
+    }
+    case Uint {
+      return false
+    }
+  }
+}

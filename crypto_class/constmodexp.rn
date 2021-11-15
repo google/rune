@@ -1,0 +1,31 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+func constCodularExponentiation(g, a, m) {
+  result = <m>1
+  square = g
+  for i in range(m.length()) {
+    temp = (square & -(a & <m>1)) | (~a & <m>1)
+    if a & <m>1 {
+      result = result * temp mod m
+    }
+    square = square^2 mod m
+    a >>= 1;
+  }
+}
+
+g = 2u255
+m = <u255>(2u256^255 - 19)
+a = 23736007888857889066926411552984762136200774587310032634278555383971956518710u255
+println g^a mod m

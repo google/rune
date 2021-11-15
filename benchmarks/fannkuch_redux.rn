@@ -1,0 +1,96 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+func fannkuch(n) {
+    p = arrayof(u32).resize(n + 1)
+    for i = 1u32, i <= n, i += 1 {
+        p[i] = i
+    }
+    q = p
+    s = p
+    sign = 1i32; maxflips = 0u32; sum = 0i32
+    while true {
+        q0 = p[1]
+        if q0 != 1 {
+            for i = 2u32, i <= n, i += 1 {
+                q[i] = p[i]
+            }
+            flips = 1u32
+            do {
+                qq = q[q0]
+            } while qq != 1 {
+                q[q0] = q0
+                if q0 >= 4 {
+                    i = 2u32; j = q0-1
+                    do {
+                        t = q[i]
+                        q[i] = q[j]
+                        q[j] = t
+                        i += 1
+                        j -= 1
+                    } while i < j
+                }
+                q0 = qq
+                flips += 1
+            }
+            sum += sign*<i32>flips
+            if (flips > maxflips) {
+                maxflips = flips
+            }
+        }
+        // permute
+        if sign == 1 {
+            t = p[2]
+            p[2] = p[1]
+            p[1] = t
+            sign = -1i32
+        } else {
+            t = p[2]
+            p[2] = p[3]
+            p[3] = t
+            sign = 1i32
+            cont = true
+            for i = 3u32, i <= n && cont, i += 1 {
+                sx = s[i]
+                if sx != 1 {
+                    s[i] = sx-1
+                    cont = false
+                } else {
+                    if i == n {
+                        return (sum, maxflips)
+                    }
+                    s[i] = i
+                    t = p[1]
+                    for j = 1u32, j <= i, j += 1 {
+                        p[j] = p[j+1]
+                    }
+                    p[i+1] = t
+                }
+            }
+        }
+    }
+    return (0i32, 0u32)  // Dummy return
+}
+
+func nextPerm(var p, var s, var sum, var maxFlips, n) {
+}
+
+n = 12u32
+if argv.length() > 1 {
+    passed = false
+    n = argv[1].toUint(u32, passed)
+}
+pf = fannkuch(n)
+println(pf[0])
+println "Pfannkuchen(", n, ") = ", pf[1]

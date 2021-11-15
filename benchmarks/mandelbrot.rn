@@ -1,0 +1,59 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+N = 200u32
+if argv.length() > 1 {
+  passed = false
+  N = argv[1].toUint(u32, passed)
+}
+width = N
+height = N
+maxX = (width + 7) / 8
+maxIterations = 50u32
+limit = 2.0
+limitSq = limit * limit
+println "P4\n%u %u\n" % (width, height)
+cr0 = arrayof(f64).resize(8)
+cr = arrayof(f64).resize(8)
+ci = arrayof(f64).resize(8)
+for y = 0u32, y < height, y += 1 {
+    ci0 = 2.0 * <f64>y / <f64>height - 1.0
+    for x = 0u32, x < maxX, x += 1 {
+        for k = 0u32, k < 8u32, k += 1 {
+            cr0[k] = 2.0 * <f64>(8 * x + k) / <f64>width - 1.5;
+        }
+        for i = 0u32, i < 8, i += 1 {
+            cr[i] = cr0[i]
+            ci[i] = ci0
+        }
+        bits = 0u8
+        for i = 0u32, i < maxIterations && bits != 0xff, i += 1 {
+            for k = 0u32, k < 8, k += 1 {
+                mask = 1u8 << (7u32 - k)
+                if bits & mask == 0 {
+                    crk  = cr[k]
+                    cik  = ci[k]
+                    cr2k = crk * crk
+                    ci2k = cik * cik
+                    cr[k] = cr2k - ci2k + cr0[k]
+                    ci[k] = 2.0 * crk * cik + ci0
+                    if cr2k + ci2k > limitSq {
+                        bits |= mask
+                    }
+                }
+            }
+        }
+        writeByte(~bits)
+    }
+}

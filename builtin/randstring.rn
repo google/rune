@@ -1,0 +1,50 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// TODO: Speed this up with a call to a runtime function.
+func randString(len: Uint) {
+  result = secret("")
+  while result.length() < <u64>len {
+    randVal64 = rand64
+    result += randVal64.toStringLE()
+  }
+  result.resize(len)
+  return result
+}
+
+// Find the smallest mask of all 1's such that mask & n == n.
+func findUintMask(n: Uint) {
+  mask = n
+  dist = 1u32
+  while mask & (mask + 1) != 0 {
+    mask |= mask >> dist
+    dist <<= 1
+  }
+  return mask
+}
+
+func randRange(n: Uint) {
+  if n == 0 {
+    throw "randRage passed 0"
+  }
+  mask = findUintMask(n)
+  do {
+    if widthof(n) <= 64 {
+      val = mask & !<n>rand64
+    } else {
+      val = mask & randString((widthof(n) + 7) >> 3).toUintLE(typeof(n))
+    }
+  } while reveal(val) >= n
+  return val
+}

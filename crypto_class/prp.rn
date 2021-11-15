@@ -1,0 +1,51 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// |block| is a 512-bit unsigned integer.
+func permute(var block: u512) {
+  upper = <u256>(block >> 256)
+  lower = !<u256>block
+  for i in range(1000) {  // Iterate 1000 times.
+    round(upper, lower)
+  }
+  block = (<u512>upper << 256) | <u512>lower
+}
+
+// Mix the low portion of the block with the upper portion of the block and vice-versa.
+func round(var upper: u256, var lower: u256) {
+  upper @= lower  // XOR lower onto upper.
+  lower >>>= 101  // Rotate right by 101.
+  lower !+= upper  // Add upper to lower. The ! means ingore any overflow.
+}
+
+func inversePermute(var block: u512) {
+  upper = <u256>(block >> 256)
+  lower = !<u256>block
+  for i in range(1000) {
+    inverseRound(upper, lower)
+  }
+  block = (<u512>upper << 256) | <u512>lower
+}
+
+func inverseRound(var upper: u256, var lower: u256) {
+  lower !-= upper  // Subtract upper from lower, ignoring any overflow.
+  lower <<<= 101  // Rotate lower right by 101.
+  upper @= lower  // XOR lower onto upper.
+}
+
+unittest {
+  block = 123u512
+  permute(block)
+  println "%x512" % block
+}

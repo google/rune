@@ -1,0 +1,66 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Edwards ECC point addition. |a| and |b| should be module integers.  |d| should be a non-square.
+func addPoints(a, b, d, m) {
+  x1 = a[0]; y1 = a[1]
+  x2 = b[0]; y2 = b[1]
+  x3 = (x1*y2 + x2*y1) / (<d>1 + d*x1*x2*y1*y2) mod m
+  y3 = (y1*y2 + x1*x2) / (<d>1 - d*x1*x2*y1*y2) mod m
+  return (x3, y3)
+}
+
+// Return k*P, where k is an integer and P is a point.  Non-constant time!
+func scalarMultiply(k, P, d, m) {
+  result = (<P[0]>0, <P[1]>1)
+  power = P  // power is a power of 2.
+  mult = k
+  while mult != <mult>0 {
+    if mult & <mult>1 == <mult>1 {
+      result = addPoints(result, power, d, m)
+    }
+    power = addPoints(power, power, d, m);
+    mult >>= 1
+  }
+  return result
+}
+
+// Verify (gx, gy) is on the curve: -x^2 + y^2 = 1 + dx^2y^2:
+func verifyPoint(p, d, m) {
+  x = p[0]; y = p[1]
+  if -x^2 + y^2 != 1 + d*x^2*y^2 mod m {
+    throw "Point not on curve"
+  }
+}
+
+// Curve 25519
+const m = <u255>(2u256^255 - 19)
+d = -121665/121666 mod m
+// The generator's Y coordinate.
+gy = 4 / 5 mod m
+gx = 15112221349535400772501151409588531511454012693041857206046113283949847762202u255
+G = (gx, gy)
+verifyPoint(G, d, m)
+println "gx = ", G[0], ", gy = ", G[1]
+println "gy * 5 = ", gy * 5 mod m
+alicePrivkey = 5678u255
+alicePubkey = scalarMultiply(alicePrivkey, G, d, m)
+verifyPoint(alicePubkey, d, m)
+bobPrivkey = 1234u255
+bobPubkey = scalarMultiply(bobPrivkey, G, d, m)
+verifyPoint(bobPubkey, d, m)
+aliceSharedSecret = scalarMultiply(alicePrivkey, bobPubkey, d, m)
+bobSharedSecret = scalarMultiply(bobPrivkey, alicePubkey, d, m)
+println "Alice's secret = %x" % aliceSharedSecret[0]
+println "Bob's secret = %x" % bobSharedSecret[0]
