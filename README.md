@@ -3,11 +3,17 @@ _Safer code for secure enclaves_
 
 This is not an officially supported Google product.
 
+Rune is an unfinished language, with an unfinished compiler, and barely a start
+on the language reference manual (LRM).  Most likely, it will never be adopted
+widely.  Feel free to kick tires and to evaluate the cool new security and
+efficiency features of Rune, but for now, it is not recommended for any
+production use case.
+
 Rune is a systems programming language designed for security-sensitive
 applications that are prone to common security flaws when implemented in
 traditional systems languages such as C and C++.  Its primary goal is providing
 safety features for hardware-enforced private computation such as [sealed
-compution](https://arxiv.org/abs/1906.07841) or [secure
+computation](https://arxiv.org/abs/1906.07841) or [secure
 enclaves](https://www.infosecurity-magazine.com/opinions/enclaves-security-world/).
 Rune's most notable security feature is constant-time processing of secrets.
 Rune also aims to be faster than C++ for most memory-intensive applications, due
