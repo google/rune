@@ -36,7 +36,6 @@ Installing Datadraw requires cloning the source from github, or getting it from
 
     $ git clone https://github.com/waywardgeek/datadraw.git
     $ sudo apt-get install build-essential
-    $ export PATH=/usr/buildtools/buildhelpers/v4/bin:$PATH
     $ cd datadraw
     $ ./autogen.sh
     $ ./configure
@@ -46,23 +45,21 @@ Installing Datadraw requires cloning the source from github, or getting it from
 Hopefully that all goes well...  After dependencies are installed, to build
 rune:
 
-TODO: add cloning of repo, then cd into that dir.
-
+    $ git clone https://github.com/google/rune.git
+    $ git clone https://github.com/pornin/CTTK.git
+    $ cp CTTK/inc/cttk.h CTTK
+    $ cd rune
     $ make
 
-You need:
-
-* CTTK: A constant-time bignumber toolkit for safe crypto
-
-Which was written by Thomas Pornin.  It lives in
-
-* //third_party/CTTK
+CTTK was written by Thomas Pornin.  It provides constant-time big-integer
+arithmetic.
 
 If `make` succeeds, test the Rune compiler in the rune directory with:
 
-    $ ./runtests
+    $ ./runtests.sh
 
-To install rune under /usr/local/rune:
+Some tests are currently expected to fail, but most should pass.  To install
+rune under /usr/local/rune:
 
     $ sudo make install
 
