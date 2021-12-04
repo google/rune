@@ -17,11 +17,31 @@
 // Filepath.
 use filepath
 
+theGlobalRoot = Root()
+
 class Root(self) {
+  self.indentDepth = 0u32  // Used in dump functions.
+
+  func indent(self: Root, var text: string) {
+    for i in range(self.indentDepth) {
+      text += "  "
+    }
+  }
+
+  func incrementIndent(self) {
+    self.indentDepth += 1
+  }
+
+  func decrementIndent(self) {
+    self.indentDepth -= 1
+  }
 }
 
 func theRoot() -> Root {
   return theGlobalRoot
 }
 
-theGlobalRoot = Root()
+// Returns the global root.
+func getRoot() -> Root {
+  return theGlobalRoot
+}

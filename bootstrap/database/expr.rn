@@ -12,14 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use filepath
 use line
+use value
+use bigint
+use datatype
+use statement  // statement.rn adds Statement fields to Expr.
 
 enum ExprType {
-  Integer  // 0xABCDi32 or 1i8
-  Float  // 0.123 or 3e10
-  Randuint  // rand256
-  Bool  // true or false
-  String  // "passed"
+  Constant // Any constant such as true, false, "test", 1, 3.14f32, 0xabci255, etc.
+  Randuint  // e.g. rand256.
   Ident  // a
   Array  // [1u8, 2u8, 3u8, 4u8] or "passed"
   Modint  // 2 mod p
@@ -101,11 +103,11 @@ enum ExprType {
   Widthof  // widthof a
   Isnull  // isnull(entry)
   // Type expressions:
-  Uinttype  // x: u32 = y
-  Inttype  // x: i32 = y
-  Floattype  // x: f32 = y
-  Stringtype  // x: string = y
-  Booltype  // done: bool = checkForDone()
+  UintType  // x: u32 = y
+  IntType  // x: i32 = y
+  FloatType  // x: f32 = y
+  StringType  // x: string = y
+  BoolType  // done: bool = checkForDone()
   Typeindex  // u32[]
   Namedparam  // Myclass(name = "me", profession = "hacker")
 }
@@ -165,9 +167,7 @@ export func getPrecedence(type: ExprType) -> u32 {
     case ExprType.Dot, ExprType.Index {
       return 16u32
     }
-    case ExprType.Integer, ExprType.Bool, ExprType.String,
-        ExprType.Ident, ExprType.Uinttype, ExprType.Inttype,
-        ExprType.Stringtype, ExprType.Booltype, ExprType.Typeindex {
+    case ExprType.Constant, ExprType.Ident, ExprType.Typeindex {
       return 17u32
     }
     default {
@@ -276,25 +276,37 @@ class Expr(self, type: ExprType, line: Line = null(Line)) {
   self.isType = false
   self.isConst = false
   self.autocast = false  // Set on integer constants without a type suffix.
+  self.width = 0u32
   // TODO: add datatype when ported to Rune.
   // self.datatype = null(Datatype)
-  // TODO: When unions are supported, merge the remaining together.
-  // TODO: Add Bigint when available
-  // self.intVal = null(Bigint)
-  // TODO: add float, when available
-  // self.floatVal = null(Float)
-  self.stringVal = ""
-  self.symVal = null(Sym)
-  self.boolVal = false
-  self.width = 0u32
+  self.constVal = null(Value(0u32))
+
+  export func newConstant(value: Value, line: Line) -> Expr {
+    expr = Expr(ExprType.Constant, line)
+    expr.constVal = value
+    return expr
+  }
+
+  export func newBinary(type: ExprType, left: Expr, right: Expr, line: Line) -> Expr {
+    expr = Expr(type, line)
+    expr.appendExpr(left)
+    expr.appendExpr(right)
+    return expr
+  }
+
+  export func newUnary(type: ExprType, child: Expr, line: Line) -> Expr {
+    expr = Expr(type, line)
+    expr.appendExpr(child)
+    return expr
+  }
 
   // Return the precedence of the expression.
-  func getPrecedence(self) -> u32 {
+  export func getPrecedence(self) -> u32 {
     return getPrecedence(self.type)
   }
 
   // Return the name of this expression's type.
-  func typeName(self) {
+  export func typeName(self) {
     return getExprTypeName(self.type)
   }
 
@@ -467,25 +479,11 @@ class Expr(self, type: ExprType, line: Line = null(Line)) {
       parentPrecedence = parent.getPrecedence()
     }
     switch self.type {
-      case ExprType.Integer {
-        // TODO: Write this when we have Bigints.
-      }
-      case ExprType.Float {
-        // TODO: Write this when we have Floats.
-      }
-      case ExprType.Bool {
-        if self.boolVal {
-          text += "true"
-        } else {
-          text += "false"
-        }
-      }
-      case ExprType.String {
-        // TODO: escape the string when we've ported util.c.
-        text += "\"" + self.stringVal + "\""
+      case ExprType.Constant {
+        text += self.constVal.toString()
       }
       case ExprType.Ident {
-        text += self.symVal.name
+        text += self.constVal.symVal.name
       }
       case ExprType.Array {
         self.dumpArray(text)
@@ -719,37 +717,37 @@ class Expr(self, type: ExprType, line: Line = null(Line)) {
       case ExprType.List {
         self.dumpList(text)
       }
-      case ExprType.Uinttype {
+      case ExprType.UintType {
         text += "u%u" % self.width
       }
-      case ExprType.Inttype {
+      case ExprType.IntType {
         text += "i%u" % self.width
       }
-      case ExprType.Floattype {
+      case ExprType.FloatType {
         text += "f%u" % self.width
       }
-      case ExprType.Stringtype {
-        text += self.stringVal
+      case ExprType.StringType {
+        text += self.constVal.stringVal
       }
-      case ExprType.Booltype {
+      case ExprType.BoolType {
         text += "bool"
       }
       case ExprType.Namedparam {
-        text += self.firstExpr.symVal.name + " = "
+        text += self.firstExpr.constVal.symVal.name + " = "
         self.lastExpr.dumpToString(text)
       }
     }
   }
 
   // Convert the expression to a string in a reasonably readable format.
-  func toString(self) -> string {
+  export func toString(self) -> string {
     text = ""
     self.dumpToString(text)
     return text
   }
 
   // Write out the expression in a reasonably readable format.
-  func dump(self) {
+  export func dump(self) {
     text = ""
     self.dumpToString(text)
     println text
@@ -760,6 +758,15 @@ class Expr(self, type: ExprType, line: Line = null(Line)) {
 // Expressions form a tree, with each expression having a doubly-linked list of children.
 relation DoublyLinked Expr Expr cascade
 
-unittest {
-  import exprTest
+unittest basicExprTest {
+  filepath = Filepath.new("test_filepath", null(Filepath), false)
+  line = Line(filepath, "Not a real line", 1u32)
+  i = Bigint(0xdeadbeefu32)
+  left = Expr.newConstant(Value("Hello"), line)
+  assert left.getPrecedence() == getPrecedence(ExprType.Constant)
+  right = Expr.newConstant(Value("World"), line)
+  assert right.getPrecedence() == getPrecedence(ExprType.Constant)
+  ltExpr = Expr.newBinary(ExprType.Lt, left, right, line)
+  assert ltExpr.toString() == "\"Hello\" < \"World\""
+  println "PASSED"
 }

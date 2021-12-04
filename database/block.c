@@ -155,7 +155,7 @@ void dePrependBlockToBlock(deBlock sourceBlock, deBlock destBlock) {
   deBlockDestroy(sourceBlock);
 }
 
-// Make a deep copy of the block, without sub-blocks.
+// Make a shallow copy of the block, without sub-blocks.
 deBlock deShallowCopyBlock(deBlock block) {
   deBlock newBlock = deBlockCreate(deBlockGetFilepath(block), deBlockGetType(block),
       deBlockGetLine(block));

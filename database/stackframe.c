@@ -32,5 +32,6 @@ void dePopStackFrame(void) {
 bool deStatementIsImport(deStatement statement) {
   deStatementType type = deStatementGetType(statement);
   return type == DE_STATEMENT_USE || type == DE_STATEMENT_IMPORT ||
-      type == DE_STATEMENT_IMPORTLIB || type == DE_STATEMENT_IMPORTRPC;
+      type == DE_STATEMENT_IMPORTLIB || type == DE_STATEMENT_IMPORTRPC ||
+      type == DE_STATEMENT_USE;
 }

@@ -137,8 +137,11 @@ static deString unescape(char *string) {
         }
         *p++ = hexToChar(string[0], string[1]);
         string += 2;
-      } else  {
+      } else {
         *p++ = *string++;
+        if (*string == '\0') {
+          deError(deCurrentLine, "Cannot escape terminating quote.");
+        }
       }
     } else {
       *p++ = *string++;

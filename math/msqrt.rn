@@ -71,7 +71,7 @@ export func msqrt(a, p) {
   return <p>0  // Dummy return
 }
 
-unittest {
+unittest msqrtTest {
   for i in range(5) {
     p = findRandPrime()
     println "Found prime ", p

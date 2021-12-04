@@ -12,32 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-enum ValueType {
-  String = 123u32
-  Bool = 456u32
-  Integer = 789u32
-}
-
-class Integer(self, value) {
-  self.value = value
-}
-
-func getValueType(value) {
-  switch typeof(value) {
-    case String {
-      return ValueType.String
-    }
-    case Bool {
-      return ValueType.Bool
-    }
-    case Integer {
-      return ValueType.Integer
-    }
-  }
-}
-
-unittest valueTypeTest {
-  println getValueType("test")
-  println getValueType(true)
-  println getValueType(Integer(123u64))
-}
+pi = 3.1415927f64
+shortFloat = <f32>pi
+assert widthof(shortFloat) == 32
+longFloat = <f64>shortFloat
+assert widthof(longFloat) == 64
+assert abs(longFloat - pi) < 0.0001f64

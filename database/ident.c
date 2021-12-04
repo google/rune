@@ -100,6 +100,7 @@ deDatatype deGetIdentDatatype(deIdent ident) {
       deFunction function = deIdentGetFunction(ident);
       switch (deFunctionGetType(function)) {
         case DE_FUNC_PLAIN:
+        case DE_FUNC_UNITTEST:
         case DE_FUNC_FINAL:
         case DE_FUNC_DESTRUCTOR:
         case DE_FUNC_PACKAGE:

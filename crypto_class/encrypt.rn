@@ -27,7 +27,7 @@ func  encrypt(key: secret(string), info: string, plaintext: string) -> string {
   return nonce + ciphertext + mac
 }
 
-unittest {
+unittest encryptionTest {
   use decrypt
   password = secret("password")
   info = "info"

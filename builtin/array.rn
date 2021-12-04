@@ -26,7 +26,7 @@ appendcode Array {
   }
 }
 
-unittest {
+unittest arrayTest {
   l = [1, 2, 3]
   for i in l.values() {
     println i

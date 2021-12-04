@@ -27,7 +27,6 @@
 
 static deBlock deSavedBlock;
 static deStatement deLastStatement;
-static bool deSkippingUnitTest;
 
 extern int fileno (FILE *__stream) __THROW __wur;
 
@@ -101,17 +100,26 @@ static void setFunctionExtern(deFunction function, deString langName) {
 
 // Chech that deCurrentBlock is a module or package block.
 static void checkTopBlock(void ) {
-  if (deSkippingUnitTest) {
-    return;
-  }
   if (deBlockGetType(deCurrentBlock) == DE_BLOCK_FUNCTION) {
     deFunction function = deBlockGetOwningFunction(deCurrentBlock);
     deFunctionType type = deFunctionGetType(function);
-    if (type == DE_FUNC_PACKAGE || type == DE_FUNC_MODULE) {
+    if (type == DE_FUNC_PACKAGE || type == DE_FUNC_MODULE || type == DE_FUNC_UNITTEST) {
       return;
     }
   }
   deerror("Import statements must be at the top level");
+}
+
+// Move import and use statements in a unit test to |destBlock|.
+static void moveImportsToBlock(deFunction function, deBlock destBlock) {
+  deBlock subBlock = deFunctionGetSubBlock(function);
+  deStatement statement;
+  deSafeForeachBlockStatement(subBlock, statement) {
+    if (deStatementIsImport(statement)) {
+      deBlockRemoveStatement(subBlock, statement);
+      deBlockAppendStatement(destBlock, statement);
+    }
+  } deEndSafeBlockStatement;
 }
 
 %}
@@ -310,8 +318,6 @@ initialize: // Empty
   deSavedBlock = deBlockNull;
   deInGenerator = false;
   deInIterator = false;
-  deSkippingUnitTest = false;
-  deSkippingUnitTest = false;
 }
 
 runeFile: statements
@@ -1418,23 +1424,29 @@ yield: KWYIELD expression newlines
 
 unitTestStatement: unitTestHeader block
 {
-  if (!deParsingMainModule) {
-    // Destroy unittest code not in main module.
-    deStatement statement = deBlockGetOwningStatement(deCurrentBlock);
-    deCurrentBlock = deStatementGetBlock(statement);
-    deStatementDestroy(statement);
+  deFunction function = deBlockGetOwningFunction(deCurrentBlock);
+  deCurrentBlock = deFunctionGetBlock(function);
+  if (!deTestMode && !deParsingMainModule) {
+    deFunctionDestroy(function);
+  } else {
+    moveImportsToBlock(function, deCurrentBlock);
+    // Call the unit test.
+    deLine line = deFunctionGetLine(function);
+    deExpression accessExpr = deIdentExpressionCreate(deFunctionGetSym(function), line);
+    deExpression paramsExpr = deExpressionCreate(DE_EXPR_LIST, line);
+    deExpression callExpr = deBinaryExpressionCreate(DE_EXPR_CALL, accessExpr, paramsExpr, line);
+    deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_CALL, line);
+    deStatementInsertExpression(statement, callExpr);
   }
-  deSkippingUnitTest = false;
+  deInIterator = false;
 }
 ;
 
-unitTestHeader: KWUNITTEST
+unitTestHeader: KWUNITTEST IDENT
 {
-  if (!deParsingMainModule) {
-    // We dstroy this above when parsing of the block is done.
-    deSkippingUnitTest = true;
-    createBlockStatement(DE_STATEMENT_DO);
-  }
+  deFunction function = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
+      DE_FUNC_UNITTEST, $2, DE_LINK_MODULE, $1);
+  deCurrentBlock = deFunctionGetSubBlock(function);
 }
 ;
 
@@ -1445,6 +1457,14 @@ debugStatement: debugHeader block
     deStatement statement = deBlockGetOwningStatement(deCurrentBlock);
     deCurrentBlock = deStatementGetBlock(statement);
     deStatementDestroy(statement);
+  }
+}
+;
+
+debugHeader: KWDEBUG
+{
+  if (!deDebugMode) {
+    createBlockStatement(DE_STATEMENT_DO);
   }
 }
 ;
@@ -1482,14 +1502,6 @@ entry: IDENT newlines
 }
 ;
 
-debugHeader: KWDEBUG
-{
-  if (!deDebugMode) {
-    createBlockStatement(DE_STATEMENT_DO);
-  }
-}
-;
-
 foreachStatement: forStatementHeader IDENT KWIN expression block
 {
   deStatement statement = deBlockGetOwningStatement(deCurrentBlock);
@@ -1518,10 +1530,8 @@ finalHeader: KWFINAL
   if (deFunctionGetType(constructor) != DE_FUNC_CONSTRUCTOR) {
     deError($1, "final(self) functions only allowed inside constructors");
   }
-  if (!deSkippingUnitTest) {
-    deTclass tclass = deFunctionGetTclass(constructor);
-    deTclassSetHasFinalMethod(tclass, true);
-  }
+  deTclass tclass = deFunctionGetTclass(constructor);
+  deTclassSetHasFinalMethod(tclass, true);
   deFunction function = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_PLAIN, utSymCreate("final"), DE_LINK_MODULE, $1);
   deCurrentBlock = deFunctionGetSubBlock(function);

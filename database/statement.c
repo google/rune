@@ -86,10 +86,9 @@ deStatement deStatementCreate(deBlock block, deStatementType type, deLine line) 
   deStatement statement = deStatementAlloc();
   deStatementSetType(statement, type);
   deStatementSetLine(statement, line);
-  deStatementSetGenerated(statement, deGenerating | deInIterator);
+  deStatementSetGenerated(statement, deGenerating || deInIterator);
   deBlockAppendStatement(block, statement);
   // In case the statement is copied, moved, etc.
-  deStatementSetFilepath(statement, deBlockGetFilepath(block));
   return statement;
 }
 
@@ -117,7 +116,6 @@ void deAppendStatementCopy(deStatement statement, deBlock destBlock) {
   copyExpressionAndSubBlockToNewStatement(statement, newStatement);
   deStatementSetGenerated(newStatement, deStatementGenerated(newStatement) ||
       deStatementGenerated(statement));
-  deStatementSetFilepath(newStatement, deStatementGetFilepath(statement));
 }
 
 // Prepend a deep copy of the statement to destBlock.

@@ -11,23 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-runtests: bigint expr value statement
-	./expr
-	./bigint
-	./value
-
-expr: expr.rn
-	rune -g expr.rn
-
-bigint: bigint.rn
-	rune -g bigint.rn
-
-value: value.rn
-	rune -g value.rn
-
-statement: statement.rn
-	rune -g statement.rn
-
-clean:
-	rm -f bigint expr value statement *.ll rune.log
+#
+#!/bin/bash
+for test in comperrors/*.rn; do
+  ./rune -g "$test"
+  if [[ "$?" != 0 ]]; then
+    echo "$test passed"
+  else
+    echo "*************************************** $test failed"
+  fi
+done

@@ -41,9 +41,10 @@ static void usage(void) {
   printf("Usage: rune [options] file\n"
          "    -g        - Include debug information for gdb.  Implies -l.\n"
          "    -l <llvmfile> - Write LLVM IR to <llvmfile>.\n"
-         "    -n        - No clang.  Don't compile the resultihg .ll output.\n"
-         "    -O        - Optimized buld.  Passes -O3 to clang.\n"
+         "    -n        - No clang.  Don't compile the resulting .ll output.\n"
+         "    -O        - Optimized build.  Passes -O3 to clang.\n"
          "    -p <dir>  - Use <dir> as the root directory for packages.\n"
+         "    -t        - Execute unit tests for all modules.\n"
          "    -U        - Unsafe mode.  Don't generate bounds checking, overflow\n"
          "                detection, and destroyed object access detection.\n");
   exit(1);
@@ -54,6 +55,7 @@ int main(int argc, char** argv) {
     usage();
   }
   deDebugMode = false;
+  deTestMode = false;
   deUnsafeMode = false;
   dePackageDir = NULL;
   bool noClang = false;
@@ -63,6 +65,8 @@ int main(int argc, char** argv) {
   while (xArg < argc && argv[xArg][0] == '-') {
     if (!strcmp(argv[xArg], "-g")) {
       deDebugMode = true;
+    } else if (!strcmp(argv[xArg], "-t")) {
+      deTestMode = true;
     } else if (!strcmp(argv[xArg], "-O")) {
       optimized = true;
     } else if (!strcmp(argv[xArg], "-U")) {

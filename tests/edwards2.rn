@@ -29,8 +29,8 @@ class EdwardsCurve(self, <m>, d: typeof(m), gy: typeof(m)) {
 
   // Return the positive X coordinate given Y.
   func computeX(self, y) {
-    root = math.msqrt((y^2 - 1)/(d*y^2 + 1) mod m, m)
-    return min(root, m - root)
+    root = math.msqrt((y^2 - 1)/(self.d*y^2 + 1) mod self.m, self.m)
+    return min(root, self.m - root)
   }
 }
 
@@ -71,7 +71,7 @@ class Point(self, <curve>: EdwardsCurve, x: typeof(curve.m), y: typeof(curve.m))
   }
 }
 
-unittest {
+unittest edwardsTest {
   // Curve 25519 parameters.
   m = <u255>(2u256^255 - 19)
   d = -121665/121666 mod m

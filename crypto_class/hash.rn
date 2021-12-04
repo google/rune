@@ -20,7 +20,7 @@ func hash(data: string) -> u256 {
   return reveal(sponge.squeezeBlock())
 }
 
-unittest {
+unittest hashTest {
   digest = hash("test")
   println "%x256" % digest
 }

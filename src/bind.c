@@ -1139,7 +1139,7 @@ static void fillOutDefaultParamters(deBlock block, deDatatype selfType, deDataty
           tclass = deDatatypeGetTclass(selfType);
         }
         if (deDatatypeGetTclass(datatype) != tclass) {
-          deError(line, "Called constructor with incorect self-type");
+          deError(line, "Called constructor with incorrect self-type");
         }
         datatype = selfType;
       }
@@ -1191,7 +1191,7 @@ static void bindFunctionBlock(deFunction function, deSignature signature) {
 }
 
 // Add a default .print() method that can be called from the debugger.
-static void addDefaultDebugMethods(deClass theClass) {
+static void addDefaultClassDebugMethods(deClass theClass) {
   utSym toStringSym = utSymCreate("toString");
   deFunction toStringMethod = deClassFindMethod(theClass, toStringSym);
   if (toStringMethod == deFunctionNull) {
@@ -1215,6 +1215,14 @@ static void addDefaultDebugMethods(deClass theClass) {
     deSignatureSetInstantiated(signature, true);
     bindFunctionBlock(dumpMethod, signature);
   }
+}
+
+// Add default debug methods to classes after binding is done.
+static void addDefaultDebugMethods(void) {
+  deClass theClass;
+  deForeachRootClass(deTheRoot, theClass) {
+    addDefaultClassDebugMethods(theClass);
+  } deEndRootClass;
 }
 
 // Forward declaration for recursion.
@@ -1249,9 +1257,6 @@ static void instantiateConstructorSignature(deSignature signature) {
   bindLazySignatures(theClass);
   setSignatureParamsInstantiated(signature, subBlock);
   deClassSetBound(theClass, true);
-  if (deDebugMode) {
-    addDefaultDebugMethods(theClass);
-  }
 }
 
 // Signatures that were created while binding the block.
@@ -1485,6 +1490,7 @@ static void verifyFunctionIsCallable(deBlock scopeBlock, deFunction function) {
   deFunctionType type = deFunctionGetType(function);
   switch (type) {
     case DE_FUNC_PLAIN:
+    case DE_FUNC_UNITTEST:
     case DE_FUNC_OPERATOR:
     case DE_FUNC_CONSTRUCTOR:
     case DE_FUNC_DESTRUCTOR:
@@ -2143,8 +2149,8 @@ static void bindWidthofExpression(deBlock scopeBlock, deExpression expression) {
   bool savedInstantiating = deInstantiating;
   deInstantiating = false;
   deDatatype datatype = bindUnaryExpression(scopeBlock, expression);
-  if (!deDatatypeIsInteger(datatype)) {
-    deError(deExpressionGetLine(expression), "widthof applied to non-integer");
+  if (!deDatatypeIsNumber(datatype)) {
+    deError(deExpressionGetLine(expression), "widthof applied to non-number");
   }
   deExpressionSetDatatype(expression, deUintDatatypeCreate(32));
   deInstantiating = savedInstantiating;
@@ -2963,6 +2969,9 @@ void deBind(void) {
   bindBlock(rootBlock, rootBlock, mainSignature);
   deCurrentStatement = deStatementNull;
   bindExports();
+  if (deDebugMode) {
+    addDefaultDebugMethods();
+  }
 }
 
 // This is used to bind new statements after adding memory management stuff.

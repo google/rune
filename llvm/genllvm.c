@@ -2693,6 +2693,22 @@ static void generateCastExpression(deExpression expression, bool truncate) {
   } else if (leftType == DE_TYPE_FLOAT && rightType == DE_TYPE_INT) {
       llPrintf("sitofp %s %s to %s\n", rightTypeString,
           llElementGetName(rightElement), leftTypeString);
+  } else if (leftType == DE_TYPE_FLOAT && rightType == DE_TYPE_FLOAT) {
+    // Must be different width floats.
+    uint32 oldWidth = deDatatypeGetWidth(rightDatatype);
+    uint32 newWidth = deDatatypeGetWidth(leftDatatype);
+    utAssert(oldWidth != newWidth);
+    if (oldWidth < newWidth) {
+      // Extending precesion.
+      utAssert(oldWidth == 32 && newWidth == 64);
+      llPrintf("fpext %s %s to %s\n", rightTypeString,
+          llElementGetName(rightElement), leftTypeString);
+    } else {
+      // Truncating precesion.
+      utAssert(oldWidth == 64 && newWidth == 32);
+      llPrintf("fptrunc %s %s to %s\n", rightTypeString,
+          llElementGetName(rightElement), leftTypeString);
+    }
   } else {
     utExit("Cannot cast from array to integer or back");
   }

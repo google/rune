@@ -768,7 +768,7 @@ statements.
 		return n*fact(n-1)
 	}
 	
-	unittest {
+	unittest factTest {
 		if fact(6) != 720 {
 			throw "Incorrect value for fact(6)"
 		}
@@ -1006,7 +1006,7 @@ a given node, when traversing only forward edges.
 		}
 	}
 	
-	unittest {
+	unittest graphTest {
 		// Build an example graph.
 		graph = Graph()
 		a = Node(graph, "A"); b = Node(graph, "B")

@@ -64,7 +64,7 @@ class Value(self, value: string | bool | i64) {
   }
 }
 
-unittest {
+unittest valueTest {
   a = Value(0xdeadbeefi64)
   b = Value("This is a test")
   c = Value(true)

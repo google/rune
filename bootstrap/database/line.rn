@@ -36,7 +36,7 @@ class Line(self, filepath: Filepath, text: string, lineNum: u32) {
   }
 }
 
-unittest {
+unittest filepathTest {
   filepath = Filepath.new("test_filepath", null(Filepath), false)
   line1 = Line(filepath, "Line 1", 1u32)
   line2 = Line(filepath, "Line 2", 1u32)

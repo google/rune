@@ -24,6 +24,8 @@ char *deGetFunctionTypeName(deFunctionType type) {
   switch (type) {
     case DE_FUNC_PLAIN:  // Includes methods.
       return "function";
+    case DE_FUNC_UNITTEST:  // Includes methods.
+      return "unittest";
     case DE_FUNC_CONSTRUCTOR:
       return "constructor";
     case DE_FUNC_DESTRUCTOR:
@@ -104,9 +106,7 @@ deFunction deCopyFunction(deFunction function, deBlock destBlock) {
   return newFunction;
 }
 
-// Prepend a call statement to the module initialization function in the root
-// block.  Put it before the last call to a module initialization.  This causes
-// modules to be initialized in reverse order of when they are loased.
+// Append a call statement to the module initialization function in the root block.
 void deInsertModuleInitializationCall(deFunction moduleFunc) {
   deIdent ident = deFunctionGetFirstIdent(moduleFunc);
   deExpression pathExpr = deCreateIdentPathExpression(ident);
@@ -118,16 +118,11 @@ void deInsertModuleInitializationCall(deFunction moduleFunc) {
   deBlock rootBlock = deRootGetBlock(deTheRoot);
   deStatement statement = deStatementCreate(rootBlock, DE_STATEMENT_CALL, line);
   deStatementInsertExpression(statement, callExpression);
-  // Move the statement to before the last initialization call.
+  // Move the statement to after the last initialization call.
   deStatement lastInitializer = deRootGetLastInitializerStatement(deTheRoot);
   if (lastInitializer != deStatementNull) {
     deBlockRemoveStatement(rootBlock, statement);
-    if (deBlockGetFirstStatement(rootBlock) == lastInitializer) {
-      deBlockInsertStatement(rootBlock, statement);
-    } else {
-      deStatement prevStatement = deStatementGetPrevBlockStatement(lastInitializer);
-      deBlockInsertAfterStatement(rootBlock, prevStatement, statement);
-    }
+    deBlockInsertAfterStatement(rootBlock, lastInitializer, statement);
   }
   deRootSetLastInitializerStatement(deTheRoot, statement);
 }

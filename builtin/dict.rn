@@ -73,16 +73,3 @@ class Dict(self, <keyType>, <valueType>) {
 }
 
 relation Hashed Dict Dict.Entry cascade ("key", "Entries")
-
-unittest {
-  dict = Dict(string, u32)
-  dict.insert("Bob", 32u32)
-  value = dict.find("Bob")
-  println value
-  dict.remove("Bob")
-  dict = Dict(u32, string)
-  dict2.insert(32u32, "Alice")
-  value2 = dict2.find(32u32)
-  println value2
-  dict2.remove(32u32)
-}

@@ -23,6 +23,7 @@ deRoot deTheRoot;
 uint32 deDumpIndentLevel;
 bool deUnsafeMode;
 bool deDebugMode;
+bool deTestMode;
 char *deExeName;
 char *deLibDir;
 char *dePackageDir;
@@ -380,7 +381,6 @@ deBlock deParseModule(char *fileName, deBlock packageBlock, bool isMainModule) {
   deLine line = deLineCreate(filepath, text, strlen(text), 0);
   deFunction moduleFunc = deFunctionCreate(filepath, packageBlock, DE_FUNC_MODULE,
       moduleName, DE_LINK_MODULE, line);
-  deInsertModuleInitializationCall(moduleFunc);
   deBlock newModuleBlock = deFunctionGetSubBlock(moduleFunc);
   deParsingMainModule = isMainModule;
   deCurrentBlock = newModuleBlock;
@@ -389,6 +389,7 @@ deBlock deParseModule(char *fileName, deBlock packageBlock, bool isMainModule) {
   deCurrentFilepath = deFilepathNull;
   deParsingMainModule = false;
   loadImports(packageBlock, newModuleBlock);
+  deInsertModuleInitializationCall(moduleFunc);
   utFree(fullName);
   executeModuleRelations(newModuleBlock);
   return newModuleBlock;

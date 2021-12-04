@@ -478,7 +478,7 @@ extern char *deLibDir;
 extern char *dePackageDir;
 extern bool deUnsafeMode;
 extern bool deDebugMode;
-extern bool deRunUnitTests;
+extern bool deTestMode;
 extern uint32 deStackPos;
 extern char *deStringVal;
 extern uint32 deStringAllocated;

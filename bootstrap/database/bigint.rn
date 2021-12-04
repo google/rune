@@ -58,6 +58,11 @@ func isSigned(value: Int | Uint) {
 // Represent fixed-sized integers of any width up to the limit of the runtime bigint
 // code.
 class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
+  // It is good practice to assign all data members default values up-front.
+  self.bigint = arrayof(u32)
+  self.width = 0u32
+  self.isSigned = false
+  self.isSecret = false
   switch typeof(value) {
     case Int | Uint {
       if widthof(value) > kMaxBigintWidth {
@@ -91,7 +96,15 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   }
 
   // Return a string in the base set by |base|.
-  func toString(self, base = 10u32) -> string {
+  func toString(self) -> string {
+    text = runtime.bigintToString(self.bigint, 10u32)
+    text += self.isSigned? "i" : "u"
+    text += self.width.toString()
+    return text
+  }
+
+  // Return a string in the base set by |base|.
+  func toStringInBase(self, base: u32 = 10u32) -> string {
     text = runtime.bigintToString(self.bigint, base)
     text += self.isSigned? "i" : "u"
     text += self.width.toString()
@@ -272,22 +285,22 @@ operator @ (a: Bigint, b: Bigint) -> Bigint {
 }
 
 // Test printing and addition.
-unittest {
-  a = Bigint(1u32)
+unittest testPrintAndAdd {
+  a = Bigint(1u32, 16u32)
   println a.toString()
-  b = Bigint(2u32)
+  b = Bigint(2u16)
   println b.toString()
   c = a + b
   println c.toString()
   d = Bigint(0xdeadbeef, 256u32)
-  println d.toString(16u32)
+  println d.toStringInBase(16u32)
   e = Bigint(1u32, 256u32)
   f = d + e
-  println f.toString(16u32)
+  println f.toStringInBase(16u32)
 }
 
 // Test casting.
-unittest {
+unittest testCasting {
   a = Bigint(123u32)
   b = a.cast(256u32, true, false, false)
   println b, " width = ", b.width
@@ -297,7 +310,7 @@ unittest {
 }
 
 // Test comparison operators.
-unittest {
+unittest testComparison {
   a = Bigint(123u32)
   b = Bigint(123u32)
   c = Bigint(124u32)
@@ -316,7 +329,7 @@ unittest {
 }
 
 // Test arithmetic operations, -, * / and %, along with truncating versions.
-unittest {
+unittest testArithmeticOperators {
   // Test the !+ operator
   a = Bigint(0xdeadbeefu32)
   b = a !+ a
@@ -334,7 +347,7 @@ unittest {
 }
 
 // Test the exponentiation ^ operator.
-unittest {
+unittest testExponentiation {
   a = Bigint(2i32)
   b = Bigint(4i32)
   c = Bigint(-3i32)
@@ -344,18 +357,18 @@ unittest {
 }
 
 // Test unary operators -, !-, and ~.
-unittest {
+unittest testUnaryOperators {
   assert -Bigint(123i256) == Bigint(-123i256)
   println -Bigint(12345i32)
   // Test truncating negation's one exceptional input.
   assert !-Bigint(-128i8) == Bigint(-128i8)
   assert !-Bigint(-127i8) == Bigint(127i8)
-  println (~Bigint(0x55aaau20)).toString(16u32)
+  println (~Bigint(0x55aaau20)).toStringInBase(16u32)
   assert ~Bigint(0x55aaau20) == Bigint(0xaa555u20);
 }
 
 // Test shift operators.
-unittest {
+unittest testShiftOperators {
   a = Bigint(0xdeadbeefu32)
   assert a >> 16u32 == Bigint(0xdeadu32)
   assert a << 4u32 == Bigint(0xeadbeef0u32)
@@ -365,16 +378,16 @@ unittest {
 }
 
 // Test rotation operators.
-unittest {
+unittest testRotationOperators {
   a = Bigint(0xdeadbeefu32)
   assert a >>> 16u32 == Bigint(0xbeefdeadu32)
   assert a <<< 4u32 == Bigint(0xeadbeefdu32)
 }
 
 // Test bitwise-overloaded operators.
-unittest {
+unittest testBitwiseOperators {
   // Overload the bitwise-AND & operator.
-  a = Bigint(0xffu16)
+  a = Bigint(0xffu16, 16u32)
   b = Bigint(0xff00u16)
   assert a & b == Bigint(0u16)
   assert a & (b >> 1u32) == Bigint(0x80u16)

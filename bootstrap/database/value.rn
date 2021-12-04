@@ -1,0 +1,157 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use bigint
+use datatype
+
+func getDatatypeType(value) -> DatatypeType {
+  switch typeof(value) {
+    case string {
+      return DatatypeType.String
+    }
+    case bool {
+      return DatatypeType.Bool
+    }
+    case Int {
+      return DatatypeType.Int
+    }
+    case Uint {
+      return DatatypeType.Uint
+    }
+    case Bigint {
+      if value.isSigned {
+        return DatatypeType.Int
+      }
+      return Datatype.Uint
+    }
+    case Float {
+      return DatatypeType.Float
+    }
+    case Sym {
+      return DatatypeType.Sym
+    }
+    default {
+      throw "Datatype not yet supported by the Value class"
+    }
+  }
+}
+
+class Value(self, value: string | bool | Int | Uint | Bigint | Float | Sym) {
+  self.type = getDatatypeType(value)
+  self.width = 0u32
+  // TODO: Merge these values into a union when unions are supported.
+  self.stringVal = ""
+  self.boolVal = false
+  self.intVal = null(Bigint)
+  self.floatVal = 0.0f64
+  self.symVal = null(Sym)
+  switch typeof(value) {
+    case string {
+      self.stringVal = value
+    }
+    case bool {
+      self.boolVal = value
+    }
+    case Float {
+      // This must be the widest supported floating point type, currently f64.
+      self.floatVal = <f64>value
+      self.width = widthof(value)
+    }
+    case Int, Uint {
+      self.intVal = Bigint(value)
+      self.width = widthof(value)
+    }
+    case Bigint {
+      self.intVal = value
+      self.width = value.width
+    }
+    case Sym {
+      self.symVal = value
+    }
+  }
+
+  export func toString(self) -> string {
+    switch self.type {
+      case DatatypeType.String {
+        // TODO: Escape the string.
+        return "\"" + self.stringVal + "\""
+      }
+      case DatatypeType.Bool {
+        return self.boolVal ? "true" : "false"
+      }
+      case DatatypeType.Float {
+        return "%ff%u" % (self.floatVal, self.width)
+      }
+      case DatatypeType.Int, DatatypeType.Uint {
+        return self.intVal.toString()
+      }
+      case DatatypeType.Sym {
+        return self.symVal.name
+      }
+    }
+  }
+
+  operator == (v1: Value, v2: Value) {
+    if v1.type != v2.type || v1.width != v2.width {
+      return false
+    }
+    switch v1.type {
+      case DatatypeType.String {
+        return v1.stringVal == v2.stringVal
+      }
+      case DatatypeType.Bool {
+        return v1.stringVal == v2.stringVal
+      }
+      case DatatypeType.Uint, DatatypeType.Int {
+        return v1.intVal == v2.intVal
+      }
+      case DatatypeType.Float {
+        return v1.floatVal == v2.floatVal
+      }
+      case DatatypeType.Sym {
+        return v1.symVal == v2.symVal
+      }
+    }
+  }
+}
+
+unittest valueTypesTest {
+  a = Value(0xdeadbeefi64)
+  b = Value("This is a test")
+  c = Value(true)
+  d = Value(3.1415927f32)
+  e = Value(Sym.new("test"))
+  println a.intVal.toStringInBase(16u32)
+  println b
+  println c
+  println d
+  println e
+}
+
+unittest u64Test {
+  v = Value(1)
+  println v.toString()
+}
+
+unittest equalTest {
+  v1 = Value(1)
+  v2 = Value(1)
+  println v1 == v2
+}
+
+unittest notEqualTest {
+  v1 = Value(1)
+  v2 = Value(2)
+  println v1 == v2
+}

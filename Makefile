@@ -117,13 +117,14 @@ LLVM.ps: llvm/LLVM.dd
 	dataview llvm/LLVM.dd
 
 install: rune
-	install -d $(PREFIX)/bin $(PREFIX)/lib/rune
+	install -d $(PREFIX)/bin $(PREFIX)/lib/rune $(PREFIX)/lib/rune/runtime
 	install rune $(PREFIX)/bin
 	install lib/libcttk.a $(PREFIX)/lib/rune
 	install lib/librune.a $(PREFIX)/lib/rune
 	cp -r builtin $(PREFIX)/lib/rune
 	cp -r math $(PREFIX)/lib/rune
 	cp -r io $(PREFIX)/lib/rune
+	install runtime/package.rn $(PREFIX)/lib/rune/runtime
 
 clean:
 	rm -rf obj lib rune */*database.[ch] *.ps parse/descan.c parse/deparse.[ch] rune.log tests/*.ll tests/*.result crypto_class/*.ll crypto_class/*.result errortests/*.ll

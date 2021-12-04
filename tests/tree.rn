@@ -50,7 +50,7 @@ func indent(depth) {
   }
 }
 
-unittest {
+unittest treeTest {
   n1 = Tree("N1", Tree("L1"), Tree("L2"))
   n2 = Tree("N2", Tree("L3"), Tree("L4"))
   n3 = Tree("N3", n1, n2)

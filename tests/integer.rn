@@ -65,7 +65,7 @@ operator +(a: Integer, b: Integer) -> Integer {
   return result
 }
 
-unittest {
+unittest integerTest {
   a = Integer(1u32)
   b = Integer(2u32)
   println "a + b = ", (a + b).toHex()

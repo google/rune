@@ -44,7 +44,7 @@ func inverseRound(var upper: u256, var lower: u256) {
   upper @= lower  // XOR lower onto upper.
 }
 
-unittest {
+unittest prpTest {
   block = 123u512
   permute(block)
   println "%x512" % block

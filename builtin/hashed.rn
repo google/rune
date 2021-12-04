@@ -190,24 +190,3 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
     }
   }
 }
-
-unittest {
-  class A(self, <idType>) {
-  }
-
-  class B(self, a: A, <id>) {
-    self.id = id
-    a.insertB(self)
-
-    final(self) {
-      println "Destroying b"
-    }
-  }
-
-  relation Hashed A B cascade ("id")
-
-  a = A(typeof(123))
-  b = B(a, 123)
-  println a.findB(123).id
-  a = null(a)
-}
