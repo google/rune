@@ -36,12 +36,16 @@ func computeMac(macSecret: string, message:string) -> string {
 }
 ```
 
-Can you see the potential security flaw?  Suppose the attacker can tell how long
-it takes for the `mac == computedMac` to run.  If the first byte of an
-attacker-chosen `mac` is wrong for the attacker-chosen `message`, the loop
-terminates after just one comparison.  With 256 attempts, the attacker can find
-the first byte of the expected MAC for the attacker-controlled `message`.
-Repeating this process, the attacker can forge an entire MAC.
+Can you see the potential security flaw?  In most languages, an attacker with
+accurate timing data can forge a MAC on a message of their choice, causing a
+server to accept it as genuine.
+
+Assume the attacker can tell how long it takes for `mac == computedMac` to run.
+If the first byte of an attacker-chosen `mac` is wrong for the attacker-chosen
+`message`, the loop terminates after just one comparison.  With 256 attempts,
+the attacker can find the first byte of the expected MAC for the
+attacker-controlled `message`.  Repeating this process, the attacker can forge
+an entire MAC.
 
 Users of Rune are protected, because the compiler sees that `macSecret` is
 secret, and thus the result of `hmacSha256` is secret.  The string comparison
