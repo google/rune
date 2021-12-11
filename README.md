@@ -30,62 +30,131 @@ func checkMac(macSecret: secret(string), message: string, mac: string) -> bool {
     return mac == computedMac
 }
 
-func computeMac(macSecret: secret(string), message:string) -> string {
+func computeMac(macSecret: string, message:string) -> string {
   // A popular MAC algorithm.
   return hmacSha256(macSecret, message)
 }
 ```
 
 Can you see the potential security flaw?  Suppose the attacker can tell how long
-it takes for the comparison `mac == computedMac` to run.  If the first byte of
-an attacker-chosen `mac` is wrong for the attacker-chosen `message`, the
-loop terminates after just one comparison.  With 256 attempts, the attacker can
-find the first byte of the expected MAC for the attacker-controlled `message`.
-Repeating this process, the attacker can forge the entire MAC.
+it takes for the `mac == computedMac` to run.  If the first byte of an
+attacker-chosen `mac` is wrong for the attacker-chosen `message`, the loop
+terminates after just one comparison.  With 256 attempts, the attacker can find
+the first byte of the expected MAC for the attacker-controlled `message`.
+Repeating this process, the attacker can forge an entire MAC.
 
-Rune is not affected, because it sees that `macSecret` is secret, and thus the
-result of `hmacSha256` is secret.  The string comparison operator when either
-operand is secret will be executed in constant time, revealing no timing
-information to the attacker.  Care must still be taken in Rune, but many common
-mistakes like this are detected by the compiler.
+Users of Rune are protected, because the compiler sees that `macSecret` is
+secret, and thus the result of `hmacSha256` is secret.  The string comparison
+operator, when either operand is secret, will run in constant time, revealing no
+timing information to the attacker.  Care must still be taken in Rune, but many
+common mistakes like this are detected by the compiler, and either fixed or
+flagged as an error.
 
-As for the speed of Rune's memory management, the `binarytree.rn` benchmark begins
-to show what is possible.  In simplified form:
+As for the speed and safety of Rune's memory management, consider a simple
+`Human` class.  This can be tricky to model in some languages, yet is trivial in
+both SQL and Rune.
 
 ```
-class Node(self) {
-}
-
-relation OneToOne Node:"ParentLeft" Node:"Left" cascade
-relation OneToOne Node:"ParentRight" Node:"Right" cascade
-
-func makeTree(depth: Uint) -> Node {
-  node = Node()
-  if depth != 0 {
-    left = makeTree(depth - 1)
-    right = makeTree(depth - 1)
-    node.insertLeftNode(left)
-    node.insertRightNode(right)
+class Human(self, name: string, mother: Human = null, father: Human = null) {
+  self.name = name
+  if !isnull(mother) {
+    mother.appendMotheredHuman(self)
   }
-  return node
+  if !isnull(father) {
+    father.appendFatheredHuman(self)
+  }
+
+  func printFamilyTree(self, level: u32) {
+    for i in range(level) {
+      print "    "
+    }
+    println self.name
+    for child in self.motheredHumans() {
+      child.printFamilyTree(level + 1)
+    }
+    for child in self.fatheredHumans() {
+      child.printFamilyTree(level + 1)
+    }
+  }
 }
+
+relation DoublyLinked Human:"Mother" Human:"Mothered" cascade
+relation DoublyLinked Human:"Fater" Human:"Fathered" cascade
+
+adam = Human("Adam")
+eve = Human("Eve")
+cain = Human("Cain", eve, adam)
+abel = Human("Abel", eve, adam)
+alice = Human("Alice", eve, adam)
+bob = Human ("Bob", eve, adam)
+malory = Human("Malory", alice, abel)
+abel.destroy()
+adam.printFamilyTree(0u32)
+eve.printFamilyTree(0u32)
 ```
 
-The `relation` statements give the Rune compiler critical hints for memory
-optmization.  It figures out not to reference count objects already in a
-cascade-delete relationship (all Nodes but the root).  It also auto-generates a
-safe destructor: Rune programmers never write destructors, removing this footgun
-from the language.  Consider what happens in C++ if we call delete on a child
-node, without manually maintaining up back-pointers to parent nodes?
+When run, this prints:
 
-This code already runs faster than any other single-threaded result in the
-[Benchmark
+```
+Adam
+    Cain
+    Alice
+    Bob
+Eve
+    Cain
+    Alice
+    Bob
+```
+
+Note that Abel and Malory are not listed.  This is because we didn't just kill
+Abel, we destroyed Abel, and this caused all of Abel's children to be
+recursively destroyed.
+
+Relation statements are similar to columns in SQL tables.  A table with a Mother
+and Father column has two many-to-one relations in a database.
+
+Relation statements give the Rune compiler critical hints for memory
+optimization.  Objects which the compiler can prove are always in cascade-delete
+relationships do not need to be reference counted.  The relation statements also
+inform the compiler to update Node's destructor to recursively destroy children.
+**Rune programmers never write destructors**, removing this footgun from the
+language.
+
+To understand why Rune's generated SoA code is so efficient, consider the arrays
+of properties created for the Human example above:
+
+
+```
+  nextFree = [0u32]
+  motherHuman = [null(human.Human(string, null, null))]
+  prevHumanMotheredHuman = [null(human.Human(string, null, null))]
+  nextHumanMotheredHuman = [null(human.Human(string, null, null))]
+  firstMotheredHuman = [null(human.Human(string, null, null))]
+  lastMotheredHuman = [null(human.Human(string, null, null))]
+  faterHuman = [null(human.Human(string, null, null))]
+  prevHumanFatheredHuman = [null(human.Human(string, null, null))]
+  nextHumanFatheredHuman = [null(human.Human(string, null, null))]
+  firstFatheredHuman = [null(human.Human(string, null, null))]
+  lastFatheredHuman = [null(human.Human(string, null, null))]
+  name = [""]
+```
+
+A total of 12 arrays are allocated for the Human class in SoA memory layout.  In
+`printFamilyTree`, we only access 5 of them.  In AoS memory layout, all 12
+fields would be loaded into cache during the tree traversal, and all fields
+would be 64 bits on a 64-bit machine.  In Rune, only the string references are
+64-bits by default.  As a result, **Rune loads only 25% as much data into
+cache** during the traversal, improving memory load times, while simultaneously
+improving cache hit rates.
+
+This is why Rune's binarytree.rn code already runs faster than any other
+single-threaded result in the [Benchmark
 Games](https://benchmarksgame-team.pages.debian.net/benchmarksgame/index.html).
 (Rune is not yet multi-threaded).  The only close competitor is C++, where the
 author uses the little-known `MemoryPool` class from the `<memory>` library.
-Not only is Rune's SoA memory layout faster, due to improved cache performance,
-its solution is generic: we can create/destroy Node objects arbitrarily, unlike
-the C++ benchmark.  When completed, we expect Rune to win most memory-intensive
+Not only is Rune's SoA memory layout faster, but its solution is more generic:
+we can create/destroy Node objects arbitrarily, unlike the C++ benchmark based
+on `MemoryPool`.  When completed, we expect Rune to win most memory-intensive
 benchmarks.
 
 For more information about Rune, see additional documentation in
