@@ -129,17 +129,17 @@ of properties created for the Human example above:
 
 
 ```
-  nextFree = [0u32]
-  motherHuman = [null(human.Human(string, null, null))]
-  prevHumanMotheredHuman = [null(human.Human(string, null, null))]
-  nextHumanMotheredHuman = [null(human.Human(string, null, null))]
-  firstMotheredHuman = [null(human.Human(string, null, null))]
-  lastMotheredHuman = [null(human.Human(string, null, null))]
-  faterHuman = [null(human.Human(string, null, null))]
-  prevHumanFatheredHuman = [null(human.Human(string, null, null))]
-  nextHumanFatheredHuman = [null(human.Human(string, null, null))]
-  firstFatheredHuman = [null(human.Human(string, null, null))]
-  lastFatheredHuman = [null(human.Human(string, null, null))]
+  nextFree = [null(Human)]
+  motherHuman = [null(Human)]
+  prevHumanMotheredHuman = [null(Human)]
+  nextHumanMotheredHuman = [null(Human)]
+  firstMotheredHuman = [hull(Human)]
+  lastMotheredHuman = [hull(Human)]
+  faterHuman = [hull(Human)]
+  prevHumanFatheredHuman = [hull(Human)]
+  nextHumanFatheredHuman = [hull(Human)]
+  firstFatheredHuman = [hull(Human)]
+  lastFatheredHuman = [hull(Human)]
   name = [""]
 ```
 
