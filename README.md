@@ -19,6 +19,9 @@ due to its Structure-of-Array
 \([SoA](https://en.wikipedia.org/wiki/AoS_and_SoA#:~:text=AoS%20vs.,AoS%20case%20easier%20to%20handle.)\)
 memory management.
 
+In short, Rune aims to be the safest language available, while being similar to
+Python, yet faster than C and C++ for most memory-intensive applications.
+
 Consider the following example for treatment of secrets:
 
 ```
