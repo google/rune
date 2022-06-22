@@ -1,7 +1,5 @@
-</head>
-# Rune for Python Programmers
-<!---
-_A faster, safer, and more productive systems programming language_
+# ᚣ Rune for Python Programmers
+_Safer code for secure enclaves_
 
 Rune aims to provide much of the power of Python in a fast systems-programming
 language designed for safety and speed.  Rune tries to offer much of the
@@ -1041,4 +1039,3 @@ build several fundamental crypto primitives such as collision-resistant hash
 functions, and also I teach how implement a basic Diffie-Hellman public key
 exchange.  If you write your crypto in Rune, you’ll likely get the constant-time
 part right.
--->
