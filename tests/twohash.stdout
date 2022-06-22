@@ -1,0 +1,7 @@
+n1 -> n2
+n2 -> n1 n3
+n3 ->
+After destroying n2's out edges:
+n1 -> n2
+n2 ->
+n3 ->
