@@ -22,14 +22,6 @@ class Complex(self, <x>, <y>) {
     self.y = y
 }
 
-// Non-constant time, so this will generate an error if passed a secret.
-func abs(a) {
-   if a >= <a>0 {
-     return a;
-   }
-   return -a;
-}
-
 func  manhattanDistance(object) {
     return abs(object.x) + abs(object.y)
 }

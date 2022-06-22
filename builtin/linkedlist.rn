@@ -13,7 +13,10 @@
 // limitations under the License.
 
 generator LinkedList(A: Class, B: Class, cascadeDelete:bool = false,
-    labelA: string = "", labelB: string = "") {
+    labelA: string = "", labelB: string = "", pluralB = "") {
+  if pluralB == "" {
+    pluralB = "$B_s"
+  }
   prependcode A {
     self.first$labelB$B = null(B)
 
@@ -30,7 +33,7 @@ generator LinkedList(A: Class, B: Class, cascadeDelete:bool = false,
     }
 
     func findPrev$labelB$B(self, child: B) {
-      for prevChild in self.$labelB$B_s() {
+      for prevChild in self.$labelB$pluralB() {
         if prevChild.next$A$labelB$B == child {
           return prevChild
         }
@@ -72,9 +75,9 @@ generator LinkedList(A: Class, B: Class, cascadeDelete:bool = false,
       unref child
     }
 
-    func count$labelB$B_s(self) {
+    func count$labelB$pluralB(self) {
       count = 0
-      for child in self.$labelB$B_s() {
+      for child in self.$labelB$pluralB() {
         count += 1
       }
       return count
@@ -82,7 +85,7 @@ generator LinkedList(A: Class, B: Class, cascadeDelete:bool = false,
 
     func index$labelB$B(self, index) {
       count = 0
-      for child in self.$labelB$B_s() {
+      for child in self.$labelB$pluralB() {
         if count == index {
           return child
         }
@@ -91,13 +94,13 @@ generator LinkedList(A: Class, B: Class, cascadeDelete:bool = false,
       return null(child)
     }
 
-    iterator $labelB$B_s(self) {
+    iterator $labelB$pluralB(self) {
       for child = self.first$labelB$B, !isnull(child), child = child.next$A$labelB$B {
         yield child
       }
     }
 
-    iterator safe$labelB$B_s(self) {
+    iterator safe$labelB$pluralB(self) {
       child = self.first$labelB$B
       while !isnull(child) {
         next$A$labelB$B = child.next$A$labelB$B

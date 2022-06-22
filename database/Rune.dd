@@ -166,7 +166,7 @@ enum VariableType
 
 enum FunctionType
   DE_FUNC_PLAIN  // Includes methods.
-  DE_FUNC_OPERATOR  // Operatored operator.
+  DE_FUNC_OPERATOR  // Overloaded operator.
   DE_FUNC_CONSTRUCTOR
   DE_FUNC_DESTRUCTOR
   DE_FUNC_PACKAGE  // Initializes all modules in the package.

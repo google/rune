@@ -75,18 +75,18 @@ func hashValue(value) -> u64 {
 generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
     labelA: string = "", labelB: string = "", keyField: string = "hash", pluralB: string = "") {
   if pluralB == "" {
-    pluralB = labelB + "s";
+    pluralB = "$B_s";
   }
   prependcode A {
-    self.table = arrayof(B)
-    self.numEntries = 0
+    self.$labelB$B_Table = arrayof(B)
+    self.num$labelB$pluralB = 0
 
     func find$labelB$B(self, key) {
-      if self.table.length() == 0 {
-        return null(self.table[u64])
+      if self.$labelB$B_Table.length() == 0 {
+        return null(self.$labelB$B_Table[u64])
       }
-      hash = hashValue(key) & <u64>(self.table.length() - 1)
-      entry = self.table[hash]
+      hash = hashValue(key) & <u64>(self.$labelB$B_Table.length() - 1)
+      entry = self.$labelB$B_Table[hash]
       while !isnull(entry) {
         if key == entry.$keyField {
           return entry
@@ -97,37 +97,39 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
     }
 
     func insert$labelB$B(self, entry) {
-      if self.numEntries == self.table.length() {
-        if self.table.length() == 0 {
-          self.table.resize(1)
+      if self.num$labelB$pluralB == self.$labelB$B_Table.length() {
+        if self.$labelB$B_Table.length() == 0 {
+          self.$labelB$B_Table.resize(1)
         } else {
           // Double the size of the hash table.
-          self.table.resize(self.table.length() << 1)
+          self.$labelB$B_Table.resize(self.$labelB$B_Table.length() << 1)
         }
-        for i in range(self.numEntries, self.table.length()) {
-          self.table[i] = null(entry)
+        for i in range(self.num$labelB$pluralB, self.$labelB$B_Table.length()) {
+          self.$labelB$B_Table[i] = null(entry)
         }
       }
-      hash = hashValue(entry.$keyField) & <u64>(self.table.length() - 1)
-      prevEntry = self.table[hash]
+      hash = hashValue(entry.$keyField) & <u64>(self.$labelB$B_Table.length() - 1)
+      prevEntry = self.$labelB$B_Table[hash]
       entry.nextHashed$A$labelB$B = prevEntry
-      self.table[hash] = entry
-      self.numEntries += 1
+      self.$labelB$B_Table[hash] = entry
+      self.num$labelB$pluralB += 1
+      entry.$labelA$A = self
       ref entry
     }
 
     func remove$labelB$B(self, child) {
-      hash = hashValue(child.$keyField) & <u64>(self.table.length() - 1)
-      entry = self.table[hash]
+      hash = hashValue(child.$keyField) & <u64>(self.$labelB$B_Table.length() - 1)
+      entry = self.$labelB$B_Table[hash]
       prev = null(entry)
       while !isnull(entry) {
         if entry == child {
           if isnull(prev) {
-            self.table[hash] = child.nextHashed$A$labelB$B
+            self.$labelB$B_Table[hash] = child.nextHashed$A$labelB$B
           } else {
             prev.nextHashed$A$labelB$B = child.nextHashed$A$labelB$B
           }
           child.nextHashed$A$labelB$B = null(child)
+          child.$labelA$A = null(self)
           unref child
           return
         }
@@ -138,11 +140,22 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
     }
 
     iterator $labelB$pluralB(self) {
-      for i in range(self.table.length()) {
-        entry = self.table[i]
+      for i in range(self.$labelB$B_Table.length()) {
+        entry = self.$labelB$B_Table[i]
         while !isnull(entry) {
           yield entry
           entry = entry.nextHashed$A$labelB$B
+        }
+      }
+    }
+
+    iterator safe$labelB$pluralB(self) {
+      for i in range(self.$labelB$B_Table.length()) {
+        entry = self.$labelB$B_Table[i]
+        while !isnull(entry) {
+          nextEntry = entry.nextHashed$A$labelB$B
+          yield entry
+          entry = nextEntry
         }
       }
     }
@@ -152,8 +165,8 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
     // If this is a cascade-delete relationship, destroy children in
     // the destructor.
     appendcode A.destroy {
-      for x$labelB$B in range(self.table.length()) {
-        $labelB$B_Entry = self.table[x$labelB$B]
+      for x$labelB$B in range(self.$labelB$B_Table.length()) {
+        $labelB$B_Entry = self.$labelB$B_Table[x$labelB$B]
         while !isnull($labelB$B_Entry) {
           next$labelB$B_Entry = $labelB$B_Entry.nextHashed$A$labelB$B
           $labelB$B_Entry.nextHashed$A$labelB$B = null($labelB$B_Entry)
@@ -161,20 +174,20 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
           $labelB$B_Entry.destroy()
           $labelB$B_Entry = next$labelB$B_Entry
         }
-        self.table[x$labelB$B] = null($labelB$B_Entry)
+        self.$labelB$B_Table[x$labelB$B] = null($labelB$B_Entry)
       }
     }
   } else {
     appendcode A.destroy {
-      for x$labelB$B in range(self.table.length()) {
-        $labelB$B_Entry = self.table[x$labelB$B]
+      for x$labelB$B in range(self.$labelB$B_Table.length()) {
+        $labelB$B_Entry = self.$labelB$B_Table[x$labelB$B]
         while !isnull($labelB$B_Entry) {
           next$labelB$B_Entry = $labelB$B_Entry.nextHashed$A$labelB$B
           $labelB$B_Entry.nextHashed$A$labelB$B = null($labelB$B_Entry)
           $labelB$B_Entry.$labelA$A = null(self)
           $labelB$B_Entry = next$labelB$B_Entry
         }
-        self.table[x$labelB$B] = null($labelB$B_Entry)
+        self.$labelB$B_Table[x$labelB$B] = null($labelB$B_Entry)
       }
     }
   }

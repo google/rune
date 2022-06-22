@@ -4165,6 +4165,7 @@ void llGenerateLLVMAssemblyCode(char* fileName, bool debugMode) {
           snapshot = deSaveBlockSnapshot(block);
         }
         deBindBlock(block, signature, true);
+        deResetString();
         llDeclareBlockGlobals(block);
         generateBlockAssemblyCode(block, signature);
         flushStringBuffer();

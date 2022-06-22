@@ -7,17 +7,17 @@ This is not an officially supported Google product.
 cool new security and efficiency features of Rune, but, for now, it is not
 recommended for any production use case.**
 
-Rune is a systems programming language designed for security-sensitive
-applications. Rune can help you avoid common security flaws that often arise
-when using traditional systems languages such as C and C++. Its primary goal is
-providing safety features for hardware-enforced private computation such as
-[sealed computation](https://arxiv.org/abs/1906.07841) or [secure
-enclaves](https://www.infosecurity-magazine.com/opinions/enclaves-security-world/).
-Rune's most notable security feature is constant-time processing of secrets.
-Rune also aims to be faster than C++ for most memory-intensive applications,
-due to its Structure-of-Array
+Rune is a Python-inspired efficient systems programming language designed to
+interact easily with C and C++ libraries.  Rune's most notable security feature
+is constant-time processing of secrets.  Rune aims to be faster than C++ for
+most memory-intensive applications, due to its Structure-of-Array
 \([SoA](https://en.wikipedia.org/wiki/AoS_and_SoA#:~:text=AoS%20vs.,AoS%20case%20easier%20to%20handle.)\)
 memory management.
+
+Additional documentation:
+
+* [Rune Overview](docs/index.md)
+* [Rune for Python programmers](docs/rune4python.md)
 
 Consider the following example for treatment of secrets:
 
@@ -160,9 +160,6 @@ Not only is Rune's SoA memory layout faster, but its solution is more generic:
 we can create/destroy Node objects arbitrarily, unlike the C++ benchmark based
 on `MemoryPool`.  When completed, we expect Rune to win most memory-intensive
 benchmarks.
-
-For more information about Rune, see additional documentation in
-[g3doc](g3doc/index.md).
 
 ## Compiling the Rune compiler:
 

@@ -216,6 +216,105 @@ static deValue evaluateNegateExpression(deBlock scopeBlock, deExpression express
   return deValueNull;  // Cannot negate this type.
 }
 
+// Expand a string from the original identifier string, which may contain $ and
+// _.  The $ characters until either an _ or the end of the identifier, must
+// match an identifier in scope.  The underscores do not become part of the
+// identifier.  // For example:
+//
+//   first$childLabel$childClass = null(self)
+//   $parentLabel$parentClass = parent
+//   func $class_Create()  // For example, myclassCreate
+//
+// If an identifier of the same name already existed before running the current
+// generator, the identifier is uniquified by appending a number, such as
+// child1, if child already exists.
+static char *expandText(deBlock scopeBlock, char *oldText, deLine line) {
+  char *buf = utAllocString(oldText);
+  char *p = buf;
+  char *q = p;
+  deResetString();
+  bool isIdent = false;
+  bool hasIdent = false;
+  bool upperCase = false;
+  char c = *q++;
+  bool firstTime = true;
+  while (true) {
+    if ((!firstTime && c == '_') || (c != '_' && !isalnum(c) && c <= '~')) {
+      // Found end of current sub-ident.
+      *--q = '\0';
+      if (p < q) {
+        if (!isIdent) {
+          deAddString(p);
+        } else {
+          hasIdent = true;
+          if (!strcmp(p, "L")) {
+            upperCase = true;
+          } else {
+            utSym name = utSymCreate(p);
+            deIdent ident = deBlockFindIdent(scopeBlock, name);
+            if (ident == deIdentNull ||
+                deIdentGetType(ident) != DE_IDENT_VARIABLE) {
+              deError(line, "Identifier %s not found", utSymGetName(name));
+            }
+            deValue value = deVariableGetValue(deIdentGetVariable(ident));
+            utAssert(value != deValueNull);
+            utSym valueName = deValueGetName(value);
+            if (valueName == utSymNull) {
+              deError(line, "Identifier %s cannot be included as a string",
+                      utSymGetName(name));
+            }
+            uint32 prevPos = deStringPos;
+            deAddString(utSymGetName(valueName));
+            if (upperCase) {
+              upperCase = false;
+              deStringVal[prevPos] = toupper(deStringVal[prevPos]);
+            } else {
+              // Capitalize first letter if this is not the start of the identifier.
+              if (prevPos == 0) {
+                deStringVal[prevPos] = tolower(deStringVal[prevPos]);
+              } else {
+                deStringVal[prevPos] = toupper(deStringVal[prevPos]);
+              }
+            }
+          }
+        }
+      }
+      *q++ = c;
+      if (c == '\0') {
+        utFree(buf);
+        if (!hasIdent) {
+          return oldText;
+        }
+        return deStringVal;
+      }
+      p = q;
+      isIdent = c == '$';
+      firstTime = false;
+    }
+    c = *q++;
+  }
+  return NULL;  // Dummy return.
+}
+
+// Expand a symbol.
+static utSym expandSym(deBlock scopeBlock, utSym oldSym, deLine line) {
+  char *oldName = utSymGetName(oldSym);
+  char *result = expandText(scopeBlock, oldName, line);
+  if (result == oldName) {
+    return oldSym;
+  }
+  return utSymCreate(result);
+}
+
+// Expand a string.
+static deString expandString(deBlock scopeBlock, deString string, deLine line) {
+  char *result = expandText(scopeBlock, deStringGetCstr(string), line);
+  if (!strcmp(result, deStringGetCstr(string))) {
+    return string;
+  }
+  return deCStringCreate(result);
+}
+
 // Evaluate the expression.  This is used for both code generation, and constant
 // propagation.
 deValue deEvaluateExpression(deBlock scopeBlock, deExpression expression, deBigint modulus) {
@@ -228,8 +327,11 @@ deValue deEvaluateExpression(deBlock scopeBlock, deExpression expression, deBigi
       return deFloatValueCreate(deCopyFloat(deExpressionGetFloat(expression)));
     case DE_EXPR_BOOL:
       return deBoolValueCreate(deExpressionBoolVal(expression));
-    case DE_EXPR_STRING:
-      return deStringValueCreate(deExpressionGetString(expression));
+    case DE_EXPR_STRING: {
+      deString oldString = deExpressionGetString(expression);
+      deString newString = expandString(scopeBlock, oldString, deExpressionGetLine(expression));
+      return deStringValueCreate(newString);
+    }
     case DE_EXPR_IDENT:
       return evaluateIdentExpression(scopeBlock, expression, modulus);
     case DE_EXPR_DOT:
@@ -297,86 +399,6 @@ static deBlock findAppendStatementDestBlock(deBlock scopeBlock, deStatement stat
   return deBlockNull;  // Dummy return.
 }
 
-// Expand an identifier from the original identifier string, which may contain $
-// and _.  The $ characters until either an _ or the end of the identifier, must
-// match an identifier in scope.  The underscores do not become part of the
-// identifier.  // For example:
-//
-//   first$childLabel$childClass = null(self)
-//   $parentLabel$parentClass = parent
-//   func $class_Create()  // For example, myclassCreate
-//
-// If an identifier of the same name already existed before running the current
-// generator, the identifier is uniquified by appending a number, such as
-// child1, if child already exists.
-static utSym expandSym(deBlock scopeBlock, utSym oldSym, deLine line) {
-  char *buf = utAllocString(utSymGetName(oldSym));
-  char *p = buf;
-  char *q = p;
-  deResetString();
-  bool isIdent = false;
-  bool hasIdent = false;
-  bool upperCase = false;
-  char c = *q++;
-  bool firstTime = true;
-  while (true) {
-    if ((!firstTime && c == '_') || c == '$' || c == '\0') {
-      // Found end of current sub-ident.
-      *--q = '\0';
-      if (p < q) {
-        if (!isIdent) {
-          deAddString(p);
-        } else {
-          hasIdent = true;
-          if (!strcmp(p, "L")) {
-            upperCase = true;
-          } else {
-            utSym name = utSymCreate(p);
-            deIdent ident = deBlockFindIdent(scopeBlock, name);
-            if (ident == deIdentNull ||
-                deIdentGetType(ident) != DE_IDENT_VARIABLE) {
-              deError(line, "Identifier %s not found", utSymGetName(name));
-            }
-            deValue value = deVariableGetValue(deIdentGetVariable(ident));
-            utAssert(value != deValueNull);
-            utSym valueName = deValueGetName(value);
-            if (valueName == utSymNull) {
-              deError(line, "Identifier %s cannot be included as a string",
-                      utSymGetName(name));
-            }
-            uint32 prevPos = deStringPos;
-            deAddString(utSymGetName(valueName));
-            if (upperCase) {
-              upperCase = false;
-              deStringVal[prevPos] = toupper(deStringVal[prevPos]);
-            } else {
-              // Capitalize first letter if this is not the start of the identifier.
-              if (prevPos == 0) {
-                deStringVal[prevPos] = tolower(deStringVal[prevPos]);
-              } else {
-                deStringVal[prevPos] = toupper(deStringVal[prevPos]);
-              }
-            }
-          }
-        }
-      }
-      *q++ = c;
-      if (c == '\0') {
-        utFree(buf);
-        if (!hasIdent) {
-          return oldSym;
-        }
-        return utSymCreate(deStringVal);
-      }
-      p = q;
-      isIdent = c == '$';
-      firstTime = false;
-    }
-    c = *q++;
-  }
-  return utSymNull;  // Dummy return.
-}
-
 // Expand an identifier's symbol.
 static void expandIdent(deBlock scopeBlock, deIdent ident) {
   utSym oldSym = deIdentGetSym(ident);
@@ -389,9 +411,10 @@ static void expandIdent(deBlock scopeBlock, deIdent ident) {
   }
 }
 
-// Expand all identifier expressions in the expression tree.
+// Expand all identifier and string expressions in the expression tree.
 static void expandExpressionIdentifiers(deBlock scopeBlock, deExpression expression) {
-  if (deExpressionGetType(expression) == DE_EXPR_IDENT) {
+  deExpressionType type = deExpressionGetType(expression);
+  if (type == DE_EXPR_IDENT) {
     utSym oldSym = deExpressionGetName(expression);
     deIdent ident = deBlockFindIdent(scopeBlock, oldSym);
     utSym newSym;
@@ -402,6 +425,10 @@ static void expandExpressionIdentifiers(deBlock scopeBlock, deExpression express
       newSym = expandSym(scopeBlock, oldSym, deExpressionGetLine(expression));
     }
     deExpressionSetName(expression, newSym);
+  } else if (type == DE_EXPR_STRING) {
+    deString oldString = deExpressionGetString(expression);
+    deString newString = expandString(scopeBlock, oldString, deExpressionGetLine(expression));
+    deExpressionSetString(expression, newString);
   }
   deExpression child;
   deForeachExpressionExpression(expression, child) {
@@ -409,7 +436,7 @@ static void expandExpressionIdentifiers(deBlock scopeBlock, deExpression express
   } deEndExpressionExpression;
 }
 
-// Expand identifiers in the entire block.
+// Expand identifiers and strings in the entire block.
 static void expandBlockIdentifiers(deBlock scopeBlock, deBlock block) {
   // This handles tclasses, functions, and variables.
   deIdent ident;

@@ -14,11 +14,9 @@
 
 generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
     labelA: string = "", labelB: string = "", pluralB: string = "") {
-  /*
   if pluralB == "" {
-    pluralB = labelB + B + "s"
+    pluralB = "$B_s"
   }
-  */
   prependcode A {
     self.first$labelB$B = null(B)
     self.last$labelB$B = null(B)
@@ -106,9 +104,9 @@ generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
       unref child
     }
 
-    func count$labelB$B_s(self) {
+    func count$labelB$pluralB(self) {
       count = 0
-      for child in self.$labelB$B_s() {
+      for child in self.$labelB$pluralB() {
         count += 1
       }
       return count
@@ -116,7 +114,7 @@ generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
 
     func index$labelB$B(self, index) {
       count = 0
-      for child in self.$labelB$B_s() {
+      for child in self.$labelB$pluralB() {
         if count == index {
           return child
         }
@@ -125,19 +123,19 @@ generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
       return null(child)
     }
 
-    iterator $labelB$B_s(self) {
+    iterator $labelB$pluralB(self) {
       for child = self.first$labelB$B, !isnull(child), child = child.next$A$labelB$B {
         yield child
       }
     }
 
-    iterator reverse$labelB$B_s(self) {
+    iterator reverse$labelB$pluralB(self) {
       for child = self.last$labelB$B, !isnull(child), child = child.prev$A$labelB$B {
         yield child
       }
     }
 
-    iterator safe$labelB$B_s(self) {
+    iterator safe$labelB$pluralB(self) {
       child = self.first$labelB$B
       while !isnull(child) {
         next$A$labelB$B = child.next$A$labelB$B
@@ -146,7 +144,7 @@ generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
       }
     }
 
-    iterator safeReverse$labelB$B_s(self) {
+    iterator safeReverse$labelB$pluralB(self) {
       child = self.last$labelB$B
       while !isnull(child) {
         prevA$labelB$B = child.prev$A$labelB$B
@@ -171,7 +169,7 @@ generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
       do {
         child$labelB$B = self.first$labelB$B
       } while !isnull(child$labelB$B) {
-        self.remove(child$labelB$B)
+        self.remove$labelB$B(child$labelB$B)
       }
     }
   }

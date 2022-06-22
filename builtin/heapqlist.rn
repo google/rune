@@ -13,7 +13,10 @@
 // limitations under the License.
 
 generator HeapqList(A: Class, B: Class, cascadeDelete:bool = false,
-    labelA: string = "", labelB: string = "", ascend: bool = true) {
+    labelA: string = "", labelB: string = "", ascend: bool = true, pluralB = "") {
+  if pluralB == "" {
+    pluralB = "$B_s"
+  }
   if (ascend) {
     prependcode A {
       func _compare$labelB$B(self, child1: B, child2: B) -> bool {
@@ -28,33 +31,33 @@ generator HeapqList(A: Class, B: Class, cascadeDelete:bool = false,
     }
   }
   prependcode A {
-    self.$labelB$B_s = arrayof(B)
+    self.$labelB$pluralB = arrayof(B)
 
     func _swap$labelB$B(self, index1: u32, index2: u32) {
-      child1 = self.$labelB$B_s[index1]
-      child2 = self.$labelB$B_s[index2]
-      self.$labelB$B_s[index1] = child2
-      self.$labelB$B_s[index2] = child1
+      child1 = self.$labelB$pluralB[index1]
+      child2 = self.$labelB$pluralB[index2]
+      self.$labelB$pluralB[index1] = child2
+      self.$labelB$pluralB[index2] = child1
       child1.$labelA$A_Index = index2
       child2.$labelA$A_Index = index1
     }
 
     func _heapqDown$labelB$B(self, startX: u32) {
-      length = <u32>self.$labelB$B_s.length()
+      length = <u32>self.$labelB$pluralB.length()
       x = startX
       do {
         bestIndex = x
-        best = self.$labelB$B_s[x]
+        best = self.$labelB$pluralB[x]
         leftIndex = (x << 1u32) + 1u32
         if leftIndex < length {
-          left = self.$labelB$B_s[leftIndex]
+          left = self.$labelB$pluralB[leftIndex]
           if self._compare$labelB$B(left, best) {
             best = left
             bestIndex = leftIndex
           }
           rightIndex = leftIndex + 1u32
           if rightIndex < length {
-            right = self.$labelB$B_s[rightIndex]
+            right = self.$labelB$pluralB[rightIndex]
             if self._compare$labelB$B(right, best) {
               best = right
               bestIndex = rightIndex
@@ -71,40 +74,40 @@ generator HeapqList(A: Class, B: Class, cascadeDelete:bool = false,
       x = startX
       do {
         parentIndex = (x - 1u32) >> 1
-      } while x > 0u32 && self._compare$labelB$B(self.$labelB$B_s[x], self.$labelB$B_s[parentIndex]) {
+      } while x > 0u32 && self._compare$labelB$B(self.$labelB$pluralB[x], self.$labelB$pluralB[parentIndex]) {
         self._swap$labelB$B(parentIndex, x)
         x = parentIndex
       }
     }
 
     func peek$labelB$B(self) {
-      if self.$labelB$B_s.length() != 0 {
-        return null(self.$labelB$B_s[0])
+      if self.$labelB$pluralB.length() != 0 {
+        return null(self.$labelB$pluralB[0])
       }
-      return self.$labelB$B_s[0]
+      return self.$labelB$pluralB[0]
     }
 
     func _pop$labelB$B(self, index: u32 = 0u32) {
-      retval = self.$labelB$B_s[index]
-      newNum = <u32>self.$labelB$B_s.length() - 1u32
+      retval = self.$labelB$pluralB[index]
+      newNum = <u32>self.$labelB$pluralB.length() - 1u32
       retval.$labelA$A = null(self)
       retval.$labelA$A_Index = 0xffffffffu32
       if newNum > index {
-        cur = self.$labelB$B_s[newNum]
-        self.$labelB$B_s[index] = cur
+        cur = self.$labelB$pluralB[newNum]
+        self.$labelB$pluralB[index] = cur
         cur.$labelA$A_Index = index
-        self.$labelB$B_s.resize(newNum)
+        self.$labelB$pluralB.resize(newNum)
         self._heapqDown$labelB$B(index)
       } else {
-        self.$labelB$B_s.resize(newNum)
+        self.$labelB$pluralB.resize(newNum)
       }
       unref retval
       return retval
     }
 
     func pop$labelB$B(self) {
-      if self.$labelB$B_s.length() == 0 {
-        return null(self.$labelB$B_s[0])
+      if self.$labelB$pluralB.length() == 0 {
+        return null(self.$labelB$pluralB[0])
       }
       return self._pop$labelB$B(0u32)
     }
@@ -116,8 +119,8 @@ generator HeapqList(A: Class, B: Class, cascadeDelete:bool = false,
     }
 
     func push$labelB$B(self, child: B) {
-      pos = <u32>self.$labelB$B_s.length()
-      self.$labelB$B_s.append(child)
+      pos = <u32>self.$labelB$pluralB.length()
+      self.$labelB$pluralB.append(child)
       child.$labelA$A_Index = pos
       child.$labelA$A = self
       self._heapqUp$labelB$B(pos)
@@ -126,7 +129,7 @@ generator HeapqList(A: Class, B: Class, cascadeDelete:bool = false,
     func remove$labelB$B(self, child: B) {
       debug {
         if child.$labelA$A != self {
-          throw "remove$labelB$B: Object not owned by me"
+          throw "remove$labelB$B_: Object not owned by me"
         }
       }
       self._pop$labelB$B(child.$labelA$A_Index)

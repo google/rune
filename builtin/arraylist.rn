@@ -13,27 +13,30 @@
 // limitations under the License.
 
 generator ArrayList(A: Class, B: Class, cascadeDelete:bool = false,
-    labelA: string = "", labelB: string = "") {
+    labelA: string = "", labelB: string = "", pluralB = "") {
+  if pluralB == "" {
+    pluralB = "$B_s"
+  }
   prependcode A {
-    self.$labelB$B_s = arrayof(B)
+    self.$labelB$pluralB = arrayof(B)
 
-    func resize$labelB$B_s(self, num$labelB$B_s: Uint) {
-      length = self.$labelB$B_s.length()
+    func resize$labelB$pluralB(self, num$labelB$pluralB: Uint) {
+      length = self.$labelB$pluralB.length()
       if num$labelB$B < length {
         // Remove children that fall off the end.
-        for i in range(num$labelB$B_s, length) {
-          child = self.$labelB$B_s[i]
+        for i in range(num$labelB$pluralB, length) {
+          child = self.$labelB$pluralB[i]
           if !isnull(child) {
             self.remove$labelB$B(child)
           }
         }
       } else {
         // Initialize the new values to null.
-        for i in range(length, num$labelB$B_s) {
-          self.$labelB$B_s[i] = null(B)
+        for i in range(length, num$labelB$pluralB) {
+          self.$labelB$pluralB[i] = null(B)
         }
       }
-      self.$labelB$B_s.resize(num$labelB$B_s)
+      self.$labelB$pluralB.resize(num$labelB$pluralB)
     }
 
     func append$labelB$B(self, child: B) {
@@ -42,8 +45,8 @@ generator ArrayList(A: Class, B: Class, cascadeDelete:bool = false,
           throw "append$labelB$B: Object is already in a relation"
         }
       }
-      child.$labelA$A_Index = <u32>self.$labelB$B_s.length()
-      self.$labelB$B_s.append(child)
+      child.$labelA$A_Index = <u32>self.$labelB$pluralB.length()
+      self.$labelB$pluralB.append(child)
       child.$labelA$A = self
       ref child
     }
@@ -54,7 +57,7 @@ generator ArrayList(A: Class, B: Class, cascadeDelete:bool = false,
           throw "remove$labelB$B: Object not owned by me"
         }
       }
-      self.$labelB$B_s[child.$labelA$A_Index] = null(child)
+      self.$labelB$pluralB[child.$labelA$A_Index] = null(child)
       child.$labelA$A_Index = 0xffffffffu32
       child.$labelA$A = null(self)
       unref child
@@ -64,8 +67,8 @@ generator ArrayList(A: Class, B: Class, cascadeDelete:bool = false,
   if cascadeDelete {
     // If this is a cascade-delete relationship, destroy children in the destructor.
     appendcode A.destroy {
-      for i in range(self.$labelB$B_s.length()) {
-        child$labelB$B = self.$labelB$B_s[i]
+      for i in range(self.$labelB$pluralB.length()) {
+        child$labelB$B = self.$labelB$pluralB[i]
         if !isnull(child$labelB$B) {
           child$labelB$B.destroy()
         }
@@ -74,8 +77,8 @@ generator ArrayList(A: Class, B: Class, cascadeDelete:bool = false,
   } else {
     // Remove all children.
     prependcode A.destroy {
-      for i in range(self.$labelB$B_s.length()) {
-        child$labelB$B = self.$labelB$B_s[i]
+      for i in range(self.$labelB$pluralB.length()) {
+        child$labelB$B = self.$labelB$pluralB[i]
         if !isnull(child$labelB$B) {
           self.remove$labelB$B(child$labelB$B)
         }

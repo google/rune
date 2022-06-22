@@ -611,7 +611,7 @@ Examples of cool capabilities generators enable include:
 * Adding runtime reflection APIs similar to Java's.
 * Generatinig optimized code for a parameterized algorithm, such as FFTs.
 
-Generators are called with 
+Generators are called with
 
 ## Grammar
 
