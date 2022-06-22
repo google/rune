@@ -1,5 +1,6 @@
+
 # ᚣ Rune for Python Programmers
-_Safer code for secure enclaves_
+_A faster, safer, and more productive systems programming language_
 
 Rune aims to provide much of the power of Python in a fast systems-programming
 language designed for safety and speed.  Rune tries to offer much of the
