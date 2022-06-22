@@ -1,3 +1,4 @@
+</head>
 # Rune for Python Programmers
 <!---
 _A faster, safer, and more productive systems programming language_
