@@ -1,6 +1,6 @@
 # ᚣ The Rune Programming Language
 
-A faster, safer, and more productive systems programming language.
+_A faster, safer, and more productive systems programming language_
 
 [See the language reference here.](rune_reference.md)
 
