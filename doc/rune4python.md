@@ -10,6 +10,7 @@ This document is a brief introduction to Rune for Python programmers, with a
 focus on the differences, shown by example.  Hopefully you will find this simple
 to read based on your Python experience.
 
+<!---
 ## Difference #1: Curly braces, not indentation
 
 Rune uses curly braces, like C, C++, Java, C#, JavaScript, Go, etc.  This call
@@ -1039,3 +1040,4 @@ build several fundamental crypto primitives such as collision-resistant hash
 functions, and also I teach how implement a basic Diffie-Hellman public key
 exchange.  If you write your crypto in Rune, you’ll likely get the constant-time
 part right.
+-->
