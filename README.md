@@ -16,8 +16,8 @@ memory management.
 
 Additional documentation:
 
-* [Rune Overview](docs/index.md)
-* [Rune for Python programmers](docs/rune4python.md)
+* [Rune Overview](doc/index.md)
+* [Rune for Python programmers](doc/rune4python.md)
 
 Consider the following example for treatment of secrets:
 
