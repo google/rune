@@ -1,5 +1,5 @@
 # ᚣ The Rune Programming Language
-_Safer code for secure enclaves_
+_A faster, safer, and more productive systems programming language_
 
 This is not an officially supported Google product.
 
@@ -8,9 +8,9 @@ cool new security and efficiency features of Rune, but, for now, it is not
 recommended for any production use case.**
 
 Rune is a Python-inspired efficient systems programming language designed to
-interact easily with C and C++ libraries.  Rune's most notable security feature
-is constant-time processing of secrets.  Rune aims to be faster than C++ for
-most memory-intensive applications, due to its Structure-of-Array
+interact well with C and C++ libraries.  Rune has many security features such as
+memory safety, and constant-time processing of secrets.  Rune aims to be faster
+than C++ for most memory-intensive applications, due to its Structure-of-Array
 \([SoA](https://en.wikipedia.org/wiki/AoS_and_SoA#:~:text=AoS%20vs.,AoS%20case%20easier%20to%20handle.)\)
 memory management.
 
