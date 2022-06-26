@@ -1190,7 +1190,7 @@ static void bindFunctionBlock(deFunction function, deSignature signature) {
   deCurrentSignature = savedSignature;
 }
 
-// Add a default .print() method that can be called from the debugger.
+// Add a default debugging methods that can be called from the debugger.
 static void addDefaultClassDebugMethods(deClass theClass) {
   utSym toStringSym = utSymCreate("toString");
   deFunction toStringMethod = deClassFindMethod(theClass, toStringSym);
@@ -1215,14 +1215,6 @@ static void addDefaultClassDebugMethods(deClass theClass) {
     deSignatureSetInstantiated(signature, true);
     bindFunctionBlock(dumpMethod, signature);
   }
-}
-
-// Add default debug methods to classes after binding is done.
-static void addDefaultDebugMethods(void) {
-  deClass theClass;
-  deForeachRootClass(deTheRoot, theClass) {
-    addDefaultClassDebugMethods(theClass);
-  } deEndRootClass;
 }
 
 // Forward declaration for recursion.
@@ -1251,6 +1243,9 @@ static void instantiateConstructorSignature(deSignature signature) {
   if (!deClassBound(theClass)) {
     // Wait until member variables have datatypes set to create member relationsihps.
     deAddClassMemberRelations(theClass);
+    if (deDebugMode) {
+      addDefaultClassDebugMethods(theClass);
+    }
   }
   deCurrentSignature = savedSignature;
   deCurrentClass = savedClass;
@@ -2969,9 +2964,6 @@ void deBind(void) {
   bindBlock(rootBlock, rootBlock, mainSignature);
   deCurrentStatement = deStatementNull;
   bindExports();
-  if (deDebugMode) {
-    addDefaultDebugMethods();
-  }
 }
 
 // This is used to bind new statements after adding memory management stuff.
