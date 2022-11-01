@@ -6,4 +6,4 @@ if [[ "$outFile" = "$llvmFile" ]]; then
   exit 1
 fi
 shift
-clang-10 -g -fsanitize=undefined -fPIC -Iruntime -I../CTTK -o "$outFile" "$llvmFile" runtime/io.c runtime/array.c runtime/random.c runtime/bigint.c lib/libcttk.a && ./"$outFile" $@
+clang-14 -g -fsanitize=undefined -fPIC -Iruntime -I../CTTK -o "$outFile" "$llvmFile" runtime/io.c runtime/array.c runtime/random.c runtime/bigint.c lib/libcttk.a && ./"$outFile" $@

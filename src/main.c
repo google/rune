@@ -21,7 +21,7 @@
 
 #include "llexport.h"
 
-static char *deClangPath = "/usr/bin/clang-10";
+static char *deClangPath = "/usr/bin/clang-14";
 
 // Run the Clang compiler on the LLVM code we generated.
 static int runClangCompiler(char *llvmFileName, bool debugMode, bool optimized) {

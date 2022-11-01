@@ -1,6 +1,6 @@
 CFLAGS=-Wall -g -std=c11 -Wno-varargs -I../../CTTK -DRN_DEBUG
 #CFLAGS=-Wall -O3 -std=c11 -Wno-varargs -I../../cttk
-CC=clang-10
+CC=clang-14
 
 SRC= \
 array.c \

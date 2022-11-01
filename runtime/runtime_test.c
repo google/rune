@@ -358,7 +358,7 @@ static void testSprintf(void) {
   runtime_arrayInitCstr(&format, "%[u32]\n");
   runtime_array list = runtime_makeEmptyArray();
   for (uint32_t i = 1; i <= 10; i++) {
-    runtime_appendArrayElement(&list, (uint8_t*)&i, sizeof(uint32_t), false);
+    runtime_appendArrayElement(&list, (uint8_t*)&i, sizeof(uint32_t), false, false);
   }
   runtime_sprintf(&buf, &format, &list);
   runtime_puts(&buf);
