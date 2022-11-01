@@ -260,7 +260,7 @@ static bool getNextObject(runtime_array *array, size_t indices[], uint32_t depth
 // Call |callback| for each non-zero object in the array.  If this is a
 // multi-dimensional array, call only for the leaf elements.  |array| cannot be
 // a constant array: it must have a header.  It must also be on the stack.
-void runtime_foreachArrayObject(runtime_array *array, void (*callback)(), uint32_t refWidth, uint32_t depth) {
+void runtime_foreachArrayObject(runtime_array *array, void *callback, uint32_t refWidth, uint32_t depth) {
   if (array->numElements == 0) {
     return;
   }
@@ -270,7 +270,6 @@ void runtime_foreachArrayObject(runtime_array *array, void (*callback)(), uint32
   for (uint32_t i = 0; i < depth; i++) {
     indices[i] = 0;
   }
-  uint64_t object = 0;
   if (refWidth <= 8) {
     refWidth = 8;
   } else if (refWidth <= 16) {
@@ -280,9 +279,22 @@ void runtime_foreachArrayObject(runtime_array *array, void (*callback)(), uint32
   } else if (refWidth <= 64) {
     refWidth = 64;
   }
+  uint64_t object = 0;
+  uint64_t nullObject = (uint64_t)-1;
+  if (refWidth < 64) {
+    nullObject = ((uint64_t)1 << refWidth) - 1;
+  }
   while (getNextObject(array, indices, depth, 0, &object, refWidth)) {
-    if (object != 0) {
-      callback(object);
+    if (object != nullObject) {
+      if (refWidth == 8) {
+        ((void(*)(uint8_t))callback)(object);
+      } else if (refWidth == 16) {
+        ((void(*)(uint16_t))callback)(object);
+      } else if (refWidth == 32) {
+        ((void(*)(uint32_t))callback)(object);
+      } else if (refWidth == 64) {
+        ((void(*)(uint64_t))callback)(object);
+      }
     }
   }
 }
@@ -475,7 +487,8 @@ void runtime_moveArray(runtime_array *dest, runtime_array *source) {
 }
 
 // Copy an element to the end of |array|.
-void runtime_appendArrayElement(runtime_array *array, uint8_t *data, size_t elementSize, bool isArray) {
+void runtime_appendArrayElement(runtime_array *array, uint8_t *data, size_t elementSize,
+      bool isArray, bool hasSubArrays) {
   size_t numElements = array->numElements;
   arrayResize(array, array->numElements + 1, elementSize, isArray, true);
   uint8_t *dest = ((uint8_t*)array->data) + runtime_multCheckForOverflow(numElements, elementSize);
@@ -488,9 +501,8 @@ void runtime_appendArrayElement(runtime_array *array, uint8_t *data, size_t elem
   } else {
     runtime_array *sourceArray = (runtime_array*)data;
     runtime_array *destArray = (runtime_array*)dest;
-    runtime_heapHeader *header = runtime_getArrayHeader(sourceArray);
-    replicateArrayData(destArray, sourceArray, header->allocatedWords << RN_SIZET_SHIFT,
-        header->hasSubArrays);
+    size_t numBytes = runtime_multCheckForOverflow(sourceArray->numElements, elementSize);
+    replicateArrayData(destArray, sourceArray, numBytes, hasSubArrays);
   }
 }
 

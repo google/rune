@@ -95,29 +95,29 @@ void runtime_arrayStart(void);
 void runtime_arrayStop(void);
 void runtime_initArrayOfStringsFromC(runtime_array *array, const uint8_t **vector, size_t len);
 void runtime_allocArray(runtime_array *array, size_t numElements, size_t elementSize,
-                  bool hasSubArrays);
+    bool hasSubArrays);
 void runtime_arrayInitCstr(runtime_array *array, const char *text);
 void runtime_resizeArray(runtime_array *array, uint64_t numElements, size_t elementSize,
-                   bool hasSubArrays);
+    bool hasSubArrays);
 void runtime_copyArray(runtime_array *dest, runtime_array *source, size_t elementSize,
-                 bool hasSubArrays);
+    bool hasSubArrays);
 void runtime_moveArray(runtime_array *dest, runtime_array *source);
 void runtime_sliceArray(runtime_array *dest, runtime_array *source, uint64_t lower,
-                  uint64_t upper, size_t elementSize, bool hasSubArrays);
+    uint64_t upper, size_t elementSize, bool hasSubArrays);
 void runtime_freeArray(runtime_array *array);
-void runtime_foreachArrayObject(runtime_array *array, void (*callback)(), uint32_t refWidth,
-                          uint32_t depth);
+void runtime_foreachArrayObject(runtime_array *array, void *callback, uint32_t refWidth,
+    uint32_t depth);
 void runtime_updateArrayBackPointer(runtime_array *array);
 void runtime_compactArrayHeap(void);
 void runtime_appendArrayElement(runtime_array *array, uint8_t *data, size_t elementSize,
-                          bool isArray);
+    bool isArray, bool hasSubArrays);
 void runtime_concatArrays(runtime_array *dest, runtime_array *source, size_t elementSize,
-                    bool hasSubArrays);
+    bool hasSubArrays);
 void runtime_xorStrings(runtime_array *dest, runtime_array *a, runtime_array *b);
 void runtime_reverseArray(runtime_array *array, size_t elementSize, bool hasSubArrays);
 bool runtime_compareArrays(runtime_comparisonType compareType, runtime_type elementType,
-                     const runtime_array *a, const runtime_array *b, size_t elementSize,
-                     bool hasSubArrays, bool secret);
+    const runtime_array *a, const runtime_array *b, size_t elementSize,
+    bool hasSubArrays, bool secret);
 void runtime_memcopy(void *dest, const void *source, size_t len);
 // For debugging.
 void runtime_printBigint(runtime_array *val);

@@ -1,0 +1,7 @@
+module Rpc rpc
+
+import Rune
+
+// Extend the Datatype class.
+class Datatype: de
+  bool declared  // Set when writing the declaration to a header file so we only do it once.

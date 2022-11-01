@@ -12,13 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Find sqrt(-1) mod 2^255 - 19, the prime used in elliptic curve25519.  This
-// value can be replaced with the imaginary number, i, in arithmetic
-// calculations, mod 2^255 - 19, with valid results.
+class Foo(self, name) {
+  self.name = name
 
-import math
+  final(self) {
+    println "Destroying ", self.name
+  }
+}
 
-const m = <u255>(2u256^255 - 19)
-i = math.msqrt(m - 1, m)
-assert i*i == -1 mod m
-println "sqrt(-1) mod 2^255 - 19 = ", i
+// Create some Foo objects in an array that will be destroyed at function exit.
+// The Foo objects should be destroyed when their ref counts reach 0.
+func createTempArrayOfFoos() {
+  l = [Foo("Alice"), Foo("Bob"), Foo("Charlie")]
+}
+
+createTempArrayOfFoos()

@@ -46,6 +46,28 @@ static int deRead(char *buf, int maxSize) {
           deError(deCurrentLine, "Invalid control character");
         }
       }
+      // defend against trojan source attacks.
+      if (c == 0xE2) {
+        *p++ = c;
+        numChars++;
+        c = getc(deFile);
+        if (c == 0x80) {
+          *p++ = c;
+          numChars++;
+          c = getc(deFile);
+          if ((c >= 0xAA && c <= 0xAE) || c == 0x8B) {
+            deError(deCurrentLine, "Invalid control character");
+          }
+        }
+        if (c == 0x81) {
+          *p++ = c;
+          numChars++;
+          c = getc(deFile);
+          if (c >= 0xA6 && c <= 0xA9) {
+            deError(deCurrentLine, "Invalid control character");
+          }
+        }
+      }
       if (c != EOF) {
         if (isInvalidControlChar(c)) {
           deError(deCurrentLine, "Invalid control character");
@@ -66,6 +88,28 @@ static int deRead(char *buf, int maxSize) {
         c = deInputString[deInputStringPos++];
         if (c != '\n') {
           deError(deCurrentLine, "Invalid control character");
+        }
+      }
+      // defend against trojan source attacks.
+      if (c == 0xE2) {
+        *p++ = c;
+        numChars++;
+        c = getc(deFile);
+        if (c == 0x80) {
+          *p++ = c;
+          numChars++;
+          c = getc(deFile);
+          if ((c >= 0xAA && c <= 0xAE) || c == 0x8B) {
+            deError(deCurrentLine, "Invalid control character");
+          }
+        }
+        if (c == 0x81) {
+          *p++ = c;
+          numChars++;
+          c = getc(deFile);
+          if (c >= 0xA6 && c <= 0xA9) {
+            deError(deCurrentLine, "Invalid control character");
+          }
         }
       }
       if (c != EOF) {

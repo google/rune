@@ -1,0 +1,51 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+func REDC(T: Uint) -> Uint {
+  m = !<u256>T!*Np
+  t = <u256>((<u512>T + <u512>m*<u512>N) >> Rexp)
+  if t >= N {
+    return t - N
+  }
+  return t
+}
+
+func toMontForm(a: Uint) -> Uint {
+  return REDC(<u512>a * <u512>RsqModN)
+}
+
+func fromMontForm(aR: Uint) -> Uint {
+  return REDC(aR)
+}
+
+// Fixed parameters.
+N = (1u256 << 255) - 19
+Rexp = 256
+R = 1u257 << Rexp
+RsqModN = R^2 mod N
+Np = <u256>(-1/N mod R)
+
+// Test of Montgomery Multiplication.
+for i in range(10) {
+  a = reveal(rand255) mod N
+  b = reveal(rand255) mod N
+  aR = a * R mod N
+  bR = b * R mod N
+  T = <u512>aR * <u512>bR
+  abR = REDC(T)
+  assert abR == (a*b*R mod N)
+  assert (a*b mod N) == (abR/R mod N)
+  assert (a*b mod N) == fromMontForm(REDC(<u512>toMontForm(a)*<u512>toMontForm(b)))
+}
+println "PASSED"

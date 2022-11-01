@@ -12,13 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Find sqrt(-1) mod 2^255 - 19, the prime used in elliptic curve25519.  This
-// value can be replaced with the imaginary number, i, in arithmetic
-// calculations, mod 2^255 - 19, with valid results.
+message BasicTypes {
+  boolVal: bool
+  f32Val: f32
+  f64Val: f64
+  u8Val: u8
+  i8Val: i8
+  u16Val: u16
+  i16Val: i16
+  u32Val: u32
+  i32Val: i32
+  u64Val: u64
+  i64Val: i64
+  stringVal: string
+}
 
-import math
-
-const m = <u255>(2u256^255 - 19)
-i = math.msqrt(m - 1, m)
-assert i*i == -1 mod m
-println "sqrt(-1) mod 2^255 - 19 = ", i
+rpc Echo(request: BasicTypes) -> BasicTypes

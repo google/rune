@@ -455,6 +455,7 @@ void runtime_bigintMul(runtime_array *dest, runtime_array *a, runtime_array *b) 
 // Subtract two bigints.  Truncate the result if it is too big.
 void runtime_bigintMulTrunc(runtime_array *dest, runtime_array *a, runtime_array *b) {
   binaryOperation(cti_mul_trunc, dest, a, b);
+  fixUnderflow(dest);
 }
 
 // Divide two bigints.  Throw an exception if |b| is 0.

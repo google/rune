@@ -12,13 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Find sqrt(-1) mod 2^255 - 19, the prime used in elliptic curve25519.  This
-// value can be replaced with the imaginary number, i, in arithmetic
-// calculations, mod 2^255 - 19, with valid results.
+#ifndef THIRD_PARTY_RUNE_RPC_RPCGEN_CC_H_
+#define THIRD_PARTY_RUNE_RPC_RPCGEN_CC_H_
 
-import math
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-const m = <u255>(2u256^255 - 19)
-i = math.msqrt(m - 1, m)
-assert i*i == -1 mod m
-println "sqrt(-1) mod 2^255 - 19 = ", i
+void deGenCCRpcCode(char *rpcDefFile, char *headerFile, char *clientFile, char *serverFile);
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
+
+#endif  // THIRD_PARTY_RUNE_RPC_RPCGEN_CC_H_

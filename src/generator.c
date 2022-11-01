@@ -241,8 +241,8 @@ static char *expandText(deBlock scopeBlock, char *oldText, deLine line) {
   while (true) {
     if ((!firstTime && c == '_') || (c != '_' && !isalnum(c) && c <= '~')) {
       // Found end of current sub-ident.
-      *--q = '\0';
       if (p < q) {
+        *--q = '\0';
         if (!isIdent) {
           deAddString(p);
         } else {
@@ -278,8 +278,8 @@ static char *expandText(deBlock scopeBlock, char *oldText, deLine line) {
             }
           }
         }
+        *q++ = c;
       }
-      *q++ = c;
       if (c == '\0') {
         utFree(buf);
         if (!hasIdent) {

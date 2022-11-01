@@ -76,14 +76,29 @@ static void checkVariableDatatype(deBlock scopeBlock, deVariable variable, deLin
   }
 }
 
+// Return a string that can be printed on two lines to show the old type vs new type.
+// This is used in error reporting.
+static char *getOldVsNewDatatypeStrings(deDatatype oldDatatype, deDatatype newDatatype) {
+  deString oldDatatypeStr = deMutableCStringCreate("");
+  deString newDatatypeStr = deMutableCStringCreate("");
+  deDumpDatatypeStr(oldDatatypeStr, oldDatatype);
+  deDumpDatatypeStr(newDatatypeStr, newDatatype);
+  char *s = utSprintf("\n  old: %s\n  new: %s",
+          deStringGetCstr(oldDatatypeStr), deStringGetCstr(newDatatypeStr));
+  deStringDestroy(oldDatatypeStr);
+  deStringDestroy(newDatatypeStr);
+  return s;
+}
+
 // Set the variable's datatype.  Check that it does not violate the variables
 // type constraint, if any.
 static void setVariableDatatype(deBlock scopeBlock, deVariable variable,
     deDatatype datatype, deLine line) {
   if (deVariableGetDatatype(variable) != deDatatypeNull) {
     if (!deDatatypesCompatible(deVariableGetDatatype(variable), datatype)) {
-      deError(line, "Assigning %s a different type than a prior assignment",
-          deVariableGetName(variable));
+      deError(line, "Assigning %s a different type than a prior assignment:%s",
+          deVariableGetName(variable),
+          getOldVsNewDatatypeStrings(deVariableGetDatatype(variable), datatype));
     }
   }
   deVariableSetDatatype(variable, datatype);
@@ -185,7 +200,8 @@ static void bindArrayExpression(deBlock scopeBlock, deExpression expression) {
   while (nextElement != deExpressionNull) {
     bindExpression(scopeBlock, nextElement);
     if (getDatatype(nextElement) != datatype) {
-      deError(line, "Array elements must have the same type");
+      deError(line, "Array elements must have the same type:%s",
+          getOldVsNewDatatypeStrings(getDatatype(nextElement), datatype));
     }
     if (deExpressionIsType(nextElement)) {
       deError(line, "Array type expressions can contain only one type, like [u32]");
@@ -290,6 +306,8 @@ static void bindModularExpression(deBlock scopeBlock, deExpression expression,
       deExpressionSetDatatype(expression, modularType);
       break;
     }
+    case DE_EXPR_REVEAL:
+    case DE_EXPR_SECRET:
     case DE_EXPR_NEGATE: {
       deExpression left = deExpressionGetFirstExpression(expression);
       bindModularExpression(scopeBlock, left, modularType);
@@ -1010,7 +1028,8 @@ static void bindSelectExpression(deBlock scopeBlock, deExpression expression) {
     deError(line, "Select must be Boolean");
   }
   if (leftType != rightType) {
-    deError(line, "Select operator applied to different data types");
+    deError(line, "Select operator applied to different data types:%s",
+        getOldVsNewDatatypeStrings(leftType, rightType));
   }
   deExpressionSetDatatype(expression, leftType);
 }
@@ -1861,7 +1880,8 @@ static void bindAssignmentExpression(deBlock scopeBlock, deExpression expression
     deDatatype targetType = getDatatype(target);
     if (targetType != deDatatypeNull) {
       if (!deDatatypesCompatible(targetType, valueType)) {
-        deError(line, "Writing different datatype to existing value");
+        deError(line, "Writing different datatype to existing value:%s",
+            getOldVsNewDatatypeStrings(targetType, valueType));
       }
       if (targetType != valueType) {
         // Refine the target datatype.
@@ -1902,7 +1922,8 @@ static void bindAssignmentExpression(deBlock scopeBlock, deExpression expression
       if (oldType == deDatatypeNull) {
         setVariableDatatype(scopeBlock, variable, valueType, line);
       } else if (!deDatatypesCompatible(oldType, valueType)) {
-        deError(line, "Type mismatch while updating an existing variable");
+        deError(line, "Type mismatch while updating an existing variable:%s",
+            getOldVsNewDatatypeStrings(oldType, valueType));
       } else if (deVariableConst(variable)) {
         deError(line, "Assigning to const variable %s", deVariableGetName(variable));
       } else if (isConst) {
@@ -2193,7 +2214,8 @@ static void bindDotDotDotExpression(deBlock scopeBlock, deExpression expression)
       deError(line, "Integer ranges are only allowed for Int and Uint types, eg u1 ... u32");
     }
     if (leftDatatype != rightDatatype) {
-      deError(line, "Type ranges limits must have the same type, eg 1 ... 10 or 1i32 ... 10i32");
+      deError(line, "Type ranges limits must have the same type, eg 1 ... 10 or 1i32 ... 10i32:%s",
+          getOldVsNewDatatypeStrings(leftDatatype, rightDatatype));
     }
     deExpressionSetDatatype(expression, leftDatatype);
   }
@@ -2462,7 +2484,9 @@ static void updateFunctionType(deBlock scopeBlock, deExpression expression, deLi
         autocastExpression(expression, datatype);
       }
       if (deExpressionGetDatatype(expression) != datatype) {
-        deError(line, "Return statement has different type than prior return statement");
+        deError(line,
+            "Return statement has different type than prior return statement:%s",
+            getOldVsNewDatatypeStrings(deExpressionGetDatatype(expression), datatype));
       }
     }
   }
@@ -2546,7 +2570,8 @@ static void bindCaseStatements(deBlock scopeBlock, deStatement switchStatement, 
       deExpression expression;
       deForeachExpressionExpression(listExpression, expression) {
         if (deExpressionGetDatatype(expression) != datatype) {
-          deError(line, "Case expression has different type than switch expression");
+          deError(line, "Case expression has different type than switch expression:%s",
+            getOldVsNewDatatypeStrings(deExpressionGetDatatype(expression), datatype));
         }
       } deEndExpressionExpression;
     }

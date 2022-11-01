@@ -255,7 +255,7 @@ static inline void appendArrayCstr(runtime_array *array, const char *string) {
   uint64_t len = strlen(string);
   uint8_t *p = (uint8_t*)string;
   for (uint64_t i = 0; i < len; i++) {
-    runtime_appendArrayElement(array, p, sizeof(uint8_t), false);
+    runtime_appendArrayElement(array, p, sizeof(uint8_t), false, false);
     p++;
   }
 }
@@ -619,11 +619,11 @@ static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel
     uint8_t quote = '"';
     runtime_array *string = va_arg(ap, runtime_array *);
     if (!topLevel) {
-      runtime_appendArrayElement(array, &quote, sizeof(uint8_t), false);
+      runtime_appendArrayElement(array, &quote, sizeof(uint8_t), false, false);
     }
     runtime_concatArrays(array, string, sizeof(uint8_t), false);
     if (!topLevel) {
-      runtime_appendArrayElement(array, &quote, sizeof(uint8_t), false);
+      runtime_appendArrayElement(array, &quote, sizeof(uint8_t), false, false);
     }
   } else if (c == 'i' || c == 'u' || c == 'x') {
     uint8_t *typeStart = (uint8_t*)(p - 1);
@@ -656,7 +656,7 @@ static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel
     }
     if (!topLevel) {
       while (typeStart < p) {
-        runtime_appendArrayElement(array, typeStart++, sizeof(uint8_t), false);
+        runtime_appendArrayElement(array, typeStart++, sizeof(uint8_t), false, false);
       }
     }
   } else if (c == 'f') {
@@ -678,7 +678,7 @@ static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel
     runtime_freeArray(&buf);
     if (!topLevel) {
       while (typeStart < p) {
-        runtime_appendArrayElement(array, typeStart++, sizeof(uint8_t), false);
+        runtime_appendArrayElement(array, typeStart++, sizeof(uint8_t), false, false);
       }
     }
   } else if (c == 'b') {
@@ -754,11 +754,11 @@ void runtime_vsprintf(runtime_array *array, const runtime_array *format, va_list
       } else if (c == 'v') {
         c = 0xb;
       }
-      runtime_appendArrayElement(array, &c, sizeof(uint8_t), false);
+      runtime_appendArrayElement(array, &c, sizeof(uint8_t), false, false);
     } else if (c == '%') {
       p = appendFormattedElement(array, true, p, ap);
     } else {
-      runtime_appendArrayElement(array, &c, sizeof(uint8_t), false);
+      runtime_appendArrayElement(array, &c, sizeof(uint8_t), false, false);
     }
   }
 }
@@ -798,7 +798,7 @@ void runtime_nativeIntToString(runtime_array *string, uint64_t value, uint32_t b
   }
   if (value == 0) {
     uint8_t c = '0';
-    runtime_appendArrayElement(string, &c, sizeof(uint8_t), false);
+    runtime_appendArrayElement(string, &c, sizeof(uint8_t), false, false);
     return;
   }
   while (value != 0) {
@@ -810,11 +810,11 @@ void runtime_nativeIntToString(runtime_array *string, uint64_t value, uint32_t b
     } else {
       c = '0' + digit;
     }
-    runtime_appendArrayElement(string, &c, sizeof(uint8_t), false);
+    runtime_appendArrayElement(string, &c, sizeof(uint8_t), false, false);
   }
   if (negated) {
     uint8_t c = '-';
-    runtime_appendArrayElement(string, &c, sizeof(uint8_t), false);
+    runtime_appendArrayElement(string, &c, sizeof(uint8_t), false, false);
   }
   runtime_reverseArray(string, sizeof(uint8_t), false);
 }
@@ -837,7 +837,7 @@ void runtime_bigintToString(runtime_array *string, runtime_array *bigint, uint32
   runtime_freeArray(string);
   if (runtime_rnBoolToBool(runtime_bigintZero(bigint))) {
     uint8_t c = '0';
-    runtime_appendArrayElement(string, &c, sizeof(uint8_t), false);
+    runtime_appendArrayElement(string, &c, sizeof(uint8_t), false, false);
     return;
   }
   bool negative = false;
@@ -864,11 +864,11 @@ void runtime_bigintToString(runtime_array *string, runtime_array *bigint, uint32
     } else {
       c = '0' + digit;
     }
-    runtime_appendArrayElement(string, &c, sizeof(uint8_t), false);
+    runtime_appendArrayElement(string, &c, sizeof(uint8_t), false, false);
   }
   if (negative) {
     uint8_t c = '-';
-    runtime_appendArrayElement(string, &c, sizeof(uint8_t), false);
+    runtime_appendArrayElement(string, &c, sizeof(uint8_t), false, false);
   }
   runtime_freeArray(&b);
   runtime_freeArray(&r);

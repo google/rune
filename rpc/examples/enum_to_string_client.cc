@@ -12,13 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Find sqrt(-1) mod 2^255 - 19, the prime used in elliptic curve25519.  This
-// value can be replaced with the imaginary number, i, in arithmetic
-// calculations, mod 2^255 - 19, with valid results.
+#include "third_party/rune/rpc/examples/enum_to_string_proto.h"
+#include "third_party/sealedcomputing/wasm3/base.h"
+#include "third_party/sealedcomputing/wasm3/logging.h"
 
-import math
+using ::sealed::enum_to_string_service::Status;
+using ::sealed::enum_to_string_service::client::EnumToString;
 
-const m = <u255>(2u256^255 - 19)
-i = math.msqrt(m - 1, m)
-assert i*i == -1 mod m
-println "sqrt(-1) mod 2^255 - 19 = ", i
+extern "C" int start() {
+  SC_LOG(INFO) << *EnumToString(Status::kUnknown);
+  SC_LOG(INFO) << *EnumToString(Status::kOK);
+  SC_LOG(INFO) << *EnumToString(Status::kInternalError);
+  SC_LOG(INFO) << *EnumToString(Status::kThePrinterIsOnFire);
+  return 0;
+}

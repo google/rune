@@ -367,10 +367,13 @@ static void unrefArrayElements(llElement element, deDatatype baseType) {
   uint32 depth = deArrayDatatypeGetDepth(llElementGetDatatype(element));
   uint32 refWidth = deClassGetRefWidth(theClass);
   char* path = utSprintf("%s_unref", deGetBlockPath(classBlock, true));
+
+  uint32 unrefPointer = printNewValue();
+  llPrintf(" bitcast void (i%u)* @%s to i8*\n", refWidth, path);
   llDeclareRuntimeFunction("runtime_foreachArrayObject");
   llPrintf("  call void @runtime_foreachArrayObject(%%struct.runtime_array* %s, "
-      "void ()* @%s, i32 %u i32, %u)%s\n",
-      llElementGetName(element), path, refWidth, depth, locationInfo());
+      "i8* %%%u, i32 %u, i32 %u)%s\n",
+      llElementGetName(element), unrefPointer, refWidth, depth, locationInfo());
 }
 
 // Call runtime_freeArray on the variable.
@@ -1018,8 +1021,20 @@ static llElement findDatatypeSize(deDatatype datatype) {
       utExit("Type has no size");
       break;
     case DE_TYPE_CLASS:
-    case DE_TYPE_TBDCLASS:
-      return createSmallInteger(sizeof(uint32_t), llSizeWidth, false);
+    case DE_TYPE_TBDCLASS: {
+      uint32 refWidth = deClassGetRefWidth(deDatatypeGetClass(datatype));
+      uint32 refSize;
+      if (refWidth <= 8) {
+         refSize = 1;
+      } else if (refWidth <= 16) {
+         refSize = 2;
+      } else if (refWidth <= 32) {
+         refSize = 4;
+      } else {
+         refSize = 8;
+      }
+      return createSmallInteger(refSize, llSizeWidth, false);
+    }
     case DE_TYPE_FUNCPTR:
       return createSmallInteger(sizeof(void*), llSizeWidth, false);
     case DE_TYPE_BOOL:
@@ -1782,8 +1797,9 @@ static void generateBuiltinMethod(deExpression expression) {
       llElement sizeValue = findDatatypeSize(elementDatatype);
       char *location = locationInfo();
       llPrintf("  call void @runtime_appendArrayElement(%%struct.runtime_array* %s, i8* %%%u, "
-          "i%s %s, i1 zeroext %u)%s\n", llElementGetName(access), uint8Ptr, llSize,
-          llElementGetName(sizeValue), llDatatypeIsArray(elementDatatype), location);
+          "i%s %s, i1 zeroext %u, i1 zeroext %u)%s\n", llElementGetName(access), uint8Ptr, llSize,
+          llElementGetName(sizeValue), llDatatypeIsArray(elementDatatype),
+          arrayHasSubArrays(elementDatatype), location);
       break;
     }
     case DE_BUILTINFUNC_ARRAYCONCAT:
@@ -2627,6 +2643,9 @@ static void pushDefaultValue(deDatatype datatype) {
   if (llDatatypeIsArray(datatype)) {
     element->isConst = true;
   }
+  if (deDatatypeGetType(datatype) == DE_TYPE_CLASS) {
+    element->isNull = true;
+  }
 }
 
 // This differs from pushDefaultValue in that we may have to allocate a
@@ -3220,6 +3239,10 @@ static void generateModularExpression(deExpression expression, llElement modulus
       break;
     case DE_EXPR_EXP:
       generateModularExpExpression(expression, modulusElement);
+      break;
+    case DE_EXPR_REVEAL:
+    case DE_EXPR_SECRET:
+      generateModularExpression(deExpressionGetFirstExpression(expression), modulusElement);
       break;
     case DE_EXPR_NEGATE:
       generateModularNegateExpression(expression, modulusElement);

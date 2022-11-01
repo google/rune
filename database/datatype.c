@@ -753,22 +753,22 @@ char *deDatatypeGetDefaultValueString(deDatatype datatype) {
   return "";  // Dummy return
 }
 
-// Generate a default value string for the theClass.
+// Return a string representing the class type.
 static char *getClassTypeString(deDatatype datatype) {
   deClass theClass = deDatatypeGetClass(datatype);
   if (deClassGetFirstSignature(theClass) == deSignatureNull) {
     char *name = deGetBlockPath(deClassGetSubBlock(theClass), false);
-    return utSprintf("null(%s)", name);
+    return utSprintf("%s", name);
   }
   char *parameters =  getClassDatatypeParametersTypeString(datatype);
   char *name = deGetBlockPath(deClassGetSubBlock(theClass), false);
-  return utSprintf("null(%s(%s))", name, parameters);
+  return utSprintf("%s(%s)", name, parameters);
 }
 
-// Return a default value string for the function pointer.
+// Return a string representing the funciton pointer type.
 static char *getFuncptrTypeString(deDatatype datatype) {
   char *parameters =  getTupleDatatypeParametersTypeString(datatype);
-  return utSprintf("null(func(%s))", parameters);
+  return utSprintf("func(%s)", parameters);
 }
 
 // Return the type string for the tuple.
@@ -824,8 +824,10 @@ char *deDatatypeGetTypeString(deDatatype datatype) {
     case DE_TYPE_ENUM:
       return getEnumClassTypeString(datatype);
     case DE_TYPE_TCLASS:
-    case DE_TYPE_TBDCLASS:
-      return deTclassGetName(deDatatypeGetTclass(datatype));
+    case DE_TYPE_TBDCLASS: {
+      deTclass tclass = deDatatypeGetTclass(datatype);
+      return deGetBlockPath(deFunctionGetSubBlock(deTclassGetFunction(tclass)), false);
+    }
     case DE_TYPE_FUNCTION:
       return utSprintf("func %s", deFunctionGetName(deDatatypeGetFunction(datatype)));
     case DE_TYPE_NONE:

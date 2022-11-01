@@ -12,13 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Find sqrt(-1) mod 2^255 - 19, the prime used in elliptic curve25519.  This
-// value can be replaced with the imaginary number, i, in arithmetic
-// calculations, mod 2^255 - 19, with valid results.
+#include "third_party/rune/rpc/examples/echo_mixed_proto.h"
+#include "third_party/sealedcomputing/wasm3/base.h"
+#include "third_party/sealedcomputing/wasm3/logging.h"
 
-import math
+using ::sealed::echo_mixed::client::EchoMixed;
+using ::sealed::echo_mixed::Message;
 
-const m = <u255>(2u256^255 - 19)
-i = math.msqrt(m - 1, m)
-assert i*i == -1 mod m
-println "sqrt(-1) mod 2^255 - 19 = ", i
+extern "C" int start() {
+  Message message =  *EchoMixed(Message("public", "secret");
+  SC_LOG(INFO) << message.public_data;
+  SC_LOG(INFO) << message.secet_data;
+  return 0;
+}

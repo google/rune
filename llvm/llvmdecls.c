@@ -286,13 +286,13 @@ static void declareRuntimeFunctions(void) {
       "declare dso_local void @runtime_xorStrings(%struct.runtime_array*, %struct.runtime_array*, %struct.runtime_array*)\n");
   createFuncDecl("runtime_freeArray", "declare dso_local void @runtime_freeArray(%struct.runtime_array*)");
   createFuncDecl("runtime_foreachArrayObject",
-      "declare dso_local void @runtime_foreachArrayObject(%struct.runtime_array*, void ()*, i32, i32)");
+      "declare dso_local void @runtime_foreachArrayObject(%struct.runtime_array*, i8 *, i32, i32)");
   createFuncDecl("runtime_panicCstr", "declare dso_local void @runtime_panicCstr(i8*, ...)");
   createFuncDecl("runtime_allocArray", utSprintf(
       "declare dso_local void @runtime_allocArray(%%struct.runtime_array*, i%s, i%s, i1 zeroext)",
       llSize, llSize));
   createFuncDecl("runtime_appendArrayElement", utSprintf(
-      "declare dso_local void @runtime_appendArrayElement(%%struct.runtime_array*, i8*, i%s, i1 zeroext)",
+      "declare dso_local void @runtime_appendArrayElement(%%struct.runtime_array*, i8*, i%s, i1 zeroext, i1 zeroext)",
       llSize));
   createFuncDecl("runtime_arrayStart", utSprintf("declare dso_local void @runtime_arrayStart()"));
   createFuncDecl("runtime_arrayStop", "declare dso_local void @runtime_arrayStop()");

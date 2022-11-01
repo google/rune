@@ -12,13 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Find sqrt(-1) mod 2^255 - 19, the prime used in elliptic curve25519.  This
-// value can be replaced with the imaginary number, i, in arithmetic
-// calculations, mod 2^255 - 19, with valid results.
+enum Color {
+  kRed = 1u8
+  kBlue
+  kGreen
+}
 
-import math
+message Point {
+  x: i32
+  y: i32
+  color: Color
+}
 
-const m = <u255>(2u256^255 - 19)
-i = math.msqrt(m - 1, m)
-assert i*i == -1 mod m
-println "sqrt(-1) mod 2^255 - 19 = ", i
+message Box {
+  lowerLeft: Point
+  upperRight: Point
+}
+
+rpc BoxUnion(box1: Box, box2: Box) -> Box

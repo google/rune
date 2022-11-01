@@ -44,6 +44,11 @@ if [[ "$stdin" != "nostdin" ]]; then
 else
   $target "$@" > "${TEST_TMPDIR}/result" || die "Failed execution of $target"
 fi
-cmp "${TEST_TMPDIR}/result" "$stdout" || die "Wrong output for $target"
+cmp "${TEST_TMPDIR}/result" "$stdout"
+if [[ $? != "0" ]]; then
+  cat "${TEST_TMPDIR}/result"
+  cat "$stdout"
+  die "Wrong output for $target"
+fi
 
 echo "PASS"

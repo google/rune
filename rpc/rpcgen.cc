@@ -12,13 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Find sqrt(-1) mod 2^255 - 19, the prime used in elliptic curve25519.  This
-// value can be replaced with the imaginary number, i, in arithmetic
-// calculations, mod 2^255 - 19, with valid results.
+#include <iostream.h>
 
-import math
+#include "base/init_google.h"
+#include "third_party/absl/strings/escaping.h"
+#include "third_party/rune/include/de.h"
+#include "third_party/rune/rpc/rpcgen_cc.h"
 
-const m = <u255>(2u256^255 - 19)
-i = math.msqrt(m - 1, m)
-assert i*i == -1 mod m
-println "sqrt(-1) mod 2^255 - 19 = ", i
+int main(int argc, char **argv) {
+  InitGoogle(argv[0], &argc, &argv, true);
+  if (argc != 5) {
+    std::cout << "Usage: genrpc your.proto output.h output_client.cc "
+                 "output_server.cc\n";
+    return 1;
+  }
+  deGenCCRpcCode(const_cast<char *>(argv[1]), const_cast<char *>(argv[2]),
+                 const_cast<char *>(argv[3]), const_cast<char *>(argv[4]));
+  return 0;
+}
