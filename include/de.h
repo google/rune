@@ -459,6 +459,7 @@ char *deBytesToHex(void *bytes, uint32 len, bool littleEndian);
 bool deIsLegalIdentifier(char *identifier);
 char *deSnakeCase(char *camelCase);
 char *deUpperSnakeCase(char *camelCase);
+void deGenerateDummyLLFileAndExit(void);
 static inline uint32 deBitsToBytes(uint32 bits) {
   return (bits + 7) / 8;
 }
@@ -478,6 +479,8 @@ extern char *deLibDir;
 extern char *dePackageDir;
 extern bool deUnsafeMode;
 extern bool deDebugMode;
+extern bool deInvertReturnCode;
+extern char *deLLVMFileName;
 extern bool deTestMode;
 extern uint32 deStackPos;
 extern char *deStringVal;

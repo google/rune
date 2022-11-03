@@ -94,7 +94,7 @@ deRelation deRelationCreate(deGenerator generator, deTclass parent, deString par
   return relation;
 }
 
-// Return true if the tclass has a cascade-delete perent relationship.
+// Return true if the tclass has a cascade-delete parent relationship.
 static bool tclassHasCascadDeleteParent(deTclass tclass) {
   deRelation rel;
   deForeachTclassParentRelation(tclass, rel) {

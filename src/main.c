@@ -46,7 +46,8 @@ static void usage(void) {
          "    -p <dir>  - Use <dir> as the root directory for packages.\n"
          "    -t        - Execute unit tests for all modules.\n"
          "    -U        - Unsafe mode.  Don't generate bounds checking, overflow\n"
-         "                detection, and destroyed object access detection.\n");
+         "                detection, and destroyed object access detection.\n"
+         "    -x        - Invert the return code: 0 if we fail, and 1 if we pass.\n");
   exit(1);
 }
 
@@ -55,12 +56,13 @@ int main(int argc, char** argv) {
     usage();
   }
   deDebugMode = false;
+  deInvertReturnCode = false;
   deTestMode = false;
   deUnsafeMode = false;
   dePackageDir = NULL;
   bool noClang = false;
   bool optimized = false;
-  char *llvmFileName = NULL;
+  deLLVMFileName = NULL;
   uint32 xArg = 1;
   while (xArg < argc && argv[xArg][0] == '-') {
     if (!strcmp(argv[xArg], "-g")) {
@@ -73,24 +75,26 @@ int main(int argc, char** argv) {
       deUnsafeMode = true;
     } else if (!strcmp(argv[xArg], "-l")) {
       if (++xArg == argc) {
-        printf("-l requies the output LLVM IR file name");
+        printf("-l requires the output LLVM IR file name");
         return 1;
       }
-      llvmFileName = argv[xArg];
+      deLLVMFileName = argv[xArg];
     } else if (!strcmp(argv[xArg], "-n")) {
       noClang = true;
     } else if (!strcmp(argv[xArg], "-p")) {
       if (++xArg == argc) {
-        printf("-p requies a path to the root package directory");
+        printf("-p requires a path to the root package directory");
         return 1;
       }
       dePackageDir = argv[xArg];
     } else if (!strcmp(argv[xArg], "-clang")) {
       if (++xArg == argc) {
-        printf("-C requies a path argument to the clang executable");
+        printf("-C requires a path argument to the clang executable");
         return 1;
       }
       deClangPath = argv[xArg];
+    } else if (!strcmp(argv[xArg], "-x")) {
+      deInvertReturnCode = true;
     }  else {
       usage();
     }
@@ -108,25 +112,28 @@ int main(int argc, char** argv) {
     deBind();
     deVerifyRelationshipGraph();
     deAddMemoryManagement();
-    if (llvmFileName == NULL) {
-      llvmFileName = utAllocString(utReplaceSuffix(fileName, ".ll"));
+    if (deLLVMFileName == NULL) {
+      deLLVMFileName = utAllocString(utReplaceSuffix(fileName, ".ll"));
     } else {
       // Since we call utFree on this below.
-      llvmFileName = utAllocString(llvmFileName);
+      deLLVMFileName = utAllocString(deLLVMFileName);
     }
-    llGenerateLLVMAssemblyCode(llvmFileName, deDebugMode);
+    llGenerateLLVMAssemblyCode(deLLVMFileName, deDebugMode);
     if (!noClang) {
-      int rc = runClangCompiler(llvmFileName, deDebugMode, optimized);
+      int rc = runClangCompiler(deLLVMFileName, deDebugMode, optimized);
       if (rc != 0) {
         return rc;
       }
     }
-    utFree(llvmFileName);
+    utFree(deLLVMFileName);
     utUnsetjmp();
   } else {
     printf("Exiting due to errors\n");
     return 1;
   }
   deStop();
+  if (deInvertReturnCode) {
+    return 1;
+  }
   return 0;
 }

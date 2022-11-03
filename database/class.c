@@ -277,7 +277,7 @@ static deExpression buildClassTupleExpression(deBlock classBlock, deExpression s
 
 // Find the print format for the object tuple.
 static deString findObjectPrintFormat(deExpression tupleExpr) {
-  // Priht to the end of deStringVal, and reset deStringPos afterwards.
+  // Print to the end of deStringVal, and reset deStringPos afterwards.
   uint32 len = 42;
   uint32 pos = 0;
   char *format = utMakeString(len);

@@ -537,7 +537,7 @@ deDatatype deSetDatatypeSecret(deDatatype datatype, bool secret) {
 deDatatype deDatatypeSetSigned(deDatatype datatype, bool isSigned) {
   deDatatypeType type = deDatatypeGetType(datatype);
   if (type != DE_TYPE_UINT && type != DE_TYPE_INT) {
-    utExit("Tried to chane sign of non-integer");
+    utExit("Tried to change sign of non-integer");
   }
   uint32 width = deDatatypeGetWidth(datatype);
   if (isSigned) {
@@ -836,7 +836,7 @@ char *deDatatypeGetTypeString(deDatatype datatype) {
   return "";  // Dummy return
 }
 
-// Match a ... type constraint, eg u1 ... u32.
+// Match a ... type constraint, e.g. u1 ... u32.
 static bool matchDotDotDotTypeConstraint(deBlock scopeBlock,
     deDatatype datatype, deExpression typeExpression) {
   // Rages only make sense for u<lower> ... u<upper>, and i<lower>...i<upper>.
@@ -984,13 +984,6 @@ bool deDatatypeMatchesTypeExpression(deBlock scopeBlock, deDatatype datatype,
       return datatype == deSetDatatypeSecret(deStringDatatypeCreate(), secret);
     case DE_EXPR_BOOLTYPE:
       return datatype == deSetDatatypeSecret(deBoolDatatypeCreate(), secret);
-    case DE_EXPR_TYPEINDEX: {
-      if (deDatatypeGetType(datatype) != DE_TYPE_ARRAY) {
-        return false;
-      }
-      deExpression child = deExpressionGetFirstExpression(typeExpression);
-      return deDatatypeMatchesTypeExpression(scopeBlock, deDatatypeGetElementType(datatype), child);
-    }
     case DE_EXPR_DOTDOTDOT:
       return matchDotDotDotTypeConstraint(scopeBlock, datatype, typeExpression);
     default:
@@ -1006,7 +999,7 @@ static bool arrayDatatypesCompatible(deDatatype datatype1, deDatatype datatype2)
   return deDatatypesCompatible(elementType1, elementType2);
 }
 
-// Unify two tuple dataypes.
+// Unify two tuple datatypes.
 static bool tupleDatatypesCompatible(deDatatype datatype1, deDatatype datatype2) {
   uint32 numElements = deDatatypeGetNumTypeList(datatype1);
    if (deDatatypeGetNumTypeList(datatype2) != numElements) {

@@ -15,6 +15,7 @@
 #include "de.h"
 
 #include <ctype.h>
+#include <stdlib.h>
 
 char* deStringVal;
 uint32 deStringAllocated;
@@ -78,7 +79,11 @@ void deError(deLine line, char* format, ...) {
     deDumpLine(line);
   }
   dePrintStack();
-  utExit("Exiting due to error...");
+  if (!deInvertReturnCode) {
+    utExit("Exiting due to error...");
+  }
+  printf("Exiting due to error...\n");
+  deGenerateDummyLLFileAndExit();
 }
 
 // Return the path to the block with '_' separators if printing as a label, and
@@ -229,7 +234,7 @@ static void resizeStringIfNeeded(deString string, uint32 len) {
   }
 }
 
-// Appand text to the end of a deString object.
+// Append text to the end of a deString object.
 void deStringPuts(deString string, char *text) {
   uint32 len = strlen(text);
   uint32 used = deStringGetUsed(string);
@@ -388,7 +393,7 @@ deString deFindPrintFormat(deExpression expression) {
   return deCStringCreate(format);
 }
 
-// Convert bytes to hexidecimal.
+// Convert bytes to hexadecimal.
 char *deBytesToHex(void *bytes, uint32 len, bool littleEndian) {
   char *buf = utMakeString(len*2 + 1);
   buf[len << 1] = '\0';
@@ -473,4 +478,12 @@ char *deUpperSnakeCase(char *camelCase) {
   }
   *q = '\0';
   return snake_case;
+}
+
+// Generate a dummy .ll file and exit.
+void deGenerateDummyLLFileAndExit(void) {
+  if (deLLVMFileName != NULL) {
+    fclose(fopen(deLLVMFileName, "w"));
+  }
+  exit(0);
 }

@@ -29,7 +29,7 @@ bool deInstantiating;
 static deSignature deCurrentSignature;
 // The currently binding theClass.
 static deClass deCurrentClass;
-// We inline iterators only during the second callto deBindBlock.
+// We inline iterators only during the second call to deBindBlock.
 static bool deInlining;
 // Set when binding an access expression.
 bool deBindingAssignmentTarget;
@@ -217,7 +217,7 @@ static void bindArrayExpression(deBlock scopeBlock, deExpression expression) {
 static void autocastExpression(deExpression expression, deDatatype datatype) {
   deDatatype oldDatatype = deExpressionGetDatatype(expression);
   if (!deDatatypeIsInteger(oldDatatype) || !deDatatypeIsInteger(datatype)) {
-    return;  // We only autocast integers without type specifiers to integers.
+    return;  // We only auto-cast integers without type specifiers to integers.
   }
   deExpressionSetDatatype(expression, datatype);
   deExpression child;
@@ -242,7 +242,7 @@ static void bindBinaryExpression(deBlock scopeBlock, deExpression expression,
   *leftType = getDatatype(left);
   *rightType = getDatatype(right);
   if (compareTypes && !typesAreEquivalent(*leftType, *rightType)) {
-    // Try autocast.
+    // Try auto-cast.
     if (deExpressionAutocast(left) && !deExpressionAutocast(right)) {
       autocastExpression(left, *rightType);
       *leftType = deExpressionGetDatatype(left);
@@ -278,7 +278,7 @@ static void bindModularExpression(deBlock scopeBlock, deExpression expression,
     case DE_EXPR_INDEX:
     case DE_EXPR_DOT:
     case DE_EXPR_WIDTHOF:
-      // These are non-modular operators that are legal in modular expressins.
+      // These are non-modular operators that are legal in modular expressions.
       // Bind them, and verify they can be cast to the modular type.  The cast
       // will be done in the assembly generators.
       bindExpression(scopeBlock, expression);
@@ -329,7 +329,7 @@ static void bindModularExpression(deBlock scopeBlock, deExpression expression,
   deExpressionSetDatatype(expression, modularType);
 }
 
-// Bind a modular integer expression.  Adding "mod p" after an expressio forces
+// Bind a modular integer expression.  Adding "mod p" after an expression forces
 // all of the expressions to the left to be computed mod p.
 static void bindModintExpression(deBlock scopeBlock, deExpression expression) {
   deExpression left = deExpressionGetFirstExpression(expression);
@@ -412,7 +412,7 @@ static bool parameterTypesMatchesOverload(deDatatypeArray parameterTypes, deFunc
 // Forward declaration for recursion.
 static deDatatype bindFunctionCall(deBlock scopeBlock, deFunction function,
           deExpression expression, deExpression parameters, deDatatype selfType,
-          deDatatypeArray parameterTypes);
+          deDatatypeArray parameterTypes, bool fromFuncPtrExpr);
 
 // Find a matching operator overload.
 static deFunction findMatchingOperatorOverload(deBlock scopeBlock, deExpression expression,
@@ -459,7 +459,7 @@ static bool bindOverloadedOperator(deBlock scopeBlock, deExpression expression) 
     return false;
   }
   deDatatype datatype = bindFunctionCall(scopeBlock, operatorFunc, expression,
-      expression, deDatatypeNull, parameterTypes);
+      expression, deDatatypeNull, parameterTypes, false);
   deExpressionSetDatatype(expression, datatype);
   deDatatypeArrayFree(parameterTypes);
   return true;
@@ -494,7 +494,7 @@ static void bindBinaryArithmeticExpression(deBlock scopeBlock, deExpression expr
 }
 
 // Bind and AND, OR, or XOR operator.  If operating on numbers, bitwise
-// operators are used.  If operating on boolean values, logical operators are
+// operators are used.  If operating on Boolean values, logical operators are
 // used.
 static void bindBinaryBoolOrArithmeticExpression(deBlock scopeBlock, deExpression expression) {
   deDatatype leftType, rightType;
@@ -590,7 +590,7 @@ static deExpression checkExpressionIsPrintable(deBlock scopeBlock, deExpression 
 }
 
 // Read a uint16 from the string.  Update the string pointer to point to first
-// non-digit.  Given an error if the value doesn not fit in a uint16.
+// non-digit.  Given an error if the value does not fit in a uint16.
 static uint16 readUint16(char **p, char *end, deLine line) {
   if (*p == end) {
     return 0;
@@ -723,14 +723,14 @@ static void verifyPrintfParameters(deBlock scopeBlock, deExpression expression) 
       c = *p++;
       buf = deAppendCharToBuffer(buf, &len, &pos, c);
       if (p >= end) {
-        deError(line, "Incomplete escape secquence");
+        deError(line, "Incomplete escape sequence");
       }
       if (c == 'x') {
         for (uint32 i = 0; i < 2; i++) {
           c = *p++;
           buf = deAppendCharToBuffer(buf, &len, &pos, c);
           if (p >= end) {
-            deError(line, "Incomplete escape secquence");
+            deError(line, "Incomplete escape sequence");
           }
           if (!isxdigit(c)) {
             deError(line, "Invalid hex escape: should be 2 hex digits");
@@ -1088,7 +1088,7 @@ static void compareFuncptrParameters(deDatatype callType,
   }
 }
 
-// Check that the parmater types match their constraints.
+// Check that the parameter types match their constraints.
 static void checkParameterTypeConstraints(deBlock block, deLine line) {
   deVariable variable;
   deForeachBlockVariable(block, variable) {
@@ -1100,7 +1100,7 @@ static void checkParameterTypeConstraints(deBlock block, deLine line) {
 }
 
 // Verify that all named parameters match parameter variables on the block.
-static void verifyNamedParameteersMatch(deBlock block, deExpression firstNamedParameter) {
+static void verifyNamedParametersMatch(deBlock block, deExpression firstNamedParameter) {
   for (deExpression parameter = firstNamedParameter; parameter != deExpressionNull;
        parameter = deExpressionGetNextExpression(parameter)) {
     deLine line = deExpressionGetLine(parameter);
@@ -1121,7 +1121,7 @@ static void verifyNamedParameteersMatch(deBlock block, deExpression firstNamedPa
 // Fill out the parameter types passed to the function using default parameter values.
 static void fillOutDefaultParamters(deBlock block, deDatatype selfType, deDatatypeArray paramTypes,
     deExpression firstNamedParameter, deLine line) {
-  verifyNamedParameteersMatch(block, firstNamedParameter);
+  verifyNamedParametersMatch(block, firstNamedParameter);
   deVariable variable = deBlockGetFirstVariable(block);
   uint32 xDatatype = 0;  // Index into signature datatypes.
   deFunctionType funcType = deFunctionGetType(deBlockGetOwningFunction(block));
@@ -1260,7 +1260,7 @@ static void instantiateConstructorSignature(deSignature signature) {
   deSignatureSetInstantiated(signature, deSignatureInstantiated(signature) | deInstantiating);
   bindBlock(subBlock, subBlock, signature);
   if (!deClassBound(theClass)) {
-    // Wait until member variables have datatypes set to create member relationsihps.
+    // Wait until member variables have datatypes set to create member relationships.
     deAddClassMemberRelations(theClass);
     if (deDebugMode) {
       addDefaultClassDebugMethods(theClass);
@@ -1281,7 +1281,7 @@ static void bindLazySignatures(deClass theClass) {
   } deEndSafeClassLazySignature;
 }
 
-// Determine if the expression is an identifire bound to a non-const variable.
+// Determine if the expression is an identifier bound to a non-const variable.
 static bool expressionIsNonConstVariable(deExpression expression) {
   if (deExpressionGetType(expression) != DE_EXPR_IDENT) {
     return false;
@@ -1297,7 +1297,8 @@ static bool expressionIsNonConstVariable(deExpression expression) {
 // Check that var parameters are bound to non-const variables.  If |addSelf| is
 // true, we skip the first paramspec on the signature, since this is bound to
 // self.
-static void checkVarParams(deSignature signature, deExpression parameters, bool addSelf) {
+static void checkVarParams(deSignature signature, deExpression parameters, bool addSelf,
+      bool fromFuncPtrExpr) {
   bool skip = addSelf;
   deExpression parameter = deExpressionGetFirstExpression(parameters);
   deParamspec paramspec;
@@ -1311,6 +1312,11 @@ static void checkVarParams(deSignature signature, deExpression parameters, bool 
         deError(deExpressionGetLine(parameter),
             "Parameter %s must be passed a non-const variable", deVariableGetName(variable));
       }
+      if (!fromFuncPtrExpr && deInstantiating &&
+          deParamspecInstantiated(paramspec) && deExpressionIsType(parameter)) {
+        deError(deExpressionGetLine(parameter),
+            "Parameter %s cannot be a type since its value is used", deVariableGetName(variable));
+      }
       parameter = deExpressionGetNextExpression(parameter);
     }
     skip = false;
@@ -1321,7 +1327,7 @@ static void checkVarParams(deSignature signature, deExpression parameters, bool 
 // on its signature.  This allows us to update the datatype later once the
 // constructor is fully bound and we know the theClass's data members.
 static deDatatype bindConstructorCall(deFunction constructor, deExpression expression,
-    deExpression parameters, deDatatypeArray parameterTypes) {
+    deExpression parameters, deDatatypeArray parameterTypes, bool fromFuncPtrExpr) {
   deTclass tclass = deFunctionGetTclass(constructor);
   deLine line = deExpressionGetLine(expression);
   deBlock subBlock = deFunctionGetSubBlock(constructor);
@@ -1357,7 +1363,7 @@ static deDatatype bindConstructorCall(deFunction constructor, deExpression expre
       }
     }
   }
-  checkVarParams(signature, parameters, true);
+  checkVarParams(signature, parameters, true, fromFuncPtrExpr);
   if (deInstantiating && deSignatureGetLazyClass(signature) == deClassNull &&
       !deClassBound(deSignatureGetClass(signature))) {
     // Now bind the signature that we delayed above.
@@ -1371,11 +1377,11 @@ static deDatatype bindConstructorCall(deFunction constructor, deExpression expre
   return deSignatureGetReturnType(signature);
 }
 
-// Bind a functino call, other than a built-in.  Default parameters should
+// Bind a function call, other than a built-in.  Default parameters should
 // already have been added.
 static deDatatype bindFunctionCall(deBlock scopeBlock, deFunction function,
           deExpression expression, deExpression parameters, deDatatype selfType,
-          deDatatypeArray parameterTypes) {
+          deDatatypeArray parameterTypes, bool fromFuncPtrExpr) {
   deLine line = deExpressionGetLine(expression);
   deSignature signature = deLookupSignature(function, parameterTypes);
   if (signature == deSignatureNull) {
@@ -1394,8 +1400,12 @@ static deDatatype bindFunctionCall(deBlock scopeBlock, deFunction function,
     }
     deSignatureSetInstantiated(signature, deSignatureInstantiated(signature) | deInstantiating);
     bindFunctionBlock(function, signature);
+  } else if (deInstantiating && !deSignatureInstantiated(signature)) {
+    // Rebind the function if we are instantiating it this time.
+    deSignatureSetInstantiated(signature, true);
+    bindFunctionBlock(function, signature);
   }
-  checkVarParams(signature, parameters, selfType != deDatatypeNull);
+  checkVarParams(signature, parameters, selfType != deDatatypeNull, fromFuncPtrExpr);
   deExpressionSetSignature(expression, signature);
   deDatatype returnType = deSignatureGetReturnType(signature);
   // If a function is called recursively, the return type should already
@@ -1526,8 +1536,14 @@ static void verifyFunctionIsCallable(deBlock scopeBlock, deFunction function) {
      deFunctionGetName(function), deGetFunctionTypeName(type));
 }
 
-// Bind a call expression.
-static void bindCallExpression(deBlock scopeBlock, deExpression expression) {
+// Bind a call expression.  When binding in a function pointer expression, we
+// use different parameter checks, because we want to instantiate the function,
+// and allow types to be passed as parameters, even if they are used inside the
+// function.  E.g. &sum(u32, u32) should instantiate sum as if real u32 values
+// were passed in, as functions called through pointers cannot take types as
+// inputs.
+static void bindCallExpression(deBlock scopeBlock, deExpression expression,
+      bool fromFuncPtrExpr) {
   deExpression accessExpression = deExpressionGetFirstExpression(expression);
   bindExpression(scopeBlock, accessExpression);
   deLine line = deExpressionGetLine(expression);
@@ -1563,7 +1579,7 @@ static void bindCallExpression(deBlock scopeBlock, deExpression expression) {
         parameterTypes = deDatatypeArrayNull;  // It is freed in bindStructCall.
       } else {
         returnType = bindFunctionCall(scopeBlock, function, expression,
-            parameters, selfType, parameterTypes);
+            parameters, selfType, parameterTypes, fromFuncPtrExpr);
       }
       break;
     }
@@ -1576,7 +1592,8 @@ static void bindCallExpression(deBlock scopeBlock, deExpression expression) {
       deFunction constructor = deTclassGetFunction(tclass);
       fillOutDefaultParamters(deFunctionGetSubBlock(constructor), selfType, parameterTypes,
           firstNamedParameter, line);
-      returnType = bindConstructorCall(constructor, expression, parameters, parameterTypes);
+      returnType = bindConstructorCall(constructor, expression, parameters, parameterTypes,
+          fromFuncPtrExpr);
       break;
     }
     default:
@@ -1656,21 +1673,6 @@ static void bindSliceExpression(deBlock scopeBlock, deExpression expression) {
     deError(line, "Slicing a non-array/non-string type");
   }
   deExpressionSetDatatype(expression, leftType);
-}
-
-// Bind an array type expression, such as [u32].
-static void bindTypeIndexExpression(deBlock scopeBlock, deExpression expression) {
-  bool savedInstantiating = deInstantiating;
-  deInstantiating = false;
-  deDatatype leftType = bindUnaryExpression(scopeBlock, expression);
-  deDatatypeType type = deDatatypeGetType(leftType);
-  if (type != DE_TYPE_ARRAY && type != DE_TYPE_STRING) {
-    deError(deExpressionGetLine(expression), "Index into non-array type");
-  }
-  deDatatype elementType = deDatatypeGetElementType(leftType);
-  deExpressionSetDatatype(expression, elementType);
-  deExpressionSetIsType(expression, true);
-  deInstantiating = savedInstantiating;
 }
 
 // Bind the markSecret or markPublic expression.
@@ -1972,7 +1974,7 @@ static void bindDotExpression(deBlock scopeBlock, deExpression expression) {
     deError(line,
         "\n    Trying to access member of partially unified class.This can be caused by\n"
         "    having a relationship between template classes without ever adding a child\n"
-        "    obejcet to the relationship.  This can cause the compiler to still lack type\n"
+        "    object to the relationship.  This can cause the compiler to still lack type\n"
         "    information when asked to destroy an object of the partially unified class.\n"
         "    Try deleting unused Dict objects, or inserting some data.\n");
     return;  // Can't get here.
@@ -2099,8 +2101,9 @@ static void setAllSignatureVariablesToInstantiated(deSignature signature) {
 static void bindFunctionPointerExpression(deBlock scopeBlock, deExpression expression) {
   bool savedInstantiating = deInstantiating;
   deInstantiating = true;
-  deDatatype returnType = bindUnaryExpression(scopeBlock, expression);
   deExpression functionCallExpression = deExpressionGetFirstExpression(expression);
+  bindCallExpression(scopeBlock, functionCallExpression, true);
+  deDatatype returnType = getDatatype(functionCallExpression);
   deExpression functionExpression = deExpressionGetFirstExpression(functionCallExpression);
   deExpression parameters = deExpressionGetNextExpression(functionExpression);
   deDatatypeArray parameterTypes = deDatatypeArrayAlloc();
@@ -2339,7 +2342,7 @@ static void bindExpression(deBlock scopeBlock, deExpression expression) {
       break;
     case DE_EXPR_CALL:
       dePushStackFrame(deFindExpressionStatement(expression));
-      bindCallExpression(scopeBlock, expression);
+      bindCallExpression(scopeBlock, expression, false);
       dePopStackFrame();
       break;
     case DE_EXPR_INDEX:
@@ -2443,10 +2446,6 @@ static void bindExpression(deBlock scopeBlock, deExpression expression) {
     case DE_EXPR_BOOLTYPE:
       deExpressionSetIsType(expression, true);
       deExpressionSetDatatype(expression, deBoolDatatypeCreate());
-      break;
-    case DE_EXPR_TYPEINDEX:
-      deExpressionSetIsType(expression, true);
-      bindTypeIndexExpression(scopeBlock, expression);
       break;
     case DE_EXPR_AS:
       utExit("Unexpected expression type");
@@ -2737,7 +2736,7 @@ static void checkForInstantiatingTypeVariables(deBlock block) {
 // Reset the binding on the block so it can be bound again.  This is needed
 // because functions are bound once for each set of unique parameter signatures
 // passed to the function.  Datatypes on expressions do not need to be reset,
-// but non-parameter variables shoudl be deleted.
+// but non-parameter variables should be deleted.
 static void  resetBlockBinding(deBlock block) {
   deVariable variable;
   deForeachBlockVariable(block, variable) {

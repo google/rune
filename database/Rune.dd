@@ -134,7 +134,6 @@ enum ExpressionType
   DE_EXPR_FLOATTYPE  // x: f32 = y
   DE_EXPR_STRINGTYPE  // x: string = y
   DE_EXPR_BOOLTYPE  // done: bool = checkForDone()
-  DE_EXPR_TYPEINDEX  // u32[]
   DE_EXPR_NAMEDPARAM  // Myclass(name = "me", profession = "hacker")
 
 enum DatatypeType
@@ -358,7 +357,7 @@ class Datatype array
     Class Class: DE_TYPE_CLASS
     Expression modulus: DE_TYPE_MODINT
   array Datatype typeList  // For tuples, structs, and funcptr.
-  bool concrete  // Set for tyipes that can be instantiated directly.
+  bool concrete  // Set for types that can be instantiated directly.
 
 class Bigint
   array uint8 data

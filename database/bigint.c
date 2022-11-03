@@ -253,7 +253,7 @@ bool deBigintsEqual(deBigint bigint1, deBigint bigint2) {
 
 // Get the value of a bigint as a uint64.  If it is bigger than 64-bits can
 // hold, report an error at |line|.  The returned value ca be cast to int64
-// if the bignum is signed.
+// if the bigint is signed.
 static uint64 bigintGetUint64(deBigint bigint, deLine line) {
   uint8* data = deBigintGetData(bigint);
   uint32 width = deBigintGetWidth(bigint);
@@ -278,7 +278,7 @@ static uint64 bigintGetUint64(deBigint bigint, deLine line) {
   return value;
 }
 
-// Return the uint32 represented by the biging constant.  Report an error if the
+// Return the uint32 represented by the bigint constant.  Report an error if the
 // integer is too big.
 uint32 deBigintGetUint32(deBigint bigint, deLine line) {
   if (deBigintSigned(bigint)) {
@@ -291,7 +291,7 @@ uint32 deBigintGetUint32(deBigint bigint, deLine line) {
   return val;
 }
 
-// Return the int32 represented by the biging constant.  Report an error if the
+// Return the int32 represented by the bigint constant.  Report an error if the
 // integer is too big.
 int32 deBigintGetInt32(deBigint bigint, deLine line) {
   if (!deBigintSigned(bigint)) {
@@ -304,7 +304,7 @@ int32 deBigintGetInt32(deBigint bigint, deLine line) {
   return val;
 }
 
-// Return the uint64 represented by the biging constant.  Report an error if the
+// Return the uint64 represented by the bigint constant.  Report an error if the
 // integer is too big.
 uint64 deBigintGetUint64(deBigint bigint, deLine line) {
   if (deBigintSigned(bigint)) {
@@ -313,7 +313,7 @@ uint64 deBigintGetUint64(deBigint bigint, deLine line) {
   return bigintGetUint64(bigint, line);
 }
 
-// Return the int32 represented by the biging constant.  Report an error if the
+// Return the int32 represented by the 'igint constant.  Report an error if the
 // integer is too big.
 int64 deBigintGetInt64(deBigint bigint, deLine line) {
   if (!deBigintSigned(bigint)) {
@@ -453,7 +453,7 @@ deBigint deBigintResize(deBigint bigint, uint32 width, deLine line) {
     uint8 val = deBigintNegative(bigint)? 0xff : 0;
     for (uint32 i = newBytes; i < oldBytes; i++) {
       if (deBigintGetiData(bigint, i) != val) {
-        deError(line, "Trucation of integer loses significant bits");
+        deError(line, "Truncation of integer loses significant bits");
       }
     }
     deBigintSetData(result, deBigintGetData(bigint), newBytes);

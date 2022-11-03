@@ -191,7 +191,7 @@ void deRenameIdent(deIdent ident, utSym newName) {
   } deEndIdentExpression;
 }
 
-// Find the identifier for the block owning this identifire.
+// Find the identifier for the block owning this identifier.
 deIdent deFindIdentOwningIdent(deIdent ident) {
   deBlock block = deIdentGetBlock(ident);
   deBlock owningBlock = deBlockGetOwningBlock(block);
@@ -228,8 +228,8 @@ deExpression deCreateIdentPathExpression(deIdent ident) {
   return deBinaryExpressionCreate(DE_EXPR_DOT, prefixExpr, identExpr, line);
 }
 
-// Copy the identifire to the destination block.  The caller must ensure the
-// identifier does not already existe on |destBlock|.
+// Copy the identifier to the destination block.  The caller must ensure the
+// identifier does not already exist on |destBlock|.
 deIdent deCopyIdent(deIdent ident, deBlock destBlock) {
   deIdentType type = deIdentGetType(ident);
   deIdent newIdent = deIdentCreate(destBlock, type, deIdentGetSym(ident), deLineNull);

@@ -29,7 +29,7 @@ static deStatement assignVariable(deStatement statement, deVariable variable, de
   return assignmentState;
 }
 
-// Create assign statements to set the iterators's parammeters.
+// Create assign statements to set the iterators's parameters.
 static deStatement assignIteratorParameters(deStatement statement,
     deBlock iteratorBlock, deExpression parameters, bool isMethodCall) {
   uint32 numParamExprs = deExpressionCountExpressions(parameters);
@@ -77,7 +77,7 @@ static deStatement findStatementYieldStatement(deStatement statement) {
   return deStatementNull;
 }
 
-// Recursively search for a yield statement in the range of statemetns, not
+// Recursively search for a yield statement in the range of statements, not
 // including |lastStatement|.
 static deStatement findYieldStatement(deStatement firstStatement, deStatement lastStatement) {
   while (firstStatement != lastStatement) {
@@ -116,7 +116,7 @@ static deStatement findSelectedCase(deStatement switchStatement) {
   return deStatementNull;
 }
 
-// Forward declaratino for recursion.
+// Forward declaration for recursion.
 static deStatement flattenSwitchTypeStatements(deStatement firstStatement,
     deStatement lastStatement);
 
@@ -142,7 +142,7 @@ static void flattenSwitchTypeStatement(deStatement statement) {
   }
 }
 
-// Return the first non-destroyed statment in the range.
+// Return the first non-destroyed statement in the range.
 static deStatement flattenSwitchTypeStatements(deStatement firstStatement,
     deStatement lastStatement) {
   deStatement nextStatement;
@@ -155,7 +155,7 @@ static deStatement flattenSwitchTypeStatements(deStatement firstStatement,
 }
 
 // Inline the iterator.  The statement should already be bound.  Return the
-// statement replacig the one passed in.
+// statement replacing the one passed in.
 deStatement deInlineIterator(deBlock scopeBlock, deStatement statement) {
   bool savedInIterator = deInIterator;
   deInIterator = true;
@@ -201,7 +201,7 @@ deStatement deInlineIterator(deBlock scopeBlock, deStatement statement) {
   deStatement yieldStatement = findYieldStatement(firstStatement, lastStatement);
   turnYieldIntLoopVarAssignment(yieldStatement, assignment);
   deStatementDestroy(statement);
-  // Insert body afer the yield statement, which is now the loop var assignment.
+  // Insert body after the yield statement, which is now the loop var assignment.
   deMoveBlockStatementsAfterStatement(body, yieldStatement);
   deBlockDestroy(body);
   flattenSwitchTypeStatements(firstStatement, lastStatement);

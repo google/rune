@@ -493,7 +493,7 @@ void runtime_bigintExp(runtime_array *dest, runtime_array *base, uint32_t expone
 
 typedef void (*runtime_unaryBigintFunc)(cti_elt *d, const cti_elt *a);
 
-// Peform a binary bigint operation, calling the CTTK function pointer.
+// Perform a binary bigint operation, calling the CTTK function pointer.
 static void unaryOperation(runtime_unaryBigintFunc func, runtime_array *dest, runtime_array *a) {
   initBigint(dest, runtime_bigintWidth(a), runtime_bigintSigned(a), runtime_bigintSecret(a));
   uint32_t *destData = getBigintData(dest);
@@ -604,7 +604,7 @@ void runtime_bigintBitwiseXor(runtime_array *dest, runtime_array *a, runtime_arr
 }
 
 // Constant-time subtract modulus from X if X > modulus.  This is all that is
-// required after a modular addtion to make the result less than modulus.  This
+// required after a modular addition to make the result less than modulus.  This
 // takes advantage of the bigint being unsigned and thus having an extra bit.
 // After addition, we must subtract the modulus if either value > modulus, or
 // value < 0.
@@ -683,7 +683,7 @@ void runtime_bigintModularNegate(runtime_array *dest, runtime_array *a, runtime_
   runtime_bigintSub(dest, modulus, a);
 }
 
-// Negate tehe modular smallnum.  This is just |modulus| - |a|.
+// Negate the modular smallnum.  This is just |modulus| - |a|.
 uint64_t runtime_smallnumModularNegate(uint64_t a, uint64_t modulus, bool secret) {
   return modulus - a;
 }
@@ -867,7 +867,7 @@ void runtime_bigintModularExp(runtime_array *dest, runtime_array *base, runtime_
   runtime_freeArray(&t);
 }
 
-// Perform a smallnum multiplicaiton.
+// Perform a smallnum multiplication.
 uint64_t runtime_smallnumMul(uint64_t a, uint64_t b, bool isSigned, bool secret) {
   if (secret) {
     if (isSigned) {

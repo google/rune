@@ -118,7 +118,7 @@ static llTag createMemberTag(char *name, llTag baseTypeTag, uint32 size, uint32 
   return memberTag;
 }
 
-// Generate an array, bitint, or string type tag.
+// Generate an array, bigint, or string type tag.
 static llTag createArrayTypeTag(deDatatype datatype) {
   deDatatype elementDatatype;
   if (deDatatypeGetType(datatype) == DE_TYPE_STRING) {

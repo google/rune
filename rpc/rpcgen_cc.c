@@ -948,7 +948,7 @@ static void declareEncoders(deString string, deSecretType sectype) {
   }
 }
 
-// Write a return statement, which depens on the secret type.
+// Write a return statement, which depends on the secret type.
 static void returnEncodedData(deString string, deSecretType sectype) {
   switch (sectype) {
     case DE_SECTYPE_NONE:

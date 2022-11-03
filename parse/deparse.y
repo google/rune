@@ -25,6 +25,8 @@
 
 #include "parse.h"
 
+#include <stdlib.h>
+
 static deBlock deSavedBlock;
 static deStatement deLastStatement;
 
@@ -37,8 +39,13 @@ void deerror(char *message, ...) {
   va_start(ap, message);
   buff = utVsprintf(message, ap);
   va_end(ap);
-  utError("File %s, line %d, token \"%s\": %s", deCurrentFileName,
+  if (!deInvertReturnCode) {
+    utError("File %s, line %d, token \"%s\": %s", deCurrentFileName,
+        deLineGetLineNum(deCurrentLine), detext, buff);
+  }
+  printf("File %s, line %d, token \"%s\": %s\n", deCurrentFileName,
       deLineGetLineNum(deCurrentLine), detext, buff);
+  deGenerateDummyLLFileAndExit();
 }
 
 // Create a new block statement and set the sub-block current.
@@ -98,7 +105,7 @@ static void setFunctionExtern(deFunction function, deString langName) {
   }
 }
 
-// Chech that deCurrentBlock is a module or package block.
+// Check that deCurrentBlock is a module or package block.
 static void checkTopBlock(void ) {
   if (deBlockGetType(deCurrentBlock) == DE_BLOCK_FUNCTION) {
     deFunction function = deBlockGetOwningFunction(deCurrentBlock);
@@ -1222,10 +1229,6 @@ accessExpression: tokenExpression
   $$ = deBinaryExpressionCreate(DE_EXPR_SLICE, $1, $3, $2);
   deExpressionAppendExpression($$, $5);
 }
-| accessExpression '[' ']'
-{
-  $$ = deUnaryExpressionCreate(DE_EXPR_TYPEINDEX, $1, $2);
-}
 ;
 
 callStatement: accessExpression '(' callParameterList ')' newlines
@@ -1370,8 +1373,8 @@ relationStatement: KWRELATION pathExpression pathExpression optLabel pathExpress
   deExpressionInsertExpression(params, $6);  // optLabel
   deExpressionInsertExpression(params, $4);  // optLabel
   deExpressionInsertExpression(params, $7);  // optCascade
-  deExpressionInsertExpression(params, $5);  // child clss
-  deExpressionInsertExpression(params, $3);  // parent clss
+  deExpressionInsertExpression(params, $5);  // child class
+  deExpressionInsertExpression(params, $3);  // parent class
   deExpression callExpr = deBinaryExpressionCreate(DE_EXPR_CALL, $2, params, $1);
   deStatementInsertExpression(statement, callExpr);
   // Move it to the start of the block.

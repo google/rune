@@ -155,7 +155,7 @@ static void markExpressionSecret(deExpression expression) {
   } deEndExpressionExpression;
 }
 
-// Recursively set the expressioni datatype to secret, and encode the
+// Recursively set the expression datatype to secret, and encode the
 // sub-expression.
 static void encodeSecret(RpcEncoderContext *publicCtx, RpcEncoderContext *secretCtx,
     deExpression constValExpr) {

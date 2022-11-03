@@ -46,7 +46,7 @@ static int deRead(char *buf, int maxSize) {
           deError(deCurrentLine, "Invalid control character");
         }
       }
-      // defend against trojan source attacks.
+      // defend against Trojan source attacks.
       if (c == 0xE2) {
         *p++ = c;
         numChars++;
@@ -90,7 +90,7 @@ static int deRead(char *buf, int maxSize) {
           deError(deCurrentLine, "Invalid control character");
         }
       }
-      // defend against trojan source attacks.
+      // defend against Trojan source attacks.
       if (c == 0xE2) {
         *p++ = c;
         numChars++;

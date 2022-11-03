@@ -23,6 +23,8 @@ deRoot deTheRoot;
 uint32 deDumpIndentLevel;
 bool deUnsafeMode;
 bool deDebugMode;
+bool deInvertReturnCode;
+char *deLLVMFileName;
 bool deTestMode;
 char *deExeName;
 char *deLibDir;
@@ -193,7 +195,7 @@ static char *findModuleFile(deBlock packageBlock, deExpression pathExpr, bool *i
     utFree(commonPath);
     return utAllocString(path);
   }
-  // Check in the shared package directory ini dePackageDir.
+  // Check in the shared package directory in dePackageDir.
   path = findPathUnderFilepath(dePackageDir, commonPath, isPackageDir);
   if (path  != NULL) {
     utFree(commonPath);
@@ -260,7 +262,7 @@ static deBlock createPackagePath(deExpression pathExpr, bool isPackageDir) {
 //
 // We may not have imported any portion of this path before, and a chain of
 // package blocks may need to be created for at foo, bar, and possibly baz.  If
-// baz is a directory, look for packge.rn in baz, if baz is a directory
+// baz is a directory, look for package.rn in baz, if baz is a directory
 // containing package.rn.
 //
 // First, we need to find one of:
@@ -348,7 +350,7 @@ static void parseFile(char *fileName, char *fullName) {
   deCurrentFileName = NULL;
 }
 
-// Execute module relationss.
+// Execute module relations.
 static void executeModuleRelations(deBlock moduleBlock) {
   deStatement statement;
   deForeachBlockStatement(moduleBlock, statement) {

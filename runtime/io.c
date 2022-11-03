@@ -151,6 +151,7 @@ void runtime_throwException(const runtime_array *format, ...) {
   if (runtime_jmpBufSet) {
     printf("Expected ");
   }
+  runtime_putsCstr("******************** Exception: ");
   va_list ap;
   va_start(ap, format);
   runtime_array buf = runtime_makeEmptyArray();
@@ -387,7 +388,9 @@ static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel
 static const uint8_t *appendFormattedArg(runtime_array *array, bool topLevel, const uint8_t *p, ...) {
   va_list ap;
   va_start(ap, p);
-  return appendFormattedElement(array, topLevel, p, ap);
+  const uint8_t *result = appendFormattedElement(array, topLevel, p, ap);
+  va_end(ap);
+  return result;
 }
 
 // Skip to the matching ] in the spec.  For example, given "[u32]] %d", return
@@ -449,7 +452,7 @@ static const uint8_t *skipTupleElementSpec(const uint8_t *p, uint32_t *tupleSize
   return p;
 }
 
-// Findthe end of the format element spec, and set |elementSize| to the element
+// Find the end of the format element spec, and set |elementSize| to the element
 // size in memory.
 static const uint8_t *findEndOfSpec(const uint8_t *p, uint32_t *elementSize, uint32_t *width,
     bool *deref) {
@@ -466,7 +469,7 @@ static const uint8_t *findEndOfSpec(const uint8_t *p, uint32_t *elementSize, uin
     } else {
       *deref = true;
     }
-    // Ingeters in arrays are rounded up to a power of 2 size.
+    // Integers in arrays are rounded up to a power of 2 size.
     if (*width <= 8) {
       *elementSize = 1;
     } else if (*width <= 16) {
@@ -528,9 +531,8 @@ static void derefAndAppendFormattedArg(runtime_array *dest, bool topLevel, const
   }
 }
 
-// Print an array to a string.  |p| points the the element type specifier.
-// Return a pointer to the character just past the end of the array format
-// specifier.
+// Print an array to a string.  |p| points the element type specifier.  Return
+// a pointer to the character just past the end of the array format specifier.
 static const uint8_t *printArray(runtime_array *dest, const uint8_t *p, const runtime_array *source) {
   appendArrayCstr(dest, "[");
   uint32_t elementSize, width;
@@ -561,9 +563,8 @@ static const uint8_t *printArray(runtime_array *dest, const uint8_t *p, const ru
   return elementSpecEnd;
 }
 
-// Print a tuple to a string.  |p| points the the element type specifier.
-// Return a pointer to the character just past the end of the tuple format
-// specifier.
+// Print a tuple to a string.  |p| points the element type specifier.  Return a
+// pointer to the character just past the end of the tuple format specifier.
 static const uint8_t *printTuple(runtime_array *dest, const uint8_t *p, const uint8_t *tuple) {
   appendArrayCstr(dest, "(");
   uint32_t elementPos = 0;
@@ -610,7 +611,7 @@ static uint64_t extendToUpperBits(uint64_t value, bool isSigned, uint32_t width)
 }
 
 // Append a formatted element to the string array.  The first character is the
-// format specifier, eg s for string.  Consume the entire format specifier and
+// format specifier, e.g. s for string.  Consume the entire format specifier and
 // return a pointer to the character after the specifier.
 static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel,
     const uint8_t *p, va_list ap) {
@@ -664,9 +665,15 @@ static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel
     uint32_t width = readUint32(&p);
     double value = 0.0;
     if (width == 32) {
-      // Note that clang's warning here is wrong for Rune, but right for C/C++.
-      // Implement with a casting hack to suppress the warning.
-      value = va_arg(ap, float);
+      if (topLevel) {
+        // Note that clang's warning here is wrong for Rune, but right for C/C++.
+        // Implement with a casting hack to suppress the warning.
+        value = va_arg(ap, float);
+      } else {
+        // We pass floats as uint32_t when called from appendFormattedArg.
+        uint32_t floatVal = va_arg(ap, uint32_t);
+        value = *(float*)&floatVal;
+      }
     } else if (width == 64) {
       value = va_arg(ap, double);
     } else {
@@ -775,7 +782,7 @@ void runtime_sprintf(runtime_array *array, const runtime_array *format, ...) {
 void runtime_printf(const char *format, ...) {
   runtime_array array = runtime_makeEmptyArray();
   runtime_array formatArray = runtime_makeEmptyArray();
-  // Build it like a constat array, outside of the heap.
+  // Build it like a constant array, outside of the heap.
   formatArray.data = (uint64_t*)format;
   formatArray.numElements = strlen(format);
   va_list ap;
@@ -899,7 +906,7 @@ void runtime_printHexBigint(runtime_array *val) {
   fflush(stdout);
 }
 
-// Convet a binary string to a hexadecimal string.
+// Convert a binary string to a hexadecimal string.
 void runtime_stringToHex(runtime_array *destHexString, const runtime_array *sourceBinString) {
   uint64_t numElements = sourceBinString->numElements;
   runtime_resizeArray(destHexString, numElements << 1, sizeof(uint8_t), false);

@@ -31,7 +31,7 @@ func magnitude(object) {
 }
 
 func arraySum(array, distancefunc) {
-    t = typeof(distancefunc(array[]))
+    t = typeof(distancefunc(array[0]))
     total = <t>0  // Cast 0 to type of the result.
     for i = 0, i < array.length(), i += 1 {
         total += distancefunc(array[i])
@@ -42,10 +42,10 @@ func arraySum(array, distancefunc) {
 func printArrayTotalDistance(array) {
     if useManhattan {
         println "Using manhattan distance."
-        distancefunc = &manhattanDistance(array[])
+        distancefunc = &manhattanDistance(array[0])
     } else {
         println "Using magnitude distance."
-        distancefunc = &magnitude(array[])
+        distancefunc = &magnitude(array[0])
     }
     // All three calls should result in only 1 instatiated func.
     // The datatype is simply funcptr, so the signatures match.

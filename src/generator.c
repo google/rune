@@ -227,7 +227,7 @@ static deValue evaluateNegateExpression(deBlock scopeBlock, deExpression express
 //
 // If an identifier of the same name already existed before running the current
 // generator, the identifier is uniquified by appending a number, such as
-// child1, if child already exists.
+// child, if child already exists.
 static char *expandText(deBlock scopeBlock, char *oldText, deLine line) {
   char *buf = utAllocString(oldText);
   char *p = buf;
@@ -582,7 +582,7 @@ static void executeGenerator(deBlock moduleBlock, deGenerator generator,
 }
 
 // Build a Relation edge between the two tclasses.  The first three parameters
-// MUST be parent tclass, child dclass, and bool cascade.
+// MUST be parent tclass, child tclass, and bool cascade.
 static void buildRelation(deGenerator generator) {
   deBlock block = deGeneratorGetSubBlock(generator);
   deVariable parent = deBlockGetFirstVariable(block);

@@ -137,7 +137,7 @@ utSym deValueGetName(deValue value) {
 // Return true if the values are equal.
 bool deValuesEqual(deValue a, deValue b) {
   if (deValueGetType(a) != deValueGetType(b)) {
-    utExit("Comparing values of different typess");
+    utExit("Comparing values of different types");
   }
   switch (deValueGetType(a)) {
     case DE_TYPE_BOOL:

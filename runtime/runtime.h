@@ -16,7 +16,7 @@
 #define EXPERIMENTAL_WAYWARDGEEK_RUNE_RUNTIME_RUNE_RUNTIME_H_
 
 // This is the runtime for Rune.  It gets linked with every Rune application.
-// It needs to stay small!  It provides basic I/O and big integher support, as
+// It needs to stay small!  It provides basic I/O and big integer support, as
 // well as dynamic arrays.  Functions starting with runtime_ are directly
 // callable from Rune, since they are declared as extern "C" in package.rn.
 
@@ -75,7 +75,7 @@ typedef struct {
 // on the heap preceding an array's data.
 typedef struct {
 #ifdef RN_DEBUG
-  size_t counter;  // Set the value of runtime_arrayCounter when the heaer is
+  size_t counter;  // Set the value of runtime_arrayCounter when the header is
                    // initialized.
 #endif
   bool hasSubArrays: 1;
@@ -130,7 +130,7 @@ static inline runtime_heapHeader *runtime_getArrayHeader(const runtime_array *ar
   return ((runtime_heapHeader*)(array->data)) - 1;
 }
 
-// I/O: logging and error handling.  Fnor now, all I/O is to stdout and from
+// I/O: logging and error handling.  For now, all I/O is to stdout and from
 // stdin, which matches the communication model of a sealed enclave.
 uint8_t readByte(void);
 void writeByte(uint8_t c);
@@ -158,7 +158,7 @@ uint64_t runtime_stringRfind(const runtime_array *haystack, const runtime_array 
 uint64_t runtime_generateTrueRandomValue(uint32_t width);
 void runtime_generateTrueRandomBytes(uint8_t *dest, uint64_t numBytes);
 
-// Sall integer exponentiatoin, with overflow checking.
+// Small integer exponentiation, with overflow checking.
 
 // Zero memory securely.
 static inline void runtime_zeroMemory(uint64_t *p, uint64_t numWords) {
@@ -218,7 +218,7 @@ extern const runtime_bool runtime_false;
 extern const runtime_bool runtime_true;
 
 // These bits are set in the first word of the bigint.  When we integrate CTTK,
-// we should merge this workd with the first CTTK word.
+// we should merge this word with the first CTTK word.
 #define RN_SECRET_BIT 0x80000000
 #define RN_SIGNED_BIT 0x40000000
 
@@ -263,7 +263,7 @@ void runtime_bigintBitwiseAnd(runtime_array *dest, runtime_array *a, runtime_arr
 void runtime_bigintBitwiseOr(runtime_array *dest, runtime_array *a, runtime_array *b);
 void runtime_bigintBitwiseXor(runtime_array *dest, runtime_array *a, runtime_array *b);
 void runtime_bigintDivRem(runtime_array *q, runtime_array *r, runtime_array *a, runtime_array *b);
-// Modular aperations on bigints.
+// Modular operations on bigints.
 void runtime_bigintModularAdd(runtime_array *dest, runtime_array *a, runtime_array *b, runtime_array *modulus);
 void runtime_bigintModularSub(runtime_array *dest, runtime_array *a, runtime_array *b, runtime_array *modulus);
 void runtime_bigintModularMul(runtime_array *dest, runtime_array *a, runtime_array *b, runtime_array *modulus);

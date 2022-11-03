@@ -158,7 +158,7 @@ void deFunctionAppendFunctionCall(deFunction function, deFunction childFunction)
   deStatementInsertExpression(statement, callExpression);
 }
 
-// Declare an iaterator.
+// Declare an iterator.
 deFunction deIteratorFunctionCreate(deBlock block, utSym name, utSym selfName,
     deLinkage linkage, deLine line) {
   deFilepath filepath = deBlockGetFilepath(block);

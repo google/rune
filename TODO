@@ -2,7 +2,6 @@
 Figure out when relationship generators should run.  Right now it is in the order statements are bound so that module-level variables can be passed into the generators, but we assume all generators are run before binding a constructor, which is currently false.  Figure out the right thing and do it.
 Use concrete type constraints in binding.  This can help eleminate problems
 in binding recursive functions, and also non-template classes.
-Fix bug when printing arrays containing floats.
 Don't allow generated fields to be written outside of generated code.
 Add an Object class that maches all types, so we can have case (Object, Object, Object).
 Allow cast to be overloaded.
@@ -11,48 +10,37 @@ Defend vs Specter/Meltdown: duplicate bignum functions in runtime to have consta
 Figure out how to prgramatically manipulate labels in generators.
 Flesh out index overloading: write is not yet supported.
 Support Overloading method get/set methods.
-Write builtin iterators: for c in "test", for x in [1, 2, 3]
 Improve safe mode:
     Throw error when destroying an object that has a reference on the stack.
     Use overflow/underflow intrinsics in LLVM
 Fix LLVM select for case when select bit is secret.
     Also, only evaluate one or the other when select is not secret.
-Generate debug functions for accessing class members, and printing whole classes, to aid debugging
-  in gdb, which does not understand structure-of-array layout.
 Add syntax for declaring volatile globals at specified addresses, so we can do memory-mapped I/O.  Consider using a global io array.
-Add support for fixed-size arrays on the stack and in globals.
 Add good support for interopo with C++, which is a key requirement for a language to replace C++ in prod:
     syntax for declaring extern "C++" functions, and deal with name mangling.
     Add support for calling C++ constructors and methods.
-    Add support for c++ unique pointers, which are often returned>
-Figure out how to more efficiently support unit tests that throw or fail to compile.
+    Add support for c++ unique pointers, which are often returned.
 Add support for C pointer types, which can be returned by C functions declared extern"C".
 Add "unsafe" blocks where it is legal to dereference or index into a C pointer.
 Write all the Benchmark Games benchmarks twice: once single threaded, and
     honest, one multi-threaded and using similar trickes used by the others to win.
 Implement dynamic class extensions.
-Implement inheritance.
+Implement inheritance via composition, using exclusive relationships.
 Return error codes for each deError call, which error tests can expect.
 Write initial language reference manual.
 Add LLVM compiler hints and optmizations as described at
     https://llvm.org/docs/Frontend/PerformanceTips.html#adding-to-this-document.
-Add support for tuples with named fields.  Maybe a "message" rather than a "struct"?
 Support named parameters, like Python
-Rename linkages.  "module" currently means a directory, while "package" means the whole program/libray.
-Flesh out code in deFindUniqueConcreteDatatype
 
 ## Medium Term
 Make modular inverse constant time.
 Upgrade from lineNum to an object specifying the text of the line, position, and file name.
 Switch to BoringSSL crypto primitives for faster constant-time bignums, as well as variable-time bignums.
-Disable writing object refs to data generated members, other than in generated code.
 Perform constant propagation.
 Enforce private access to non-extern identifiers from other packages.
 Support full co-routines in iterators in the LLVM backend.
-Write RPC interfaces.
 Support tuple unpacking.
 Support overloading modular operations, so we can support modular polynomials, etc.
-Improve error messages with the location on the line that the error occurs.
 Add multi-threading support.
 Add schema-level reuse statements
 Flush out generator's Rune code interpreter.
@@ -61,20 +49,15 @@ Finish transition to memory pools, and allocation of global arrays with mmap of 
 ## Long term
 Rewrite Rune in Rune.
 Support lambda expressions with Function(statementExpression) constructor.
-Support huge objects, that can have more than 2^32 instances
-  Also support small objects, that can have i8 or i16 references
-Support mutually-exclusive relationships
 
 ## Optimizations
 Tune floating point operations: For some reason, clang is running C/C++ floating point at about 2X our speed.
 Rewrite heap to be more efficient for small passed-by-value objects like i32s.  The back-pointer and
   index are not needed for heaps of values.
 Save memory on 32-bit targets using 32-bit lengths.
-Speed up error reporting by recording the absolute position in the file, not just lineNum.
 LLVM: generate switch rather than a chain of br.
 Support tail recursion.
 Use existing uint32 or int32 field for nextFree to save memory for non-ref-counted classes.
 Identify fields that are always accessed together and merge them into tuples.
   Generate array-of-structures for these tuples
 Support unions, like DataDraw, where the field is selected by an enumerated type.
-Suport relationships in union declarations.

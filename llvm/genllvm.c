@@ -38,7 +38,7 @@ char *llPath;
 // It turns out that alloca acts like alloc, and allocates new space on the
 // stack each time it is executed, rather than just once per function call.  We
 // have to move all the alloca's to the top of the function to avoid this memory
-// leak.  Since they are generated while printing the funciton to deStringVal,
+// leak.  Since they are generated while printing the function to deStringVal,
 // write these allocs here instead, and insert them at the top.
 char *llTmpValueBuffer;
 uint32 llTmpValueLen;
@@ -52,7 +52,7 @@ static uint32 llLabelNum;
 static deBlock llCurrentScopeBlock;
 static deStatement llCurrentStatement;
 static deLine llCurrentLine;
-// Helps us generate only one call the runtime_throwExpcetion for bounds checking per function.
+// Helps us generate only one call the runtime_throwException for bounds checking per function.
 static utSym llLimitCheckFailedLabel;
 static utSym llBoundsCheckFailedLabel;
 static utSym llPrevLabel;  // Most recently printed label: used in phi instructions.
@@ -1197,7 +1197,7 @@ static void evaluateParameters(deSignature signature, deDatatype datatype,
   uint32 effectiveNumParamVars = numParamVars;
   if (signature != deSignatureNull) {
     if (deFunctionGetType(deSignatureGetFunction(signature)) == DE_FUNC_CONSTRUCTOR) {
-      // Skip the self parameer: in constructors, we instantiate it as a local variable.
+      // Skip the self parameter: in constructors, we instantiate it as a local variable.
       effectiveNumParamVars--;
     } else if (isMethodCall) {
       numParams++;  // The self parameter is pushed by the access expression.
@@ -1740,7 +1740,7 @@ static void generateBuiltinMethod(deExpression expression) {
   deFunction function = deDatatypeGetFunction(callType);
   generateExpression(accessExpression);
   llElement element = popElement(false);
-  // This should be a delagate.  We don't need the top element.  The next
+  // This should be a delegate.  We don't need the top element.  The next
   // will be the expression to access the builtin object.
   utAssert(llElementIsDelegate(element));
   llElement access = popElement(true);
@@ -2227,7 +2227,7 @@ static void generateCallExpression(deExpression expression) {
   deDatatype accessDatatype = llElementGetDatatype(element);
   deDatatypeType accessType = deDatatypeGetType(accessDatatype);
   if (llElementIsDelegate(element)) {
-    // If this is a delagate, the self expression is still on the stack, and
+    // If this is a delegate, the self expression is still on the stack, and
     // needs to be derefed
     llElement *selfElement = topOfStack();
     derefElement(selfElement);
@@ -2448,7 +2448,7 @@ static void generateClassAccess(deExpression expression) {
       generateExpression(left);
       deFunction function = deIdentGetFunction(ident);
       if (deFunctionGetType(function) != DE_FUNC_CONSTRUCTOR) {
-        // This is a method call.  Push a delagate.
+        // This is a method call.  Push a delegate.
         utAssert(deIdentGetType(ident) == DE_IDENT_FUNCTION);
         generateExpression(right);
         llSetTopOfStackAsDelegate();
@@ -2718,12 +2718,12 @@ static void generateCastExpression(deExpression expression, bool truncate) {
     uint32 newWidth = deDatatypeGetWidth(leftDatatype);
     utAssert(oldWidth != newWidth);
     if (oldWidth < newWidth) {
-      // Extending precesion.
+      // Extending precision.
       utAssert(oldWidth == 32 && newWidth == 64);
       llPrintf("fpext %s %s to %s\n", rightTypeString,
           llElementGetName(rightElement), leftTypeString);
     } else {
-      // Truncating precesion.
+      // Truncating precision.
       utAssert(oldWidth == 64 && newWidth == 32);
       llPrintf("fptrunc %s %s to %s\n", rightTypeString,
           llElementGetName(rightElement), leftTypeString);
@@ -2974,6 +2974,7 @@ static bool couldBeGreaterOrEqual(deExpression expression, uint32 width) {
   deBigint bigint = deExpressionGetBigint(expression);
   uint32 intVal = deBigintGetUint32(bigint, llCurrentLine);
   if (intVal >= width) {
+    fclose(llAsmFile);
     deError(llCurrentLine, "Shift or rotate by more than integer width");
   }
   return false;
@@ -3074,7 +3075,7 @@ static void generateShiftOrRotateExpression(deExpression expression) {
   pushValue(datatype, value, false);
 }
 
-// Write a bindary modular expression.
+// Write a binary modular expression.
 static void generateBinaryModularExpression(deExpression expression, llElement modulusElement) {
   deDatatype datatype = deExpressionGetDatatype(expression);
   deExpression left = deExpressionGetFirstExpression(expression);
@@ -3227,7 +3228,7 @@ static void generateModularExpression(deExpression expression, llElement modulus
     case DE_EXPR_INDEX:
     case DE_EXPR_DOT:
     case DE_EXPR_WIDTHOF:
-      // These are non-modular operators that are legal in modular expressins.
+      // These are non-modular operators that are legal in modular expressions.
       // Generated them, and convert to the modular type.
       modularReduction(expression, modulusElement);
       break;
@@ -3251,6 +3252,7 @@ static void generateModularExpression(deExpression expression, llElement modulus
       generateModularEqualityExpression(expression, modulusElement);
       break;
     default:
+      fclose(llAsmFile);
       deError(deExpressionGetLine(expression), "Invalid modular arithmetic expression");
   }
   llElement *resultElement = topOfStack();
@@ -3277,7 +3279,7 @@ static void jumpTo(utSym label) {
 }
 
 // Sometimes we can't wait to free elements until a statement finishes.  This
-// function frees all temporary values created when evalutating the expression,
+// function frees all temporary values created when evaluating the expression,
 // so it can only be called on expressions that don't return a temp value.
 static void generateExpressionAndFreeTempElements(deExpression expression) {
   uint32 savedPos = llNeedsFreePos;
@@ -3626,7 +3628,6 @@ static void generateExpression(deExpression expression) {
     case DE_EXPR_FLOATTYPE:
     case DE_EXPR_STRINGTYPE:
     case DE_EXPR_BOOLTYPE:
-    case DE_EXPR_TYPEINDEX:
       pushDefaultValue(deExpressionGetDatatype(expression));
       break;
     case DE_EXPR_FUNCADDR:
@@ -3786,8 +3787,7 @@ static utSym generateSwitchStatement(deStatement statement, utSym startLabel) {
           } else {
             generateComparison(target, value, "icmp eq");
           }
-          // Only free temp variables created in the comparison, not the switch
-          // exiression.
+          // Only free temp variables created in the comparison, not the switch expression.
           freeElements(false);
           llElement result = popElement(true);
           llPrintf("  br i1 %s, label %%%s, label %%%s\n",
@@ -3894,7 +3894,7 @@ static void callPuts(llElement string) {
       llGetTypeString(llElementGetDatatype(string), false), llElementGetName(string));
 }
 
-// Generate a a print or throw statement.
+// Generate a print or throw statement.
 static void generatePrintOrThrowStatement(deStatement statement, bool isPrint) {
   deExpression argument = deStatementGetExpression(statement);
   deExpression expression = deStatementGetExpression(statement);
@@ -3944,7 +3944,7 @@ static void generateReturnStatement(deStatement statement) {
     } else {
       llElement element = popElement(true);
       if (isRefCounted(returnType)) {
-        // Ref before freeing elements in case we are returning a local varialb.
+        // Ref before freeing elements in case we are returning a local varialbe.
         refObject(element);
       }
       freeElements(true);

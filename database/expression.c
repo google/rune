@@ -55,7 +55,6 @@ uint32 getPrecedence(deExpressionType type) {
     case DE_EXPR_INTTYPE:
     case DE_EXPR_STRINGTYPE:
     case DE_EXPR_BOOLTYPE:
-    case DE_EXPR_TYPEINDEX:
       return 17;
     default:
       return 1;
@@ -459,7 +458,6 @@ void deDumpExpressionStr(deString string, deExpression expression) {
       deStringSprintf(string, "null");
       break;
     case DE_EXPR_INDEX:
-    case DE_EXPR_TYPEINDEX:
       dumpIndexExpr(string, expression);
       break;
     case DE_EXPR_SLICE:
@@ -609,7 +607,6 @@ static bool exressionTypeMakesType(deExpressionType type) {
     case DE_EXPR_INTTYPE:
     case DE_EXPR_STRINGTYPE:
     case DE_EXPR_BOOLTYPE:
-    case DE_EXPR_TYPEINDEX:
       return true;
     default:
       return false;

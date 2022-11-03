@@ -211,7 +211,7 @@ deDatatypeArray getSignatureParameterTypes(deSignature signature) {
 
 // Once a constructor signature is given its return type, all the parameters that
 // have the tclass type can be resolved to the class type.  This may mean that
-// we find an old sigatue that matches, in which case, destroy the signature and
+// we find an old signature that matches, in which case, destroy the signature and
 // return the old one.
 deSignature deResolveConstructorSignature(deSignature signature) {
   if (!resolveSignatureParamTypes(signature)) {
@@ -305,7 +305,7 @@ deSignature deCreateFullySpecifiedSignature(deFunction function) {
     datatype = findConcreteDatatype(datatype, line);
     deSignatureSetReturnType(signature, datatype);
   }
-  // Set all parameters instatiated.
+  // Set all parameters instantiated.
   deParamspec paramspec;
   deForeachSignatureParamspec(signature, paramspec) {
     deParamspecSetInstantiated(paramspec, true);

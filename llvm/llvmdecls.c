@@ -539,7 +539,7 @@ void llAddStringConstant(deString string) {
 static void writeBigintArray(llArray array) {
   deExpression expression = llArrayGetExpression(array);
   deBigint bigint = deExpressionGetBigint(expression);
-  // Get width from datatype in case bigint was autocast.
+  // Get width from datatype in case bigint was auto-cast.
   uint32 width = deDatatypeGetWidth(deExpressionGetDatatype(expression));
   bool isSigned = deBigintSigned(bigint);
   uint32 numWords = llBigintBitsToWords(width, isSigned);
@@ -586,7 +586,7 @@ static void writeArray(llArray array) {
   deExpressionType type = deExpressionGetType(element);
   uint32 width = 0;
   if (type == DE_EXPR_INTEGER) {
-    // Get width from datatype in case bigint was autocast.
+    // Get width from datatype in case bigint was auto-cast.
     width = deDatatypeGetWidth(deExpressionGetDatatype(element));
   } else if (type == DE_EXPR_BOOL) {
     width = 1;

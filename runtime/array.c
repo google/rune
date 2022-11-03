@@ -683,7 +683,7 @@ static int32_t compareElements(runtime_type elementType, void *aPtr, void *bPtr,
     if (elementType == RN_INT) {
       // If sign bits are equal, then toggling sign bits does not change the
       // outcome.  If they are different, then toggling the sign big corrects
-      // the interpretation of which is larger when viewed as usigned.
+      // the interpretation of which is larger when viewed as unsigned.
       a ^= (size_t)1 << shift;
       b ^= (size_t)1 << shift;
     } else if (elementType != RN_UINT) {

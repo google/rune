@@ -142,7 +142,6 @@ static bool propagateExpressionConstants(deBlock scopeBlock, deExpression expres
     case DE_EXPR_FLOATTYPE:
     case DE_EXPR_STRINGTYPE:
     case DE_EXPR_BOOLTYPE:
-    case DE_EXPR_TYPEINDEX:
     case DE_EXPR_NAMEDPARAM:
     case DE_EXPR_NEGATETRUNC:
     case DE_EXPR_IDENT:
