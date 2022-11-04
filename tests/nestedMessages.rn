@@ -12,11 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-t1 = (123, [1.25f32, 2.5f32], "test")
-t2 = t1
-println t1
-println t2
-t3 = (t1, t2, "foo")
-t4 = t3
-println t3
-println t4
+message Point {
+  x: i64
+  y: i64
+}
+
+message Rectangle {
+  lowerLeft: Point
+  upperRight: Point
+}
+
+rect = Rectangle(Point(0i64, 0i64), Point(100i64, 200i64))
+println rect
+println rect.lowerLeft
+println rect.upperRight

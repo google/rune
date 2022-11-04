@@ -4113,6 +4113,7 @@ static void generateBlockAssemblyCode(deBlock block, deSignature signature) {
   utFree(llPath);
   llCurrentScopeBlock = deBlockNull;
   llDebugMode = savedDebugMode;
+  llDeclareNewTuples();
 }
 
 // Print header info.  Declare all the Rune runtime functions.

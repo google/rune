@@ -72,3 +72,4 @@ relationship Root String doubly_linked
 relationship Root Array doubly_linked mandatory
 relationship Root Tag hashed text mandatory
 relationship Root Tuple hashed datatype mandatory
+relationship Root:New Tuple:New doubly_linked

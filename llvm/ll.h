@@ -47,7 +47,7 @@ void llDeclareLocalVariable(deVariable variable, uint32 argNum);
 void llDeclareGlobalVariable(deVariable variable);
 llTag llCreateLocationTag(llTag scopeTag, deLine line);
 char *llGetVariableName(deVariable variable);
-llTuple llDeclareTuple(deDatatype datatype);
+void llDeclareNewTuples(void);
 bool llDatatypeIsBigint(deDatatype datatype);
 bool llDatatypeIsArray(deDatatype datatype);
 uint32 llBigintBitsToWords(uint32 width, bool isSigned);

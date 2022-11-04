@@ -138,7 +138,7 @@ static void writeTupleDecl(llTuple tuple) {
 }
 
 // Declare the tuple type to represent the datatype.
-llTuple llDeclareTuple(deDatatype datatype) {
+static llTuple declareTuple(deDatatype datatype) {
   llTuple tuple = llRootFindTuple(deTheRoot, datatype);
   if (tuple != llTupleNull) {
     return tuple;
@@ -148,15 +148,25 @@ llTuple llDeclareTuple(deDatatype datatype) {
   llTupleSetNum(tuple, llTupleNum);
   llTupleNum++;
   llRootAppendTuple(deTheRoot, tuple);
-  writeTupleDecl(tuple);
+  llRootAppendNewTuple(deTheRoot, tuple);
   return tuple;
+}
+
+// Declare all the new tuples that were used while generating code for a
+// function.
+void llDeclareNewTuples(void) {
+  llTuple tuple;
+  llSafeForeachRootNewTuple(deTheRoot, tuple) {
+    writeTupleDecl(tuple);
+    llRootRemoveNewTuple(deTheRoot, tuple);
+  } llEndSafeRootTuple;
 }
 
 // Return a type string for the tuple.
 static char *getTupleTypeString(deDatatype datatype, bool isDefinition) {
   llTuple tuple = llRootFindTuple(deTheRoot, datatype);
   if (deDatatypeGetType(datatype) == DE_TYPE_TUPLE) {
-    tuple = llDeclareTuple(datatype);
+    tuple = declareTuple(datatype);
   }
   if (isDefinition) {
     return utSprintf("%%struct.runtime_tuple%u", llTupleGetNum(tuple));

@@ -12,11 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-t1 = (123, [1.25f32, 2.5f32], "test")
-t2 = t1
-println t1
-println t2
-t3 = (t1, t2, "foo")
-t4 = t3
-println t3
-println t4
+t = (12, ("test", (6.5f64, (-1i1,))))
+println t
