@@ -2861,6 +2861,39 @@ static bool blockIsIterator(deBlock block) {
   return deFunctionGetType(deBlockGetOwningFunction(block)) == DE_FUNC_ITERATOR;
 }
 
+// Determine if the expression is bound to an iterator.
+static bool datatypeIsIterator(deDatatype datatype) {
+  if (deDatatypeGetType(datatype) != DE_TYPE_FUNCTION) {
+    return false;
+  }
+  deFunction iterator = deDatatypeGetFunction(datatype);
+  return deFunctionGetType(iterator) == DE_FUNC_ITERATOR;
+}
+
+// Add a .values() call to the target if it does not represent an iterator, and
+// the target has a values iterator.
+static void addValuesIteratorIfNeeded(deBlock scopeBlock, deStatement statement) {
+  deExpression assignment = deStatementGetExpression(statement);
+  deExpression access = deExpressionGetFirstExpression(assignment);
+  deExpression callExpr = deExpressionGetNextExpression(access);
+  bindExpression(scopeBlock, callExpr);
+  if (deExpressionGetType(callExpr) == DE_EXPR_CALL) {
+    deDatatype datatype = deExpressionGetDatatype(deExpressionGetFirstExpression(callExpr));
+    if (datatypeIsIterator(datatype)) {
+      return;  // Already have an iterator.
+    }
+  }
+  // Add .values().
+  deExpressionRemoveExpression(assignment, callExpr);
+  deLine line = deExpressionGetLine(callExpr);
+  deExpression valuesExpr = deIdentExpressionCreate(utSymCreate("values"), line);
+  deExpression dotExpr = deBinaryExpressionCreate(DE_EXPR_DOT, callExpr, valuesExpr, line);
+  deExpression emptyParamsExpr = deExpressionCreate(DE_EXPR_LIST, line);
+  deExpression valuesCallExpr = deBinaryExpressionCreate(DE_EXPR_CALL, dotExpr,
+      emptyParamsExpr, line);
+  deExpressionAppendExpression(assignment, valuesCallExpr);
+}
+
 // Determine all expression and variable types.  This function can be called
 // multiple times on the same block with different parameter types.  Perform
 // reachability analysis to determine if the block can return and if it can also
@@ -2893,14 +2926,17 @@ static void bindBlock(deBlock scopeBlock, deBlock block, deSignature signature) 
       if (!canContinue) {
         deError(line, "Cannot reach statement");
       }
-      if (deStatementGetType(statement) == DE_STATEMENT_FOREACH && deInlining) {
-        utAssert(deInstantiating);
-        // This sets the signature on the call expression, so the iterator
-        // function can be bound in deInlineIterator.
-        bindExpression(scopeBlock, deStatementGetExpression(statement));
-        deInlining = false;
-        statement = deInlineIterator(scopeBlock, statement);
-        deInlining = true;
+      if (deStatementGetType(statement) == DE_STATEMENT_FOREACH) {
+        addValuesIteratorIfNeeded(scopeBlock, statement);
+        if (deInlining) {
+          utAssert(deInstantiating);
+          // This sets the signature on the call expression, so the iterator
+          // function can be bound in deInlineIterator.
+          bindExpression(scopeBlock, deStatementGetExpression(statement));
+          deInlining = false;
+          statement = deInlineIterator(scopeBlock, statement);
+          deInlining = true;
+        }
       }
       deStatementSetInstantiated(statement, deInstantiating);
       bindStatement(scopeBlock, statement);
