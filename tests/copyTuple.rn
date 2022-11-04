@@ -1,0 +1,8 @@
+t1 = (123, [1.25f32, 2.5f32], "test")
+t2 = t1
+println t1
+println t2
+t3 = (t1, t2, "foo")
+t4 = t3
+println t3
+println t4
