@@ -238,7 +238,8 @@ int dewrap(void) {
     return 1;
 }
 
-#define DE_DEBUG
+// Comment this in to print tokens as they are parsed.
+// #define DE_DEBUG
 
 #ifdef DE_DEBUG
 #define myDebug utDebug("%u ", deLineNum); utDebug

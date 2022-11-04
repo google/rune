@@ -59,7 +59,6 @@ void deStart(char *fileName) {
       dePackageDir = utAllocString(commonDir);
     }
   }
-  utInitLogFile("rune.log");
   deDatabaseStart();
   deDumpIndentLevel = 0;
   deTheRoot = deRootAlloc();

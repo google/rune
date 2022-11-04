@@ -19,6 +19,19 @@ class CPRNG(self, seed: string) {
   self.sponge.absorb(seed)
 
   func squeeze(self, numBytes: Uint) -> string {
+    // This makes it hard for an attacker to guess the state of the CPRNG prior to this call.
+    // BSD had this flaw, and attackers who gained access to the state of the urandom CPRNG
+    // could guess not only future secret keys, but past keys as well.
+    self.sponge.absorb(self.sponge.squeeze(32))
     return self.sponge.squeeze(numBytes)
+  }
+
+  // A CPRNG should be reseeded occasionally, so that an attacker who knows a
+  // past state of the CPRNG will not be able to guess future states.
+  // Reseeding should be done with a seed too hard for an attacker to guess.
+  // E.g. if seed is always 1 random byte, the attacker can guess the value of
+  // seed based on the next public key they see generated.
+  func reseed(self, seed: string) {
+    self.sponge.absorb(seed)
   }
 }

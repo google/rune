@@ -675,7 +675,13 @@ static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel
         value = *(float*)&floatVal;
       }
     } else if (width == 64) {
-      value = va_arg(ap, double);
+      if (topLevel) {
+        value = va_arg(ap, double);
+      } else {
+        // We pass doubles as uint64_t when called from appendFormattedArg.
+        uint64_t floatVal = va_arg(ap, uint64_t);
+        value = *(double*)&floatVal;
+      }
     } else {
       runtime_throwExceptionCstr("Unsupported floating point width: %u", width);
     }

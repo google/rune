@@ -13,3 +13,4 @@
 // limitations under the License.
 
 println [1.25f32, 2.5f32]
+println [1.25f64, 2.5f64]

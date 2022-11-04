@@ -2064,6 +2064,9 @@ void storeBasicType(llElement dest, llElement source) {
            llElementGetName(dest), locationInfo());
 }
 
+// Forward reference for recursion.
+static void copyElement(llElement access, llElement element, bool freeDest);
+
 // Copy the tuple or struct element by element.
 static void copyTuple(llElement dest, llElement source, bool freeDest) {
   utAssert(llElementIsRef(dest));
@@ -2073,43 +2076,34 @@ static void copyTuple(llElement dest, llElement source, bool freeDest) {
   }
   utAssert(deDatatypeGetType(datatype) == DE_TYPE_TUPLE);
   for (uint32 i = 0; i < deDatatypeGetNumTypeList(datatype); i++) {
-    deDatatype subType = deDatatypeGetiTypeList(datatype, i);
-    if (deDatatypeContainsArray(subType)) {
-      llElement subSourceElement = indexTuple(source, i, false);
-      llElement subDestElement = indexTuple(dest, i, true);
-      deDatatype subType = llElementGetDatatype(subSourceElement);
-      if (llDatatypeIsArray(subType)) {
-        copyArray(subDestElement, subSourceElement, freeDest);
-      } else if (deDatatypeContainsArray(subType)) {
-        utAssert(deDatatypeGetType(subType) == DE_TYPE_TUPLE);
-        copyTuple(dest, source, freeDest);
-      } else {
-        storeBasicType(subDestElement, subSourceElement);
-      }
-    }
+    llElement subSourceElement = indexTuple(source, i, false);
+    llElement subDestElement = indexTuple(dest, i, true);
+    copyElement(subDestElement, subSourceElement, false);
   }
 }
 
 // Copy an element, which should be an array type (eg string, bigint), or tuple.
 static void copyElement(llElement access, llElement element, bool freeDest) {
   deDatatype datatype = llElementGetDatatype(element);
+  deDatatypeType type = deDatatypeGetType(datatype);
   if (llDatatypeIsArray(datatype)) {
     copyArray(access, element, freeDest);
-  } else if (deDatatypeGetType(datatype) == DE_TYPE_TUPLE ||
-      deDatatypeGetType(datatype) == DE_TYPE_STRUCT) {
+  } else if (type == DE_TYPE_TUPLE || type == DE_TYPE_STRUCT) {
     copyTuple(access, element, freeDest);
-  } else {
-    utAssert(deDatatypeGetType(datatype) == DE_TYPE_CLASS);
+  } else if (type == DE_TYPE_CLASS) {
     derefElement(&element);
     refObject(element);
     if (freeDest) {
       unrefCurrentObject(access);
     }
     storeBasicType(access, element);
+  } else {
+    derefElement(&element);
+    storeBasicType(access, element);
   }
 }
 
-// If we know an array/tuple wont be referenced again, call this function
+// If we know an array/tuple won't be referenced again, call this function
 // instead of copyArray.  It checks the needsFree flag, and if the array will be
 // freed, it calls runtime_moveArray rather than runtime_copyArray, which is faster.
 static void copyOrMoveElement(llElement dest, llElement source, bool freeDest) {
