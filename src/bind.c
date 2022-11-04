@@ -1218,22 +1218,20 @@ static void addDefaultClassDebugMethods(deClass theClass) {
   }
   utSym dumpSym = utSymCreate("dump");
   deFunction dumpMethod = deClassFindMethod(theClass, dumpSym);
-  if (dumpMethod == deFunctionNull) {
-    dumpMethod = deGenerateDefaultDumpMethod(theClass);
+  if (dumpMethod != deFunctionNull) {
+    return;
   }
+  dumpMethod = deGenerateDefaultDumpMethod(theClass);
   deLine line = deTclassGetLine(deClassGetTclass(theClass));
-
   deDatatypeArray parameterTypes = deDatatypeArrayAlloc();
   deDatatype selfType = deClassDatatypeCreate(theClass);
   deDatatypeArrayAppendDatatype(parameterTypes, selfType);
   deSignature signature = deLookupSignature(dumpMethod, parameterTypes);
-  if (signature == deSignatureNull) {
-    signature = deSignatureCreate(dumpMethod, parameterTypes, line);
-    deParamspec paramspec = deSignatureGetiParamspec(signature, 0);
-    deParamspecSetInstantiated(paramspec, true);
-    deSignatureSetInstantiated(signature, true);
-    bindFunctionBlock(dumpMethod, signature);
-  }
+  utAssert(signature == deSignatureNull);
+  signature = deSignatureCreate(dumpMethod, parameterTypes, line);
+  deParamspec paramspec = deSignatureGetiParamspec(signature, 0);
+  deParamspecSetInstantiated(paramspec, true);
+  deSignatureSetInstantiated(signature, true);
 }
 
 // Forward declaration for recursion.

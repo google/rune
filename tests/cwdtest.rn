@@ -16,9 +16,9 @@ import io
 
 path = io.getcwd()
 runeDirName = path[0 : path.rfind("/")]
-thirdPartyDirName = runeDirName[0 : runeDirName.rfind("/")]
-shortPath = path[thirdPartyDirName.length() : path.length()]
-if shortPath == "/third_party/rune" || shortPath == "/runfiles/google3" {
+parentDirName = runeDirName[0 : runeDirName.rfind("/")]
+shortPath = path[parentDirName.length() : path.length()]
+if shortPath.length() > 0 {
   println "PASSED"
 } else {
   println "FAILED with ", shortPath
