@@ -2870,8 +2870,7 @@ static bool datatypeIsIterator(deDatatype datatype) {
   return deFunctionGetType(iterator) == DE_FUNC_ITERATOR;
 }
 
-// Add a .values() call to the target if it does not represent an iterator, and
-// the target has a values iterator.
+// Add a .values() call to the target if it does not represent an iterator.
 static void addValuesIteratorIfNeeded(deBlock scopeBlock, deStatement statement) {
   deExpression assignment = deStatementGetExpression(statement);
   deExpression access = deExpressionGetFirstExpression(assignment);
