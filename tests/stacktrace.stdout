@@ -1,7 +1,0 @@
-Error: Non-equal types passed to binary operator
-File tests/stacktrace.rn, line 2:   println a + b
-Stack trace:
-In : File tests, line 0: stacktrace()
-In stacktrace: File tests/stacktrace.rn, line 5: foobar(123, 32u8)
-In stacktrace.foobar: File tests/stacktrace.rn, line 2:   println a + b
-Exiting due to error...

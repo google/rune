@@ -1,6 +1,0 @@
-Error: Assigning to const expression
-File tests/constmember.rn, line 6: foo.x[0][1] = "asdf"
-Stack trace:
-In : File tests, line 0: constmember()
-In constmember: File tests/constmember.rn, line 6: foo.x[0][1] = "asdf"
-Exiting due to error...
