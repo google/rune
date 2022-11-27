@@ -61,9 +61,7 @@ Python:
 
 ```python
 def max(a, b):
-	if a >= b:
-		return a
-	return b
+	return a if a >= b else b
 ```
 
 Rune:
