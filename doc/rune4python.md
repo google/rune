@@ -91,7 +91,7 @@ from a 1-character string to a u8 and back.
 
 	class Person(self, name) {
 		self.name = name
-	
+
 		func helloWorld(self) {
 			println "Hello, world, from ", self.name, "."
 		}
@@ -154,7 +154,7 @@ Python:
 		def __init__(self, x, y):
 			self.x = x
 			self.y = y
-		
+
 		def manhattanDist(self):
 			return abs(x) + abs(y)
 
@@ -163,7 +163,7 @@ Rune:
 	class Point(self, x, y) {
 		self.x = x
 		self.y = y
-	
+
 		func manhattanDist(self) {
 			return abs(x) + abs(y)
 		}
@@ -207,9 +207,9 @@ template functions.
 	func add(a, b) {
 		return a + b  // Like Python, addition of strings or arrays means concatenate.
 	}
-	
+
 	println add(3, 5)
-	
+
 	printlin add("This is", " a test")
 
 Rune gives a compiler error when integer sizes are mixed.  For example:
@@ -283,7 +283,7 @@ self:
 		self.parent = null(self)  // In the body, you must be more specific.
 		...
 	}
-	
+
 	n1 = Tree("N1", Tree("L1"), Tree("L2"))
 	n2 = Tree("N2", Tree("L3"), Tree("L4"))
 	n3 = Tree("N3", n1, n2)
@@ -652,7 +652,7 @@ Rune does this a bit differently:
 	class Point(self, <x>, <y>) {
 		self.x = x
 		self.y = y
-	
+
 		operator + (a: Point, b: Point): Point {
 			return Point(a.x + b.x, a.y + b.y)
 		}
@@ -768,7 +768,7 @@ statements.
 		}
 		return n*fact(n-1)
 	}
-	
+
 	unittest factTest {
 		if fact(6) != 720 {
 			throw "Incorrect value for fact(6)"
@@ -887,12 +887,12 @@ called when an object is destroyed.  Rune uses "final" methods for this:
 
 	class Foo(self, name) {
 		self.name = name
-		
+
 		final(self) {
 			println "Destroying ", self.name
 		}
 	}
-	
+
 	foo = Foo("123")
 	foo = null(Foo)
 
@@ -971,23 +971,23 @@ a given node, when traversing only forward edges.
 
 	class Graph(self) {
 	}
-	
+
 	class Node(self, graph, name) {
 		self.name = name
 		self.visited = false
 	}
-	
+
 	class Edge(self, outNode: Node, inNode: Node) {
 		outNode.appendOutEdge(self)
 		inNode.appendInEdge(self)
 	}
-	
+
 	relation DoublyLinkedList Graph  Node cascade
 	// Edges have a "fromNode" and a "toNode".
 	// Nodes have "outEdges" and "inEdges".
 	relation DoublyLinkedList Node:from Edge:out cascade
 	relation DoublyLinkedList Node:to Edge:in cascade
-	
+
 	// Print names of nodes in the graph that are reachable by traversing only forward edges.
 	func printReachableNodes(node: Node, reachedNodes) {
 		print node.name
@@ -1000,13 +1000,13 @@ a given node, when traversing only forward edges.
 			}
 		}
 	}
-	
+
 	func clearVisitedFlags(reachedNodes) {
 		for i in range(reachedNodes.length()) {
 			reachedNodes[i].visited = false
 		}
 	}
-	
+
 	unittest graphTest {
 		// Build an example graph.
 		graph = Graph()
@@ -1016,7 +1016,7 @@ a given node, when traversing only forward edges.
 		Edge(a, b); Edge(b, c); Edge(c, a)
 		Edge(d, b); Edge(d, a); Edge(c, e)
 		Edge(e, a); Edge(f, d); Edge(f, c)
-		
+
 		// Should print ABCE.
 		reachedNodes = arrayof(typeof(a))
 		printReachableNodes(a, reachedNodes)
