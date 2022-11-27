@@ -169,7 +169,7 @@ class Point:
 		self.y = y
 
 	def manhattanDist(self):
-		return abs(x) + abs(y)
+		return abs(self.x) + abs(self.y)
 ```
 
 Rune:
