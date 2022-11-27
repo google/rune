@@ -358,7 +358,7 @@ a compiler error:
 println rand32  // An error because rand32 generates a secret random value.
 ```
 
-Like Python, Rune embraces printf-like formatting with the % operator
+Like Python before [literal string interpolation](https://peps.python.org/pep-0498/), Rune embraces printf-like formatting with the % operator
 
 ```rune
 println "%x" % (2u256^255 - 19u256)  // Print curve25519’s modulus in hex.
