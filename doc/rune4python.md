@@ -18,16 +18,16 @@ was tough to make, and there are pros and cons.
 
 Pros:
 
-    - Many Python coders enjoy indentation-based statement grouping, which
-    requires less typing and results in fewer lines of code.
+- Many Python coders enjoy indentation-based statement grouping, which
+  requires less typing and results in fewer lines of code.
 
 Cons:
 
-    - Indentation based statement grouping leads to bugs when tabs and spaces
-      are used in the same file.
-    - Some folks have very low vision (including Rune's original author).  The
-      blind dislike Python’s indentation-based grouping, which screen readers by
-      default do not read out loud.
+- Indentation based statement grouping leads to bugs when tabs and spaces
+  are used in the same file.
+- Some folks have very low vision (including Rune's original author).  The
+  blind dislike Python’s indentation-based grouping, which screen readers by
+  default do not read out loud.
 
 Python:
 
