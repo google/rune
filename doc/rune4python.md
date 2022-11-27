@@ -170,6 +170,17 @@ class Point:
 
 	def manhattanDist(self):
 		return abs(self.x) + abs(self.y)
+
+# Python 3.7+:
+from dataclasses import dataclass
+
+@dataclass
+class Point:
+	x: int
+	y: int
+
+	def manhattanDist(self):
+		return abs(self.x) + abs(self.y)
 ```
 
 Rune:
