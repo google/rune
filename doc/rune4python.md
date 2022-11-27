@@ -511,7 +511,7 @@ names = ["Bill", "Bob", "Dave"]
 ```
 
 Note that array elements _must have the same type_, unlike Python.  Tuples are
-defined like Python, but with () rather than just commas:
+defined like Python, but unlike Python, parentheses are mandatory:
 
 ```rune
 point = (x, y)
