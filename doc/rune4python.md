@@ -683,8 +683,7 @@ no need for a break statement.
 
 In Rune, only operators can be overloaded, not functions.  This leads to
 situations where we wish we had different functionality in a function based on
-the types of arguments passed.  In Python we can use isinstance(object, type) to
-test the object type and change a function’s behavior.
+the types of arguments passed.  In Python we can use `isinstance(object, type)` or [`functools.singledispatch`](https://docs.python.org/3/library/functools.html#functools.singledispatch) to test the object type and change a function’s behavior.
 
 Similarly, in Rune, we can switch on the type of an object, and only the
 matching case is instantiated in the compiled code:
