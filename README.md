@@ -135,7 +135,7 @@ of properties created for the Human example above:
   nextHumanMotheredHuman = [null(Human)]
   firstMotheredHuman = [null(Human)]
   lastMotheredHuman = [null(Human)]
-  faterHuman = [null(Human)]
+  fatherHuman = [null(Human)]
   prevHumanFatheredHuman = [null(Human)]
   nextHumanFatheredHuman = [null(Human)]
   firstFatheredHuman = [null(Human)]
