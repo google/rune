@@ -422,7 +422,7 @@ and convey the programmer’s intent to the reader.  It is very common in Rune t
 cast a value to the type of another value, which is what \<a\> means, which is
 shorthand for \<typeof(a)\>.
 
-You can take the union of two type constraints with the | operator.  This means
+You can take the union of two type constraints with the | operator, [as in Python 3.10+](https://docs.python.org/3/library/typing.html#typing.Union). This means
 that either type is allowed.  All unsigned integers match Uint, and all signed
 integers match Int.  To specify a particular width:
 
