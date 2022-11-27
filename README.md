@@ -83,7 +83,7 @@ class Human(self, name: string, mother: Human = null, father: Human = null) {
 }
 
 relation DoublyLinked Human:"Mother" Human:"Mothered" cascade
-relation DoublyLinked Human:"Fater" Human:"Fathered" cascade
+relation DoublyLinked Human:"Father" Human:"Fathered" cascade
 
 adam = Human("Adam")
 eve = Human("Eve")
@@ -135,7 +135,7 @@ of properties created for the Human example above:
   nextHumanMotheredHuman = [null(Human)]
   firstMotheredHuman = [null(Human)]
   lastMotheredHuman = [null(Human)]
-  faterHuman = [null(Human)]
+  fatherHuman = [null(Human)]
   prevHumanFatheredHuman = [null(Human)]
   nextHumanFatheredHuman = [null(Human)]
   firstFatheredHuman = [null(Human)]
