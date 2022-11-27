@@ -803,7 +803,7 @@ and Rune allow tuples to be returned which is the Pythonic way of returning
 multiple values.  However, this creates new values on the stack when it is often
 more efficient to directly overwrite existing values.
 
-Rune offers Pascal-like "var" parameters:
+Rune offers Pascal-like "var" parameters (see also C#'s `ref` keyword):
 
 ```rune
 func increment(var x) {
