@@ -785,7 +785,8 @@ your class as a parameter.
 ## The toString() method
 
 If a class has a toString() method, it will be called in print and println
-statements, as well as throw.  If you print an object instance of a class
+statements, as well as throw.  This is like Python's `__repr__` (if `__str__` is missing).
+If you print an object instance of a class
 without defining a toString() method, a default method will be added for you,
 but only in debug mode, specified with the -g flag.
 
