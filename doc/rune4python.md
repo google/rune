@@ -115,7 +115,7 @@ which are displayed as UTF-8 when printed.  Note that for security reasons (see
 the Trojan Source attack), control characters are not allowed in Rune source files
 other than newline, return, and tab characters.
 
-The followin is valid in Rune:
+The following is valid in Rune:
 
     hässlich = "Μεδουσα"
     schön = "Ἀφροδίτη"
@@ -174,7 +174,7 @@ a function where methods are just sub-functions.
 
 ## Integers
 
-Integers in Python are either fixed-width integer, rather then infinite
+Integers in Python are either fixed-width integer, rather than infinite
 precision.  As a cryptography-centric systems language, Rune uses only
 fixed-integer widths, but the width can be any size up to 2<sup>24</sup>-1.
 
@@ -489,7 +489,7 @@ with different types of parameters results in different functions being
 instantiated.  This is the heart of polymorphism.  Simply calling a class
 constructor with different types of arguments does not create a new class.
 
-For classes only, you can specify the template parameters that will instatiate a
+For classes only, you can specify the template parameters that will instantiate a
 new class when different datatypes are used by putting the parameter name in
 angle brackets:
 
@@ -722,7 +722,7 @@ references, only the reference is copied.
 	listCopy = list  // Copies the array
 	assert(listCopy == list)  // True because Rune does deep list comparison.
 	a1 = Foo("test)  // Create a Foo object
-	a2 = a1  // Does not copy the Foo object in a1.  Copies the reference insetead.
+	a2 = a1  // Does not copy the Foo object in a1.  Copies the reference instead.
 	assert(a1 == a2)  // True because the references are equal
 	t1 = (1, "two")
 	t2 = t1  // Makes a copy of the tuple in t1
@@ -813,8 +813,8 @@ doubly-linked list before freeing the graph object.
 If you further define an Edge class and want a directed graph, you can add two
 additional relationships:
 
-	relation DoublyLinked Node:from Edge:out cascad
-	relation DoublyLinked Node:to Edge:in cascad
+	relation DoublyLinked Node:from Edge:out cascade
+	relation DoublyLinked Node:to Edge:in cascade
 
 This means that Node has an outEdges iterator, and an inEdges iterator:
 
@@ -831,7 +831,7 @@ This means that Node has an outEdges iterator, and an inEdges iterator:
 		}
 	}
 
-Now detroying the graph recursively deletes all its nodes and edges.
+Now destroying the graph recursively deletes all its nodes and edges.
 
 You can create your own relationship types, but take care!  Rune’s safety
 guarantees require relationship generators to be bug-free, which is harder than
@@ -839,9 +839,9 @@ it sounds.  Most folks will just use the default relationship types, which are:
 
 * LinkedList - Singly-linked list: insert is fast, remove is slow.
 * DoublyLinked - Doubly-linked list: both insert and remove are fast.
-* TailLinked - Like LinkedList, but has a fast append fuinction.
+* TailLinked - Like LinkedList, but has a fast append function.
 * OneToOne - Parent has one child, and child has one parent
-* Array - Like vectors of classes, but safer: children know how to remov
+* Array - Like vectors of classes, but safer: children know how to remove
   themselves.
 * Heapq - Binary heap queue, supporting constant-average-time push, log(n) pop,
   always returns smallest element, or largest if you set ascending false.
@@ -903,17 +903,17 @@ destroyed when foo is overwritten with null.
 
 One of the coolest features of Rune is its safe yet high performance memory
 management.  All data is stored in dynamic arrays or on the stack.  These arrays
-are not fixed like memory retured by malloc, and are occasionally compacted to
+are not fixed like memory returned by malloc, and are occasionally compacted to
 recover freed memory.  Top level objects are reference counted, and may not be
 in pointer-loops with other reference counted objects..
 
 Most objects should be in cascade-delete relationships.  These objects have no
-need for reference coutning: they will be destroyed when one of their
+need for reference counting: they will be destroyed when one of their
 cascade-delete parents is destroyed.  Cascade-delete objects can safely be in
 relationship loops.
 
-This scheme offers memory safefty like Rust, with improved performance, and
-without the no-poiner-loop (other than in "unsafe" code) restriction.
+This scheme offers memory safety like Rust, with improved performance, and
+without the no-pointer-loop (other than in "unsafe" code) restriction.
 
 ## Generators
 
