@@ -883,15 +883,7 @@ assert(t1 == t2)  // Rune does not deep compare tuples.
 
 ## Unit tests
 
-Python code often has a statement like this near the end of a file:
-
-```python
-if __name__ == "__main__":
-```
-
-Everything after it usually is some sort of test code the author wrote to
-verify the code works.  In Rune, we formalize this concept with unittest
-statements.
+In Rune, a special `unittest` statement is provided:
 
 ```rune
 func fact(n) {
@@ -909,7 +901,16 @@ unittest factTest {
 }
 ```
 
-These tests do nothing unless they are in the main module, just like Python.
+These tests do nothing unless they are in the main module, just like if you would state, for example,
+
+```python
+if __name__ == "__main__":
+	main()
+
+do_unittests()
+```
+
+in Python.
 
 ## Rune relationships
 
