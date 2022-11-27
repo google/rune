@@ -664,6 +664,18 @@ switch x {
 }
 ```
 
+Which in Python would either have to be an `if`/`elif` chain or, from [Python 3.10 on](https://peps.python.org/pep-0636/), a `match`/`case`:
+
+```python
+match x:
+    case 1:
+        print("one")
+    case 2:
+        print("two")
+    case _:
+        print("many")
+```
+
 Unlike C, the cases can be arbitrary expressions.  There is no fall-through, and
 no need for a break statement.
 
