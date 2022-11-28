@@ -83,7 +83,7 @@ class Human(self, name: string, mother: Human = null, father: Human = null) {
 }
 
 relation DoublyLinked Human:"Mother" Human:"Mothered" cascade
-relation DoublyLinked Human:"Fater" Human:"Fathered" cascade
+relation DoublyLinked Human:"Father" Human:"Fathered" cascade
 
 adam = Human("Adam")
 eve = Human("Eve")
@@ -135,7 +135,7 @@ of properties created for the Human example above:
   nextHumanMotheredHuman = [null(Human)]
   firstMotheredHuman = [null(Human)]
   lastMotheredHuman = [null(Human)]
-  faterHuman = [null(Human)]
+  fatherHuman = [null(Human)]
   prevHumanFatheredHuman = [null(Human)]
   nextHumanFatheredHuman = [null(Human)]
   firstFatheredHuman = [null(Human)]
@@ -151,7 +151,7 @@ would be 64 bits on a 64-bit machine.  In Rune, only the string references are
 cache** during the traversal, improving memory load times, while simultaneously
 improving cache hit rates.
 
-This is why Rune's binarytree.rn code already runs faster than any other
+This is why Rune's `binarytree.rn` code already runs faster than any other
 single-threaded result in the [Benchmark
 Games](https://benchmarksgame-team.pages.debian.net/benchmarksgame/index.html).
 (Rune is not yet multi-threaded).  The only close competitor is C++, where the
@@ -174,7 +174,7 @@ You'll need 6 dependencies installed to compile Rune:
 The first four can be installed with one command:
 
 ```sh
-$ sudo apt-get install bison flex libgmp-dev clang-10
+$ sudo apt-get install bison flex libgmp-dev clang-14
 ```
 
 Installing Datadraw requires cloning [the source from
@@ -232,5 +232,5 @@ You can debug your binary executable with gdb:
 $ gdb ./hello
 ```
 
-TODO: add instructions on how to debug compiler itself, especially the datadraw debug functionality.
+TODO: add instructions on how to debug the compiler itself, especially the datadraw debug functionality.
 

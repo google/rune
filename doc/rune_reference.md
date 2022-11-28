@@ -16,8 +16,8 @@ Implementation of data structures in Rune is abstract, allowing the compiler
 great freedom in how that data is laid out in memory.
 
 Another design choice is that all class instances are reference counted, unless
-the compiler can prove this it is not needed. To aid in this, RUne compiles an
-entire program or shared library at once, rather tha one file at a time. If
+the compiler can prove this it is not needed. To aid in this, Rune compiles an
+entire program or shared library at once, rather than one file at a time. If
 certain conventions are followed, moste objects will not even have a reference
 counter allocated.
 
@@ -151,7 +151,7 @@ behavior of code, only its speed.
 Since we do not know if a value is passed by reference or value, what happens
 here:
 
-func doubleArray(a: Array) { b = a b.concat(a) return b }
+    func doubleArray(a: Array) { b = a b.concat(a) return b }
 
 The |a| parameter is immutable, but |b| can be modified. This forces the
 compiler to make a copy of |a|, unless |b| is never modified, in which case why

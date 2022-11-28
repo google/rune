@@ -197,6 +197,7 @@ static deString unescape(char *string) {
 }
 
 // If the identifier contains characters used only in generators, report an error.
+// TODO Trojan Source attacks (IdStart IdContinue+, normalized only, no marks, UTX39)
 static inline void checkIdentifierChars(char *text) {
   if (deInGenerator || deGenerating || deInIterator) {
     return;

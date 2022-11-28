@@ -65,7 +65,7 @@ Rune:
 		return a >= b ? a : b  // Rune uses most C-style operators.
 	}
 
-Functions in both Python and Rune are highly polymorphic._  This means that you
+Functions in both Python and Rune are highly polymorphic.  This means that you
 can pass different types of objects to functions, and as long as all the
 operations in the function are defined for those objects, it just works.
 
@@ -115,7 +115,7 @@ which are displayed as UTF-8 when printed.  Note that for security reasons (see
 the Trojan Source attack), control characters are not allowed in Rune source files
 other than newline, return, and tab characters.
 
-The followin is valid in Rune:
+The following is valid in Rune:
 
     hässlich = "Μεδουσα"
     schön = "Ἀφροδίτη"
