@@ -149,7 +149,8 @@ static void assignParamspecVariables(deSignature signature) {
 }
 
 // Create either a class or function signature.
-deSignature deSignatureCreate(deFunction function, deDatatypeArray parameterTypes, deLine line) {
+deSignature deSignatureCreate(deFunction function,
+    deDatatypeArray parameterTypes, deLine line) {
   deSignature signature = deSignatureAlloc();
   deSignatureSetLine(signature, line);
   deFunctionAppendSignature(function, signature);
@@ -164,6 +165,12 @@ deSignature deSignatureCreate(deFunction function, deDatatypeArray parameterType
   deSignatureSetUsedParamspec(signature, numParameters);
   assignParamspecVariables(signature);
   addToHashTable(signature, parameterTypes);
+  if (deCurrentSignature != deSignatureNull) {
+    deSignatureAppendCallSignature(deCurrentSignature, signature);
+  }
+  if (deCurrentStatement != deStatementNull) {
+    deStatementAppendCallSignature(deCurrentStatement, signature);
+  }
   deRootAppendSignature(deTheRoot, signature);
   return signature;
 }
@@ -183,13 +190,13 @@ bool deSignatureIsMethod(deSignature signature) {
 static bool resolveSignatureParamTypes(deSignature signature) {
   deDatatype classType = deSignatureGetReturnType(signature);
   deTclass tclass = deClassGetTclass(deDatatypeGetClass(classType));
-  deDatatype TBDClassType = deTBDClassDatatypeCreate(tclass);
+  deDatatype nullType = deNullDatatypeCreate(tclass);
   bool firstTime = true;
   bool changedType = false;
   deParamspec paramspec;
   deForeachSignatureParamspec(signature, paramspec) {
     // Skip the self variable, which we leave as the tclass type.
-    if (!firstTime && deParamspecGetDatatype(paramspec) == TBDClassType) {
+    if (!firstTime && deParamspecGetDatatype(paramspec) == nullType) {
       deParamspecSetDatatype(paramspec, classType);
       changedType = true;
     }

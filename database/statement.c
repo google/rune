@@ -88,7 +88,6 @@ deStatement deStatementCreate(deBlock block, deStatementType type, deLine line) 
   deStatementSetLine(statement, line);
   deStatementSetGenerated(statement, deGenerating || deInIterator);
   deBlockAppendStatement(block, statement);
-  // In case the statement is copied, moved, etc.
   return statement;
 }
 
@@ -137,4 +136,11 @@ void deAppendStatementCopyAfterStatement(deStatement statement, deStatement dest
   deBlockRemoveStatement(destBlock, newStatement);
   deBlockInsertAfterStatement(destBlock, destStatement, newStatement);
   copyExpressionAndSubBlockToNewStatement(statement, newStatement);
+}
+
+// Return true if the statement is an import of any flavor.
+bool deStatementIsImport(deStatement statement) {
+  deStatementType type = deStatementGetType(statement);
+  return type == DE_STATEMENT_USE || type == DE_STATEMENT_IMPORT ||
+      type == DE_STATEMENT_IMPORTLIB || type == DE_STATEMENT_IMPORTRPC;
 }

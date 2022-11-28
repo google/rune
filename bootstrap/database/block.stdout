@@ -1,0 +1,48 @@
+{
+  println "Hello, World!"
+}
+{
+  println "First copied line"
+  println "Second copied line"
+}
+{
+  println "First stationary line"
+  println "Second moved line"
+}
+{
+  println "First line"
+  println "Second line"
+}
+{
+  println "Second line"
+  println "First line"
+}
+{
+  println "Hello"
+}
+{
+  println "Hello"
+}
+{
+}
+func print1() {
+  println "block1"
+}
+{
+  func print1()   {
+    println "block1"
+  }
+  println "block2"
+}
+{
+  func printTest()   {
+    println "func1"
+  }
+  func printTest_1()   {
+    println "func2"
+  }
+  func printTest_2()   {
+    println "func3"
+  }
+  println "topBlock"
+}

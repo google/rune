@@ -52,7 +52,7 @@ generator OneToOne(A: Class, B: Class, cascadeDelete:bool = false,
     prependcode A.destroy {
       child$labelB$B = self.$labelB$B
       if !isnull(child$labelB$B) {
-        self.remove(child$labelB$B)
+        self.remove$labelB$B(child$labelB$B)
       }
     }
   }

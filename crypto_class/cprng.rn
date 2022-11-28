@@ -22,6 +22,7 @@ class CPRNG(self, seed: string) {
     // This makes it hard for an attacker to guess the state of the CPRNG prior to this call.
     // BSD had this flaw, and attackers who gained access to the state of the urandom CPRNG
     // could guess not only future secret keys, but past keys as well.
+    // https://ftp.netbsd.org/pub/NetBSD/security/advisories/NetBSD-SA2019-005.txt.asc
     self.sponge.absorb(self.sponge.squeeze(32))
     return self.sponge.squeeze(numBytes)
   }

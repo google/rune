@@ -63,14 +63,15 @@ static void importIdentifier(deBlock destBlock, deBlock sourceBlock,
     deIdent ident, deLine line) {
   utSym name = deIdentGetSym(ident);
   deIdent oldIdent = deBlockFindIdent(destBlock, name);
-  if (oldIdent != deIdentNull) {
+  if (oldIdent == deIdentNull) {
+    deIdent newIdent = deCopyIdent(ident, destBlock);
+    deIdentSetImported(newIdent, true);
+  } else if (!deIdentImported(oldIdent)) {
     deFunction function = deBlockGetOwningFunction(sourceBlock);
     char *moduleName = deIdentGetName(deFunctionGetFirstIdent(function));
     deError(line, "Imported identifier %s in module %s already exists in this scope",
         utSymGetName(name), moduleName);
   }
-  deIdent newIdent = deCopyIdent(ident, destBlock);
-  deIdentSetImported(newIdent, true);
 }
 
 // Import the identifiers of |sourceBlock| into |destBlock|.  Both blocks are

@@ -36,6 +36,8 @@ class Line(self, filepath: Filepath, text: string, lineNum: u32) {
   }
 }
 
+relation TailLinked Filepath Line cascade
+
 unittest filepathTest {
   filepath = Filepath.new("test_filepath", null(Filepath), false)
   line1 = Line(filepath, "Line 1", 1u32)

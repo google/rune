@@ -87,14 +87,14 @@ deTclass deTclassCreate(deFunction constructor, uint32 refWidth, deLine line) {
 }
 
 // We allow datatypes to be different in a specific case: if newDatatype is
-// TBDCLASS and oldDatatype is an instance of that TCLASS.
+// NULL and oldDatatype is an instance of that TCLASS.
 static bool datatypesCompatible(deDatatype newDatatype, deDatatype oldDatatype) {
   if (newDatatype == oldDatatype) {
     return true;
   }
   deDatatypeType newType = deDatatypeGetType(newDatatype);
   deDatatypeType oldType = deDatatypeGetType(oldDatatype);
-  if (newType != DE_TYPE_TBDCLASS || oldType != DE_TYPE_CLASS) {
+  if (newType != DE_TYPE_NULL || oldType != DE_TYPE_CLASS) {
     return false;
   }
   deTclass oldTclass = deClassGetTclass(deDatatypeGetClass(oldDatatype));
@@ -133,10 +133,6 @@ deClass findExistingClass(deSignature signature) {
   deClass theClass;
   deForeachTclassClass(tclass, theClass) {
     deSignature otherSignature = deClassGetFirstSignature(theClass);
-    if (otherSignature == deSignatureNull) {
-      utAssert(deTclassHasDefaultClass(tclass));
-      return theClass;
-    }
     if (classSignaturesMatch(signature, otherSignature)) {
       return theClass;
     }
@@ -192,48 +188,12 @@ static bool tclassHasTemplateParameters(deTclass tclass) {
   return false;
 }
 
-// Create a new theClass object.
-static deClass defaultClassCreate(deTclass tclass) {
-  deClass theClass = deClassAlloc();
-  uint32 numClasses = deTclassGetNumClasses(tclass) + 1;
-  deClassSetNumber(theClass, numClasses);
-  deTclassSetNumClasses(tclass, numClasses);
-  deBlock subBlock = deBlockCreate(deFilepathNull, DE_BLOCK_CLASS, deTclassGetLine(tclass));
-  deClassInsertSubBlock(theClass, subBlock);
-  deTclassAppendClass(tclass, theClass);
-  deDatatype selfType = deClassDatatypeCreate(theClass);
-  deClassSetDatatype(theClass, selfType);
-  // Create a nextFree variable.
-  deVariable nextFree = deVariableCreate(subBlock, DE_VAR_LOCAL, false, utSymCreate("nextFree"),
-      deExpressionNull, false, 0);
-  deVariableSetDatatype(nextFree, selfType);
-  deVariableSetInstantiated(nextFree, true);
-  // Make identifiers pointing to the original methods and inner-classes.
-  deBlock oldBlock = deFunctionGetSubBlock(deTclassGetFunction(tclass));
-  deFunction function;
-  deForeachBlockFunction(oldBlock, function) {
-    deLine line = deFunctionGetLine(function);
-    deIdent ident = deIdentCreate(subBlock, DE_IDENT_FUNCTION,
-        deIdentGetSym(deFunctionGetFirstIdent(function)), line);
-    deFunctionAppendIdent(function, ident);
-  } deEndBlockFunction;
-  deRootAppendClass(deTheRoot, theClass);
-  return theClass;
-}
-
 // If we already created the default class, return it.  Otherwise, check that we
 // have no template parameters, and if so, create the default class.  Return
 // null if we do have template parameters.
 deClass deTclassGetDefaultClass(deTclass tclass) {
-  if (!deTclassHasDefaultClass(tclass)) {
-    if (tclassHasTemplateParameters(tclass)) {
-      return deClassNull;
-    }
-    if (deTclassGetFirstClass(tclass) == deClassNull) {
-      utAssert(deTclassGetFirstClass(tclass) == deClassNull);
-      classCreate(tclass);
-    }
-    deTclassSetHasDefaultClass(tclass, true);
+  if (tclassHasTemplateParameters(tclass)) {
+    return deClassNull;
   }
   return deTclassGetFirstClass(tclass);
 }
@@ -244,30 +204,22 @@ deTclass deCopyTclass(deTclass tclass, deFunction destConstructor) {
 }
 
 // Build a tuple expression for the class members.  Bind types as we go.
-static deExpression buildClassTupleExpression(deBlock classBlock, deExpression selfExpr) {
+static deExpression buildClassTupleExpression(deBlock classBlock,
+    deExpression selfExpr, bool showGenerated) {
   deExpression tupleExpr = deExpressionCreate(DE_EXPR_TUPLE, deExpressionGetLine(selfExpr));
   deDatatypeArray types = deDatatypeArrayAlloc();
   deVariable variable;
   deForeachBlockVariable(classBlock, variable) {
-    if (!deVariableIsType(variable) && !deVariableGenerated(variable)) {
+    if (!deVariableIsType(variable) && (showGenerated || !deVariableGenerated(variable))) {
       deDatatype datatype = deVariableGetDatatype(variable);
-      deDatatypeArrayAppendDatatype(types, datatype);
-      deLine line = deVariableGetLine(variable);
-      deExpression varExpr = deIdentExpressionCreate(deVariableGetSym(variable), line);
-      deExpression newSelfExpr = deCopyExpression(selfExpr);
-      deExpression dotExpr = deBinaryExpressionCreate(DE_EXPR_DOT, newSelfExpr, varExpr, line);
-      deExpressionSetDatatype(dotExpr, datatype);
-      if (deDatatypeGetType(datatype) != DE_TYPE_CLASS) {
+      if (deDatatypeConcrete(datatype)) {
+        deDatatypeArrayAppendDatatype(types, datatype);
+        deLine line = deVariableGetLine(variable);
+        deExpression varExpr = deIdentExpressionCreate(deVariableGetSym(variable), line);
+        deExpression newSelfExpr = deCopyExpression(selfExpr);
+        deExpression dotExpr = deBinaryExpressionCreate(DE_EXPR_DOT, newSelfExpr, varExpr, line);
+        deExpressionSetDatatype(dotExpr, datatype);
         deExpressionAppendExpression(tupleExpr, dotExpr);
-      } else {
-        // Cast class members to u32.
-        deDatatype uint32Datatype = deUintDatatypeCreate(32);
-        deExpression uintTypeExpr = deExpressionCreate(DE_EXPR_UINTTYPE, line);
-        deExpressionSetWidth(uintTypeExpr, 32);
-        deExpressionSetDatatype(uintTypeExpr, uint32Datatype);
-        deExpression castExpr = deBinaryExpressionCreate(DE_EXPR_CAST, uintTypeExpr, dotExpr, line);
-        deExpressionSetDatatype(castExpr, uint32Datatype);
-        deExpressionAppendExpression(tupleExpr, castExpr);
       }
     }
   } deEndBlockVariable;
@@ -304,10 +256,12 @@ static deString findObjectPrintFormat(deExpression tupleExpr) {
 }
 
 // Generate a default toString method for the class.
-deFunction deGenerateDefaultToStringMethod(deClass theClass) {
+static deFunction generateDefaultMethod(deClass theClass, char *name,
+    bool showGenerated, bool callPrint) {
   deBlock classBlock = deClassGetSubBlock(theClass);
-  utSym funcName = utSymCreate("toString");
-  deLinkage linkage = deFunctionGetLinkage(deTclassGetFunction(deClassGetTclass(theClass)));
+  utSym funcName = utSymCreate(name);
+  deTclass tclass = deClassGetTclass(theClass);
+  deLinkage linkage = deFunctionGetLinkage(deTclassGetFunction(tclass));
   deFunction function = deFunctionCreate(deBlockGetFilepath(classBlock), classBlock,
       DE_FUNC_PLAIN, funcName, linkage, 0);
   deBlock functionBlock = deFunctionGetSubBlock(function);
@@ -317,39 +271,40 @@ deFunction deGenerateDefaultToStringMethod(deClass theClass) {
   deVariableCreate(functionBlock, DE_VAR_PARAMETER, true, paramName, deExpressionNull, false, line);
   deExpression selfExpr = deIdentExpressionCreate(utSymCreate("self"), line);
   deExpressionSetDatatype(selfExpr, deClassDatatypeCreate(theClass));
-  deExpression tupleExpr = buildClassTupleExpression(classBlock, selfExpr);
+  deExpression tupleExpr = buildClassTupleExpression(classBlock, selfExpr, showGenerated);
   deString format = findObjectPrintFormat(tupleExpr);
+  if (showGenerated) {
+    // If showing all fields, format like Foo(32) = {...}.
+    deExpression uintExpr = deExpressionCreate(DE_EXPR_UINTTYPE, line);
+    deExpressionSetWidth(uintExpr, deTclassGetRefWidth(tclass));
+    deExpression castExpr = deBinaryExpressionCreate(DE_EXPR_CAST, uintExpr,
+        deCopyExpression(selfExpr), line);
+    deExpressionInsertExpression(tupleExpr, castExpr);
+    char *text = utSprintf("%s(%%u) = %s", deTclassGetName(tclass), deStringGetCstr(format));
+    format = deMutableCStringCreate(text);
+  }
   deExpression formatExpr = deStringExpressionCreate(format, line);
-  deStatement retStatement = deStatementCreate(functionBlock, DE_STATEMENT_RETURN, line);
   deExpression modExpr = deBinaryExpressionCreate(DE_EXPR_MOD, formatExpr, tupleExpr, line);
-  deStatementInsertExpression(retStatement, modExpr);
+  if (!callPrint) {
+    deStatement retStatement = deStatementCreate(functionBlock, DE_STATEMENT_RETURN, line);
+    deStatementInsertExpression(retStatement, modExpr);
+  } else {
+    deStatement statement = deStatementCreate(functionBlock, DE_STATEMENT_PRINT, line);
+    deExpression listExpr = deBinaryExpressionCreate(DE_EXPR_LIST, modExpr,
+        deStringExpressionCreate(deMutableCStringCreate("\n"), line), line);
+    deStatementInsertExpression(statement, listExpr);
+  }
   return function;
 }
 
+// Generate a default toString method for the class.
+deFunction deGenerateDefaultToStringMethod(deClass theClass) {
+  return generateDefaultMethod(theClass, "toString", false, false);
+}
+
 // Generate a default print method for the class.
-deFunction deGenerateDefaultDumpMethod(deClass theClass) {
-  deBlock classBlock = deClassGetSubBlock(theClass);
-  deLine line = deBlockGetLine(classBlock);
-  utSym funcName = utSymCreate("dump");
-  deLinkage linkage = deFunctionGetLinkage(deTclassGetFunction(deClassGetTclass(theClass)));
-  deFunction function = deFunctionCreate(deBlockGetFilepath(classBlock), classBlock,
-      DE_FUNC_PLAIN, funcName, linkage, line);
-  deBlock functionBlock = deFunctionGetSubBlock(function);
-  // Add a self parameter.
-  utSym paramName = utSymCreate("self");
-  deVariableCreate(functionBlock, DE_VAR_PARAMETER, true, paramName, deExpressionNull, false, line);
-  deExpression selfExpr = deIdentExpressionCreate(utSymCreate("self"), line);
-  deExpression toStringExpr = deIdentExpressionCreate(utSymCreate("toString"), line);
-  deExpressionSetDatatype(selfExpr, deClassDatatypeCreate(theClass));
-  deStatement printStatement = deStatementCreate(functionBlock, DE_STATEMENT_PRINT, line);
-  deExpression accessExpr = deBinaryExpressionCreate(DE_EXPR_DOT, selfExpr, toStringExpr, line);
-  deExpression paramsExpr = deExpressionCreate(DE_EXPR_LIST, line);
-  deExpression callExpr = deBinaryExpressionCreate(DE_EXPR_CALL, accessExpr, paramsExpr, line);
-  deExpression newlineExpr = deCStringExpressionCreate("\n", line);
-  deExpression printArgsExpr = deBinaryExpressionCreate(
-      DE_EXPR_LIST, callExpr, newlineExpr, line);
-  deStatementInsertExpression(printStatement, printArgsExpr);
-  return function;
+deFunction deGenerateDefaultShowMethod(deClass theClass) {
+  return generateDefaultMethod(theClass, "show", true, true);
 }
 
 // Determine if the class has a toString method.  If so, we use it to print
@@ -361,4 +316,30 @@ deFunction deClassFindMethod(deClass theClass, utSym methodSym) {
     return deFunctionNull;
   }
   return deIdentGetFunction(ident);
+}
+
+// Some functions, like tclass functions need to continue existing even if they
+// are never constructed, since they are used in datatypes.  Instead of
+// destroying them, destroy most of their contents.  This will destroy
+// relations and any statements and functions generated by them.  If we do not
+// do this, we will have many statements trying to operate on classes that were
+// never clearly defined, since we do not know how the constructor was called.
+//
+// This situation is common when developing modules with unit tests that may
+// import other modules, but not instantiate all classes in those modules.
+void deDestroyTclassContents(deTclass tclass) {
+  deFunction function = deTclassGetFunction(tclass);
+  deBlock oldSubBlock = deFunctionGetSubBlock(function);
+  deFilepath filepath = deBlockGetFilepath(oldSubBlock);
+  deLine line = deBlockGetLine(oldSubBlock);
+  deBlock newSubBlock = deBlockCreate(filepath, DE_BLOCK_FUNCTION, line);
+  deBlockDestroy(oldSubBlock);
+  deFunctionInsertSubBlock(function, newSubBlock);
+  deRelation relation;
+  deSafeForeachTclassParentRelation(tclass, relation) {
+    deRelationDestroy(relation);
+  } deEndSafeTclassParentRelation;
+  deSafeForeachTclassChildRelation(tclass, relation) {
+    deRelationDestroy(relation);
+  } deEndSafeTclassChildRelation;
 }

@@ -1,0 +1,98 @@
+//  Copyright 2022 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use root
+use line
+use value
+use block
+use datatype
+use expr
+
+class Variable(self, block: Block, isParam: bool, isConst: bool, sym: Sym,
+    initializer: Expr, typeExpr: Expr, generated: bool, line: Line) {
+  self.isParam = isParam  // Otherwise, it is a local variable.
+  self.isConst = isConst
+  self.sym = sym
+  if !isnull(initializer) {
+    self.insertInitializerExpr(initializer)
+  }
+  if !isnull(typeExpr) {
+    self.insertTypeExpr(typeExpr)
+  }
+  self.instantiated = false  // Some variables hold types, not values.
+  self.line = line
+  self.inClassSignature = false
+  // TODO: Comment this in when we port Datatype.
+  // self.datatype = null(Datatype)
+  // This is the array holding a class data members values.
+  self.globalArrayVariable = null(Variable)
+  // Set if the variable is initialized in the scope-block.  This is used to
+  // determine if we should initialize it up-front or later.
+  self.initializedAtTop = false
+  // Class constructor parameters declared <withBrackets> become template parameters.
+  // Template parameters are in the tclass signature.
+  self.inTclassSig = false
+  // Used when renaming variables to eliminate conflicts with generated code.
+  self.savedSym = null(Sym)
+  // Used when interpreting Rune code generators.
+  self.value = null(Value(0u32))
+  self.generated = generated
+  self.entryValue = 0u32  // Set for variables representing enum entries.
+  // TODO: Comment this in when we port Datatype
+  // self.savedDatatype = null(Datatype)  // Used in matching overloaded operators.
+  block.appendVariable(self)
+  Ident(block, self, sym, line)
+
+  // Dump the variable to a string for debugging purposes.
+  func dumpToString(self, var text: string) {
+    getRoot().indent(text)
+    if self.isParam && !self.isConst {
+      text += "var "
+    }
+    text += "%s" % self.sym.name
+    if !isnull(self.typeExpr) {
+      text += ": "
+      self.typeExpr.dumpToString(text)
+    }
+    if !isnull(self.initializerExpr) {
+      text += " = "
+      self.initializerExpr.dumpToString(text)
+    }
+  }
+
+  // Dump the variable to stdout for debugging purposes.
+  func dump(self) {
+    text = ""
+    self.dumpToString(text)
+    print text
+  }
+
+  // Make a copy of a variable in |destBlock|.
+  func copy(self, destBlock: Block) -> Variable {
+    newVariable = Variable(destBlock, self.isParam, self.isConst, self.sym,
+        self.initializerExpr.copy(), self.typeExpr.copy(), self.generated, self.line)
+    return newVariable
+  }
+
+  // Rename the variable.  Save the old name, in case it needs to be restored later.
+  func rename(self, newName: Sym) {
+    self.savedName = self.sym
+    for ident in self.idents() {
+      // There should just be one.
+      ident.rename(newName)
+    }
+  }
+}
+
+relation DoublyLinked Block Variable cascade

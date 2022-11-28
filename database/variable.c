@@ -47,7 +47,7 @@ deVariable deVariableCreate(deBlock block, deVariableType type, bool isConst, ut
   }
   deBlockAppendVariable(block, variable);
   deIdent ident = deIdentCreate(block, DE_IDENT_VARIABLE, name, line);
-  deVariableAppendIdent(variable, ident);
+  deVariableInsertIdent(variable, ident);
   return variable;
 }
 
@@ -65,9 +65,6 @@ deVariable deCopyVariable(deVariable variable, deBlock destBlock) {
 // Rename the variable.  Save the old name, in case it needs to be restored later.
 void deVariableRename(deVariable variable, utSym newName) {
   deVariableSetSavedName(variable, deVariableGetSym(variable));
-  deIdent ident;
-  deForeachVariableIdent(variable, ident) {
-    // There should just be one.
-    deRenameIdent(ident, newName);
-  } deEndVariableIdent;
+  deIdent ident = deVariableGetIdent(variable);
+  deRenameIdent(ident, newName);
 }

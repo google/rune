@@ -12,11 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// TODO: should we automatically add this when a relationship is executed?
-// This is only required because filepath.rn generates methods on Root that use
-// Filepath.
-use filepath
-
 theGlobalRoot = Root()
 
 class Root(self) {
@@ -35,10 +30,6 @@ class Root(self) {
   func decrementIndent(self) {
     self.indentDepth -= 1
   }
-}
-
-func theRoot() -> Root {
-  return theGlobalRoot
 }
 
 // Returns the global root.

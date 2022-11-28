@@ -29,6 +29,7 @@
 
 static deBlock deSavedBlock;
 static deStatement deLastStatement;
+static uint32 deSkippedCodeNestedDepth;
 
 extern int fileno (FILE *__stream) __THROW __wur;
 
@@ -106,7 +107,10 @@ static void setFunctionExtern(deFunction function, deString langName) {
 }
 
 // Check that deCurrentBlock is a module or package block.
-static void checkTopBlock(void ) {
+static void checkTopBlock(void) {
+  if (deSkippedCodeNestedDepth != 0) {
+    return;
+  }
   if (deBlockGetType(deCurrentBlock) == DE_BLOCK_FUNCTION) {
     deFunction function = deBlockGetOwningFunction(deCurrentBlock);
     deFunctionType type = deFunctionGetType(function);
@@ -118,8 +122,7 @@ static void checkTopBlock(void ) {
 }
 
 // Move import and use statements in a unit test to |destBlock|.
-static void moveImportsToBlock(deFunction function, deBlock destBlock) {
-  deBlock subBlock = deFunctionGetSubBlock(function);
+static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
   deStatement statement;
   deSafeForeachBlockStatement(subBlock, statement) {
     if (deStatementIsImport(statement)) {
@@ -150,7 +153,6 @@ static void moveImportsToBlock(deFunction function, deBlock destBlock) {
 %token <boolVal> BOOL
 %token <floatVal> FLOAT
 
-%type <boolVal> optConst
 %type <boolVal> optVar
 %type <exprTypeVal> assignmentOp
 %type <exprTypeVal> operator
@@ -170,7 +172,6 @@ static void moveImportsToBlock(deFunction function, deBlock destBlock) {
 %type <exprVal> inExpression
 %type <exprVal> modExpression
 %type <exprVal> mulExpression
-%type <exprVal> nonConstAssignmentExpression
 %type <exprVal> oneOrMoreExpressions
 %type <exprVal> oneOrMoreCallParameters
 %type <exprVal> optCascade
@@ -213,7 +214,6 @@ static void moveImportsToBlock(deFunction function, deBlock destBlock) {
 %token <lineVal> KWCASE
 %token <lineVal> KWCASTTRUNC
 %token <lineVal> KWCLASS
-%token <lineVal> KWCONST
 %token <lineVal> KWDEBUG
 %token <lineVal> KWDEFAULT
 %token <lineVal> KWDIVEQUALS
@@ -325,6 +325,7 @@ initialize: // Empty
   deSavedBlock = deBlockNull;
   deInGenerator = false;
   deInIterator = false;
+  deSkippedCodeNestedDepth = 0;
 }
 
 runeFile: statements
@@ -472,23 +473,13 @@ structMembers:  // Empty
 | structMembers structMember newlines
 ;
 
-structMember: optConst IDENT optTypeExpression optInitializer
+structMember: IDENT optTypeExpression optInitializer
 {
   deVariable parameter = deVariableCreate(deCurrentBlock, DE_VAR_PARAMETER,
-      $1, $2, $4, false, deCurrentLine);
-  if ($3 != deExpressionNull) {
-    deVariableInsertTypeExpression(parameter, $3);
+      false, $1, $3, false, deCurrentLine);
+  if ($2 != deExpressionNull) {
+    deVariableInsertTypeExpression(parameter, $2);
   }
-}
-;
-
-optConst:  // Empyt
-{
-  $$ = false;
-}
-| KWCONST
-{
-  $$ = true;
 }
 ;
 
@@ -1054,8 +1045,8 @@ doStatementHeader: KWDO
 }
 ;
 
-forStatement: forStatementHeader nonConstAssignmentExpression ',' optNewlines expression ','
-	    optNewlines nonConstAssignmentExpression block
+forStatement: forStatementHeader assignmentExpression ',' optNewlines expression ','
+	    optNewlines assignmentExpression block
 {
   deStatement statement = deBlockGetOwningStatement(deCurrentBlock);
   deExpression expressionList = deExpressionCreate(DE_EXPR_LIST, deStatementGetLine(statement));
@@ -1081,23 +1072,13 @@ assignmentStatement: assignmentExpression newlines
 }
 ;
 
-assignmentExpression: nonConstAssignmentExpression
-| KWCONST nonConstAssignmentExpression
-{
-  if (deExpressionGetType($2) != DE_EXPR_EQUALS) {
-    deError($1, "Invalid const assignment");
-  }
-  $$ = deUnaryExpressionCreate(DE_EXPR_CONST, $2, $1);
-}
-
-nonConstAssignmentExpression: accessExpression optTypeExpression assignmentOp expression
+assignmentExpression: accessExpression optTypeExpression assignmentOp expression
 {
   $$ = deBinaryExpressionCreate($3, $1, $4, deExpressionGetLine($1));
   if ($2 != deExpressionNull) {
     deExpressionAppendExpression($$, $2);  // Add type constraint as 3rd parameter.
   }
 }
-;
 
 assignmentOp: '='
 {
@@ -1337,6 +1318,9 @@ returnStatement: KWRETURN newlines
 {
   deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_RETURN, $1);
   deStatementInsertExpression(statement, $2);
+  deBlock scopeBlock = deBlockGetScopeBlock(deCurrentBlock);
+  deFunction function = deBlockGetOwningFunction(scopeBlock);
+  deFunctionSetReturnsValue(function, true);
 }
 ;
 
@@ -1425,14 +1409,15 @@ yield: KWYIELD expression newlines
 }
 ;
 
-unitTestStatement: unitTestHeader block
+unitTestStatement: namedUnitTestHeader block
 {
   deFunction function = deBlockGetOwningFunction(deCurrentBlock);
   deCurrentBlock = deFunctionGetBlock(function);
   if (!deTestMode && !deParsingMainModule) {
     deFunctionDestroy(function);
   } else {
-    moveImportsToBlock(function, deCurrentBlock);
+    deBlock subBlock = deFunctionGetSubBlock(function);
+    moveImportsToBlock(subBlock, deCurrentBlock);
     // Call the unit test.
     deLine line = deFunctionGetLine(function);
     deExpression accessExpr = deIdentExpressionCreate(deFunctionGetSym(function), line);
@@ -1443,13 +1428,32 @@ unitTestStatement: unitTestHeader block
   }
   deInIterator = false;
 }
+| unnamedUnitTestHeader block
+{
+  if (!deTestMode && !deParsingMainModule) {
+    deStatement statement = deBlockGetOwningStatement(deCurrentBlock);
+    deCurrentBlock = deStatementGetBlock(statement);
+    deStatementDestroy(statement);
+    deSkippedCodeNestedDepth--;
+  }
+}
 ;
 
-unitTestHeader: KWUNITTEST IDENT
+namedUnitTestHeader: KWUNITTEST IDENT
 {
   deFunction function = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_UNITTEST, $2, DE_LINK_MODULE, $1);
   deCurrentBlock = deFunctionGetSubBlock(function);
+}
+;
+
+unnamedUnitTestHeader: KWUNITTEST
+{
+  if (!deTestMode && !deParsingMainModule) {
+    deSkippedCodeNestedDepth++;
+    // Statements in this block will be destroyed above.
+    createBlockStatement(DE_STATEMENT_DO);
+  }
 }
 ;
 
@@ -1460,6 +1464,7 @@ debugStatement: debugHeader block
     deStatement statement = deBlockGetOwningStatement(deCurrentBlock);
     deCurrentBlock = deStatementGetBlock(statement);
     deStatementDestroy(statement);
+    deSkippedCodeNestedDepth--;
   }
 }
 ;
@@ -1467,6 +1472,7 @@ debugStatement: debugHeader block
 debugHeader: KWDEBUG
 {
   if (!deDebugMode) {
+    deSkippedCodeNestedDepth++;
     createBlockStatement(DE_STATEMENT_DO);
   }
 }

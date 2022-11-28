@@ -97,6 +97,33 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
     }
 
     func insert$labelB$B(self, entry) {
+      func updateHashTableAfterResize(self) {
+        // Move ojbects that have their high next higher bit forward by the old table length.
+        for i in range(0, self.num$labelB$pluralB) {
+          entry = self.$labelB$B_Table[i]
+          prevEntry = null(entry)
+          newLength = self.$labelB$B_Table.length()
+          mask = <u64>(newLength - 1)
+          while !isnull(entry) {
+            hash = hashValue(entry.$keyField) & mask
+            if hash >> (newLength - 2) != 0 {
+              nextEntry = entry.nextHashed$A$labelB$B
+              // Remove entry.
+              if isnull(prevEntry) {
+                self.$labelB$B_Table[i] = nextEntry
+              } else {
+                prevEntry.nextHashed$A$labelB$B = nextEntry
+              }
+              // Insert entry.
+              entry.nextHashed$A$labelB$B = self.$labelB$B_Table[hash]
+              self.$labelB$B_Table[hash] = entry
+            }
+            prevEntry = entry
+            entry = nextEntry
+          }
+        }
+      }
+
       if self.num$labelB$pluralB == self.$labelB$B_Table.length() {
         if self.$labelB$B_Table.length() == 0 {
           self.$labelB$B_Table.resize(1)
@@ -107,6 +134,7 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
         for i in range(self.num$labelB$pluralB, self.$labelB$B_Table.length()) {
           self.$labelB$B_Table[i] = null(entry)
         }
+        updateHashTableAfterResize(self)
       }
       hash = hashValue(entry.$keyField) & <u64>(self.$labelB$B_Table.length() - 1)
       prevEntry = self.$labelB$B_Table[hash]

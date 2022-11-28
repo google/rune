@@ -42,8 +42,8 @@ char *deDatatypeTypeGetName(deDatatypeType type) {
   switch (type) {
   case DE_TYPE_NONE:
     return "none";
-  case DE_TYPE_TBDCLASS:
-    return "TBDCLASS";
+  case DE_TYPE_NULL:
+    return "null";
   case DE_TYPE_BOOL:
     return "bool";
   case DE_TYPE_STRING:
@@ -89,6 +89,7 @@ deTclass deFindDatatypeTclass(deDatatype datatype) {
     case DE_TYPE_FUNCPTR:
       return deFuncptrTclass;
     case DE_TYPE_TCLASS:
+    case DE_TYPE_NULL:
       return deDatatypeGetTclass(datatype);
     case DE_TYPE_CLASS:
       return deClassGetTclass(deDatatypeGetClass(datatype));
@@ -111,18 +112,12 @@ deTclass deFindDatatypeTclass(deDatatype datatype) {
     case DE_TYPE_STRUCT:
       return deStructTclass;
     case DE_TYPE_ENUM:
-      return deEnumTclass;
     case DE_TYPE_ENUMCLASS:
-      utExit("Tried to find the class type of an enum class");
-      break;
+      return deEnumTclass;
     case DE_TYPE_NONE:
-      utExit("Tried to find the class type of none");
-      break;
-    case DE_TYPE_TBDCLASS:
-      utExit("Tried to find the class type of TBDCLASS");
       break;
   }
-  return deTclassNull;  // Dummy return.
+  return deTclassNull;
 }
 
 // Create a datatype of type DE_TYPE_NONE.  Making it unique comes later.
@@ -226,7 +221,7 @@ static bool datatypesAreIdentical(deDatatype datatype1, deDatatype datatype2) {
       }
       break;
     case DE_TYPE_TCLASS:
-    case DE_TYPE_TBDCLASS:
+    case DE_TYPE_NULL:
       if (deDatatypeGetTclass(datatype1) != deDatatypeGetTclass(datatype2)) {
         return false;
       }
@@ -327,10 +322,10 @@ deDatatype deNoneDatatypeCreate(void) {
   return deNoneDatatype;
 }
 
-// Return the TBDCLASS datatype, witch can be unified with classes of the same
+// Return the NULL datatype, witch can be unified with classes of the same
 // tclass.
-deDatatype deTBDClassDatatypeCreate(deTclass tclass) {
-  deDatatype datatype = datatypeCreate(DE_TYPE_TBDCLASS, deTclassGetRefWidth(tclass), false);
+deDatatype deNullDatatypeCreate(deTclass tclass) {
+  deDatatype datatype = datatypeCreate(DE_TYPE_NULL, deTclassGetRefWidth(tclass), false);
   deDatatypeSetTclass(datatype, tclass);
   return addToHashTable(datatype);
 }
@@ -425,9 +420,28 @@ deDatatype deClassDatatypeCreate(deClass theClass) {
 
 // Return the function datatype.
 deDatatype deFunctionDatatypeCreate(deFunction function) {
-  deDatatype datatype = datatypeCreate(DE_TYPE_FUNCTION, 0, false);
-  deDatatypeSetFunction(datatype, function);
-  return addToHashTable(datatype);
+  switch (deFunctionGetType(function)) {
+    case DE_FUNC_PLAIN:
+    case DE_FUNC_UNITTEST:
+    case DE_FUNC_FINAL:
+    case DE_FUNC_DESTRUCTOR:
+    case DE_FUNC_PACKAGE:
+    case DE_FUNC_MODULE:
+    case DE_FUNC_ITERATOR:
+    case DE_FUNC_STRUCT:
+    case DE_FUNC_GENERATOR: {
+      deDatatype datatype = datatypeCreate(DE_TYPE_FUNCTION, 0, false);
+      deDatatypeSetFunction(datatype, function);
+      return addToHashTable(datatype);
+    }
+    case DE_FUNC_ENUM:
+      return deEnumClassDatatypeCreate(function);
+    case DE_FUNC_CONSTRUCTOR:
+      return deTclassDatatypeCreate(deFunctionGetTclass(function));
+    case DE_FUNC_OPERATOR:
+      utExit("Operators don't have idents");
+  }
+  return deDatatypeNull;  // Dummy return.
 }
 
 // Return the function pointer datatype.  Do not the datatypes array.
@@ -741,7 +755,7 @@ char *deDatatypeGetDefaultValueString(deDatatype datatype) {
       return getEnumClassDefaultValue(datatype);
     case DE_TYPE_NONE:
       return "None";
-    case DE_TYPE_TBDCLASS: {
+    case DE_TYPE_NULL: {
       deFunction constructor = deTclassGetFunction(deDatatypeGetTclass(datatype));
       return utSprintf("null(%s)", deGetBlockPath(deFunctionGetSubBlock(constructor), false));
     }
@@ -824,7 +838,7 @@ char *deDatatypeGetTypeString(deDatatype datatype) {
     case DE_TYPE_ENUM:
       return getEnumClassTypeString(datatype);
     case DE_TYPE_TCLASS:
-    case DE_TYPE_TBDCLASS: {
+    case DE_TYPE_NULL: {
       deTclass tclass = deDatatypeGetTclass(datatype);
       return deGetBlockPath(deFunctionGetSubBlock(deTclassGetFunction(tclass)), false);
     }
@@ -941,10 +955,9 @@ bool deDatatypeMatchesTypeExpression(deBlock scopeBlock, deDatatype datatype,
                 childExpression)) {
           return false;
         }
+        i++;
       } deEndExpressionExpression;
-      if (i != deDatatypeGetNumTypeList(datatype)) {
-        return false;
-      }
+      return i == deDatatypeGetNumTypeList(datatype);
     }
     case DE_EXPR_SECRET: {
       if (!deDatatypeSecret(datatype)) {
@@ -993,53 +1006,65 @@ bool deDatatypeMatchesTypeExpression(deBlock scopeBlock, deDatatype datatype,
 }
 
 // Unify two array datatypes.
-static bool arrayDatatypesCompatible(deDatatype datatype1, deDatatype datatype2) {
+static deDatatype unifyArrayDatatypes(deDatatype datatype1, deDatatype datatype2) {
   deDatatype elementType1 = deDatatypeGetElementType(datatype1);
   deDatatype elementType2 = deDatatypeGetElementType(datatype2);
-  return deDatatypesCompatible(elementType1, elementType2);
+  deDatatype unifiedType = deUnifyDatatypes(elementType1, elementType2);
+  if (unifiedType == deDatatypeNull) {
+    return deDatatypeNull;
+  }
+  return deArrayDatatypeCreate(unifiedType);
 }
 
 // Unify two tuple datatypes.
-static bool tupleDatatypesCompatible(deDatatype datatype1, deDatatype datatype2) {
+static deDatatype unifyTupleDatatypes(deDatatype datatype1, deDatatype datatype2) {
   uint32 numElements = deDatatypeGetNumTypeList(datatype1);
-   if (deDatatypeGetNumTypeList(datatype2) != numElements) {
-     return false;
-   }
+  if (deDatatypeGetNumTypeList(datatype2) != numElements) {
+    return deDatatypeNull;
+  }
+  deDatatypeArray datatypes = deDatatypeArrayAlloc();
   for (uint32 i = 0; i < numElements; i++) {
     deDatatype elementType1 = deDatatypeGetiTypeList(datatype1, i);
     deDatatype elementType2 = deDatatypeGetiTypeList(datatype2, i);
-    if (!deDatatypesCompatible(elementType1, elementType2)) {
-      return false;
+    deDatatype unifiedType = deUnifyDatatypes(elementType1, elementType2);
+    if (unifiedType == deDatatypeNull) {
+      deDatatypeArrayFree(datatypes);
+      return deDatatypeNull;
     }
+    deDatatypeArrayAppendDatatype(datatypes, unifiedType);
   }
-  return true;
+  return deTupleDatatypeCreate(datatypes);
 }
 
-// Unify two datatypes.  A TBDCLASS datatype unifies to the other class type, if
-// they hare of the same tclasses.
-bool deDatatypesCompatible(deDatatype datatype1, deDatatype datatype2) {
+// Unify two datatypes.  A NULL datatype unifies to the other class type, if
+// they have the same tclasses.
+deDatatype deUnifyDatatypes(deDatatype datatype1, deDatatype datatype2) {
   if (datatype1 == datatype2) {
     return datatype1;
   }
   deDatatypeType type1 = deDatatypeGetType(datatype1);
   deDatatypeType type2 = deDatatypeGetType(datatype2);
-  if (type1 == DE_TYPE_TBDCLASS && type2 == DE_TYPE_CLASS) {
+  if (type1 == DE_TYPE_NULL && type2 == DE_TYPE_CLASS) {
     deTclass tclass = deDatatypeGetTclass(datatype1);
-    return type2 == DE_TYPE_CLASS && deClassGetTclass(deDatatypeGetClass(datatype2)) == tclass;
+    if (deClassGetTclass(deDatatypeGetClass(datatype2)) == tclass) {
+      return datatype2;
+    }
   }
-  if (type2 == DE_TYPE_TBDCLASS && type1 == DE_TYPE_CLASS) {
+  if (type2 == DE_TYPE_NULL && type1 == DE_TYPE_CLASS) {
     deTclass tclass = deDatatypeGetTclass(datatype2);
-    return type1 == DE_TYPE_CLASS && deClassGetTclass(deDatatypeGetClass(datatype1)) == tclass;
+    if (deClassGetTclass(deDatatypeGetClass(datatype1)) == tclass) {
+      return datatype1;
+    }
   }
   if (type1 != type2) {
-    return false;
+    return deDatatypeNull;
   }
   if (type1 == DE_TYPE_ARRAY) {
-    return arrayDatatypesCompatible(datatype1, datatype2);
+    return unifyArrayDatatypes(datatype1, datatype2);
   } else if (type1 == DE_TYPE_TUPLE) {
-    return tupleDatatypesCompatible(datatype1, datatype2);
+    return unifyTupleDatatypes(datatype1, datatype2);
   }
-  return false;
+  return deDatatypeNull;
 }
 
 // Return the base element type of a potentially multi-dimensional array.
@@ -1192,7 +1217,7 @@ deSecretType deFindDatatypeSectype(deDatatype datatype) {
     case DE_TYPE_FUNCTION:
     case DE_TYPE_CLASS:
     case DE_TYPE_TCLASS:
-    case DE_TYPE_TBDCLASS:
+    case DE_TYPE_NULL:
     case DE_TYPE_MODINT:
       utExit("Unexpected datatype in RPC call");
   }

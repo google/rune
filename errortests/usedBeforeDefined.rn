@@ -12,13 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Bad recursion.  The basis case must be checked first.
-
-func factorial(n) {
-  if n > 1 {
-    return n*factorial(n - 1)
-  }
-  return 1
-}
-
-factorial(6)
+println test
+test = 1

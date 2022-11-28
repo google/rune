@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-runtests: bigint expr value statement
-	./expr
-	./bigint
-	./value
+RUNE_TESTS=bigint block expr function statement value
+
+runtests: $(RUNE_TESTS)
+	for test in $(RUNE_TESTS); do "./$$test"; done
 
 expr: expr.rn
 	rune -g expr.rn
@@ -29,5 +29,11 @@ value: value.rn
 statement: statement.rn
 	rune -g statement.rn
 
+block: block.rn
+	rune -g block.rn
+
+function: function.rn
+	rune -g function.rn
+
 clean:
-	rm -f bigint expr value statement *.ll rune.log
+	rm -f $(RUNE_TESTS) *.ll

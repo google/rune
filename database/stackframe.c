@@ -14,24 +14,3 @@
 
 #include "de.h"
 
-// Save a new call location on the frame stack.  This is just so we can report
-// the call path to an error.
-deStackFrame dePushStackFrame(deStatement statement) {
-  deStackFrame frame = deStackFrameAlloc();
-  deStackFrameSetStatement(frame, statement);
-  deRootAppendStackFrame(deTheRoot, frame);
-  return frame;
-}
-
-// Pop the top call stack frame.
-void dePopStackFrame(void) {
-  deStackFrameDestroy(deRootGetLastStackFrame(deTheRoot));
-}
-
-// Return true if the statement is an import of any flavor.
-bool deStatementIsImport(deStatement statement) {
-  deStatementType type = deStatementGetType(statement);
-  return type == DE_STATEMENT_USE || type == DE_STATEMENT_IMPORT ||
-      type == DE_STATEMENT_IMPORTLIB || type == DE_STATEMENT_IMPORTRPC ||
-      type == DE_STATEMENT_USE;
-}

@@ -295,7 +295,6 @@ static void noDebug(char *foo, ...) {}
 <INITIAL>"cascade" { delval.lineVal = deCurrentLine; myDebug("KWCASCADE\n"); return KWCASCADE; }
 <INITIAL>"case"    { delval.lineVal = deCurrentLine; myDebug("KWCASE\n"); return KWCASE; }
 <INITIAL>"class"   { delval.lineVal = deCurrentLine; myDebug("KWCLASS\n"); return KWCLASS; }
-<INITIAL>"const"   { delval.lineVal = deCurrentLine; myDebug("KWCONST\n"); return KWCONST; }
 <INITIAL>"debug"   { delval.lineVal = deCurrentLine; myDebug("KWDEBUG\n"); return KWDEBUG; }
 <INITIAL>"default" { delval.lineVal = deCurrentLine; myDebug("KWDEFAULT\n"); return KWDEFAULT; }
 <INITIAL>"do"      { delval.lineVal = deCurrentLine; myDebug("KWDO\n"); return KWDO; }

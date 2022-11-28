@@ -15,6 +15,8 @@
 #include "de.h"
 #include <ctype.h>
 
+deRelation deCurrentRelation;
+
 // Dump the generator to stdout.
 void deDumpGenerator(deGenerator generator) {
   dePrintIndent();
@@ -83,6 +85,9 @@ static deValue getIdentValue(deIdent ident, deLine line) {
         }
         return deClassValueCreate(deDatatypeGetClass(datatype));
       }
+    case DE_IDENT_UNDEFINED:
+      deError(line, "Accessing undefined variable %s in generator", deIdentGetName(ident));
+      break;
     }
   return deValueNull;  // Dummy return.
 }
@@ -463,6 +468,18 @@ static void expandBlockIdentifiers(deBlock scopeBlock, deBlock block) {
   deCurrentStatement = savedStatement;
 }
 
+// Append the block's statements and functions to the relation.
+static void appendRelationStatementsAndFunctions(deRelation relation, deBlock block) {
+  deStatement statement;
+  deForeachBlockStatement(block, statement) {
+    deRelationAppendGeneratedStatement(relation, statement);
+  } deEndBlockStatement;
+  deFunction function;
+  deForeachBlockFunction(block, function) {
+    deRelationAppendGeneratedFunction(relation, function);
+  } deEndBlockFunction;
+}
+
 // Execute an append class statement.
 static void executeAppendOrPrependStatement(deBlock scopeBlock, deStatement statement) {
   deBlock sourceBlock = deStatementGetSubBlock(statement);
@@ -470,6 +487,9 @@ static void executeAppendOrPrependStatement(deBlock scopeBlock, deStatement stat
   expandBlockIdentifiers(scopeBlock, newBlock);
   deBlock destBlock = findAppendStatementDestBlock(scopeBlock, statement);
   deStatementType type = deStatementGetType(statement);
+  if (deCurrentRelation != deRelationNull) {
+    appendRelationStatementsAndFunctions(deCurrentRelation, newBlock);
+  }
   if (type == DE_STATEMENT_APPENDCODE) {
     deAppendBlockToBlock(newBlock, destBlock);
   } else {
@@ -576,14 +596,34 @@ static void executeGenerator(deBlock moduleBlock, deGenerator generator,
   utAssert(!deGenerating);
   deGenerating = true;
   deBlock block = deGeneratorGetSubBlock(generator);
-  evaluateGeneratorParameters(moduleBlock, block, parameters, line);
   executeBlockStatements(block, block);
   deGenerating = false;
 }
 
+// The module holding the parent class does not normally import the child's
+// module, but the child constructor is referenced in null expressions in
+// generated code.  Import the child constructor class into the parent's module
+// so it can be found during binding.
+static void importChildClassIntoParentModule(deFunction parentFunc, deFunction childFunc) {
+  deBlock parentBlock = deFunctionGetBlock(parentFunc);
+  deBlock childBlock = deFunctionGetBlock(childFunc);
+  utSym parentSym = deFunctionGetSym(parentFunc);
+  utSym childSym = deFunctionGetSym(childFunc);
+  deIdent oldIdent = deBlockFindIdent(parentBlock, childSym);
+  if (oldIdent == deIdentNull) {
+    deIdent ident = deFunctionIdentCreate(parentBlock, childFunc, childSym);
+    deIdentSetImported(ident, true);
+  }
+  oldIdent = deBlockFindIdent(childBlock, parentSym);
+  if (oldIdent == deIdentNull) {
+    deIdent ident = deFunctionIdentCreate(childBlock, parentFunc, parentSym);
+    deIdentSetImported(ident, true);
+  }
+}
+
 // Build a Relation edge between the two tclasses.  The first three parameters
 // MUST be parent tclass, child tclass, and bool cascade.
-static void buildRelation(deGenerator generator) {
+static deRelation buildRelation(deGenerator generator) {
   deBlock block = deGeneratorGetSubBlock(generator);
   deVariable parent = deBlockGetFirstVariable(block);
   deVariable child = deVariableGetNextBlockVariable(parent);
@@ -602,7 +642,8 @@ static void buildRelation(deGenerator generator) {
   deString childLabelString = deValueGetStringVal(childLabelVal);
   deTclass parentTclass = deFunctionGetTclass(parentFunc);
   deTclass childTclass = deFunctionGetTclass(childFunc);
-  deRelationCreate(generator, parentTclass, parentLabelString, childTclass,
+  importChildClassIntoParentModule(parentFunc, childFunc);
+  return deRelationCreate(generator, parentTclass, parentLabelString, childTclass,
       childLabelString, cascadeDelete);
 }
 
@@ -624,10 +665,14 @@ void deExecuteRelationStatement(deStatement statement) {
   if (generator == deGeneratorNull) {
     deError(line, "Generator not found");
   }
-  executeGenerator(moduleBlock, generator, parameters, line);
+  deBlock block = deGeneratorGetSubBlock(generator);
+  evaluateGeneratorParameters(moduleBlock, block, parameters, line);
+  deCurrentRelation = deRelationNull;
   if (deStatementGetType(statement) == DE_STATEMENT_RELATION) {
-    buildRelation(generator);
+    deCurrentRelation = buildRelation(generator);
   }
+  executeGenerator(moduleBlock, generator, parameters, line);
+  deCurrentRelation = deRelationNull;
   deStatementSetExecuted(statement, true);
   deInstantiating = true;
 }

@@ -623,7 +623,7 @@ static char *getDefaultValue(deDatatype datatype) {
       }
       return "0";
     case DE_TYPE_CLASS:
-    case DE_TYPE_TBDCLASS:
+    case DE_TYPE_NULL:
       return "-1";
     case DE_TYPE_STRING:
     case DE_TYPE_ARRAY:
@@ -811,6 +811,9 @@ static void generateIdentExpression(deExpression expression) {
       deFunction function = deIdentGetFunction(ident);
       deDatatype datatype = deFunctionDatatypeCreate(function);
       push(datatype, deIdentGetName(ident), false);
+      break;
+    case DE_IDENT_UNDEFINED:
+      utExit("Tried to generate an undefined identifier");
       break;
     }
   }
@@ -1021,7 +1024,7 @@ static llElement findDatatypeSize(deDatatype datatype) {
       utExit("Type has no size");
       break;
     case DE_TYPE_CLASS:
-    case DE_TYPE_TBDCLASS: {
+    case DE_TYPE_NULL: {
       uint32 refWidth = deClassGetRefWidth(deDatatypeGetClass(datatype));
       uint32 refSize;
       if (refWidth <= 8) {
@@ -2017,7 +2020,7 @@ static void moveTupleOrObject(llElement dest, llElement source) {
   deDatatype datatype = llElementGetDatatype(source);
   deDatatype destType = llElementGetDatatype(dest);
   utAssert(datatype == llElementGetDatatype(dest) ||
-      deDatatypeGetType(datatype) == DE_TYPE_TBDCLASS ||
+      deDatatypeGetType(datatype) == DE_TYPE_NULL ||
       deDatatypeGetType(destType) == DE_TYPE_STRUCT);
   char *type = llGetTypeString(datatype, true);
   char *location = locationInfo();
@@ -2456,6 +2459,9 @@ static void generateClassAccess(deExpression expression) {
         llCurrentScopeBlock = savedScopeBlock;
       }
       break;
+    case DE_IDENT_UNDEFINED:
+      utExit("Tried to access through undefined identifier");
+      break;
     }
   }
 }
@@ -2530,6 +2536,7 @@ static void generateDotExpression(deExpression expression) {
       break;
     }
     case DE_TYPE_FUNCTION:
+    case DE_TYPE_TCLASS:
     case DE_TYPE_ENUMCLASS: {
       popElement(false);
       deFunction function = deDatatypeGetFunction(datatype);
@@ -2538,10 +2545,9 @@ static void generateDotExpression(deExpression expression) {
     }
     case DE_TYPE_STRUCT:
     case DE_TYPE_FUNCPTR:
-    case DE_TYPE_TCLASS:
     case DE_TYPE_CLASS:
     case DE_TYPE_NONE:
-    case DE_TYPE_TBDCLASS:
+    case DE_TYPE_NULL:
     case DE_TYPE_ENUM:
       utExit("Unexpected type");
       break;
@@ -2660,21 +2666,34 @@ static void pushFunctionAddress(deExpression expression) {
   push(datatype, path, false);
 }
 
+// If the datatype is DE_TYPE_ENUM, cast it to its underlying datatype.
+static deDatatype castEnumToBaseType(deExpression expression, bool orEnumClass) {
+  deDatatype datatype = deExpressionGetDatatype(expression);
+  if (deDatatypeGetType(datatype) != DE_TYPE_ENUM &&
+      (!orEnumClass || deDatatypeGetType(datatype) != DE_TYPE_ENUMCLASS)) {
+    return datatype;
+  }
+  deBlock enumBlock = deFunctionGetSubBlock(deDatatypeGetFunction(datatype));
+  return deFindEnumIntType(enumBlock);
+}
+
 // Generate a cast expression.
 static void generateCastExpression(deExpression expression, bool truncate) {
   deExpression left = deExpressionGetFirstExpression(expression);
   deExpression right = deExpressionGetNextExpression(left);
-  deDatatype leftDatatype = deExpressionGetDatatype(left);
-  deDatatype rightDatatype = deExpressionGetDatatype(right);
+  deDatatype leftDatatype = castEnumToBaseType(left, true);
+  deDatatype rightDatatype = castEnumToBaseType(right, false);
   if (deSetDatatypeSecret(leftDatatype, false) == deSetDatatypeSecret(rightDatatype, false)) {
     // No need to generate the cast.
     generateExpression(right);
+    topOfStack()->datatype = rightDatatype;
     return;
   }
   deDatatypeType leftType = deDatatypeGetType(leftDatatype);
   deDatatypeType rightType = deDatatypeGetType(rightDatatype);
+  generateExpression(right);
+  topOfStack()->datatype = rightDatatype;
   if (deDatatypeTypeIsInteger(leftType) && deDatatypeTypeIsInteger(rightType)) {
-    generateExpression(right);
     llElement rightElement = popElement(true);
     uint32 newWidth = deDatatypeGetWidth(leftDatatype);
     pushElement(resizeInteger(rightElement, newWidth,
@@ -2684,12 +2703,10 @@ static void generateCastExpression(deExpression expression, bool truncate) {
   if (leftType == DE_TYPE_CLASS || rightType == DE_TYPE_CLASS ||
       leftType == DE_TYPE_STRING || rightType == DE_TYPE_STRING) {
     // These casts are almost nops.
-    generateExpression(right);
     llElement *element = topOfStack();
     element->datatype = deExpressionGetDatatype(expression);
     return;
   }
-  generateExpression(right);
   llElement rightElement = popElement(true);
   char *leftTypeString = llGetTypeString(leftDatatype, true);
   char *rightTypeString = llGetTypeString(rightDatatype, true);
@@ -3360,13 +3377,13 @@ static void generateLogicalOrExpression( deExpression expression) {
 }
 
 // Find the ref width of the class, if this is a class datatype, or the tclass
-// if it is a TBDCLASS.  There should not still be TBD classes at this point, so
+// if it is a NULL.  There should not still be TBD classes at this point, so
 // when this is fixed, simplify this code.
 static uint32 findClassRefWidth(deDatatype datatype) {
   switch(deDatatypeGetType(datatype)) {
     case DE_TYPE_CLASS:
       return deClassGetRefWidth(deDatatypeGetClass(datatype));
-    case DE_TYPE_TBDCLASS:
+    case DE_TYPE_NULL:
       return deTclassGetRefWidth(deDatatypeGetTclass(datatype));
     default:
       utExit("Unexpected datatype");
@@ -3578,7 +3595,6 @@ static void generateExpression(deExpression expression) {
       break;
     case DE_EXPR_SECRET:
     case DE_EXPR_REVEAL:
-    case DE_EXPR_CONST:
       generateExpression(deExpressionGetFirstExpression(expression));
       break;
     case DE_EXPR_EQUALS:

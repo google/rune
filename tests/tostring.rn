@@ -33,4 +33,4 @@ println p1
 // This one calls the auto-generated toString.
 p2 = Point2(10, 15)
 println p2
-println "%s" % p2
+println "%s" % p2.toString()
