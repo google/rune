@@ -116,6 +116,9 @@ Rune.ps Codegen.ps: database/Rune.dd
 LLVM.ps: llvm/LLVM.dd
 	dataview llvm/LLVM.dd
 
+check: rune
+	./runtests.sh
+
 install: rune
 	install -d $(PREFIX)/bin $(PREFIX)/lib/rune $(PREFIX)/lib/rune/runtime
 	install rune $(PREFIX)/bin
