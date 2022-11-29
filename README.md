@@ -83,7 +83,7 @@ class Human(self, name: string, mother: Human = null, father: Human = null) {
 }
 
 relation DoublyLinked Human:"Mother" Human:"Mothered" cascade
-relation DoublyLinked Human:"Fater" Human:"Fathered" cascade
+relation DoublyLinked Human:"Father" Human:"Fathered" cascade
 
 adam = Human("Adam")
 eve = Human("Eve")
