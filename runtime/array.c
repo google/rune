@@ -18,11 +18,19 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <stdlib.h>  // For calloc, realloc, and free.
+#ifdef _WIN32
+#include <windows.h>  // To find total RAM available.
+#else
 #include <sys/sysinfo.h>  // To find total RAM available.
+#endif
 
 // These are verified with static_assert in runtime_arrayStart.
 #ifdef RN_DEBUG
+#ifdef _WIN32
+#define RN_HEADER_WORDS 4u
+#else
 #define RN_HEADER_WORDS 3u
+#endif
 // Used when initializing array headers to help track down heap bugs.
 static size_t runtime_arrayCounter = 0;
 #else
@@ -309,9 +317,16 @@ void runtime_arrayStart(void) {
   static_assert(RN_SIZET_SHIFT != UINT32_MAX, "Unsupported size_t size");
   static_assert(sizeof(char) == 1 && sizeof(uint8_t) == 1,
                 "Unsupported char or uint8_t size");
+#ifdef _WIN32
+  MEMORYSTATUSEX statex;
+  statex.dwLength = sizeof (statex);
+  GlobalMemoryStatusEx (&statex);
+  runtime_totalRam = statex.ullTotalPhys;
+#else
   struct sysinfo info;
   sysinfo(&info);
   runtime_totalRam = info.totalram;
+#endif
   // Just to ensure there is enough room for a header.  Otherwise, we might get
   // underflow in memory size computations.
   if (runtime_totalRam < sizeof(runtime_heapHeader)) {
@@ -746,6 +761,31 @@ void runtime_initArrayOfStringsFromC(runtime_array *array, const uint8_t** vecto
     runtime_memcopy(subArray->data, vector[i], len * sizeof(uint8_t));
     subArray++;
   }
+}
+
+// Initialize an array of strings from a C vector of char* with converting to UTF-8 from locale.
+void runtime_initArrayOfStringsFromCUTF8(runtime_array *array, const uint8_t** vector, size_t len) {
+#ifdef _WIN32
+  arrayResize(array, len, sizeof(runtime_array), true, false);
+  runtime_array *subArray = (runtime_array*)(array->data);
+  for (uint32_t i = 0; i < len; i++) {
+    uint32_t len = strlen((const char*)vector[i]);
+    int wlen = MultiByteToWideChar(CP_ACP, 0, (const char*)vector[i], len, NULL, 0);
+    wchar_t* wbuf = (wchar_t*) malloc(sizeof(wchar_t) * wlen);
+    MultiByteToWideChar(CP_ACP, 0, (const char*)vector[i], strlen((const char*)vector[i]), wbuf, wlen);
+    int clen = WideCharToMultiByte(CP_UTF8, 0, wbuf, wlen, NULL, 0, NULL, FALSE);
+    char* cbuf = (char*) malloc(clen);
+    WideCharToMultiByte(CP_UTF8, 0, wbuf, wlen, cbuf, clen, NULL, FALSE);
+
+    runtime_allocArray(subArray, clen, sizeof(uint8_t), false);
+    runtime_memcopy(subArray->data, cbuf, clen * sizeof(uint8_t));
+    free(wbuf);
+    free(cbuf);
+    subArray++;
+  }
+#else
+  runtime_initArrayOfStringsFromC(array, vector, len);
+#endif
 }
 
 // XOR two byte-strings together.  Throw an error if their sizes differ.
