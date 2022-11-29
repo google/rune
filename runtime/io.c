@@ -667,8 +667,11 @@ static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel
     if (width == 32) {
       if (topLevel) {
         // Note that clang's warning here is wrong for Rune, but right for C/C++.
-        // Implement with a casting hack to suppress the warning.
+        // Suppress the warning.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wvarargs"
         value = va_arg(ap, float);
+#pragma clang diagnostic pop
       } else {
         // We pass floats as uint32_t when called from appendFormattedArg.
         uint32_t floatVal = va_arg(ap, uint32_t);
