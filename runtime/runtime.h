@@ -94,6 +94,7 @@ static inline runtime_array runtime_makeEmptyArray(void) {
 void runtime_arrayStart(void);
 void runtime_arrayStop(void);
 void runtime_initArrayOfStringsFromC(runtime_array *array, const uint8_t **vector, size_t len);
+void runtime_initArrayOfStringsFromCUTF8(runtime_array *array, const uint8_t **vector, size_t len);
 void runtime_allocArray(runtime_array *array, size_t numElements, size_t elementSize,
     bool hasSubArrays);
 void runtime_arrayInitCstr(runtime_array *array, const char *text);

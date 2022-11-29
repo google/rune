@@ -663,11 +663,12 @@ static void initializeLocalVariable(deVariable variable) {
 static void printMainTop(void) {
   llDeclareRuntimeFunction("runtime_arrayStart");
   llDeclareRuntimeFunction("runtime_initArrayFromC");
+  llDeclareRuntimeFunction("runtime_initArrayFromCUTF8");
   llVarNum += 2;  // For argc and argv.
   llPrevLabel = utSymCreate("2");
   llPrintf(
       "  call void @runtime_arrayStart()\n"
-      "  call void @runtime_initArrayOfStringsFromC(%%struct.runtime_array* @argv, i8** %%1, i32 %%0)\n");
+      "  call void @runtime_initArrayOfStringsFromCUTF8(%%struct.runtime_array* @argv, i8** %%1, i32 %%0)\n");
 }
 
 // Declare parameter values so they are visible in gdb.

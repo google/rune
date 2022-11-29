@@ -763,6 +763,31 @@ void runtime_initArrayOfStringsFromC(runtime_array *array, const uint8_t** vecto
   }
 }
 
+// Initialize an array of strings from a C vector of char* with converting to UTF-8 from locale.
+void runtime_initArrayOfStringsFromCUTF8(runtime_array *array, const uint8_t** vector, size_t len) {
+#ifdef _WIN32
+  arrayResize(array, len, sizeof(runtime_array), true, false);
+  runtime_array *subArray = (runtime_array*)(array->data);
+  for (uint32_t i = 0; i < len; i++) {
+    uint32_t len = strlen((const char*)vector[i]);
+    int wlen = MultiByteToWideChar(CP_ACP, 0, (const char*)vector[i], len, NULL, 0);
+    wchar_t* wbuf = (wchar_t*) malloc(sizeof(wchar_t) * wlen);
+    MultiByteToWideChar(CP_ACP, 0, (const char*)vector[i], strlen((const char*)vector[i]), wbuf, wlen);
+    int clen = WideCharToMultiByte(CP_UTF8, 0, wbuf, wlen, NULL, 0, NULL, FALSE);
+    char* cbuf = (char*) malloc(clen);
+    WideCharToMultiByte(CP_UTF8, 0, wbuf, wlen, cbuf, clen, NULL, FALSE);
+
+    runtime_allocArray(subArray, clen, sizeof(uint8_t), false);
+    runtime_memcopy(subArray->data, cbuf, clen * sizeof(uint8_t));
+    free(wbuf);
+    free(cbuf);
+    subArray++;
+  }
+#else
+  runtime_initArrayOfStringsFromC(array, vector, len);
+#endif
+}
+
 // XOR two byte-strings together.  Throw an error if their sizes differ.
 void runtime_xorStrings(runtime_array *dest, runtime_array *a, runtime_array *b) {
   size_t len = a->numElements;

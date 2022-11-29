@@ -289,6 +289,8 @@ static void declareRuntimeFunctions(void) {
   createFuncDecl("calloc", utSprintf("declare dso_local noalias i8* @calloc(i%s, i%s)", llSize, llSize));
   createFuncDecl("runtime_initArrayFromC",
       "declare dso_local void @runtime_initArrayOfStringsFromC(%struct.runtime_array*, i8**, i32)");
+  createFuncDecl("runtime_initArrayFromCUTF8",
+      "declare dso_local void @runtime_initArrayOfStringsFromCUTF8(%struct.runtime_array*, i8**, i32)");
   createFuncDecl("runtime_concatArrays", utSprintf(
       "declare dso_local void @runtime_concatArrays(%%struct.runtime_array*, %%struct.runtime_array*, "
      "i%s, i1 zeroext)", llSize));
