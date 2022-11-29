@@ -1,0 +1,28 @@
+package main(argc: u32, argv: string) -> i32 {
+  return 0i32
+}
+package main(argc: u32, argv: string) -> i32 {
+  return 0i32
+}
+package main(argc: u32, argv: string) -> i32 {
+  func topFunc()   {
+  }
+  func botFunc()   {
+  }
+  call topFunc()
+  return 0i32
+  call botFunc()
+}
+iterator testItr(var self) {
+}
+operator +() {
+}
+{
+  func module1()   {
+  }
+  func module2()   {
+  }
+  call module1()
+  call module2()
+  return 0i32
+}

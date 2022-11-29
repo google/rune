@@ -127,7 +127,6 @@ static bool propagateExpressionConstants(deBlock scopeBlock, deExpression expres
     case DE_EXPR_TUPLE:
     case DE_EXPR_AS:
     case DE_EXPR_IN:
-    case DE_EXPR_CONST:
     case DE_EXPR_NULL:
     case DE_EXPR_NULLSELF:
     case DE_EXPR_FUNCADDR:

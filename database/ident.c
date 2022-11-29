@@ -21,13 +21,19 @@ void deDumpIdentStr(deString string, deIdent ident) {
   switch (deIdentGetType(ident)) {
     case DE_IDENT_FUNCTION: {
       deFunction function = deIdentGetFunction(ident);
-      deStringSprintf(string, "%s %x\n",deGetFunctionTypeName(deFunctionGetType(function)),
-        deFunction2Index(function));
+      if (function != deFunctionNull) {
+        deStringSprintf(string, "%s %x\n",deGetFunctionTypeName(deFunctionGetType(function)),
+          deFunction2Index(function));
+      } else {
+        deStringSprintf(string, "<undefined>\n");
+      }
       break;
     }
     case DE_IDENT_VARIABLE:
       deStringSprintf(string, "variable %x\n", deVariable2Index(deIdentGetVariable(ident)));
       break;
+    case DE_IDENT_UNDEFINED:
+      deStringSprintf(string, "<undefined>\n");
   }
 }
 
@@ -47,6 +53,13 @@ deIdent deIdentCreate(deBlock block, deIdentType type, utSym name, deLine line) 
     // Operator identifiers are not in any block hash table.
     deIdent oldIdent = deBlockFindIdent(block, name);
     if (oldIdent != deIdentNull) {
+      // Undefined identifiers can be created during binding.  If this has not
+      // a function or variable, update it.
+      if (deIdentGetFunction(oldIdent) == deFunctionNull &&
+          deIdentGetVariable(oldIdent) == deVariableNull) {
+        deIdentSetType(oldIdent, type);
+        return oldIdent;
+      }
       deError(line, "Tried to create an identifier '%s' that already exists on the block",
           utSymGetName(name));
     }
@@ -58,6 +71,12 @@ deIdent deIdentCreate(deBlock block, deIdentType type, utSym name, deLine line) 
     deBlockAppendIdent(block, ident);
   }
   return ident;
+}
+
+// Create an undefined identifier.  This is so we can trigger binding events
+// when it becomes defined.
+deIdent deUndefinedIdentCreate(deBlock block, utSym name) {
+  return deIdentCreate(block, DE_IDENT_UNDEFINED, name, deBlockGetLine(block));
 }
 
 // Create an identifier for a function.
@@ -97,28 +116,13 @@ deIdent deFindIdent(deBlock scopeBlock, utSym name) {
 deDatatype deGetIdentDatatype(deIdent ident) {
   switch (deIdentGetType(ident)) {
     case DE_IDENT_FUNCTION: {
-      deFunction function = deIdentGetFunction(ident);
-      switch (deFunctionGetType(function)) {
-        case DE_FUNC_PLAIN:
-        case DE_FUNC_UNITTEST:
-        case DE_FUNC_FINAL:
-        case DE_FUNC_DESTRUCTOR:
-        case DE_FUNC_PACKAGE:
-        case DE_FUNC_MODULE:
-        case DE_FUNC_ITERATOR:
-        case DE_FUNC_STRUCT:
-        case DE_FUNC_GENERATOR:
-          return deFunctionDatatypeCreate(function);
-        case DE_FUNC_ENUM:
-          return deEnumClassDatatypeCreate(function);
-        case DE_FUNC_CONSTRUCTOR:
-          return deTclassDatatypeCreate(deFunctionGetTclass(function));
-        case DE_FUNC_OPERATOR:
-          utExit("Operators don't have idents");
-      }
+      return deFunctionDatatypeCreate(deIdentGetFunction(ident));
     }
     case DE_IDENT_VARIABLE:
       return deVariableGetDatatype(deIdentGetVariable(ident));
+    case DE_IDENT_UNDEFINED:
+      return deDatatypeNull;
+      break;
   }
   return deDatatypeNull;  // Dummy return.
 }
@@ -129,6 +133,7 @@ deBlock deIdentGetSubBlock(deIdent ident) {
     case DE_IDENT_FUNCTION:
       return deFunctionGetSubBlock(deIdentGetFunction(ident));
     case DE_IDENT_VARIABLE:
+    case DE_IDENT_UNDEFINED:
       return deBlockNull;
   }
   return deBlockNull;  // Dummy return.
@@ -141,6 +146,8 @@ deLine deIdentGetLine(deIdent ident) {
       return deFunctionGetLine(deIdentGetFunction(ident));
     case DE_IDENT_VARIABLE:
       return deVariableGetLine(deIdentGetVariable(ident));
+    case DE_IDENT_UNDEFINED:
+      return deLineNull;
   }
   return 0;  // Dummy return.
 }
@@ -232,15 +239,9 @@ deExpression deCreateIdentPathExpression(deIdent ident) {
 // identifier does not already exist on |destBlock|.
 deIdent deCopyIdent(deIdent ident, deBlock destBlock) {
   deIdentType type = deIdentGetType(ident);
+  utAssert(type == DE_IDENT_FUNCTION);
   deIdent newIdent = deIdentCreate(destBlock, type, deIdentGetSym(ident), deLineNull);
-  switch (type) {
-    case DE_IDENT_FUNCTION:
-      deFunctionAppendIdent(deIdentGetFunction(ident), newIdent);
-      break;
-    case DE_IDENT_VARIABLE:
-      deVariableAppendIdent(deIdentGetVariable(ident), newIdent);
-      break;
-  }
+  deFunctionAppendIdent(deIdentGetFunction(ident), newIdent);
   return newIdent;
 }
 

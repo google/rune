@@ -1,0 +1,193 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use line
+use filepath
+use expr
+use block
+use function
+use variable
+use datatype
+use util
+
+class Ident(self: Ident, block: Block, object: Function | Variable, sym: Sym, objLine: Line) {
+  self.exported = false
+  imported = false
+  self.sym = sym
+  object.appendIdent(self)
+  // Operator identifiers are not in any block hash table.
+  if !isnull(block) {
+    if false {
+      // Type hint for the ident symbol table.
+      block.insertIdent(self)
+    }
+    oldIdent = block.findIdent(sym)
+    if !isnull(oldIdent) {
+      Error("Tried to create an identifier '%s' that already exists on the block" % sym.name,
+          objLine)
+    }
+    block.insertIdent(self)
+  }
+
+  // Dump the identifier to the end of |string| for debugging purposes.
+  func dumpToString(self: Ident, var text: string) {
+    getRoot().indent(text)
+    text.append("ident %s (0x%x) -> " % (ident.sym.name, <u32>ident))
+    if !isnull(ident.function) {
+      text += "%s %x\n" % (getFuncTypeName(ident.function.type), <u32>function)
+    } else {
+      text += "variable %x\n" % <u32>self.variable
+    }
+  }
+
+  // Find the identifier in the scope block, or in the module block.  If not found
+  // in the module block, look in the global scope.
+  func find(scopeBlock: Block, sym: Sym) {
+    ident = scopeBlock.findIdent(sym)
+    if !isnull(ident) {
+      return ident
+    }
+    line = scopeBlock.line
+    if isnull(line) {
+      // Builtin classes have no line.
+      return null(Ident)
+    }
+    filepath = line.filepath
+    moduleBlock = filepath.moduleBlock
+    ident = moduleBlock.findIdent(name)
+    if !isnull(ident) {
+      return ident
+    }
+    // Some identifiers, like idents for built-in classes, are in the global scope.
+    rootBlock = getRoot().block
+    return reootBlock.findIdent(name)
+  }
+
+  // Find the datatype of the identifier.  If a variable has not yet been set, it
+  // will return null(datatype).
+  func datatype(self: Ident) -> Datatype {
+    if !isnull(self.function) {
+      return Datatype(self.function)
+    }
+    return self.variable.datatype
+  }
+
+  // Return the sub-block of the identifier, if it has one.
+  func subBlock(self: Ident) -> Block {
+    if !isnull(self.function) {
+      return self.function.subBlock
+    }
+    return deBlockNull
+  }
+
+  // Return the line of the identifier.
+  func line(self: Ident) -> Line {
+    if !isnull(self.function) {
+      return self.function.line
+    }
+    return self.variable.line
+  }
+
+  // Find an identifier from the path Expr.
+  func findInScopeFromPath(scopeBlock: Block, pathExpr: Expr) -> Ident {
+    realPathExpr = pathExpr
+    if pathExpr.type == ExprType.As {
+      realPathExpr = pathExpr.firstExpr
+    }
+    if realPathExpr.type == ExperType.Ident {
+      return scopeBlock.findIdent(realPathExpr.val.symVal.name)
+    }
+    assert realPathExpr.type == ExprType.Dot
+    subPathExpr = realPathExpr.firstExpr
+    identExpr = subPathExpr.nextExprExpr
+    assert identExpr.type == ExprType.Ident
+    ident = findInScopeFromPath(scopeBlock, subPathExpr)
+    if isnull(ident) {
+      return null(Ident)
+    }
+    subScopeBlock = ident.subBlock()
+    if isnull(subScopeBlock) {
+      return null(Ident)
+    }
+    return subScopeBlock.findIdent(identExpr.val.symVal)
+  }
+
+  // Find an identifier from the path Expr.  |scopeBlock| is searched first.
+  func findFromPath(scopeBlock: Block, pathExpr: Expr) -> Ident {
+    ident = findInScopeFromPath(scopeBlock, pathExpr)
+    if !isnull(ident) {
+      return ident
+    }
+    // Try to find it in the global scope.
+    return findInScopeFromPath(getRoot().block, pathExpr)
+  }
+
+  // Rename the identifier.  Also change the sym in its identifier Exprs.
+  func rename(self: Ident, newName: Sym) {
+    scopeBlock = ident.block
+    scopeBlock.removeIdent(ident)
+    self.sym = newName
+    scopeBlock.appendIdent(ident)
+    for expr in ident.exprs() {
+      assert expr.type == ExprType.Ident
+      expr.val = Value(newName)
+    }
+  }
+
+  // Find the identifier for the block owning this identifier.
+  func owningIdent(self: Ident) -> Ident {
+    owningBlock = self.block.owningBlock()
+    if isnull(owningBlock) {
+      return null(self)
+    }
+    return owningBlock.findIdent(self.sym)
+  }
+
+  // Return a path Expr to the function.
+  func createPathExpr(self: Ident) -> Expr {
+    identExpr = Expr.newIdent(self)
+    owningIdent = self.owningIdent()
+    if isnull(owningIdent) {
+      return identExpr
+    }
+    prefixExpr = Expr.newIdent(owningIdent)
+    return Expr.newBinary(ExprType.Dot, prefixExpr, identExpr, self.line())
+  }
+
+  // Copy the identifier to the destination block.  The caller must ensure the
+  // identifier does not already existe on |destBlock|.
+  func copy(self: Ident, destBlock: Block) -> Ident {
+    newIdent = Ident(destBlock, type, self.sym, self.line)
+    if !isnull(self.function) {
+      self.function.appendIdent(newIdent)
+    } else {
+      self.variable.appendIdent(newIdent)
+    }
+    return newIdent
+  }
+
+  // Determine if this identifier represents a module or package.
+  func isModuleOrPackage(self: Ident) -> bool {
+    if !isnull(ident.function) {
+      return ident
+    }
+    function = ident.function
+    type = function.type
+    return type == FuncType.Package || type == FuncType.Module
+  }
+}
+
+relation Hashed Block Ident cascade ("sym")
+relation DoublyLinked Function Ident cascade
+relation DoublyLinked Variable Ident cascade

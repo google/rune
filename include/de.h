@@ -40,6 +40,7 @@ void deParseString(char *string, deBlock currentBlock);
 deStatement deInlineIterator(deBlock scopeBlock, deStatement statement);
 void deConstantPropagation(deBlock scopeBlock, deBlock block);
 void deInstantiateRelation(deStatement statement);
+void deAnalyzeRechability(deBlock block);
 
 // RPC functions.
 bool deEncodeTextRpc(char *dataType, char *text, deString *publicData, deString *secretData);
@@ -52,10 +53,19 @@ deString deDecodeResponse(char *protoFileName, char *method, uint8 *publicData,
 void deBindRPCs(void);
 
 // Binding functions.
+void deBindStart(void);
 void deBind(void);
 void deBindNewStatement(deBlock scopeBlock, deStatement statement);
 void deBindBlock(deBlock block, deSignature signature, bool inlineIterators);
 void deBindExpression(deBlock scopeBlock, deExpression expression);
+void deApplySignatureBindings(deSignature signature);
+
+// New event-driven binding funcions.
+void deBind2(void);
+bool deBindExpression2(deSignature scopeSig, deBinding binding);
+void deBindStatement2(deBindState bindstate);
+void deQueueEventBlockedBindStates(deEvent event);
+void deQueueSignature(deSignature signature);
 
 // Block methods.
 deBlock deBlockCreate(deFilepath filepath, deBlockType type, deLine line);
@@ -136,13 +146,17 @@ deClass deClassCreate(deTclass tclass, deSignature signature);
 deClass deTclassGetDefaultClass(deTclass tclass);
 deTclass deCopyTclass(deTclass tclass, deFunction destConstructor);
 deFunction deGenerateDefaultToStringMethod(deClass theClass);
-deFunction deGenerateDefaultDumpMethod(deClass theClass);
+deFunction deGenerateDefaultShowMethod(deClass theClass);
 deFunction deClassFindMethod(deClass theClass, utSym methodSym);
+void deDestroyTclassContents(deTclass tclass);
 static inline utSym deTclassGetSym(deTclass tclass) {
   return deFunctionGetSym(deTclassGetFunction(tclass));
 }
 static inline char *deTclassGetName(deTclass tclass) {
   return deFunctionGetName(deTclassGetFunction(tclass));
+}
+static inline bool deTclassBuiltin(deTclass tclass) {
+  return deFunctionBuiltin(deTclassGetFunction(tclass));
 }
 
 // Generator methods.
@@ -169,10 +183,10 @@ void deDumpVariable(deVariable variable);
 void deDumpVariableStr(deString str, deVariable variable);
 void deVariableRename(deVariable variable, utSym newName);
 static inline utSym deVariableGetSym(deVariable variable) {
-  return deIdentGetSym(deVariableGetFirstIdent(variable));
+  return deIdentGetSym(deVariableGetIdent(variable));
 }
 static inline char *deVariableGetName(deVariable variable) {
-  return deIdentGetName(deVariableGetFirstIdent(variable));
+  return deIdentGetName(deVariableGetIdent(variable));
 }
 
 // Statement methods.
@@ -227,6 +241,7 @@ static inline deExpression deExpresssionIndexExpression(deExpression expression,
 // Ident methods.
 deIdent deIdentCreate(deBlock block, deIdentType type, utSym name, deLine line);
 deIdent deFunctionIdentCreate(deBlock block, deFunction function, utSym name);
+deIdent deUndefinedIdentCreate(deBlock block, utSym name);
 deIdent deCopyIdent(deIdent ident, deBlock destBlock);
 void deDumpIdent(deIdent ident);
 void deDumpIdentStr(deString string, deIdent ident);
@@ -281,7 +296,7 @@ deFloat deCopyFloat(deFloat theFloat);
 // Datatype, and DatatypeBin methods.
 void deDatatypeStart(void);
 void deDatatypeStop(void);
-bool deDatatypesCompatible(deDatatype datatype1, deDatatype datatype2);
+deDatatype deUnifyDatatypes(deDatatype datatype1, deDatatype datatype2);
 void deRefineAccessExpressionDatatype(deBlock scopeBlock, deExpression target,
     deDatatype valueType);
 deDatatypeArray deListDatatypes(deExpression expressionList);
@@ -297,7 +312,7 @@ deDatatype deFloatDatatypeCreate(uint32 width);
 deDatatype deArrayDatatypeCreate(deDatatype elementType);
 deDatatype deTclassDatatypeCreate(deTclass tclass);
 deDatatype deClassDatatypeCreate(deClass theClass);
-deDatatype deTBDClassDatatypeCreate(deTclass tclass);
+deDatatype deNullDatatypeCreate(deTclass tclass);
 deDatatype deFunctionDatatypeCreate(deFunction function);
 deDatatype deFuncptrDatatypeCreate(deDatatype returnType, deDatatypeArray parameterTypes);
 deDatatype deTupleDatatypeCreate(deDatatypeArray types);
@@ -405,10 +420,6 @@ char *deFilepathGetRelativePath(deFilepath filepath);
 deLine deLineCreate(deFilepath filepath, char *buf, uint32 len, uint32 lineNum);
 void deDumpLine(deLine line);
 
-// Stack frame methods.
-deStackFrame dePushStackFrame(deStatement statement);
-void dePopStackFrame(void);
-
 // Operator methods.
 static inline char *deOperatorGetName(deOperator theOperator) {
   return deExpressionTypeGetName(deOperatorGetType(theOperator));
@@ -430,6 +441,27 @@ void deVerifyRelationshipGraph(void);
 void deAssignEnumEntryConstants(deBlock block);
 deDatatype deFindEnumIntType(deBlock block);
 
+// BindState and Binding methods.
+deBindState deBindStateCreate(deSignature signature, deStatement statement,
+    bool instantiating);
+deBinding deExpressionBindingCreate(deSignature signature, deBinding owningBinding,
+    deExpression expression, bool instantiating);
+deBinding deParameterBindingCreate(deSignature signature, deVariable variable,
+    deParamspec paramspec);
+deBinding deVariableBindingCreate(deSignature signature, deVariable variable);
+deBinding deFindVariableBinding(deSignature signature, deVariable variable);
+deBinding deFindIdentBinding(deSignature signature, deIdent ident);
+deEvent deSignatureEventCreate(deSignature signature);
+deEvent deUndefinedIdentEventCreate(deIdent ident);
+deEvent deVariableEventCreate(deBinding varBinding);
+deBindState deFindBindingBindState(deBinding binding);
+static inline deExpressionType deBindingGetType(deBinding binding) {
+  return deExpressionGetType(deBindingGetExpression(binding));
+}
+static inline deLine deBindingGetLine(deBinding binding) {
+  return deExpressionGetLine(deBindingGetExpression(binding));
+}
+
 // Utilities.
 void deUtilStart(void);
 void deUtilStop(void);
@@ -437,7 +469,7 @@ char *deGetBlockPath(deBlock block, bool as_label);
 char *deGetSignaturePath(deSignature signature);
 char *deGetPathExpressionPath(deExpression pathExpression);
 void deError(deLine line, char *format, ...);
-void deStatementError(char *format, ...);
+void dePrintStack(void);
 // These use the deStringVal global string.
 void deAddString(char *string);
 void deSprintToString(char *format, ...);
@@ -460,6 +492,8 @@ bool deIsLegalIdentifier(char *identifier);
 char *deSnakeCase(char *camelCase);
 char *deUpperSnakeCase(char *camelCase);
 void deGenerateDummyLLFileAndExit(void);
+char *deGetOldVsNewDatatypeStrings(deDatatype oldDatatype,
+                                   deDatatype newDatatype);
 static inline uint32 deBitsToBytes(uint32 bits) {
   return (bits + 7) / 8;
 }
@@ -490,7 +524,9 @@ extern bool deInstantiating;
 extern bool deGenerating;
 extern bool deInIterator;
 extern deStatement deCurrentStatement;
+extern deSignature deCurrentSignature;
 extern char *deCurrentFileName;
+extern bool deUseNewBinder;
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -147,7 +147,7 @@ generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
     iterator safeReverse$labelB$pluralB(self) {
       child = self.last$labelB$B
       while !isnull(child) {
-        prevA$labelB$B = child.prev$A$labelB$B
+        prev$A$labelB$B = child.prev$A$labelB$B
         yield child
         child = prev$A$labelB$B
       }

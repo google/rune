@@ -25,8 +25,6 @@
 // For expressions such as type-cast, before recursing into the type, clear this
 // flag, and restore it when done binding it.
 bool deInstantiating;
-// The currently binding signature.
-static deSignature deCurrentSignature;
 // The currently binding theClass.
 static deClass deCurrentClass;
 // We inline iterators only during the second call to deBindBlock.
@@ -76,32 +74,21 @@ static void checkVariableDatatype(deBlock scopeBlock, deVariable variable, deLin
   }
 }
 
-// Return a string that can be printed on two lines to show the old type vs new type.
-// This is used in error reporting.
-static char *getOldVsNewDatatypeStrings(deDatatype oldDatatype, deDatatype newDatatype) {
-  deString oldDatatypeStr = deMutableCStringCreate("");
-  deString newDatatypeStr = deMutableCStringCreate("");
-  deDumpDatatypeStr(oldDatatypeStr, oldDatatype);
-  deDumpDatatypeStr(newDatatypeStr, newDatatype);
-  char *s = utSprintf("\n  old: %s\n  new: %s",
-          deStringGetCstr(oldDatatypeStr), deStringGetCstr(newDatatypeStr));
-  deStringDestroy(oldDatatypeStr);
-  deStringDestroy(newDatatypeStr);
-  return s;
-}
-
 // Set the variable's datatype.  Check that it does not violate the variables
 // type constraint, if any.
 static void setVariableDatatype(deBlock scopeBlock, deVariable variable,
     deDatatype datatype, deLine line) {
-  if (deVariableGetDatatype(variable) != deDatatypeNull) {
-    if (!deDatatypesCompatible(deVariableGetDatatype(variable), datatype)) {
+  deDatatype varDatatype = deVariableGetDatatype(variable);
+  deDatatype unifiedDatatype = datatype;
+  if (varDatatype != deDatatypeNull && varDatatype != datatype) {
+    unifiedDatatype = deUnifyDatatypes(deVariableGetDatatype(variable), datatype);
+    if (unifiedDatatype == deDatatypeNull) {
       deError(line, "Assigning %s a different type than a prior assignment:%s",
           deVariableGetName(variable),
-          getOldVsNewDatatypeStrings(deVariableGetDatatype(variable), datatype));
+          deGetOldVsNewDatatypeStrings(varDatatype, datatype));
     }
   }
-  deVariableSetDatatype(variable, datatype);
+  deVariableSetDatatype(variable, unifiedDatatype);
   checkVariableDatatype(scopeBlock, variable, line);
 }
 
@@ -115,10 +102,14 @@ static void setSignatureReturnType(deBlock scopeBlock, deSignature signature,
     return;
   }
   deExpression typeExpression = deFunctionGetTypeExpression(function);
-  if (typeExpression != deExpressionNull &&
-      !deDatatypeMatchesTypeExpression(scopeBlock, returnType, typeExpression)) {
-    deError(line, "Return statement violates function %s's type constraint: %s",
-            deFunctionGetName(function), deDatatypeGetTypeString(returnType));
+  if (typeExpression != deExpressionNull) {
+    if (returnType == deNoneDatatypeCreate()) {
+      deError(line, "Function %s must return a value", deFunctionGetName(function));
+    }
+    if (!deDatatypeMatchesTypeExpression(scopeBlock, returnType, typeExpression)) {
+      deError(line, "Return statement violates function %s's type constraint: %s",
+              deFunctionGetName(function), deDatatypeGetTypeString(returnType));
+    }
   }
 }
 
@@ -152,12 +143,36 @@ static void bindFloatExpression(deExpression expression) {
   deExpressionSetDatatype(expression, datatype);
 }
 
+// Find the position of the parameter.
+static uint32_t findParamIndex(deVariable variable) {
+  uint32_t xParam = 0;
+  deBlock block = deVariableGetBlock(variable);
+  deVariable param;
+  deForeachBlockVariable(block, param) {
+    if (param == variable) {
+      return xParam;
+    }
+    xParam++;
+  } deEndBlockVariable;
+  utExit("Broken varialbe list");
+  return 0;  // Dummy return.
+}
+
 // Bind the identifier expression to a type.
 static void bindIdentExpression(deBlock scopeBlock, deExpression expression) {
   utSym name = deExpressionGetName(expression);
   deIdent ident = deFindIdent(scopeBlock, name);
   deLine line = deExpressionGetLine(expression);
   if (ident == deIdentNull) {
+    if (deBlockGetType(scopeBlock) == DE_BLOCK_FUNCTION) {
+      deFunction function = deBlockGetOwningFunction(scopeBlock);
+      deFunctionType type = deFunctionGetType(function);
+      if (type == DE_FUNC_PACKAGE || type == DE_FUNC_MODULE) {
+        printf("Did you mean to access %s in %s %s?\n",
+            utSymGetName(name), type == DE_FUNC_MODULE? "module" : "package",
+            deFunctionGetName(function));
+      }
+    }
     deError(line, "Undefined identifier: %s", utSymGetName(name));
   }
   deIdent oldIdent = deExpressionGetIdent(expression);
@@ -184,6 +199,11 @@ static void bindIdentExpression(deBlock scopeBlock, deExpression expression) {
       }
       deExpressionSetConst(expression, deVariableConst(variable));
     }
+    if (deInstantiating && deVariableGetType(variable) == DE_VAR_PARAMETER && deCurrentSignature != deSignatureNull) {
+      deParamspec paramspec = deSignatureGetiParamspec(
+          deCurrentSignature, findParamIndex(variable));
+      deParamspecSetInstantiated(paramspec, true);
+    }
   }
 }
 
@@ -201,7 +221,7 @@ static void bindArrayExpression(deBlock scopeBlock, deExpression expression) {
     bindExpression(scopeBlock, nextElement);
     if (getDatatype(nextElement) != datatype) {
       deError(line, "Array elements must have the same type:%s",
-          getOldVsNewDatatypeStrings(getDatatype(nextElement), datatype));
+          deGetOldVsNewDatatypeStrings(getDatatype(nextElement), datatype));
     }
     if (deExpressionIsType(nextElement)) {
       deError(line, "Array type expressions can contain only one type, like [u32]");
@@ -556,7 +576,8 @@ static deExpression verifyOrGenerateToStringMethod(deBlock scopeBlock, deExpress
 
 // Verify the expression can be printed.  For example, tuples cannot be printed
 // because the compiled program does not have access to the subtype info.
-static deExpression checkExpressionIsPrintable(deBlock scopeBlock, deExpression expression) {
+static deExpression checkExpressionIsPrintable(deBlock scopeBlock, deExpression
+    expression, bool convertClassesToStrings) {
   deLine line = deExpressionGetLine(expression);
   deDatatype datatype = deExpressionGetDatatype(expression);
   switch (deDatatypeGetType(datatype)) {
@@ -573,14 +594,17 @@ static deExpression checkExpressionIsPrintable(deBlock scopeBlock, deExpression 
   case DE_TYPE_ENUMCLASS:
   case DE_TYPE_ENUM:
   case DE_TYPE_ARRAY:
-  case DE_TYPE_TBDCLASS:
+  case DE_TYPE_NULL:
   case DE_TYPE_TCLASS:
     break;
   case DE_TYPE_MODINT:
     utExit("Modint type at top level expression");
     break;
   case DE_TYPE_CLASS:
-    return verifyOrGenerateToStringMethod(scopeBlock, expression);
+    if (convertClassesToStrings) {
+      return verifyOrGenerateToStringMethod(scopeBlock, expression);
+    }
+    break;
   case DE_TYPE_FUNCTION:
   case DE_TYPE_FUNCPTR:
     deError(line, "Cannot print function pointers");
@@ -615,6 +639,14 @@ static uint16 readUint16(char **p, char *end, deLine line) {
 // Verify the format specifier matches the datatype.
 static char* verifyFormatSpecifier(char* p, char *end, deDatatype datatype, deLine line,
     char **buf, uint32 *len, uint32 *pos) {
+  if (deDatatypeGetType(datatype) == DE_TYPE_ENUM) {
+    deBlock enumBlock = deFunctionGetSubBlock(deDatatypeGetFunction(datatype));
+    datatype = deFindEnumIntType(enumBlock);
+  } else if (deDatatypeGetType(datatype) == DE_TYPE_CLASS) {
+    uint32 width = deDatatypeGetWidth(datatype);
+    utAssert(width != 0);
+    datatype = deUintDatatypeCreate(width);
+  }
   deDatatypeType type = deDatatypeGetType(datatype);
   char c = *p++;
   *buf = deAppendCharToBuffer(*buf, len, pos, c);
@@ -744,7 +776,7 @@ static void verifyPrintfParameters(deBlock scopeBlock, deExpression expression) 
       if (argument == deExpressionNull) {
         deError(line, "Too few arguments for format");
       }
-      argument = checkExpressionIsPrintable(scopeBlock, argument);
+      argument = checkExpressionIsPrintable(scopeBlock, argument, false);
       deDatatype datatype = deExpressionGetDatatype(argument);
       p = verifyFormatSpecifier(p, end, datatype, line, &buf, &len, &pos);
       if (isTuple) {
@@ -845,7 +877,8 @@ static void bindRelationalExpression(deBlock scopeBlock, deExpression expression
   }
   deLine line = deExpressionGetLine(expression);
   if (!typesAreEquivalent(leftType, rightType)) {
-    deError(line, "Non-equal types passed to relational operator");
+    deError(line, "Non-equal types passed to relational operator:%s",
+        deGetOldVsNewDatatypeStrings(leftType, rightType));
   }
   deDatatypeType type = deDatatypeGetType(leftType);
   if (type != DE_TYPE_UINT && type != DE_TYPE_INT && type != DE_TYPE_FLOAT &&
@@ -870,7 +903,11 @@ static void bindEqualityExpression(deBlock scopeBlock, deExpression expression) 
     leftType = deSetDatatypeSecret(leftType, true);
   }
   if (leftType != rightType) {
-    deError(line, "Only identical types can be compared with == and !=");
+    deDatatype unifiedType = deUnifyDatatypes(leftType, rightType);
+    if (unifiedType == deDatatypeNull) {
+      deError(line, "Non-equal types passed to relational operator:%s",
+          deGetOldVsNewDatatypeStrings(leftType, rightType));
+    }
   }
   deExpressionSetDatatype(expression,
       deSetDatatypeSecret(deBoolDatatypeCreate(), deDatatypeSecret(leftType)));
@@ -912,6 +949,16 @@ static void bindNotExpression(deBlock scopeBlock, deExpression expression) {
   deExpressionSetDatatype(expression, childType);
 }
 
+// Determine if the datatype is a number or enumerated value.
+static bool datatypeIsNumberOrEnum(deDatatypeType type) {
+  return deDatatypeTypeIsNumber(type) || type == DE_TYPE_ENUM;
+}
+
+// Determine if the datatype is a number or enumerated value.
+static bool datatypeIsNumberOrEnumClass(deDatatypeType type) {
+  return deDatatypeTypeIsNumber(type) || type == DE_TYPE_ENUMCLASS || type == DE_TYPE_ENUM;
+}
+
 // Verify the cast expression is valid, and return the resulting datatype.
 static void verifyCast(deDatatype leftDatatype, deDatatype rightDatatype, deLine line) {
   if (leftDatatype == rightDatatype) {
@@ -921,7 +968,7 @@ static void verifyCast(deDatatype leftDatatype, deDatatype rightDatatype, deLine
     deError(line, "Casts require qualified types");
   }
   if (deDatatypeGetType(leftDatatype) == DE_TYPE_CLASS &&
-      deDatatypeGetType(rightDatatype) == DE_TYPE_TBDCLASS) {
+      deDatatypeGetType(rightDatatype) == DE_TYPE_NULL) {
     // This looks like a type binding hint.
     if (deClassGetTclass(deDatatypeGetClass(leftDatatype)) != deDatatypeGetTclass(rightDatatype)) {
       deError(line, "Casting to different class types is not allowed.");
@@ -930,7 +977,7 @@ static void verifyCast(deDatatype leftDatatype, deDatatype rightDatatype, deLine
   }
   deDatatypeType leftType = deDatatypeGetType(leftDatatype);
   deDatatypeType rightType = deDatatypeGetType(rightDatatype);
-  if (deDatatypeTypeIsNumber(leftType) && deDatatypeTypeIsNumber(rightType)) {
+  if (datatypeIsNumberOrEnumClass(leftType) && datatypeIsNumberOrEnum(rightType)) {
     return;
   }
   if (deDatatypeTypeIsInteger(rightType) ||
@@ -1002,6 +1049,11 @@ static void bindCastExpression(deBlock scopeBlock, deExpression expression) {
   // We ignore the secrecy of the left type: you can't cast away secrecy.  Just
   // force the left type to have the same secrecy value as the right.
   leftDatatype = deSetDatatypeSecret(leftDatatype, deDatatypeSecret(rightDatatype));
+  if (deDatatypeGetType(leftDatatype) == DE_TYPE_ENUMCLASS) {
+    // If the cast is to an ENUMCLASS, instead cast to an ENUM.
+    deBlock enumBlock = deFunctionGetSubBlock(deDatatypeGetFunction(leftDatatype));
+    leftDatatype = deFindEnumIntType(enumBlock);
+  }
   verifyCast(leftDatatype, rightDatatype, line);
   deExpressionSetDatatype(expression, leftDatatype);
 }
@@ -1029,7 +1081,7 @@ static void bindSelectExpression(deBlock scopeBlock, deExpression expression) {
   }
   if (leftType != rightType) {
     deError(line, "Select operator applied to different data types:%s",
-        getOldVsNewDatatypeStrings(leftType, rightType));
+        deGetOldVsNewDatatypeStrings(leftType, rightType));
   }
   deExpressionSetDatatype(expression, leftType);
 }
@@ -1118,6 +1170,17 @@ static void verifyNamedParametersMatch(deBlock block, deExpression firstNamedPar
   }
 }
 
+// Restore variable datatypes for variables on the block.
+static void restoreParameterDatatypes(deBlock block) {
+  deVariable variable;
+  deForeachBlockVariable(block, variable) {
+    if (deVariableGetType(variable) != DE_VAR_PARAMETER) {
+      return;
+    }
+    deVariableSetDatatype(variable, deVariableGetSavedDatatype(variable));
+  } deEndBlockVariable;
+}
+
 // Fill out the parameter types passed to the function using default parameter values.
 static void fillOutDefaultParamters(deBlock block, deDatatype selfType, deDatatypeArray paramTypes,
     deExpression firstNamedParameter, deLine line) {
@@ -1126,6 +1189,7 @@ static void fillOutDefaultParamters(deBlock block, deDatatype selfType, deDataty
   uint32 xDatatype = 0;  // Index into signature datatypes.
   deFunctionType funcType = deFunctionGetType(deBlockGetOwningFunction(block));
   while (variable != deVariableNull && deVariableGetType(variable) == DE_VAR_PARAMETER) {
+    deVariableSetSavedDatatype(variable, deVariableGetDatatype(variable));
     if (xDatatype == deDatatypeArrayGetUsedDatatype(paramTypes)) {
       // We've past the positional parameters.  Only named parameters remain.
       deExpression defaultValue = deVariableGetInitializerExpression(variable);
@@ -1178,22 +1242,7 @@ static void fillOutDefaultParamters(deBlock block, deDatatype selfType, deDataty
     deError(line, "Too many parameters");
   }
   checkParameterTypeConstraints(block, line);
-}
-
-// Set the signature's paramsInstantiated array values to indicate which
-// parameters should be skipped when calling the function or constructor.
-static void setSignatureParamsInstantiated(deSignature signature, deBlock block) {
-  uint32 numParams = deSignatureGetNumParamspec(signature);
-  uint32 xParam = 0;
-  deVariable paramVar = deBlockGetFirstVariable(block);
-  for (xParam = 0; xParam < numParams; xParam++) {
-    utAssert(deVariableGetType(paramVar) == DE_VAR_PARAMETER);
-    if (deVariableInstantiated(paramVar)) {
-      deParamspec paramspec = deSignatureGetiParamspec(signature, xParam);
-      deParamspecSetInstantiated(paramspec, true);
-    }
-    paramVar = deVariableGetNextBlockVariable(paramVar);
-  }
+  restoreParameterDatatypes(block);
 }
 
 // Bind a called function using the signature.
@@ -1205,30 +1254,24 @@ static void bindFunctionBlock(deFunction function, deSignature signature) {
   deSignatureSetBinding(signature, true);
   bindBlock(subBlock, subBlock, signature);
   deSignatureSetBinding(signature, false);
-  setSignatureParamsInstantiated(signature, subBlock);
   deCurrentSignature = savedSignature;
 }
 
-// Add a default debugging methods that can be called from the debugger.
-static void addDefaultClassDebugMethods(deClass theClass) {
-  utSym toStringSym = utSymCreate("toString");
-  deFunction toStringMethod = deClassFindMethod(theClass, toStringSym);
-  if (toStringMethod == deFunctionNull) {
-    toStringMethod = deGenerateDefaultToStringMethod(theClass);
-  }
-  utSym dumpSym = utSymCreate("dump");
-  deFunction dumpMethod = deClassFindMethod(theClass, dumpSym);
-  if (dumpMethod != deFunctionNull) {
+// Add a default show methods that can be called from the debugger.
+static void addDefaultClassShowMethod(deClass theClass) {
+  utSym showSym = utSymCreate("show");
+  deFunction showMethod = deClassFindMethod(theClass, showSym);
+  if (showMethod != deFunctionNull) {
     return;
   }
-  dumpMethod = deGenerateDefaultDumpMethod(theClass);
+  showMethod = deGenerateDefaultShowMethod(theClass);
   deLine line = deTclassGetLine(deClassGetTclass(theClass));
   deDatatypeArray parameterTypes = deDatatypeArrayAlloc();
   deDatatype selfType = deClassDatatypeCreate(theClass);
   deDatatypeArrayAppendDatatype(parameterTypes, selfType);
-  deSignature signature = deLookupSignature(dumpMethod, parameterTypes);
+  deSignature signature = deLookupSignature(showMethod, parameterTypes);
   utAssert(signature == deSignatureNull);
-  signature = deSignatureCreate(dumpMethod, parameterTypes, line);
+  signature = deSignatureCreate(showMethod, parameterTypes, line);
   deParamspec paramspec = deSignatureGetiParamspec(signature, 0);
   deParamspecSetInstantiated(paramspec, true);
   deSignatureSetInstantiated(signature, true);
@@ -1260,14 +1303,10 @@ static void instantiateConstructorSignature(deSignature signature) {
   if (!deClassBound(theClass)) {
     // Wait until member variables have datatypes set to create member relationships.
     deAddClassMemberRelations(theClass);
-    if (deDebugMode) {
-      addDefaultClassDebugMethods(theClass);
-    }
   }
   deCurrentSignature = savedSignature;
   deCurrentClass = savedClass;
   bindLazySignatures(theClass);
-  setSignatureParamsInstantiated(signature, subBlock);
   deClassSetBound(theClass, true);
 }
 
@@ -1437,7 +1476,7 @@ static deDatatype bindStructCall(deBlock scopeBlock, deFunction function,
   return deStructDatatypeCreate(function, parameterTypes, line);
 }
 
-// Pre-bind constructor call types, using DE_TYPE_TBD placeholders for
+// Pre-bind constructor call types, using DE_TYPE_NULL placeholders for
 // non-template types.  This returns the correct datatype, but the signature
 // will need to be unified later with more specific signatures.
 static deDatatype preBindConstructor(deBlock scopeBlock, deDatatype callType,
@@ -1677,7 +1716,7 @@ static void bindSliceExpression(deBlock scopeBlock, deExpression expression) {
 static void bindMarkSecretOrPublic(deBlock scopeBlock, deExpression expression) {
   deDatatype datatype = bindUnaryExpression(scopeBlock, expression);
   deDatatypeType type = deDatatypeGetType(datatype);
-  if (type == DE_TYPE_CLASS || type == DE_TYPE_TBDCLASS) {
+  if (type == DE_TYPE_CLASS || type == DE_TYPE_NULL) {
     deError(deExpressionGetLine(expression), "Object references cannot be marked secret");
   }
   bool secret = deExpressionGetType(expression) == DE_EXPR_SECRET;
@@ -1733,6 +1772,7 @@ static bool dealWithTclassVariableAssignment(deBlock scopeBlock,
     bool generated = deStatementGenerated(statement);
     var = deVariableCreate(theClassBlock, DE_VAR_LOCAL, isConst, name, deExpressionNull,
         generated, line);
+    deStatementInsertVariable(deCurrentStatement, var);
     createdVar = true;
     if (deVariableGetDatatype(var) != deDatatypeNull) {
       if (deVariableConst(var)) {
@@ -1770,15 +1810,15 @@ static void bindAccessExpression(deBlock scopeBlock, deExpression accessExpressi
   deBindingAssignmentTarget = savedBindingAssignmentTarget;
 }
 
-// Refine TBDClass types on variables to class types, now that we have a specific class.
+// Refine NULL types on variables to class types, now that we have a specific class.
 void deRefineAccessExpressionDatatype(deBlock scopeBlock, deExpression target,
     deDatatype valueType) {
    deDatatype targetType = deExpressionGetDatatype(target);
    deLine line = deExpressionGetLine(target);
-  if (deDatatypeGetType(valueType) == DE_TYPE_TBDCLASS) {
-    // Don't unrefine to a TBD class if we have already refined.
+  if (deDatatypeGetType(valueType) == DE_TYPE_NULL) {
+    // Don't unrefine to a NULL class if we have already refined.
     deDatatypeType type = deDatatypeGetType(targetType);
-    utAssert(type == DE_TYPE_CLASS || type == DE_TYPE_TBDCLASS);
+    utAssert(type == DE_TYPE_CLASS || type == DE_TYPE_NULL);
     return;
   }
   switch (deExpressionGetType(target)) {
@@ -1879,13 +1919,14 @@ static void bindAssignmentExpression(deBlock scopeBlock, deExpression expression
     }
     deDatatype targetType = getDatatype(target);
     if (targetType != deDatatypeNull) {
-      if (!deDatatypesCompatible(targetType, valueType)) {
+      deDatatype unifiedType = deUnifyDatatypes(targetType, valueType);
+      if (unifiedType == deDatatypeNull) {
         deError(line, "Writing different datatype to existing value:%s",
-            getOldVsNewDatatypeStrings(targetType, valueType));
+            deGetOldVsNewDatatypeStrings(targetType, valueType));
       }
-      if (targetType != valueType) {
+      if (targetType != unifiedType) {
         // Refine the target datatype.
-        deRefineAccessExpressionDatatype(scopeBlock, target, valueType);
+        deRefineAccessExpressionDatatype(scopeBlock, target, unifiedType);
       }
     }
     if (deExpressionIsType(target)) {
@@ -1905,6 +1946,7 @@ static void bindAssignmentExpression(deBlock scopeBlock, deExpression expression
       bool generated = deStatementGenerated(deFindExpressionStatement(expression));
       deVariable variable = deVariableCreate(scopeBlock, DE_VAR_LOCAL, isConst, name,
           deExpressionNull, generated, line);
+      deStatementInsertVariable(deCurrentStatement, variable);
       deBlock currentBlock = deStatementGetBlock(deFindExpressionStatement(expression));
       deVariableSetInitializedAtTop(variable, currentBlock == scopeBlock);
       deStatement statement = deFindExpressionStatement(expression);
@@ -1912,7 +1954,7 @@ static void bindAssignmentExpression(deBlock scopeBlock, deExpression expression
       setVariableDatatype(scopeBlock, variable, valueType, line);
       deVariableSetIsType(variable, deExpressionIsType(value));
       deVariableSetInstantiated(variable, deInstantiating && !deExpressionIsType(value));
-      ident = deVariableGetFirstIdent(variable);
+      ident = deVariableGetIdent(variable);
     } else {
       if (deIdentGetType(ident) != DE_IDENT_VARIABLE) {
         deError(line, "Tried to assign to a non-variable (class or function)");
@@ -1921,9 +1963,9 @@ static void bindAssignmentExpression(deBlock scopeBlock, deExpression expression
       deDatatype oldType = deVariableGetDatatype(variable);
       if (oldType == deDatatypeNull) {
         setVariableDatatype(scopeBlock, variable, valueType, line);
-      } else if (!deDatatypesCompatible(oldType, valueType)) {
+      } else if (deUnifyDatatypes(oldType, valueType) == deDatatypeNull) {
         deError(line, "Type mismatch while updating an existing variable:%s",
-            getOldVsNewDatatypeStrings(oldType, valueType));
+            deGetOldVsNewDatatypeStrings(oldType, valueType));
       } else if (deVariableConst(variable)) {
         deError(line, "Assigning to const variable %s", deVariableGetName(variable));
       } else if (isConst) {
@@ -1953,6 +1995,28 @@ static void bindAssignmentExpression(deBlock scopeBlock, deExpression expression
   }
 }
 
+// Find the index of the struct member indicated by the identifier expression.
+static uint32 findStructIdentIndex(deDatatype datatype, deExpression identExpr) {
+  deFunction function = deDatatypeGetFunction(datatype);
+  deLine line = deExpressionGetLine(identExpr);
+  if (deExpressionGetType(identExpr) != DE_EXPR_IDENT) {
+    deError(line, "Expected an identifier after dot");
+  }
+  utSym sym = deExpressionGetName(identExpr);
+  uint32 xVar = 0;
+  deBlock block = deFunctionGetSubBlock(function);
+  deVariable var;
+  deForeachBlockVariable(block, var) {
+    if (deVariableGetSym(var) == sym) {
+      return xVar;
+    }
+    xVar++;
+  } deEndBlockVariable;
+  deError(line, "No struct member named %s found in %s", utSymGetName(sym),
+      deFunctionGetName(function));
+  return 0;  // Dummy return.
+}
+
 // Bind a dot expression.  If we're binding a constructor, search in the
 // current theClass rather than the class constructor.
 static void bindDotExpression(deBlock scopeBlock, deExpression expression) {
@@ -1966,15 +2030,21 @@ static void bindDotExpression(deBlock scopeBlock, deExpression expression) {
   deDatatypeType type = deDatatypeGetType(datatype);
   deBlock classBlock;
   deLine line = deExpressionGetLine(expression);
+  if (type == DE_TYPE_STRUCT) {
+    uint32 index = findStructIdentIndex(datatype, rightExpression);
+    deExpressionSetDatatype(expression, deDatatypeGetiTypeList(datatype, index));
+    return;
+  }
   if (type == DE_TYPE_CLASS) {
     classBlock = deClassGetSubBlock(deDatatypeGetClass(datatype));
-  } else if (type == DE_TYPE_TBDCLASS) {
+  } else if (type == DE_TYPE_NULL) {
     deError(line,
-        "\n    Trying to access member of partially unified class.This can be caused by\n"
-        "    having a relationship between template classes without ever adding a child\n"
-        "    object to the relationship.  This can cause the compiler to still lack type\n"
-        "    information when asked to destroy an object of the partially unified class.\n"
-        "    Try deleting unused Dict objects, or inserting some data.\n");
+        "\n    Trying to access member of partially unified class %s.  This can\n"
+        "    be caused by having a relationship between template classes without ever\n"
+        "    adding a child object to the relationship.  This can cause the compiler to\n"
+        "    still lack type information when asked to destroy an object of the partially\n"
+        "    unified class.  Try deleting unused Dict objects, or inserting some data.\n",
+        deTclassGetName(deDatatypeGetTclass(datatype)));
     return;  // Can't get here.
   } else if (type == DE_TYPE_TCLASS) {
     classBlock = deFunctionGetSubBlock(deTclassGetFunction(deDatatypeGetTclass(datatype)));
@@ -1993,6 +2063,11 @@ static void bindDotExpression(deBlock scopeBlock, deExpression expression) {
   }
   if (deExpressionGetType(rightExpression) != DE_EXPR_IDENT) {
     deError(line, "An identifier is expected after '.'");
+  }
+  utSym name = deExpressionGetName(rightExpression);
+  deIdent ident = deBlockFindIdent(classBlock, name);
+  if (ident == deIdentNull) {
+    deError(line, "No method name %s was found", utSymGetName(name));
   }
   bindExpression(classBlock, rightExpression);
   deExpressionSetDatatype(expression, deExpressionGetDatatype(rightExpression));
@@ -2043,11 +2118,11 @@ static void bindNullExpression(deBlock scopeBlock, deExpression expression) {
     }
   }
   if (deDatatypeGetType(datatype) == DE_TYPE_TCLASS) {
-    datatype = deTBDClassDatatypeCreate(deDatatypeGetTclass(datatype));
+    datatype = deNullDatatypeCreate(deDatatypeGetTclass(datatype));
   }
   switch (deDatatypeGetType(datatype)) {
     case DE_TYPE_CLASS:
-    case DE_TYPE_TBDCLASS:
+    case DE_TYPE_NULL:
     case DE_TYPE_BOOL:
     case DE_TYPE_STRING:
     case DE_TYPE_UINT:
@@ -2132,7 +2207,7 @@ static void bindArrayofExpression(deBlock scopeBlock, deExpression expression) {
   deInstantiating = false;
   deDatatype datatype = bindUnaryExpression(scopeBlock, expression);
   if (deDatatypeGetType(datatype) == DE_TYPE_TCLASS) {
-    datatype = deTBDClassDatatypeCreate(deDatatypeGetTclass(datatype));
+    datatype = deNullDatatypeCreate(deDatatypeGetTclass(datatype));
   }
   deExpressionSetDatatype(expression, deArrayDatatypeCreate(datatype));
   deInstantiating = savedInstantiating;
@@ -2177,7 +2252,7 @@ static void bindWidthofExpression(deBlock scopeBlock, deExpression expression) {
 static void bindIsnullExpression(deBlock scopeBlock, deExpression expression) {
   deDatatype datatype = bindUnaryExpression(scopeBlock, expression);
   deDatatypeType type = deDatatypeGetType(datatype);
-  if (type != DE_TYPE_CLASS && type != DE_TYPE_TBDCLASS) {
+  if (type != DE_TYPE_CLASS && type != DE_TYPE_NULL) {
     deError(deExpressionGetLine(expression), "isnull applied to non-object");
   }
   deExpressionSetDatatype(expression, deBoolDatatypeCreate());
@@ -2216,7 +2291,7 @@ static void bindDotDotDotExpression(deBlock scopeBlock, deExpression expression)
     }
     if (leftDatatype != rightDatatype) {
       deError(line, "Type ranges limits must have the same type, eg 1 ... 10 or 1i32 ... 10i32:%s",
-          getOldVsNewDatatypeStrings(leftDatatype, rightDatatype));
+          deGetOldVsNewDatatypeStrings(leftDatatype, rightDatatype));
     }
     deExpressionSetDatatype(expression, leftDatatype);
   }
@@ -2339,9 +2414,7 @@ static void bindExpression(deBlock scopeBlock, deExpression expression) {
       bindSelectExpression(scopeBlock, expression);
       break;
     case DE_EXPR_CALL:
-      dePushStackFrame(deFindExpressionStatement(expression));
       bindCallExpression(scopeBlock, expression, false);
-      dePopStackFrame();
       break;
     case DE_EXPR_INDEX:
       bindIndexExpression(scopeBlock, expression);
@@ -2358,12 +2431,6 @@ static void bindExpression(deBlock scopeBlock, deExpression expression) {
     case DE_EXPR_EQUALS:
       bindAssignmentExpression(scopeBlock, expression, false);
       break;
-    case DE_EXPR_CONST: {
-      deExpression child = deExpressionGetFirstExpression(expression);
-      bindAssignmentExpression(scopeBlock, child, true);
-      deExpressionSetDatatype(expression, deExpressionGetDatatype(child));
-      break;
-    }
     case DE_EXPR_ADD_EQUALS:
     case DE_EXPR_SUB_EQUALS:
     case DE_EXPR_MUL_EQUALS:
@@ -2483,7 +2550,7 @@ static void updateFunctionType(deBlock scopeBlock, deExpression expression, deLi
       if (deExpressionGetDatatype(expression) != datatype) {
         deError(line,
             "Return statement has different type than prior return statement:%s",
-            getOldVsNewDatatypeStrings(deExpressionGetDatatype(expression), datatype));
+            deGetOldVsNewDatatypeStrings(deExpressionGetDatatype(expression), datatype));
       }
     }
   }
@@ -2568,7 +2635,7 @@ static void bindCaseStatements(deBlock scopeBlock, deStatement switchStatement, 
       deForeachExpressionExpression(listExpression, expression) {
         if (deExpressionGetDatatype(expression) != datatype) {
           deError(line, "Case expression has different type than switch expression:%s",
-            getOldVsNewDatatypeStrings(deExpressionGetDatatype(expression), datatype));
+            deGetOldVsNewDatatypeStrings(deExpressionGetDatatype(expression), datatype));
         }
       } deEndExpressionExpression;
     }
@@ -2645,7 +2712,7 @@ static void bindStatement(deBlock scopeBlock, deStatement statement) {
           if (deDatatypeSecret(deExpressionGetDatatype(child))) {
             deError(line, "Printing a secret is not allowed");
           }
-          checkExpressionIsPrintable(scopeBlock, child);
+          checkExpressionIsPrintable(scopeBlock, child, true);
         } deEndSafeExpressionExpression;
         break;
       }
@@ -2864,11 +2931,15 @@ static bool datatypeIsIterator(deDatatype datatype) {
   if (deDatatypeGetType(datatype) != DE_TYPE_FUNCTION) {
     return false;
   }
-  deFunction iterator = deDatatypeGetFunction(datatype);
-  return deFunctionGetType(iterator) == DE_FUNC_ITERATOR;
+  deFunction function = deDatatypeGetFunction(datatype);
+  return deFunctionGetType(function) == DE_FUNC_ITERATOR;
 }
 
-// Add a .values() call to the target if it does not represent an iterator.
+// Automatically add .values() in for <var> in <expr> statements when <expr>
+// does not already name an iterator.  This lets us use Python-like loops like
+// 'for i in [1, 2, 3] {'.  It also allows classes to define 'iterator
+// values(self)' so for example, an instance of Set called set could work with
+// 'for element in set {'.
 static void addValuesIteratorIfNeeded(deBlock scopeBlock, deStatement statement) {
   deExpression assignment = deStatementGetExpression(statement);
   deExpression access = deExpressionGetFirstExpression(assignment);
@@ -2929,7 +3000,11 @@ static void bindBlock(deBlock scopeBlock, deBlock block, deSignature signature) 
           utAssert(deInstantiating);
           // This sets the signature on the call expression, so the iterator
           // function can be bound in deInlineIterator.
-          bindExpression(scopeBlock, deStatementGetExpression(statement));
+          deStatement savedStatement = deCurrentStatement;
+          deCurrentStatement = statement;
+          // Bind the whole statement to create variables assigned in the body.
+          bindStatement(scopeBlock, statement);
+          deCurrentStatement = savedStatement;
           deInlining = false;
           statement = deInlineIterator(scopeBlock, statement);
           deInlining = true;
@@ -3002,6 +3077,36 @@ static void bindExports(void) {
   } deEndRootFunction;
 }
 
+// After type binding, any NULL classes that still exist are the result of
+// declaring classes that were never constructed.  These can be destroyed.
+// The remaining code after destroying this unused code should be fully bound,
+// and ready for code generation.
+static void destroyUnusedTclassesContents(void) {
+  // This iterator is tricky because if we destroy an tclass, and it has an
+  // inner tclass, we'll destroy that too, breaking the assumption made by the
+  // auto-generated safe iterators.  Inner tclasses are always after their
+  // outer tclasses, so it should be safe to destroy them in a backwards
+  // traversal of tclasses.
+  deTclass tclass, prevTclass;
+  for (tclass = deRootGetLastTclass(deTheRoot); tclass != deTclassNull;
+       tclass = prevTclass) {
+    prevTclass = deTclassGetPrevRootTclass(tclass);
+    if (!deTclassBuiltin(tclass) && deTclassGetNumClasses(tclass) == 0) {
+      deDestroyTclassContents(tclass);
+    }
+  }
+}
+
+// Add default show methods for classes that have not defined them.
+static void addDefaultShowMethods() {
+  deClass theClass;
+  deForeachRootClass(deTheRoot, theClass) {
+    if (deClassBound(theClass)) {
+      addDefaultClassShowMethod(theClass);
+    }
+  } deEndRootClass;
+}
+
 // Bind types to all expressions.  Propagates through functions, and can create
 // new functions with different bytecode when the parameters are different.
 // Keep track of all function signatures.
@@ -3021,6 +3126,10 @@ void deBind(void) {
   bindBlock(rootBlock, rootBlock, mainSignature);
   deCurrentStatement = deStatementNull;
   bindExports();
+  destroyUnusedTclassesContents();
+  if (deDebugMode) {
+    addDefaultShowMethods();
+  }
 }
 
 // This is used to bind new statements after adding memory management stuff.
@@ -3032,18 +3141,37 @@ void deBindNewStatement(deBlock scopeBlock, deStatement statement) {
   bindStatement(scopeBlock, statement);
 }
 
+// Initialize global variables.
+void deBindStart(void) {
+  deInstantiating = false;
+  deInlining = false;
+  deBindingAssignmentTarget = false;
+  deCurrentSignature = deSignatureNull;
+  deCurrentStatement = deStatementNull;
+  deCurrentClass = deClassNull;
+}
+
 // Bind a block.  Binding a block is idempotent: it can be called multiple times.
 void deBindBlock(deBlock block, deSignature signature, bool inlineIterators) {
+  if (deUseNewBinder) {
+    deApplySignatureBindings(signature);
+    return;
+  }
   deInstantiating = true;
   deInlining = inlineIterators;
+  bool savedBindingAssignmentTarget = deBindingAssignmentTarget ;
   deBindingAssignmentTarget = false;
   deSignature savedSignature = deCurrentSignature;
   deCurrentSignature = signature;
+  deStatement savedStatement = deCurrentStatement;
   deCurrentStatement = deStatementNull;
+  deClass savedClass = deCurrentClass;
   deCurrentClass = deClassNull;
   bindBlock(block, block, signature);
-  setSignatureParamsInstantiated(signature, block);
+  deCurrentClass = savedClass;
+  deCurrentStatement = savedStatement;
   deCurrentSignature = savedSignature;
+  deBindingAssignmentTarget = savedBindingAssignmentTarget;
 }
 
 // Bind an expression.  The caller is responsible for setting deInstantiating.

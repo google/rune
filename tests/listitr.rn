@@ -16,3 +16,13 @@ l = [1, 2, 3]
 for i in l {
   println i
 }
+for j in ["Hello", "World!"] {
+  println j
+}
+l2 = [[1, 2], [3, 4]]
+for i in l2[0] {
+  println i
+}
+for i in l2[1] {
+  println i
+}

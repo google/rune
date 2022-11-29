@@ -18,7 +18,7 @@
 
 import math
 
-const m = <u255>(2u256^255 - 19)
+m = <u255>(2u256^255 - 19)
 i = math.msqrt(m - 1, m)
 assert i*i == -1 mod m
 println "sqrt(-1) mod 2^255 - 19 = ", i

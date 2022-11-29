@@ -33,7 +33,7 @@ func getDatatypeType(value) -> DatatypeType {
       if value.isSigned {
         return DatatypeType.Int
       }
-      return Datatype.Uint
+      return DatatypeType.Uint
     }
     case Float {
       return DatatypeType.Float

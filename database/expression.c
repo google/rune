@@ -471,9 +471,6 @@ void deDumpExpressionStr(deString string, deExpression expression) {
     case DE_EXPR_REVEAL:
       dumpPrefixExpr(string, expression, "reveal", parentPrecedence);
       break;
-    case DE_EXPR_CONST:
-      dumpPrefixExpr(string, expression, "const ", parentPrecedence);
-      break;
     case DE_EXPR_EQUALS:
       dumpBinaryExpr(string, expression, "=", parentPrecedence);
       break;
@@ -788,7 +785,7 @@ static void setExpressionToValue(deExpression expression, deValue value) {
     case DE_TYPE_TUPLE:
     case DE_TYPE_STRUCT:
     case DE_TYPE_ENUM:
-    case DE_TYPE_TBDCLASS:
+    case DE_TYPE_NULL:
     case DE_TYPE_TCLASS:
     case DE_TYPE_CLASS:
     case DE_TYPE_FUNCTION:

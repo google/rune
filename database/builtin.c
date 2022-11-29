@@ -59,7 +59,7 @@ deTclass deFindTypeTclass(deDatatypeType type) {
     case DE_TYPE_CLASS:
       return deClassTclass;
     case DE_TYPE_TCLASS:
-    case DE_TYPE_TBDCLASS:
+    case DE_TYPE_NULL:
     case DE_TYPE_NONE:
     case DE_TYPE_ENUMCLASS:
       utExit("Not expecting to get tclass for tclass, class, TBD, enumclass, or none");

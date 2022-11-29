@@ -118,7 +118,6 @@ enum ExpressionType
   DE_EXPR_TUPLE  // return (1, 2, "passed")
   DE_EXPR_AS  // import foo as bar
   DE_EXPR_IN  // if element in set
-  DE_EXPR_CONST  // const self.x = x
   DE_EXPR_NULL  // null(Node())
   DE_EXPR_NULLSELF  // n = Tree(null, null)
   DE_EXPR_FUNCADDR  // &max(0u32, 0u32)
@@ -153,11 +152,12 @@ enum DatatypeType
   DE_TYPE_STRUCT
   DE_TYPE_ENUM
   DE_TYPE_ENUMCLASS
-  DE_TYPE_TBDCLASS  // Returned by null(A).
+  DE_TYPE_NULL  // Returned by null(A).
 
 enum IdentType
   DE_IDENT_FUNCTION
   DE_IDENT_VARIABLE
+  DE_IDENT_UNDEFINED
 
 enum VariableType
   DE_VAR_LOCAL
@@ -248,6 +248,7 @@ class Root create_only
 // Used to keep track of statements, functions, classes, in one hash table.
 class Block
   BlockType type
+  bool reachabilityChecked
   Line line
   // For dead code analysis.
   bool canReturn
@@ -265,7 +266,6 @@ class Tclass array
   BuiltinTclassType builtinType
   Line line
   uint32 numClasses
-  bool hasDefaultClass
   bool hasFinalMethod
   bool refCounted  // Set if this tclass is in no cascade-delete relationship.
   bool visited  // Used in loop detection.
@@ -275,7 +275,7 @@ class Tclass array
 // Fully typed version of a class.  It has a block that has typed member variables, and also copies
 // of identifiers pointing to the main class' methods and inner classes.
 class Class
-  Datatype datatype
+  Datatype datatype cascade
   uint32 number  // Used in making labels to access data members.
   // We allocate a new uint32 array for the free list if the class does not have one already.
   // However, if it does, we reuse it for the free list.
@@ -352,7 +352,7 @@ class Datatype array
   union type
     Datatype elementType: DE_TYPE_ARRAY DE_TYPE_STRING
     Datatype returnType: DE_TYPE_FUNCPTR
-    Tclass tclass: DE_TYPE_TCLASS DE_TYPE_TBDCLASS
+    Tclass tclass: DE_TYPE_TCLASS DE_TYPE_NULL
     Function function: DE_TYPE_FUNCTION DE_TYPE_STRUCT DE_TYPE_ENUM DE_TYPE_ENUMCLASS
     Class Class: DE_TYPE_CLASS
     Expression modulus: DE_TYPE_MODINT
@@ -404,6 +404,7 @@ class Signature
   bool partial  // Set to indicated the signature is a partial class signature.
   Line line
   bool instantiated  // Some signatures occur in typeof(...) expressions.
+  bool bound
 
 // Specifies the type of a parameter in a signature, along with some additional data required in
 // function binding.
@@ -411,15 +412,39 @@ class Paramspec
   Datatype datatype
   Variable variable
   bool instantiated
+  bool isType
+
+// This class tracks statement binding.  See the header comment in src/bind2.c
+// for details.
+class BindState
+  bool instantiated
+
+// This class tracks binding of an expression in a signature.  The same
+// expression can be bound multiple times for different signatures.  We bind
+// them breadth-first to resolve issues such as recursive calls and calling
+// methods of a class that has not yet been bound.
+class Binding
+  bool isType
+  bool autocast
+  bool const
+  bool instantiating
+  bool nonNull  // Set for left of dot expressions or array access.
+  String altString
+  Datatype datatype
+  Signature callSignature  // Only set on function call expressions.
+
+// When an identifier is fully bound, this event can unblock BindState objects
+// that are blocked on this event.  These events take certain forms:  A
+// signature has been bound, a module's global variable has been assigned a
+// non-null type, or a local variable in a class or function as been bound to
+// non-null type.  Sometimes a code generator runs and creates an identifier
+// that was previously undefined.
+class Event
 
 // Strings.  The main difference vs utSym is that Rune strings can contain 0's.
 class String
   array char text
   uint32 used
-
-// Used to report call path to error, and also keep track of variable values in generators.
-class StackFrame
-  Statement statement
 
 // Operatored operator.
 class Operator
@@ -444,8 +469,26 @@ class Relation
 class MemberRel
 
 relationship Root Block cascade
+// We bind signatures breadth-first.
+relationship Root:Binding BindState:Binding doubly_linked
+relationship Root Event doubly_linked
+relationship Event BindState doubly_linked
+relationship Signature BindState doubly_linked mandatory
+relationship Signature:Return Event:Return cascade
+relationship Binding:Variable Event:Variable cascade
+relationship Ident:Undefined Event:Undefined cascade
+relationship Signature Binding doubly_linked mandatory
+relationship Signature:Binding BindState:Binding doubly_linked
+relationship BindState Binding doubly_linked cascade
+relationship BindState:Root Binding:Root
+relationship Statement BindState doubly_linked mandatory
+relationship Expression Binding doubly_linked cascade
+relationship Binding Binding doubly_linked cascade
+relationship Ident Binding doubly_linked cascade
+relationship Variable Binding doubly_linked cascade
 relationship Root Tclass doubly_linked mandatory
-relationship Root StackFrame doubly_linked mandatory
+relationship Signature:Call Signature:Call doubly_linked
+relationship Statement:Call Signature:Call doubly_linked
 relationship Root DatatypeBin hashed hash cascade
 relationship DatatypeBin Datatype linked_list cascade
 relationship Root SignatureBin hashed hash cascade
@@ -461,7 +504,7 @@ relationship Class:Lazy Signature:Lazy doubly_linked cascade
 relationship Signature Paramspec array mandatory
 relationship Block Ident hashed cascade
 relationship Function Ident doubly_linked cascade
-relationship Variable Ident doubly_linked cascade
+relationship Variable Ident cascade
 relationship Ident Expression doubly_linked
 relationship Block Function doubly_linked cascade
 relationship Block Variable doubly_linked mandatory
@@ -476,11 +519,15 @@ relationship Statement Expression cascade
 relationship Expression Expression doubly_linked cascade
 relationship Variable:Initializer Expression:Initializer cascade
 relationship Variable:Type Expression:Type cascade
+// If we delete the statement that created a variable, also delete the variable
+relationship Statement Variable cascade
 relationship Root String hashed text cascade
 relationship Root Operator hashed type mandatory
 relationship Operator Function doubly_linked cascade
 relationship Tclass:Parent Relation:Child doubly_linked mandatory
 relationship Tclass:Child Relation:Parent doubly_linked mandatory
+relationship Relation:Generated Statement:Generated doubly_linked cascade
+relationship Relation:Generated Function:Generated doubly_linked cascade
 relationship Generator Relation doubly_linked mandatory
 relationship Variable MemberRel mandatory
 relationship Class:Parent MemberRel:Child doubly_linked mandatory

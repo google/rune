@@ -40,12 +40,6 @@ class Sym(self, symbin: Symbin, name: string) {
 
   func new(name: string) -> Sym {
     hash = hashString(name)
-    if false {
-      // TODO: Somehow fix binding so we don't need hacks like this.  This
-      // hack tells the binding code what a constructed Symbin looks like.
-      symbin = Symbin(0u64)
-      theSymbolTable.insertSymbin(symbin)
-    }
     symbin = theSymbolTable.findSymbin(hash)
     if isnull(symbin) {
       symbin = Symbin(hash)

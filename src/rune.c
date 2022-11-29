@@ -28,7 +28,11 @@ static void buildArgvArray(void) {
   utSym argvSym = utSymCreate("argv");
   char text[] = "argv = readCommandLineArgs()\n";
   deLine line = deLineCreate(deBlockGetFilepath(rootBlock), text, sizeof(text), 0);
-  deVariableCreate(rootBlock, DE_VAR_LOCAL, true, argvSym, deExpressionNull, false, line);
+  deVariable argv = deVariableCreate(rootBlock, DE_VAR_LOCAL, true, argvSym,
+      deExpressionNull, false, line);
+  deDatatype argvType = deArrayDatatypeCreate(deStringDatatypeCreate());
+  deVariableSetDatatype(argv, argvType);
+  deVariableSetInstantiated(argv, true);
 }
 
 // Initialize all modules.
@@ -74,6 +78,7 @@ void deStart(char *fileName) {
   deDatatypeStart();
   deBuiltinStart();
   deUtilStart();
+  deBindStart();
   buildArgvArray();
 }
 

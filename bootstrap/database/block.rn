@@ -13,23 +13,27 @@
 // limitations under the License.
 
 use root
-use expr
+use filepath
 use function
 use line
 use statement
+use variable
 
 // A liternal block statement.  All statements exist within a block.
 class Block(self, line: Line) {
   self.line = line
   // For dead code analysis.
-  canReturn = false
-  canContinue = false
+  self.canReturn = false
+  self.canContinue = false
 
   // Dump the block to the end of |text| for debugging.
   func dumpToString(self: Block, var text: string) {
     getRoot().indent(text)
-    text += "block 0x%x {\n" % <u32>self
+    text += "{\n"
     getRoot().incrementIndent()
+    for function in self.functions() {
+      function.dumpToString(text)
+    }
     for statement in self.statements() {
       statement.dumpToString(text)
     }
@@ -42,14 +46,19 @@ class Block(self, line: Line) {
   func dump(self) {
     text = ""
     self.dumpToString(text)
-    println text
+    print text
   }
 
   // Copy the block's statements into the block containing |destStatement|
   // right after |destStatement|.
   func copyStatementsAfterStatement(self, destStatement: Statement) {
+    lastStatement = destStatement
     for statement in self.statements() {
-      destStatement = destStatement.appendCopyAfterStatement(destStatement)
+      if false {
+        // Type hint for recursion.
+        return
+      }
+      lastStatement = statement.appendCopyAfterStatement(lastStatement)
     }
   }
 
@@ -57,15 +66,16 @@ class Block(self, line: Line) {
   // after |destStatement|.
   func moveStatementsAfterStatement(self, destStatement: Statement) {
     destBlock = destStatement.block
+    lastStatement = destStatement
     for statement in self.safeStatements() {
       self.removeStatement(statement)
-      destBlock.insertStatementAfterStatement(destStatement, statement)
-      destStatement = statement
+      destBlock.insertAfterStatement(lastStatement, statement)
+      lastStatement = statement
     }
   }
 
   // Append the contents of |self| to |destBlock|, and destroy |self|.
-  func appendToBlock(self, destBlock: Block) {
+  func appendToBlock(self:Block , destBlock: Block) {
     for statement in self.safeStatements() {
       self.removeStatement(statement)
       destBlock.appendStatement(statement)
@@ -84,9 +94,19 @@ class Block(self, line: Line) {
 
   // Make a copy of the block, without sub-blocks.
   func copy(self) -> Block {
-    newBlock = Block(block.line)
+    if false {
+      // Type hint for recursion.
+      return null(self)
+    }
+    newBlock = Block(self.line)
     for statement in self.statements() {
       statement.appendCopy(newBlock)
+    }
+    for function in self.functions() {
+      function.copy(newBlock)
+    }
+    for variable in self.variables() {
+      variable.copy(newBlock)
     }
     return newBlock
   }
@@ -97,7 +117,165 @@ class Block(self, line: Line) {
       statement.destroy()
     }
   }
+
+  func owningBlock(self: Block) -> Block {
+    if !isnull(self.owningFunction) {
+      return self.owningFunction.block
+    } else if !isnull(self.owningStatement) {
+      return self.owningStatement.block
+    // TODO: Comment back in when we port class.
+    // } else if !isnull(self.owningClass) {
+    //   return self.owningClass.tclass.function.block
+    }
+    return null(self)
+  }
+
+  // Generate a unique name for an identifier in the block, based on |name|.
+  // Just use |name| if there is no conflict, otherwise, add _n, where n is an
+  // integer to make the name unique in the block.
+  func createUniqueSym(self: Block, sym: Sym) -> Sym {
+    if isnull(self.findIdent(sym)) {
+      return sym
+    }
+    counter = 1u32
+    do {
+      newSym = Sym.new("%s_%u" % (sym.name, counter))
+      counter += 1
+    } while !isnull(self.findIdent(newSym))
+    return newSym
+  }
 }
 
+relation OneToOne Root Block cascade
 relation OneToOne Statement:"Owning" Block:"Sub" cascade
 relation OneToOne Function:"Owning" Block:"Sub" cascade
+relation OneToOne Filepath:"Module" Block:"Module"
+
+// Common code between tests.
+unittest {
+  use value
+  use expr
+
+  rootBlock = getRoot().block
+  rootLine = rootBlock.line
+  rootFilepath = rootLine.filepath
+
+  func createEmptyBlock() -> Block {
+    line = Line(rootFilepath, "Create empty block", 0u32)
+    return Block(line)
+  }
+
+  func createPrintlnBlock(text: string) -> Block {
+    block = createEmptyBlock()
+    line = Line(rootFilepath, "println \"" + text + "\"", 1u32)
+    statement = Statement(block, StateType.Println, line)
+    constString = Value(text)
+    expr = Expr.newConstant(constString, line)
+    statement.insertExpr(expr)
+    return block
+  }
+
+  func createPrintlnFunction(owningBlock: Block, name: string, text: string) -> Function {
+    block = createPrintlnBlock(text)
+    function = Function(owningBlock, FuncType.Plain, Sym.new(name), Linkage.Module, rootLine)
+    function.insertSubBlock(block)
+    return function
+  }
+
+  func countBlockStatements(block: Block) -> u32 {
+    count = 0u32
+    for statement in block.statements() {
+      count += 1
+    }
+    return count
+  }
+}
+
+unittest dumpBlockTest {
+  block = createPrintlnBlock("Hello, World!")
+  block.dump()
+}
+
+unittest copyStatementsAfterStatementTest {
+  block1 = createPrintlnBlock("Second copied line")
+  block2 = createPrintlnBlock("First copied line")
+  destStatement = block2.firstStatement
+  block1.copyStatementsAfterStatement(destStatement)
+  assert countBlockStatements(block1) == 1
+  assert countBlockStatements(block2) == 2
+  block2.dump()
+}
+
+unittest moveStatementsAfterStatementTest {
+  block1 = createPrintlnBlock("Second moved line")
+  block2 = createPrintlnBlock("First stationary line")
+  destStatement = block2.firstStatement
+  block1.moveStatementsAfterStatement(destStatement)
+  assert countBlockStatements(block1) == 0
+  assert countBlockStatements(block2) == 2
+  block2.dump()
+}
+
+unittest destroyTest {
+  block = createPrintlnBlock("Second line")
+  block.destroy()
+}
+
+unittest appendToBlockTest {
+  block1 = createPrintlnBlock("Second line")
+  block2 = createPrintlnBlock("First line")
+  destStatement = block2.firstStatement
+  block1.appendToBlock(block2)
+  assert countBlockStatements(block2) == 2
+  block2.dump()
+}
+
+unittest prependToBlockTest {
+  block1 = createPrintlnBlock("Second line")
+  block2 = createPrintlnBlock("First line")
+  destStatement = block2.firstStatement
+  block1.prependToBlock(block2)
+  assert countBlockStatements(block2) == 2
+  block2.dump()
+}
+
+unittest copyTest {
+  block1 = createPrintlnBlock("Hello")
+  block2 = block1.copy()
+  assert countBlockStatements(block1) == 1
+  assert countBlockStatements(block2) == 1
+  block1.dump()
+  block2.dump()
+}
+
+unittest destroyStatmentsTest {
+  block1 = createPrintlnBlock("Second line")
+  block2 = createPrintlnBlock("First line")
+  block1.appendToBlock(block2)
+  block2.destroyStatements()
+  assert countBlockStatements(block2) == 0
+  block2.dump()
+}
+
+unittest owningBlockTest {
+  subFunc = createPrintlnFunction(null(Block), "print1", "block1")
+  block1 = subFunc.subBlock
+  block2 = createPrintlnBlock("block2")
+  block2.appendFunction(subFunc)
+  subFunc.dump()
+  block2.dump()
+  assert block1.owningBlock() == block2
+}
+
+unittest createUniqueSymTest {
+  baseSym = Sym.new("printTest")
+  topBlock = createPrintlnBlock("topBlock")
+  createPrintlnFunction(topBlock, baseSym.name, "func1")
+  newSym = topBlock.createUniqueSym(baseSym)
+  assert newSym.name == "printTest_1"
+  createPrintlnFunction(topBlock, newSym.name, "func2")
+  newSym = topBlock.createUniqueSym(baseSym)
+  assert newSym.name == "printTest_2"
+  createPrintlnFunction(topBlock, newSym.name, "func3")
+  topBlock.dump()
+}

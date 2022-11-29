@@ -19,7 +19,7 @@
 // to return self.  Bind all new/modified statements.
 static void generateConstructorString(deClass theClass) {
   deStringPos = 0;
-  char *theClassPath = deGetBlockPath(deClassGetSubBlock(theClass), true);
+  char *theClassPath = utAllocString(deGetBlockPath(deClassGetSubBlock(theClass), true));
   char* selfType = deDatatypeGetTypeString(deClassGetDatatype(theClass));
   uint32 refWidth = deClassGetRefWidth(theClass);
   deSprintToString(
@@ -49,6 +49,7 @@ static void generateConstructorString(deClass theClass) {
       "    return object\n"
       "  }\n"
       "}\n");
+  utFree(theClassPath);
 }
 
 // Just indent to the depth.
@@ -147,7 +148,8 @@ static void allocateSelfInConstructor(deClass theClass) {
   deGenerating = false;
   deFunction allocateFunc = deBlockGetLastFunction(rootBlock);
   deDatatypeArray parameterTypes = deDatatypeArrayAlloc();
-  deSignature signature = deSignatureCreate(allocateFunc, parameterTypes, 0);
+  deLine line = deTclassGetLine(deClassGetTclass(theClass));
+  deSignature signature = deSignatureCreate(allocateFunc, parameterTypes, line);
   deSignatureSetInstantiated(signature, true);
   deSignatureSetReturnType(signature, deClassGetDatatype(theClass));
   deBindBlock(deFunctionGetSubBlock(allocateFunc), signature, false);

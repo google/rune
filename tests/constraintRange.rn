@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-func getName() {
-  return "Bill"
+func foo(x: u1 ... u8) {
+  println x
 }
 
-println getName()
+foo(1u1)
+foo(2u2)
+foo(3u3)
+foo(8u8)

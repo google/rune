@@ -228,7 +228,7 @@ static char *getTypeString(deDatatype datatype, bool isDefinition) {
     }
     case DE_TYPE_CLASS:
       return utSprintf("i%u", deClassGetRefWidth(deDatatypeGetClass(datatype)));
-    case DE_TYPE_TBDCLASS:
+    case DE_TYPE_NULL:
       return utSprintf("i%u", deTclassGetRefWidth(deDatatypeGetTclass(datatype)));
     case DE_TYPE_FUNCPTR:
       return getFuncptrTypeString(datatype);

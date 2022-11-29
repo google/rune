@@ -17,7 +17,10 @@ use line
 use value
 use bigint
 use datatype
-use statement  // statement.rn adds Statement fields to Expr.
+use ident
+use statement
+use variable
+use function
 
 enum ExprType {
   Constant // Any constant such as true, false, "test", 1, 3.14f32, 0xabci255, etc.
@@ -112,8 +115,11 @@ enum ExprType {
   Namedparam  // Myclass(name = "me", profession = "hacker")
 }
 
-// return the operator precedence.
-export func getPrecedence(type: ExprType) -> u32 {
+// Return the operator precedence.  This is similar to C, but fixes an acknowledge mistake:
+// bitwise operators should bind more tightly than relational operators.  By the time C's
+// authors realized this mistake, there was already too much C code that would break to fix it.
+// Example: "value & 1 == 0" should test that value is even, but in C the result is always 0.
+func getPrecedence(type: ExprType) -> u32 {
   switch type {
     case ExprType.Modint {
       return 1u32
@@ -177,7 +183,7 @@ export func getPrecedence(type: ExprType) -> u32 {
 }
 
 // Return the expression type's name.
-export func getExprTypeName(type: ExprType) -> string {
+func getExprTypeName(type: ExprType) -> string {
   switch type {
     case ExprType.Modint {
       return "mod"
@@ -270,7 +276,7 @@ export func getExprTypeName(type: ExprType) -> string {
 }
 
 // The expression class represents all expression trees in Rune.
-class Expr(self, type: ExprType, line: Line = null(Line)) {
+class Expr(self, type: ExprType, line: Line) {
   self.type = type
   self.line = line
   self.isType = false
@@ -279,34 +285,41 @@ class Expr(self, type: ExprType, line: Line = null(Line)) {
   self.width = 0u32
   // TODO: add datatype when ported to Rune.
   // self.datatype = null(Datatype)
-  self.constVal = null(Value(0u32))
+  self.val = null(Value(0u32))
 
-  export func newConstant(value: Value, line: Line) -> Expr {
+  func newConstant(value: Value, line: Line) -> Expr {
     expr = Expr(ExprType.Constant, line)
-    expr.constVal = value
+    expr.val = value
     return expr
   }
 
-  export func newBinary(type: ExprType, left: Expr, right: Expr, line: Line) -> Expr {
+  func newBinary(type: ExprType, left: Expr, right: Expr, line: Line) -> Expr {
     expr = Expr(type, line)
     expr.appendExpr(left)
     expr.appendExpr(right)
     return expr
   }
 
-  export func newUnary(type: ExprType, child: Expr, line: Line) -> Expr {
+  func newUnary(type: ExprType, child: Expr, line: Line) -> Expr {
     expr = Expr(type, line)
     expr.appendExpr(child)
     return expr
   }
 
+  func newIdent(ident: Ident) -> Expr {
+    expr = Expr(ExprType.Ident, ident.line())
+    expr.val = Value(ident.sym)
+    ident.appendExpr(expr)
+    return expr
+  }
+
   // Return the precedence of the expression.
-  export func getPrecedence(self) -> u32 {
+  func getPrecedence(self) -> u32 {
     return getPrecedence(self.type)
   }
 
   // Return the name of this expression's type.
-  export func typeName(self) {
+  func typeName(self) {
     return getExprTypeName(self.type)
   }
 
@@ -318,8 +331,8 @@ class Expr(self, type: ExprType, line: Line = null(Line)) {
         text += ", "
       }
       firstTime = false
+      child.dumpToString(text)
     }
-    child.dumpToString(text)
   }
 
   // Write out a call expression.
@@ -480,10 +493,10 @@ class Expr(self, type: ExprType, line: Line = null(Line)) {
     }
     switch self.type {
       case ExprType.Constant {
-        text += self.constVal.toString()
+        text += self.val.toString()
       }
       case ExprType.Ident {
-        text += self.constVal.symVal.name
+        text += self.val.symVal.name
       }
       case ExprType.Array {
         self.dumpArray(text)
@@ -727,46 +740,127 @@ class Expr(self, type: ExprType, line: Line = null(Line)) {
         text += "f%u" % self.width
       }
       case ExprType.StringType {
-        text += self.constVal.stringVal
+        text += "string"
       }
       case ExprType.BoolType {
         text += "bool"
       }
       case ExprType.Namedparam {
-        text += self.firstExpr.constVal.symVal.name + " = "
+        text += self.firstExpr.val.symVal.name + " = "
         self.lastExpr.dumpToString(text)
       }
     }
   }
 
   // Convert the expression to a string in a reasonably readable format.
-  export func toString(self) -> string {
+  func toString(self) -> string {
     text = ""
     self.dumpToString(text)
     return text
   }
 
   // Write out the expression in a reasonably readable format.
-  export func dump(self) {
+  func dump(self) {
     text = ""
     self.dumpToString(text)
     println text
   }
 
+  // Make a deep copy of the expression.
+  func copy(self: Expr) -> Expr {
+    if isnull(self) {
+      // I'm not sure this is a good coding pattern, but let's see if we like it.
+      return self
+    }
+    newExpr = Expr(self.type, self.line)
+    // TODO: Comment in when we port datatype to Rune.
+    // newExpr.datatype = expr.datatype
+    newExpr.isType = self.isType
+    self.isConst = self.isConst
+    newExpr.width = self.width
+    newExpr.autocast = self.autocast
+    newExpr.val = self.val
+    for child in self.exprs() {
+      if (false) {
+        // Type hint for recursion.  TODO: make use of return type constraints.
+        return newExpr
+      }
+      newChild = child.copy()
+      newExpr.appendExpr(newChild)
+    }
+    return newExpr
+  }
 }
 
 // Expressions form a tree, with each expression having a doubly-linked list of children.
 relation DoublyLinked Expr Expr cascade
+relation DoublyLinked Ident Expr
+relation OneToOne Statement Expr cascade
+relation OneToOne Variable:"Initializer" Expr:"Initializer" cascade
+relation OneToOne Variable:"Type" Expr:"Type" cascade
+relation OneToOne Function:"Type" Expr:"Type" cascade
 
-unittest basicExprTest {
+unittest {
   filepath = Filepath.new("test_filepath", null(Filepath), false)
   line = Line(filepath, "Not a real line", 1u32)
-  i = Bigint(0xdeadbeefu32)
-  left = Expr.newConstant(Value("Hello"), line)
-  assert left.getPrecedence() == getPrecedence(ExprType.Constant)
-  right = Expr.newConstant(Value("World"), line)
-  assert right.getPrecedence() == getPrecedence(ExprType.Constant)
-  ltExpr = Expr.newBinary(ExprType.Lt, left, right, line)
+  if false {
+    // Type hints
+    dummyBlock = Block(line)
+    dummyFunction = Function(dummyBlock, FuncType.Package, Sym.new("test"), Linkage.Package, line)
+    dummyIdent = dummyFunction.firstIdent
+    dummyKxpr = Expr.newIdent(dummyIdent)
+  }
+
+  func createBinaryExpr() -> Expr {
+    left = Expr.newConstant(Value("Hello"), line)
+    assert left.getPrecedence() == getPrecedence(ExprType.Constant)
+    right = Expr.newConstant(Value("World"), line)
+    assert right.getPrecedence() == getPrecedence(ExprType.Constant)
+    return Expr.newBinary(ExprType.Lt, left, right, line)
+  }
+}
+
+unittest basicExprTest {
+  ltExpr = createBinaryExpr()
   assert ltExpr.toString() == "\"Hello\" < \"World\""
+}
+
+unittest destroyTest {
+  use block
+
+  filepath = Filepath.new("test_filepath", null(Filepath), false)
+  line = Line(filepath, "Not a real line", 1u32)
+  block = Block(line)
+  statement =  Statement(block, StateType.Print, line)
+  i = Bigint(0xdeadbeefu32, 256u32)
+  expr = Expr.newConstant(Value(i), line)
+  statement.insertExpr(expr)
+  expr.destroy()
+  assert isnull(statement.expr)
+}
+
+unittest copyTest {
+  expr1 = createBinaryExpr()
+  expr2 = expr1.copy()
+  assert expr1 != expr2
+  assert expr1.toString() == "\"Hello\" < \"World\""
+  assert expr2.toString() == "\"Hello\" < \"World\""
+}
+
+unittest unaryTest {
+  valueExpr = Expr.newConstant(Value(123u32), line)
+  expr = Expr.newUnary(ExprType.Negate, valueExpr, line)
+  expr.dump()
+}
+
+unittest newIdentTest {
+  block = Block(line)
+  function = Function(block, FuncType.Package, Sym.new("test"), Linkage.Package, line)
+  ident = function.firstIdent
+  expr = Expr.newIdent(ident)
+  expr.dump()
+}
+
+unittest {
   println "PASSED"
 }

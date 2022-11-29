@@ -143,6 +143,24 @@ static llTag createArrayTypeTag(deDatatype datatype) {
   return tag;
 }
 
+// Generate a class type tag as a structure of 
+//   !3 = !DIDerivedType(tag: DW_TAG_typedef, name: "BlaType", file: !1, line: 1, baseType: !4)
+//   !4 = !DIBasicType(name: "int", size: 32, encoding: DW_ATE_signed)
+static llTag createClassTypeTag(deDatatype datatype) {
+  deClass theClass = deDatatypeGetClass(datatype);
+  llTag baseTypeTag = createDatatypeTag(deUintDatatypeCreate(deDatatypeGetWidth(datatype)));
+  deTclass tclass = deClassGetTclass(theClass);
+  deBlock tclassBlock = deFunctionGetSubBlock(deTclassGetFunction(tclass));
+  deFilepath filepath = deBlockGetFilepath(tclassBlock);
+  deLine line = deBlockGetLine(tclassBlock);
+  llTag fileTag = llFilepathGetTag(filepath);
+  char *classTypeName = deGetBlockPath(deClassGetSubBlock(theClass), false);
+  char *text = utSprintf(
+      "!DIDerivedType(tag: DW_TAG_typedef, name: \"class.%s\", file: !%u, line: %u, baseType: !%u)\n",
+      classTypeName, llTagGetNum(fileTag), deLineGetLineNum(line), llTagGetNum(baseTypeTag));
+  return createTag(text);
+}
+
 // Pad |offset| to be a multiple of |size|.
 static uint32 padOffset(uint32 offset, uint32 size) {
   return size*((offset + size - 1)/size);
@@ -349,11 +367,17 @@ static llTag createDatatypeTag(deDatatype datatype) {
           width);
       break;
     }
-    case DE_TYPE_TCLASS:
     case DE_TYPE_CLASS:
-    case DE_TYPE_TBDCLASS:
-      text = "!DIBasicType(name: \"object\", size: 32, encoding: DW_ATE_unsigned)";
+    case DE_TYPE_TCLASS:
+    case DE_TYPE_NULL: {
+      if (llDebugMode && type == DE_TYPE_CLASS) {
+        return createClassTypeTag(datatype);
+      }
+      uint32 width = deDatatypeGetWidth(datatype);
+      text = utSprintf(
+          "!DIBasicType(name: \"object\", size: %u, encoding: DW_ATE_unsigned)", width);
       break;
+    }
     case DE_TYPE_FUNCTION:
       utExit("Unexpected function type");
       return llTagNull;  // Dummy return.

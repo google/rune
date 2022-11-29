@@ -22,6 +22,8 @@ uint32 deStringAllocated;
 uint32 deStringPos;
 bool deGenerating;
 bool deInIterator;
+bool deUseNewBinder;
+deSignature deCurrentSignature;
 
 // Print indents by 2 spaces to the current level of dump-indent.
 void dePrintIndent(void) {
@@ -38,33 +40,6 @@ void dePrintIndentStr(deString string) {
   }
 }
 
-// Print a stack trace showing how the error was created.
-void dePrintStack(void) {
-  bool firstTime = true;
-  deStackFrame frame;
-  deForeachRootStackFrame(deTheRoot, frame) {
-    if (firstTime) {
-      printf("Stack trace:\n");
-    }
-    firstTime = false;
-    deStatement statement = deStackFrameGetStatement(frame);
-    if (statement != deStatementNull) {
-      deBlock block = deBlockGetScopeBlock(deStatementGetBlock(statement));
-      utAssert(deBlockGetType(block) == DE_BLOCK_FUNCTION);
-      char *path = deGetBlockPath(block, false);
-      printf("In %s: ", path);
-      if (!deStatementGenerated(statement)) {
-        deDumpLine(deStatementGetLine(statement));
-      } else {
-        // The fully built statement can hold more information than the
-        // generator line of text.
-        printf("generated statement: ");
-        deDumpStatement(statement);
-      }
-    }
-  } deEndRootStackFrame;
-}
-
 void deError(deLine line, char* format, ...) {
   char *buff;
   va_list ap;
@@ -73,9 +48,12 @@ void deError(deLine line, char* format, ...) {
   va_end(ap);
   printf("Error: %s\n", buff);
   if (deCurrentStatement != deStatementNull) {
-    dePushStackFrame(deCurrentStatement);
-  }
-  if (line != deLineNull) {
+    if (!deStatementGenerated(deCurrentStatement)) {
+      deDumpLine(line);
+    } else {
+      deDumpStatement(deCurrentStatement);
+    }
+  } else if (line != deLineNull) {
     deDumpLine(line);
   }
   dePrintStack();
@@ -158,6 +136,7 @@ void deUtilStart(void) {
   deStringAllocated = 4096;
   deStringVal = utCalloc(deStringAllocated, sizeof(char));
   deGenerating = false;
+  deCurrentSignature = deSignatureNull;
 }
 
 // Clean up after the memory management generator.
@@ -486,4 +465,49 @@ void deGenerateDummyLLFileAndExit(void) {
     fclose(fopen(deLLVMFileName, "w"));
   }
   exit(0);
+}
+
+// This is used in error reporting.
+char *deGetOldVsNewDatatypeStrings(deDatatype oldDatatype, deDatatype newDatatype) {
+  deString oldDatatypeStr = deMutableCStringCreate("");
+  deString newDatatypeStr = deMutableCStringCreate("");
+  deDumpDatatypeStr(oldDatatypeStr, oldDatatype);
+  deDumpDatatypeStr(newDatatypeStr, newDatatype);
+  char *s = utSprintf("\n  old: %s\n  new: %s",
+          deStringGetCstr(oldDatatypeStr), deStringGetCstr(newDatatypeStr));
+  deStringDestroy(oldDatatypeStr);
+  deStringDestroy(newDatatypeStr);
+  return s;
+}
+
+// Print a stack trace showing how the error was created.
+void dePrintStack(void) {
+  deSignature signature = deCurrentSignature;
+  // Nested calls should be shown only once.
+  deStatement prevStatement = deStatementNull;
+  printf("Stack trace:\n");
+  while (signature != deSignatureNull) {
+    deFunctionType type = deFunctionGetType(deSignatureGetFunction(signature));
+    if (type == DE_FUNC_MODULE) {
+      // Module calls are auto-generated, and not of interest for debugging.
+      return;
+    }
+    deStatement statement = deSignatureGetCallStatement(signature);
+    if (statement != deStatementNull && statement != prevStatement) {
+      deBlock block = deBlockGetScopeBlock(deStatementGetBlock(statement));
+      utAssert(deBlockGetType(block) == DE_BLOCK_FUNCTION);
+      char *path = deGetBlockPath(block, false);
+      printf("In %s: ", path);
+      if (!deStatementGenerated(statement)) {
+        deDumpLine(deStatementGetLine(statement));
+      } else {
+        // The fully generated statement can hold more information than the
+        // generator line of text.
+        printf("generated statement: ");
+        deDumpStatement(statement);
+      }
+    }
+    signature = deSignatureGetCallSignature(signature);
+    prevStatement = statement;
+  }
 }

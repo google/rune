@@ -1,6 +1,6 @@
 //  Copyright 2021 Google LLC.
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
+// Licensed under the Apache License, Version 2.0 (the "License")
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
@@ -12,6 +12,333 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Just a placeholder for now.
-class Function(self) {
+use root
+use line
+use filepath
+use value
+use expr
+use ident
+use statement
+use block
+use op
+use variable
+
+enum FuncType {
+  Plain  // Includes methods.
+  Operator  // Overloaded operator.
+  Constructor
+  Destructor
+  Package  // Initializes all modules in the package.
+  Module  // Initializes the module.
+  Iterator
+  Final
+  Struct
+  Enum
+  Generator
+  Unittest
+}
+
+// Function linking type.
+enum Linkage {
+  Module  // Default, like Python, files in the same directory can access.
+  Package  // Allow files in other directories to access.
+  Libcall  // A library call API.  All params must have default values.
+  Rpc  // An RPC API.  All params must have default values.
+  Builtin  // Globally visible, never a lib call or RPC.
+  ExternC  // An external C function.
+  ExternRpc  // An external RPC function.
+}
+
+// Return a name for the function type.
+func getFuncTypeName(type: FuncType) -> string {
+  switch type {
+    case FuncType.Plain {  // Includes methods.
+      return "func"
+    }
+    case FuncType.Unittest {  // Includes methods.
+      return "unittest"
+    }
+    case FuncType.Constructor {
+      return "class"
+    }
+    case FuncType.Destructor {
+      return "destructor"
+    }
+    case FuncType.Package {  // Initializes all modules in the package.
+      return "package"
+    }
+    case FuncType.Module {  // Initializes the module.
+      return "module"
+    }
+    case FuncType.Iterator {
+      return "iterator"
+    }
+    case FuncType.Operator {
+      return "operator"
+    }
+    case FuncType.Final {
+      return "final"
+    }
+    case FuncType.Struct {
+      return "struct"
+    }
+    case FuncType.Enum {
+      return "enum"
+    }
+    case FuncType.Generator {
+      return "generator"
+    }
+  }
+}
+
+// Create a new function.
+class Function(self: Function, owningBlock: Block, type: FuncType, sym: Sym,
+    linkage: Linkage, line: Line) {
+  self.type = type
+  self.sym = sym
+  self.linkage = linkage
+  self.line = line
+  self.isExtern = linkage == Linkage.ExternC || linkage == Linkage.ExternRpc
+  if !isnull(owningBlock) {
+    owningBlock.appendFunction(self)
+    Ident(owningBlock, self, sym, line)
+  }
+  subBlock = Block(line)
+  // Assume it can return until we learn otherwise.  This is only an issue when
+  // evaluating recursive functions.
+  subBlock.canReturn = true
+  self.insertSubBlock(subBlock)
+  getRoot().appendFunction(self)
+  return function
+
+  // Return the name of the function.
+  func name(self: Function) -> string {
+    return self.sym.name
+  }
+
+  // Dump the function to the end of |string| for debugging purposes.
+  func dumpToString(self: Function, var text: string) {
+    func dumpParams(subBlock: Block, var text: string) {
+      firstTime = true
+      for variable in subBlock.variables() {
+        if !firstTime {
+          text += ", "
+        }
+        firstTime = false
+        if !variable.isParam {
+          return
+        }
+        variable.dumpToString(text)
+      }
+    }
+
+    func dumpFuncHeader(function :Function, var text: string) {
+      text += "%s %s(" % (getFuncTypeName(function.type), function.name())
+    }
+
+    root = getRoot()
+    root.indent(text)
+    dumpFuncHeader(self, text)
+    dumpParams(self.subBlock, text)
+    text += ") "
+    if !isnull(self.typeExpr) {
+      text += "-> "
+      self.typeExpr.dumpToString(text)
+      text += " "
+    }
+    self.subBlock.dumpToString(text)
+  }
+
+  // Dump the function to stdout for debugging purposes.
+  func dump(self: Function) {
+    text = ""
+    self.dumpToString(text)
+    print text
+  }
+
+  // Make a copy of the function in |destBlock|.
+  func copy(self: Function, destBlock: Block) -> Function {
+    if false {
+      // Type hint for recursion.
+      return null(self)
+    }
+    newFunction = Function(destBlock, self.type, self.sym, self.linkage, self.line)
+    newBlock = self.subBlock.copy()
+    newFunction.insertSubBlock(newBlock)
+    if !isnull(self.typeExpr) {
+      newFunction.typeExpr = self.typeExpr.copy()
+    }
+    // TODO: Comment this back in when we port tclass.
+    // if self.type == FuncType.Constructor {
+      // self.tclass.copy(newFunction)
+    // }
+    return newFunction
+  }
+
+  // Prepend a call statement to |childFunction| at the end of |function|.
+  // |childFunction| will be called with no parameters.
+  func prependFunctionCall(self: Function, childFunction: Function) -> Statement {
+    statement = self.appendFunctionCall(childFunction)
+    // Move the statement to the start of the block.
+    block = self.subBlock
+    block.removeStatement(statement)
+    block.insertStatement(statement)
+    return statement
+  }
+
+  // Append a call statement to |childFunction| at the end of |function|.
+  // |childFunction| will be called with no parameters.
+  func appendFunctionCall(self: Function, childFunction: Function) -> Statement {
+    ident = childFunction.firstIdent
+    pathExpr = ident.createPathExpr()
+    text = "%s()\n" % childFunction.name()
+    block = self.subBlock
+    line = Line(block.line.filepath, text, 0u32)
+    emptyParamsExpr = Expr(ExprType.List, line)
+    callExpr = Expr.newBinary(ExprType.Call, pathExpr, emptyParamsExpr, line)
+    statement = Statement(block, StateType.Call, line)
+    statement.insertExpr(callExpr)
+    return statement
+  }
+
+  // Declare an iterator.
+  func newIterator(block: Block, name: Sym, selfName: Sym, linkage: Linkage,
+      line: Line) -> Function {
+    iteratorFunc = Function(block, FuncType.Iterator, name, linkage, line)
+    subBlock = iteratorFunc.subBlock
+    Variable(subBlock, true, false, selfName, null(Expr), null(Expr), false, line)
+    return iteratorFunc
+  }
+
+  // Create an overloaded operator.
+  func newOperator(block: Block, opType: ExprType, line: Line) -> Function {
+    name = block.createUniqueSym(Sym.new(getExprTypeName(opType)))
+    function = Function(block, FuncType.Operator, name, Linkage.Package, line)
+    root = getRoot()
+    theOperator = root.findOperator(opType)
+    if isnull(theOperator) {
+      theOperator = Operator(opType)
+    }
+    theOperator.appendFunction(function)
+    return function
+  }
+}
+
+// Append a call statement to the module initialization function in the root block.
+func insertModuleInitializationCall(moduleFunc: Function) {
+  ident = moduleFunc.firstIdent
+  pathExpr = ident.createPathExpr()
+  block = moduleFunc.subBlock
+  text = "%s()\n" % moduleFunc.name()
+  line = Line(block.line.filepath, text, 0u32)
+  emptyParamsExpr = Expr(ExprType.List, line)
+  callExpression = Expr.newBinary(ExprType.Call, pathExpr, emptyParamsExpr, line)
+  root = getRoot()
+  rootBlock = root.block
+  statement = Statement(rootBlock, StateType.Call, line)
+  statement.insertExpr(callExpression)
+  // Move the statement to after the last initialization call.
+  lastInitializer = root.lastInitializerStatement
+  rootBlock.removeStatement(statement)
+  if !isnull(lastInitializer) {
+    rootBlock.insertAfterStatement(lastInitializer, statement)
+  } else {
+    rootBlock.insertStatement(statement)
+  }
+  root.lastInitializerStatement = statement
+}
+
+relation DoublyLinked Root Function cascade
+relation DoublyLinked Block Function cascade
+relation DoublyLinked Operator Function cascade
+
+// Create the main function.
+func createMainFunc() {
+  rootFilepath = Filepath("Root filepath", null(Filepath), true)
+  rootLine = Line(rootFilepath, "Create main", 0u32)
+  if false {
+    // Type hint for Block.
+    dummyBlock = Block(rootLine)
+  }
+  mainFunc = Function(null(Block(rootLine)), FuncType.Package,
+        Sym.new("main"), Linkage.Package, rootLine)
+  typeExpr = Expr(ExprType.IntType, rootLine)
+  typeExpr.width = 32u32
+  mainFunc.insertTypeExpr(typeExpr)
+  rootBlock = mainFunc.subBlock
+  getRoot().insertBlock(rootBlock)
+  rootFilepath.insertModuleBlock(rootBlock)
+  nullExpr = null(Expr(ExprType.Add, rootLine))
+  u32TypeExpr = Expr(ExprType.UintType, rootLine)
+  stringTypeExpr = Expr(ExprType.StringType, rootLine)
+  u32TypeExpr.width = 32u32
+  argcVar = Variable(rootBlock, true, true, Sym.new("argc"), nullExpr, u32TypeExpr, true, rootLine)
+  argvVar = Variable(rootBlock, true, true, Sym.new("argv"), nullExpr,
+      stringTypeExpr, true, rootLine)
+  statement = Statement(rootBlock, StateType.Return, rootLine)
+  retVal = Expr.newConstant(Value(0i32), rootLine)
+  statement.insertExpr(retVal)
+}
+
+createMainFunc()
+
+unittest {
+  use statement
+
+  rootBlock = getRoot().block
+  mainFunc = rootBlock.owningFunction
+  rootLine = rootBlock.line
+  rootFilepath = rootLine.filepath
+  argcVar = rootBlock.firstVariable
+  argvVar = argcVar.nextBlockVariable
+  // Type hint: In these tests, the compiler does not know what exact class is
+  // added in the Ident -> Expr relation.
+  expr = Expr.newIdent(argcVar.firstIdent)
+
+  func createEmptyFunction(owningBlock: Block, name: string) -> Function {
+    return Function(owningBlock, FuncType.Plain, Sym.new(name), Linkage.Module, rootLine)
+  }
+}
+
+unittest dumpTest {
+  mainFunc.dump()
+}
+
+unittest copyTest {
+  destBlock = Block(rootLine)
+  destFunc = mainFunc.copy(destBlock)
+  destFunc.dump()
+}
+
+unittest prependAndAppendFunctionCallTest {
+  block = Block(rootLine)
+  mainCopy = mainFunc.copy(block)
+  // Create an inner function.
+  topFunc = createEmptyFunction(mainCopy.subBlock, "topFunc")
+  botFunc = createEmptyFunction(mainCopy.subBlock, "botFunc")
+  lastStatement = mainCopy.appendFunctionCall(botFunc)
+  firstStatement = mainCopy.prependFunctionCall(topFunc)
+  subBlock = mainCopy.subBlock
+  assert subBlock.firstStatement == firstStatement
+  assert subBlock.lastStatement == lastStatement
+  mainCopy.dump()
+}
+
+unittest newIteratorAndOperatorTest {
+  itr = Function.newIterator(rootBlock, Sym.new("testItr"), Sym.new("self"),
+      Linkage.Module, rootLine)
+  op = Function.newOperator(rootBlock, ExprType.Add, rootLine)
+  itr.dump()
+  op.dump()
+  itr.destroy()
+  op.destroy()
+}
+
+unittest insertModuleInitializationCallTest {
+  // Create an inner function.
+  function1 = createEmptyFunction(getRoot().block, "module1")
+  function2 = createEmptyFunction(getRoot().block, "module2")
+  insertModuleInitializationCall(function1)
+  insertModuleInitializationCall(function2)
+  getRoot().block.dump()
 }

@@ -39,6 +39,7 @@ static int runClangCompiler(char *llvmFileName, bool debugMode, bool optimized) 
 // Print usage and exit.
 static void usage(void) {
   printf("Usage: rune [options] file\n"
+         "    -b        - Don't load bulitin Rune files.\n"
          "    -g        - Include debug information for gdb.  Implies -l.\n"
          "    -l <llvmfile> - Write LLVM IR to <llvmfile>.\n"
          "    -n        - No clang.  Don't compile the resulting .ll output.\n"
@@ -47,7 +48,8 @@ static void usage(void) {
          "    -t        - Execute unit tests for all modules.\n"
          "    -U        - Unsafe mode.  Don't generate bounds checking, overflow\n"
          "                detection, and destroyed object access detection.\n"
-         "    -x        - Invert the return code: 0 if we fail, and 1 if we pass.\n");
+         "    -x        - Invert the return code: 0 if we fail, and 1 if we pass.\n"
+         "    -X        - Use the new event driven binder.\n");
   exit(1);
 }
 
@@ -63,10 +65,14 @@ int main(int argc, char** argv) {
   bool noClang = false;
   bool optimized = false;
   deLLVMFileName = NULL;
+  deUseNewBinder = false;
+  bool parseBuiltinFunctions = true;
   uint32 xArg = 1;
   while (xArg < argc && argv[xArg][0] == '-') {
     if (!strcmp(argv[xArg], "-g")) {
       deDebugMode = true;
+    } else if (!strcmp(argv[xArg], "-b")) {
+      parseBuiltinFunctions = false;
     } else if (!strcmp(argv[xArg], "-t")) {
       deTestMode = true;
     } else if (!strcmp(argv[xArg], "-O")) {
@@ -95,6 +101,8 @@ int main(int argc, char** argv) {
       deClangPath = argv[xArg];
     } else if (!strcmp(argv[xArg], "-x")) {
       deInvertReturnCode = true;
+    } else if (!strcmp(argv[xArg], "-X")) {
+      deUseNewBinder = true;
     }  else {
       usage();
     }
@@ -106,10 +114,16 @@ int main(int argc, char** argv) {
   char* fileName = argv[xArg];
   deStart(fileName);
   if (!utSetjmp()) {
-    deParseBuiltinFunctions();
+    if (parseBuiltinFunctions) {
+      deParseBuiltinFunctions();
+    }
     deBlock rootBlock = deRootGetBlock(deTheRoot);
     deParseModule(fileName, rootBlock, true);
-    deBind();
+    if (deUseNewBinder) {
+      deBind2();
+    } else {
+      deBind();
+    }
     deVerifyRelationshipGraph();
     deAddMemoryManagement();
     if (deLLVMFileName == NULL) {

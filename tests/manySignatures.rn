@@ -1,0 +1,36 @@
+//  Copyright 2021 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// This test passes 4 rings of parameters to foo, of sizes 2, 3, 5, and 7.  foo
+// calls itself recursivly, rotating each ring by one, until it reaches the
+// base-case, which is when all rings have rotated their maximum distance.
+// This results in 2*3*5*7 = 210 unique function signatures.
+func foo(a1, a2, b1, b2, b3, c1, c2, c3, c4, c5, d1, d2, d3, d4, d5, d6, d7) {
+  if false {
+    // Type hint for recursion.
+    // TODO: When we complete the switch to unification-based type binding, delete this.
+    return
+  }
+  println a1, b1, c1, d1
+  switch (typeof((a1, b1, c1, d1))) {
+    case (u2, u3, u5, u7) {
+      println "The end."
+    }
+    default {
+      foo(a2, a1, b2, b3, b1, c2, c3, c4, c5, c1, d2, d3, d4, d5, d6, d7, d1)
+    }
+  }
+}
+
+foo(1u1, 2u2, 1u1, 2u2, 3u3, 1u1, 2u2, 3u3, 4u4, 5u5, 1u1, 2u2, 3u3, 4u4, 5u5, 6u6, 7u7)

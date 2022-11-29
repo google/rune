@@ -27,6 +27,7 @@ runtime/random.c
 
 SRC= \
 database/bigint.c \
+database/binding.c \
 database/block.c \
 database/builtin.c \
 database/class.c \
@@ -41,7 +42,6 @@ database/ident.c \
 database/line.c \
 database/relation.c \
 database/signature.c \
-database/stackframe.c \
 database/statement.c \
 database/string.c \
 database/util.c \
@@ -55,6 +55,8 @@ parse/deparse.c \
 parse/descan.c \
 parse/parse.c \
 src/bind.c \
+src/bind2.c \
+src/bindexpr.c \
 src/constprop.c \
 src/generator.c \
 src/iterator.c \

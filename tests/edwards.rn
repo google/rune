@@ -45,7 +45,7 @@ func verifyPoint(p, d, m) {
 }
 
 // Curve 25519
-const m = <u255>(2u256^255 - 19)
+m = <u255>(2u256^255 - 19)
 d = -121665/121666 mod m
 // The generator's Y coordinate.
 gy = 4 / 5 mod m
