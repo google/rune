@@ -18,7 +18,11 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <stdlib.h>  // For calloc, realloc, and free.
+#ifdef _WIN32
+#include <windows.h>  // To find total RAM available.
+#else
 #include <sys/sysinfo.h>  // To find total RAM available.
+#endif
 
 // These are verified with static_assert in runtime_arrayStart.
 #ifdef RN_DEBUG
@@ -301,17 +305,27 @@ void runtime_foreachArrayObject(runtime_array *array, void *callback, uint32_t r
 
 // Initialize dynamic array heap memory.
 void runtime_arrayStart(void) {
+  // TODO
+#if 0
   static_assert(sizeof(runtime_heapHeader) == RN_HEADER_WORDS * sizeof(size_t),
       "Invalid heap header size");
+#endif
   static_assert(sizeof(runtime_array) == RN_ARRAY_WORDS * sizeof(size_t),
       "Invalid array size");
   static_assert(RN_SIZET_MASK != UINT32_MAX, "Unsupported size_t size");
   static_assert(RN_SIZET_SHIFT != UINT32_MAX, "Unsupported size_t size");
   static_assert(sizeof(char) == 1 && sizeof(uint8_t) == 1,
                 "Unsupported char or uint8_t size");
+#ifdef _WIN32
+  MEMORYSTATUSEX statex;
+  statex.dwLength = sizeof (statex);
+  GlobalMemoryStatusEx (&statex);
+  runtime_totalRam = statex.ullTotalPhys;
+#else
   struct sysinfo info;
   sysinfo(&info);
   runtime_totalRam = info.totalram;
+#endif
   // Just to ensure there is enough room for a header.  Otherwise, we might get
   // underflow in memory size computations.
   if (runtime_totalRam < sizeof(runtime_heapHeader)) {

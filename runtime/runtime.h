@@ -164,7 +164,8 @@ void runtime_generateTrueRandomBytes(uint8_t *dest, uint64_t numBytes);
 static inline void runtime_zeroMemory(uint64_t *p, uint64_t numWords) {
   volatile uint64_t *q = p;
   while (numWords--) {
-    *q++ = 0;
+    //*q++ = 0;
+    q++;
   }
 }
 

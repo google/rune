@@ -30,7 +30,7 @@
 static deBlock deSavedBlock;
 static deStatement deLastStatement;
 
-extern int fileno (FILE *__stream) __THROW __wur;
+//extern int fileno (FILE *__stream) __THROW __wur;
 
 // Provide yyerror function capability.
 void deerror(char *message, ...) {

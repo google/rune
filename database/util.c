@@ -177,6 +177,113 @@ void deAddString(char* string) {
 }
 
 // Sprint to the string.
+#ifdef _WIN32
+void deSprintToString(char* format, ...) {
+  va_list ap;
+  int len = 0;
+  int i;
+  int argn[16];
+  char argt[16];
+  char *args[16];
+  int numarg = 0;
+  const char *p = format;
+
+  memset(argn, 0, sizeof(argn));
+  memset(argt, 0, sizeof(argt));
+  memset(args, 0, sizeof(args));
+  while (*p) {
+    if (*p == '%') {
+      const char *np = ++p;
+      if (*np == '%') {
+        p++;
+      } else {
+        while (isdigit(*p)) {
+          p++;
+        }
+        if (p != np && *p == '$') {
+          p++;
+          int n = atoi(np);
+          if (argt[n-1] == 0) {
+            argt[n-1] = *p;
+            argn[n-1]++;
+            if (n > numarg) numarg = n;
+            p++;
+          }
+        }
+      }
+    } else {
+      p++;
+      len++;
+    }
+  }
+
+  if (numarg == 0) {
+    char buf[1];
+    va_start(ap, format);
+    uint32 len = vsnprintf(buf, 1, format, ap) + 1;
+    va_end(ap);
+    if (deStringPos + len >= deStringAllocated) {
+      deStringAllocated += (deStringAllocated >> 1) + len;
+      utResizeArray(deStringVal, deStringAllocated);
+    }
+    va_start(ap, format);
+    vsnprintf(deStringVal + deStringPos, len, format, ap);
+    va_end(ap);
+    deStringPos += len - 1;
+  } else {
+    va_start(ap, format);
+    for (i = 0; i < numarg; i++) {
+      switch (argt[i]) {
+        case 's':
+          args[i] = va_arg(ap, char*);
+          break;
+        case 'u':
+          char nbuf[16];
+          snprintf(nbuf, sizeof(nbuf), "%u", va_arg(ap, uint32));
+          args[i] = nbuf;
+          break;
+      }
+      len += strlen(args[i]) * argn[i];
+    }
+    va_end(ap);
+
+    if (deStringPos + len >= deStringAllocated) {
+      deStringAllocated += (deStringAllocated >> 1) + len;
+      utResizeArray(deStringVal, deStringAllocated);
+    }
+    *(deStringVal + deStringPos) = 0;
+    p = format;
+    while (*p) {
+      if (*p == '%') {
+        const char *np = ++p;
+        if (*np == '%') {
+          strcat(deStringVal + deStringPos, "%%");
+          deStringPos++;
+          deStringPos++;
+          p++;
+        } else {
+          while (*p && isdigit(*p)) {
+            p++;
+          }
+          if (p != np && *p == '$') {
+            int n = atoi(np);
+            strcat(deStringVal + deStringPos, args[n-1]);
+            deStringPos += strlen(args[n-1]);
+            p += 2;
+          }
+        }
+      } else {
+        char b[2];
+        b[0] = *p;
+        b[1] = 0;
+        strcat(deStringVal + deStringPos, b);
+        deStringPos++;
+        p++;
+      }
+    }
+  }
+}
+#else
 void deSprintToString(char* format, ...) {
   va_list ap;
   char buf[1];
@@ -192,6 +299,7 @@ void deSprintToString(char* format, ...) {
   va_end(ap);
   deStringPos += len - 1;
 }
+#endif
 
 // Double the size of the temp buffer.
 char *deResizeBufferIfNeeded(char *buf, uint32 *len, uint32 pos, uint32 newBytes) {

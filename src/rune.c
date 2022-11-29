@@ -20,6 +20,10 @@
 #define __USE_XOPEN2K 1
 #include <unistd.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #define DE_MAX_PATH (1 << 16)
 
 // Build the argv global variable.
@@ -37,11 +41,15 @@ void deStart(char *fileName) {
   // On Linux, this is required to avoid having to search PATH.
   utStart();
   deExeName = utNewA(char, DE_MAX_PATH);
+#ifdef _WIN32
+  GetModuleFileNameA(NULL, deExeName, DE_MAX_PATH);
+#else
   size_t len = readlink("/proc/self/exe", deExeName, DE_MAX_PATH);
   if (len >= DE_MAX_PATH - 1 || len < 1) {
     utExit("Unable to find executable path");
   }
   deExeName[len] = '\0';
+#endif
   char *commonDir = utDirName(deExeName);
   if (dePackageDir != NULL) {
     // Allocate this so we can call utFree on them later.

@@ -17,6 +17,10 @@
 #define _DEFAULT_SOURCE
 #include <stdlib.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include "parse.h"
 
 deRoot deTheRoot;
@@ -431,6 +435,26 @@ static void parseBuiltinFile(char *dirName, char *fileName) {
   utFree(fullName);
   deParsedBuilinFile = true;
 }
+
+#ifdef _WIN32
+void utForeachDirectoryFile(char *dirName, void (*func)(char *dirName, char *fileName)) {
+  char findpath[_MAX_PATH];
+  HANDLE fh;
+  WIN32_FIND_DATA wfd;
+
+  strcpy(findpath, dirName);
+  strcat (findpath, "\\*.*");
+  fh = FindFirstFile (findpath, &wfd);
+  if (fh != INVALID_HANDLE_VALUE) {
+    do {
+      if ((wfd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+        func(dirName, wfd.cFileName);
+      }
+    } while(FindNextFile(fh, &wfd));
+    FindClose(fh);
+  }
+}
+#endif
 
 // Parse the built-in functions in the standard library.
 void deParseBuiltinFunctions(void) {
