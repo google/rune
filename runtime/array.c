@@ -26,7 +26,11 @@
 
 // These are verified with static_assert in runtime_arrayStart.
 #ifdef RN_DEBUG
+#ifdef _WIN32
 #define RN_HEADER_WORDS 4u
+#else
+#define RN_HEADER_WORDS 3u
+#endif
 // Used when initializing array headers to help track down heap bugs.
 static size_t runtime_arrayCounter = 0;
 #else
