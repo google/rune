@@ -16,8 +16,8 @@ Implementation of data structures in Rune is abstract, allowing the compiler
 great freedom in how that data is laid out in memory.
 
 Another design choice is that all class instances are reference counted, unless
-the compiler can prove this it is not needed. To aid in this, RUne compiles an
-entire program or shared library at once, rather tha one file at a time. If
+the compiler can prove this it is not needed. To aid in this, Rune compiles an
+entire program or shared library at once, rather than one file at a time. If
 certain conventions are followed, moste objects will not even have a reference
 counter allocated.
 
