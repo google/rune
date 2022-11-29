@@ -15,7 +15,7 @@
 CFLAGS=-Wall -g -std=c11 -Wno-unused-function -Wno-varargs -DMAKEFILE_BUILD -DDD_DEBUG -Iinclude -I../CTTK -Iruntime -no-pie
 LIBS=lib/librune.a lib/libcttk.a -lgmp -lm -lddutil-dbg
 #CFLAGS=-Wall -O3 -std=c11 -Wno-unused-function -Wno-varargs -DMAKEFILE_BUILD -Iinclude -I../CTTK -Iruntime
-#LIBS=lib/librune.a lib/libcttk.a lgmp -lm -lddutil
+#LIBS=lib/librune.a lib/libcttk.a -lgmp -lm -lddutil
 
 PREFIX="/usr/local"
 

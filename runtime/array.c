@@ -26,7 +26,7 @@
 
 // These are verified with static_assert in runtime_arrayStart.
 #ifdef RN_DEBUG
-#define RN_HEADER_WORDS 3u
+#define RN_HEADER_WORDS 4u
 // Used when initializing array headers to help track down heap bugs.
 static size_t runtime_arrayCounter = 0;
 #else
@@ -306,10 +306,8 @@ void runtime_foreachArrayObject(runtime_array *array, void *callback, uint32_t r
 // Initialize dynamic array heap memory.
 void runtime_arrayStart(void) {
   // TODO
-#if 0
   static_assert(sizeof(runtime_heapHeader) == RN_HEADER_WORDS * sizeof(size_t),
       "Invalid heap header size");
-#endif
   static_assert(sizeof(runtime_array) == RN_ARRAY_WORDS * sizeof(size_t),
       "Invalid array size");
   static_assert(RN_SIZET_MASK != UINT32_MAX, "Unsupported size_t size");
