@@ -1,13 +1,13 @@
 ## Short term
 Figure out when relationship generators should run.  Right now it is in the order statements are bound so that module-level variables can be passed into the generators, but we assume all generators are run before binding a constructor, which is currently false.  Figure out the right thing and do it.
 Use concrete type constraints in binding.  This can help eleminate problems
-in binding recursive functions, and also non-template classes.
+  in binding recursive functions, and also non-template classes.
 Don't allow generated fields to be written outside of generated code.
-Add an Object class that maches all types, so we can have case (Object, Object, Object).
+Add an Object class that matches all types, so we can have case (Object, Object, Object).
 Allow cast to be overloaded.
-Defend vs Specter/Meltdown: duplicate bignum functions in runtime to have constant-time vs
+Defend vs Spectre/Meltdown: duplicate bignum functions in runtime to have constant-time vs
     non-constant time APIs.  Do not pass in a secret bit.
-Figure out how to prgramatically manipulate labels in generators.
+Figure out how to programatically manipulate labels in generators.
 Flesh out index overloading: write is not yet supported.
 Support Overloading method get/set methods.
 Improve safe mode:
@@ -16,13 +16,13 @@ Improve safe mode:
 Fix LLVM select for case when select bit is secret.
     Also, only evaluate one or the other when select is not secret.
 Add syntax for declaring volatile globals at specified addresses, so we can do memory-mapped I/O.  Consider using a global io array.
-Add good support for interopo with C++, which is a key requirement for a language to replace C++ in prod:
+Add good support for interop with C++, which is a key requirement for a language to replace C++ in prod:
     syntax for declaring extern "C++" functions, and deal with name mangling.
     Add support for calling C++ constructors and methods.
     Add support for c++ unique pointers, which are often returned.
 Add support for C pointer types, which can be returned by C functions declared extern"C".
 Add "unsafe" blocks where it is legal to dereference or index into a C pointer.
-Write all the Benchmark Games benchmarks twice: once single threaded, and
+Write all the Benchmark Games benchmarks twice: one single threaded and
     honest, one multi-threaded and using similar trickes used by the others to win.
 Implement dynamic class extensions.
 Implement inheritance via composition, using exclusive relationships.
@@ -52,7 +52,7 @@ Support lambda expressions with Function(statementExpression) constructor.
 
 ## Optimizations
 Tune floating point operations: For some reason, clang is running C/C++ floating point at about 2X our speed.
-Rewrite heap to be more efficient for small passed-by-value objects like i32s.  The back-pointer and
+Rewrite heap to be more efficient for small passed-by-value objects like i32's.  The back-pointer and
   index are not needed for heaps of values.
 Save memory on 32-bit targets using 32-bit lengths.
 LLVM: generate switch rather than a chain of br.

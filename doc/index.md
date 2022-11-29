@@ -33,7 +33,7 @@ keys. Rune has several properties to help protect those secrets:
     side-channel leakage.
 -   Secrets cannot be used in conditional branches or memory addressing.
 -   Even speculative branching and indexing on secrets are caught at
-    compile-time to avoid Specter/Meltdown.
+    compile-time to avoid Spectre/Meltdown.
 -   Secrecy is sticky: any value in part derived from a secret is considered
     secret until "revealed".
 -   Integer overflow is detected, except in unsafe mode.

@@ -72,7 +72,7 @@ func max(a, b) {
 }
 ```
 
-Functions in both Python and Rune are highly polymorphic._  This means that you
+Functions in both Python and Rune are highly polymorphic.  This means that you
 can pass different types of objects to functions, and as long as all the
 operations in the function are defined for those objects, it just works.
 

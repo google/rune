@@ -151,7 +151,7 @@ behavior of code, only its speed.
 Since we do not know if a value is passed by reference or value, what happens
 here:
 
-func doubleArray(a: Array) { b = a b.concat(a) return b }
+    func doubleArray(a: Array) { b = a b.concat(a) return b }
 
 The |a| parameter is immutable, but |b| can be modified. This forces the
 compiler to make a copy of |a|, unless |b| is never modified, in which case why
