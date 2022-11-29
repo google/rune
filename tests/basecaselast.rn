@@ -15,7 +15,7 @@
 // The basis case can be last with the new binder.
 
 func factorial(n) {
-  if n <= 0 {
+  if n == 1 {
     return 1
   }
   return n*factorial(n - 1)
