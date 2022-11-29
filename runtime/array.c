@@ -309,7 +309,6 @@ void runtime_foreachArrayObject(runtime_array *array, void *callback, uint32_t r
 
 // Initialize dynamic array heap memory.
 void runtime_arrayStart(void) {
-  // TODO
   static_assert(sizeof(runtime_heapHeader) == RN_HEADER_WORDS * sizeof(size_t),
       "Invalid heap header size");
   static_assert(sizeof(runtime_array) == RN_ARRAY_WORDS * sizeof(size_t),
