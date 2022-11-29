@@ -64,7 +64,7 @@ src/main.c \
 src/memmanage.c \
 src/rune.c
 
-#DEPS=Makefile
+DEPS=Makefile
 CC=gcc
 OBJS=$(patsubst %.c,obj/%.o,$(SRC))
 
