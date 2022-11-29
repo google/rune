@@ -235,12 +235,12 @@ void deSprintToString(char* format, ...) {
     for (i = 0; i < numarg; i++) {
       switch (argt[i]) {
         case 's':
-          args[i] = va_arg(ap, char*);
+          args[i] = strdup(va_arg(ap, char*));
           break;
         case 'u':
           char nbuf[16];
           snprintf(nbuf, sizeof(nbuf), "%u", va_arg(ap, uint32));
-          args[i] = nbuf;
+          args[i] = strdup(nbuf);
           break;
       }
       len += strlen(args[i]) * argn[i];
@@ -280,6 +280,9 @@ void deSprintToString(char* format, ...) {
         deStringPos++;
         p++;
       }
+    }
+    for (i = 0; i < numarg; i++) {
+      free(args[i]);
     }
   }
 }
