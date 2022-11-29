@@ -31,8 +31,6 @@ static deBlock deSavedBlock;
 static deStatement deLastStatement;
 static uint32 deSkippedCodeNestedDepth;
 
-//extern int fileno (FILE *__stream) __THROW __wur;
-
 // Provide yyerror function capability.
 void deerror(char *message, ...) {
   char *buff;
@@ -505,6 +503,7 @@ exportStructHeader: KWEXPORT KWSTRUCT IDENT  // Means the constructor is in pack
       DE_FUNC_STRUCT, $3, DE_LINK_LIBCALL, $1);
   deCurrentBlock = deFunctionGetSubBlock(theStruct);
 }
+;
 
 appendCode: appendCodeHeader block
 {
@@ -893,7 +892,7 @@ externFunction: KWEXTERN STRING functionHeader '(' parameters ')' optFuncTypeExp
   setFunctionExtern(function, $2);
   deStringFree($2);
 }
-externFunction: rpcHeader '(' parameters ')' optFuncTypeExpression newlines
+| rpcHeader '(' parameters ')' optFuncTypeExpression newlines
 {
   deFunction function = deBlockGetOwningFunction(deCurrentBlock);
   if ($5 != deExpressionNull) {
@@ -1492,7 +1491,7 @@ enumHeader: KWENUM IDENT
   deCurrentBlock = deFunctionGetSubBlock(enumFunc);
 }
 
-entries:  entry
+entries:  // Empty
 | entries entry
 ;
 
@@ -1930,6 +1929,10 @@ tupleExpression: '(' twoOrMoreExpressions optComma ')'
 | '(' expression ',' ')'
 {
   $$ = deUnaryExpressionCreate(DE_EXPR_TUPLE, $2, $1);
+}
+| '(' ')'
+{
+  $$ = deExpressionCreate(DE_EXPR_TUPLE, $1);
 }
 ;
 

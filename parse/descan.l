@@ -413,7 +413,7 @@ static void noDebug(char *foo, ...) {}
                                   delval.floatVal = deFloatCreate(DE_FLOAT_DOUBLE, safeAtof(detext, 64));
                                   myDebug("%s\n", detext);
                                   return FLOAT; }
-<INITIAL>"'"([ -\]]|[\]-~])"'"  { delval.bigintVal = deUint8BigintCreate(detext[1]);
+<INITIAL>"'"[ -~]"'"            { delval.bigintVal = deUint8BigintCreate(detext[1]);
                                   myDebug("'%c'\n", detext[1]);
                                   return INTEGER; }
 <INITIAL>[0-9]+(("u"|"i")[0-9]+)? { delval.bigintVal = deBigintParse(detext, deCurrentLine);

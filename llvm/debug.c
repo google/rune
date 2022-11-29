@@ -163,6 +163,9 @@ static llTag createClassTypeTag(deDatatype datatype) {
 
 // Pad |offset| to be a multiple of |size|.
 static uint32 padOffset(uint32 offset, uint32 size) {
+  if (size == 0) {
+    return offset;
+  }
   return size*((offset + size - 1)/size);
 }
 

@@ -18,8 +18,8 @@ func countParens(x) -> Uint {
     return 0
   }
   switch typeof(x) {
-    case (u64,) {
-      println "x is just one: ", x
+    case () {
+      println "x is the empty tuple: ", x
       return 1
     }
     default {
@@ -39,7 +39,8 @@ func decParens(x) {
 
 func addParens(a, b) {
   switch typeof(a) {
-    case (u64,) {
+    case () {
+      // The empty tuple represents 0.
       return b
     }
     default {
@@ -51,7 +52,7 @@ func addParens(a, b) {
 // Input a must have at least as many parens as b.
 func subParens(a, b) {
   switch typeof(b) {
-    case (u64,) {
+    case () {
       return a
     }
     default {
@@ -66,10 +67,11 @@ func doubleParens(x) {
 
 func mulParens(a, b) {
   switch typeof(a) {
-    case (u64,) {
+    case () {
       return a
     }
-    case ((u64,),) {
+    case ((),) {
+      // ((),) represents 1.
       return b
     }
     default {
@@ -83,17 +85,17 @@ func equalsParens(a, b) -> bool {
     return true
   }
   switch (typeof(a), typeof(b)) {
-    case ((u64,), (u64,)) {
+    case ((), ()) {
       return true
     }
     default {
       switch typeof(a) {
-        case (u64,) {
+        case () {
           return false
         }
         default {
           switch typeof(b) {
-            case (u64,) {
+            case () {
               return false
             }
             default {
@@ -106,16 +108,16 @@ func equalsParens(a, b) -> bool {
   }
 }
 
-t = ((((((((((((((((((((1,),),),),),),),),),),),),),),),),),),),)
+t = ((((((((((((((((((((),),),),),),),),),),),),),),),),),),),)
 println countParens(t)
-a = (((1,),),)
+a = (((),),)
 println "a = ", a
-b = ((((1,),),),)
+b = ((((),),),)
 println "b = ", b
 c = addParens(a, b)
 println "c = a + b = ", c
 println "c - b = ", subParens(c, b)
 println "2*c = ", doubleParens(c)
-println "2*c = ", mulParens((((1,),),), c)
-println "c*2 = ", mulParens(c, (((1,),),))
-println "2*c == c*2: ", equalsParens(doubleParens(c), mulParens(c, (((1,),),)))
+println "2*c = ", mulParens((((),),), c)
+println "c*2 = ", mulParens(c, (((),),))
+println "2*c == c*2: ", equalsParens(doubleParens(c), mulParens(c, (((),),)))

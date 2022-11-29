@@ -611,201 +611,173 @@ Examples of cool capabilities generators enable include:
 * Adding runtime reflection APIs similar to Java's.
 * Generatinig optimized code for a parameterized algorithm, such as FFTs.
 
-Generators are called with
-
 ## Grammar
 
 ```
-runeFile: statements
-
-statements: {statement}
-
-statement: import | class | appendCode | prependCode | function | externFunction
-    | ifStatement | switchStatement | whileStatement | forStatement
-    | assignmentStatement | callStatement | printStatement | printlnStatement
-    | throwStatement | assertStatement | returnStatement | generatorStatement
-    | relationStatement | generateStatement | yield | unitTestStatement
-    | debugStatement | foreachStatement | finalFunction | refStatement
-    | unrefStatement
-
-import: "import" pathExpressionWithAlias newlines
-    | "import" pathExpressionWithAlias newlines
+goal ::=  optNewlines runeFile
+runeFile ::=  statements
+statements ::= | statements statement statement ::=  appendCode | assertStatement
+    | assignmentStatement | callStatement | class | debugStatement | enum | externFunction | finalFunction
+    | foreachStatement | forStatement | function | generateStatement | generatorStatement | ifStatement
+    | import | prependCode | printlnStatement | printStatement | refStatement | relationStatement
+    | returnStatement | struct | switchStatement | throwStatement | unitTestStatement | unrefStatement
+    | whileStatement | yield
+import ::=  "import" pathExpressionWithAlias newlines
+    | "importlib" pathExpressionWithAlias newlines
     | "importrpc" pathExpressionWithAlias newlines
     | "use" IDENT newlines
-
-class: "class" IDENT '(' parameter {, parameter} ')' block
-    | exportClassHeader '(' parameter {, parameter} ')' blo
-
-exportClassHeader: "export" "class" IDENT
-    | "exportlib" "class" IDENT
-    | "exportrpc" "class" IDENT
-
-appendCode: "appendcode" [pathExpression] block
-
-prependCode: "prependcode" [pathExpression] block
-
-block: '{' newlines statements '}' [newlines]
-
-function: functionHeader parameters ["->" ':' expression] block
-    | exportFunctionHeader parameters ["->" ':' expression] block
-
-functionHeader: ["export | "exportlib" | "exportrpc"] "func" IDENT
-    | ["export"] "iterator" IDENT
-    | ["export"] "operator" operator
-
-operator: '+' | '-' | '\*' | '/' | "<<" | ">>"" | "<<<" | ">>>" | "!+" | "!-" |
-    "!\*" | '~' | '<' | "le" | '>' | ">=" | "==" | "!=" | '!' | '[' ']'
-
-parameters: '(' parameter {',' parameter} ')'
-
-parameter: ["var"] IDENT [':' expression] ['=' expression]
-    | ["var"] '<' IDENT '>' [':' expression] ['=' expression]
-
-externFunction: "extern" STRING functionHeader parameters [func':' expression] newlines
-    | "extern" STRING exportFunctionHeader parameters [func':' expression] newlines
-
-ifStatement: "if" expression block {"else" "if" expression block} ["else" block]
-
-switchStatement: "switch" expression '{' newlines {switchCase} ["default" block] '}' [newlines]
-
-switchCase: "case" expreessionList block
-
-whileStatement: ["do" block] "while" expression [block] newlines
-
-forStatement: "for nonConstAssignmentExpression ',' [newlines] expression ','
-    [newlines] nonConstAssignmentExpression block
-
-assignmentStatement: assignmentExpression newlines
-
-assignmentExpression: nonConstAssignmentExpression
-    | "const" nonConstAssignmentExpression
-
-nonConstAssignmentExpression: accessExpression [':' expression] assignmentOp expression
-
-assignmentOp: '=' | "+=" | "-=" | "\*=" | "/=" | "%=" | "&=" | "||=" | "@@=" | "&&=" |
-    "||=" | "@=" | "^=" | "<<=" | ">>=" | "<<<=" | ">>>=" | "!+=" | "!-=" | "!\*="
-
-accessExpression: tokenExpression
-    | accessExpression '(' [callParameter {',' callParameter}] ')'
+class ::=  classHeader '(' oneOrMoreParameters ')' block
+| exportClassHeader '(' oneOrMoreParameters ')' block
+classHeader ::=  "class" IDENT optWidth
+optWidth ::= UINTTYPE?
+exportClassHeader ::=  "export" "class" IDENT optWidth 
+    | "exportlib" "class" IDENT optWidth 
+    | "rpc" "class" IDENT optWidth 
+struct ::=  ("struct"|"message") IDENT '{' newlines structMembers '}' newlines
+    | "export" ("struct"|"message") IDENT block
+structMembers ::=  (structMember newlines)*
+structMember ::=  IDENT optTypeExpression ('=' expression)?
+appendCode ::=  "appendcode" pathExpression? block
+prependCode ::=  "prependcode" pathExpression? block
+block ::=  '{' newlines statements '}' optNewlines
+function ::=  functionHeader '(' parameters ')' optFuncTypeExpression block
+    | exportFunctionHeader '(' parameters ')' optFuncTypeExpression block
+    | rpcHeader '(' parameters ')' optFuncTypeExpression block
+functionHeader ::=  "func" IDENT
+    | "iterator" IDENT
+    | "operator" operator
+operator ::=  '+' | '-' | '*' | '/' | '%' | "&&" | "||" | "@@" | '&' | '|' | '@' | '^' | "<<" | ">>"
+    | "<<<" | ">>>" | "!+" | "!-" | "!*" | '~' | '<' | "<=" | '>' | ">=" | "==" | "!=" | '!'
+    | '[' ']' | "in"
+exportFunctionHeader ::=  "export" "func" IDENT
+    | "export" "iterator" IDENT
+    | "exportlib" "func" IDENT
+parameters ::= oneOrMoreParameters?
+oneOrMoreParameters ::=  parameter (',' optNewlines parameter)*
+parameter ::=  optVar IDENT optTypeExpression
+    | optVar '<' IDENT '>' optTypeExpression
+    | initializedParameter
+optVar ::= "var"?
+initializedParameter ::=  optVar IDENT optTypeExpression '=' expression
+    | optVar '<' IDENT '>' optTypeExpression '=' expression
+externFunction ::=  "extern" STRING functionHeader '(' parameters ')' optFuncTypeExpression newlines
+    | rpcHeader '(' parameters ')' optFuncTypeExpression newlines
+rpcHeader ::=  "rpc" IDENT
+ifStatement ::=  ifPart elseIfPart* elsePart?
+ifPart ::=  "if" expression block
+elseIfPart ::=  "else" "if" expression block
+elsePart ::=  "else" block
+switchStatement ::=  "switch" expression switchBlock
+switchBlock ::=  '{' newlines switchCase* defaultCase? '}' optNewlines
+switchCase ::=  "case" expression (',' optNewlines expression)* block
+defaultCase ::=  "default" block
+whileStatement ::=  doStatement? whileStatementHeader expression newlines
+| doStatement? "while" expression block
+doStatement ::=  "do" block
+forStatement ::=  "for" assignmentExpression ',' optNewlines expression ',' optNewlines
+    assignmentExpression block
+assignmentStatement ::=  assignmentExpression newlines
+assignmentExpression ::=  accessExpression optTypeExpression assignmentOp expression
+assignmentOp ::=  '=' | "+=" | "-=" | "*=" | "/=" | "mod"EQUALS | "KWBITANDEQUALS=" | "|=" | "@="
+    | "&&=" | "||=" | "@@=" | "^=" | "<<=" | ">>=" | "<<<=" | ">>>=" | "!+=" | "!-=" | "!*="
+optTypeExpression ::= expression?
+optFuncTypeExpression ::= ("->" expression)?
+accessExpression ::=  tokenExpression
+    | accessExpression '(' callParameterList ')'
     | accessExpression '.' IDENT
     | accessExpression '[' expression ']'
-    | accessExpression '[' expression ':' expression ']'
-    | accessExpression '[' ']'
-
-callStatement: accessExpression '(' [callParameter {',' callParameter}] ')' newlines
-
-callParameter: expression | IDENT = expression
-
-printStatement: "print" expressionList newlines
-
-printlnStatement: "println" expressionList newlines
-
-throwStatement: "throw" expressionList newlines
-
-assertStatement: "assert" expressionList newlines
-
-returnStatement: "return" newlines | "return" expression newlines
-
-generatorStatement: "generator" IDENT parameters block
-
-generateStatement: "generate" pathExpression '(' expressionList ')' newlines
-
-relationStatement: "relation" pathExpression pathExpression [label] pathExpression [label] ["cascade"] expressionList newlines
-
-label: ':' STRING
-
-yield: "yield" expression newlines
-
-unitTestStatement: "unittest" block
-
-debugStatement: "debug" block
-
-foreachStatement: "for" IDENT "in" expression block
-
-finalFunction: "final" '(' parameter ')' block
-
-refStatement: "ref" expression newlines
-
-unrefStatement: "unref" expression newlines
-
-expressionList: expression {, [newlines] expression}
-
-twoOrMoreExpressions: expression ',' [newlines] expression {',' [newlines] expression}
-
-expression: dotDotDotExpression
-
-dotDotDotExpression: selectExpression "dotdotdot" selectExpression
+    | accessExpression '[' expression ' ::= ' expression ']'
+callStatement ::=  accessExpression '(' callParameterList ')' newlines
+callParameterList ::= (oneOrMoreCallParameters optComma)?
+oneOrMoreCallParameters ::=  callParameter (',' optNewlines callParameter)*
+callParameter ::=  expression
+    | IDENT '=' expression
+optComma ::=  ','?
+printStatement ::=  "print" expressionList newlines
+printlnStatement ::=  "println" expressionList newlines
+throwStatement ::=  "throw" expressionList newlines
+assertStatement ::=  "assert" expressionList newlines
+returnStatement ::=  "return" newlines
+    | "return" expression newlines
+generatorStatement ::=  "generator" IDENT '(' parameters ')' block
+generateStatement ::=  "generate" pathExpression '(' expressionList ')' newlines
+relationStatement ::=  "relation" pathExpression pathExpression optLabel pathExpression optLabel
+    optCascade optExpressionList newlines
+optLabel ::= (':' STRING)?
+optCascade ::= "cascade"?
+optExpressionList ::= ('(' expressionList ')')?
+yield ::=  "yield" expression newlines
+unitTestStatement ::=  "unittest" IDENT? block
+debugStatement ::=  "debug" block
+enum ::=  "enum" IDENT '{' newlines entry* '}' newlines
+entry ::=  IDENT ('=' INTEGER)? newlines
+foreachStatement ::=  "for" IDENT "in" expression block
+finalFunction ::= "final" '(' parameter ')' block
+refStatement ::=  "ref" expression newlines
+unrefStatement ::=  "unref" expression newlines
+expressionList ::= oneOrMoreExpressions?
+oneOrMoreExpressions ::=  expression (',' optNewlines expression)*
+twoOrMoreExpressions ::=  expression ',' optNewlines expression (',' optNewlines expression)*
+expression ::=  dotDotDotExpression
+dotDotDotExpression ::=  selectExpression "..." selectExpression
     | selectExpression
-
-selectExpression: orExpression
-    | orExpression '?' orExpression ':' orExpression
-
-orExpression: xorExpression
-  | orExpression "||" xorExpression
-
-xorExpression: andExpression
+selectExpression ::=  orExpression
+    | orExpression '?' orExpression ' ::= ' orExpression
+orExpression ::=  xorExpression
+    | orExpression "||" xorExpression
+xorExpression ::=  andExpression
     | xorExpression "@@" andExpression
-
-andExpression: modExpression
-    | andExpression "&&" modExpression
-
-modExpression: relationExpression
-    | relationExpression "%" bitorExpression
-
-relationExpression: bitorExpression
+andExpression ::=  inExpression
+    | andExpression "KWANDKWAND" inExpression
+inExpression ::=  modExpression
+    | modExpression "in" modExpression
+modExpression ::=  relationExpression
+    | relationExpression "mod" bitorExpression
+relationExpression ::=  bitorExpression
     | bitorExpression '<' bitorExpression
     | bitorExpression "<=" bitorExpression
     | bitorExpression '>' bitorExpression
     | bitorExpression ">=" bitorExpression
     | bitorExpression "==" bitorExpression
     | bitorExpression "!=" bitorExpression
-
-bitorExpression: bitxorExpression
+bitorExpression ::=  bitxorExpression
     | bitorExpression '|' bitxorExpression
-bitxorExpression: bitandExpression
+bitxorExpression ::=  bitandExpression
     | bitxorExpression '@' bitandExpression
-
-bitandExpression: shiftExpression
+bitandExpression ::=  shiftExpression
     | bitandExpression '&' shiftExpression
-
-shiftExpression: addExpression
+shiftExpression ::=  addExpression
     | addExpression "<<" addExpression
-    | addExpression ">>"" addExpression
+    | addExpression ">>" addExpression
     | addExpression "<<<" addExpression
     | addExpression ">>>" addExpression
-    | addExpression "!+" addExpression
-    | addExpression "!-" addExpression
-    | addExpression "!\*" addExpression
-
-addExpression: mulExpression
+addExpression ::=  mulExpression
     | addExpression '+' mulExpression
     | addExpression '-' mulExpression
     | "!-" mulExpression
-
-mulExpression: prefixExpression
-    | mulExpression '\*' prefixExpression
+    | addExpression "!+" mulExpression
+    | addExpression "!-" mulExpression
+mulExpression ::=  prefixExpression
+    | mulExpression '*' prefixExpression
     | mulExpression '/' prefixExpression
     | mulExpression '%' prefixExpression
-
-prefixExpression: exponentiateExpression
+    | mulExpression "!*" prefixExpression
+prefixExpression ::=  exponentiateExpression
     | '!' prefixExpression
     | '~' prefixExpression
     | '-' prefixExpression
     | '<' prefixExpression '>' prefixExpression
-    | "casttrunc" prefixExpression '>' prefixExpression
-
-exponentiateExpression: postfixExpression
-    | postfixExpression '^' exponentiateExpression  // Binds right to left.
-
-postfixExpression: accessExpression
+    | "!<" prefixExpression '>' prefixExpression
+exponentiateExpression ::=  postfixExpression
+    | postfixExpression '^' exponentiateExpression 
+postfixExpression ::=  accessExpression
     | '&' pathExpression '(' expressionList ')'
-
-tokenExpression: IDENT
+tokenExpression ::=  IDENT
     | STRING
     | INTEGER
     | FLOAT
     | RANDUINT
-    | BOOL
+    | ("true" | "false")
     | '[' oneOrMoreExpressions ']'
     | '(' expression ')'
     | tupleExpression
@@ -819,23 +791,36 @@ tokenExpression: IDENT
     | "signed" '(' expression ')'
     | "widthof" '(' expression ')'
     | "isnull" '(' expression ')'
-
-typeLiteral: UINTTYPE
-    | INTTYPE
-    | "string"
-    | "bool"
-    | "f32"
-    | "f64"
-
-pathExpression: IDENT
+typeLiteral ::=  UINTTYPE | INTTYPE | "string" | "bool" | "f32" | "f64"
+pathExpression ::=  IDENT
     | pathExpression '.' IDENT
-
-pathExpressionWithAlias: pathExpression
-
-tupleExpression: '(' twoOrMoreExpressions ')'
-
-newlines: '\n'
+pathExpressionWithAlias ::=  pathExpression
+    | pathExpression "as" IDENT
+tupleExpression ::=  '(' twoOrMoreExpressions optComma ')'
+    | '(' expression ',' ')'
+    | '(' ')'
+optNewlines ::= '\n'*
+newlines ::=  '\n'
     | ';'
     | newlines '\n'
     | newlines ';'
+
+// These tokens are described with Lex syntax
+IDENT ::= ([_a-zA-Z$]|UTF8_CHAR)([a-zA-Z0-9_$]UTF8_CHAR)*
+    | \\[^ \t\n][^ \t\n]*
+STRING ::= \"([^"]|\\.)*\"
+INTEGER ::= "'"[ -~]"'"
+    | '\\a'" | "'\\b'" | '\\e'" | "'\\f'" | "'\\n'" | "'\\r'" | "'\\t'" | "'\\v'"
+    | [0-9]+(("u"|"i")[0-9]+)?
+    | "0x"[0-9a-fA-F]+(("u"|"i")[0-9]+)?
+RANDUINT ::= "rand"[0-9]+ 
+INTTYPE ::= "i"[0-9]+
+UINTTYPE ::= "u"[0-9]+
+FLOAT ::= [0-9]+"e"("-")?[0-9]+"f32"
+    | [0-9]+"."("e"("-")?[0-9]+)?"f32"
+    | [0-9]*"."[0-9]+("e"("-")?[0-9]+)?"f32"
+    | [0-9]+"e"("-")?[0-9]+("f64")?
+    | [0-9]+"."("e"("-")?[0-9]+)?("f64")?
+    | [0-9]*"."[0-9]+("e"("-")?[0-9]+)?("f64")? {
+
 ```

@@ -494,6 +494,10 @@ static const uint8_t *findEndOfSpec(const uint8_t *p, uint32_t *elementSize, uin
     p = skipArrayElementSpec(p);
   } else if (c == '(') {
     p = skipTupleElementSpec(p, elementSize);
+  } else if (c == ')') {
+    // This is an empty tuple.
+    *elementSize = 0;
+    p--;
   } else {
     runtime_panicCstr("Unsupported format specifier: %c", c);
   }
