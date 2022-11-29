@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#CFLAGS=-Wall -g -std=c11 -Wno-unused-function -Wno-varargs -DMAKEFILE_BUILD -DDD_DEBUG -Iinclude -I../CTTK -Iruntime -no-pie
-#LIBS=lib/librune.a lib/libcttk.a
-#LIBS_EXTRA=-lgmp -lm -lddutil-dbg
-CFLAGS=-Wall -O3 -std=c11 -Wno-unused-function -Wno-varargs -DMAKEFILE_BUILD -Iinclude -I../CTTK -Iruntime
+CFLAGS=-Wall -g -std=c11 -Wno-unused-function -Wno-varargs -DMAKEFILE_BUILD -DDD_DEBUG -Iinclude -I../CTTK -Iruntime -no-pie
 LIBS=lib/librune.a lib/libcttk.a
-LIBS_EXTRA=-lgmp -lm -lddutil
+LIBS_EXTRA=-lgmp -lm -lddutil-dbg
+#CFLAGS=-Wall -O3 -std=c11 -Wno-unused-function -Wno-varargs -DMAKEFILE_BUILD -Iinclude -I../CTTK -Iruntime
+#LIBS=lib/librune.a lib/libcttk.a
+#LIBS_EXTRA=-lgmp -lm -lddutil
 
 PREFIX="/usr/local"
 
