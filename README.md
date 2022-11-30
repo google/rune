@@ -30,7 +30,7 @@ func checkMac(macSecret: secret(string), message: string, mac: string) -> bool {
     return mac == computedMac
 }
 
-func computeMac(macSecret: string, message:string) -> string {
+func computeMac(macSecret: string, message: string) -> string {
   // A popular MAC algorithm.
   return hmacSha256(macSecret, message)
 }
