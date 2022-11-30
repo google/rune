@@ -369,6 +369,7 @@ static void executeModuleRelations(deBlock moduleBlock) {
 // Parse the Rune file into a module.  |currentBlock| should be the package
 // initializer function that will call this module's initializer function.
 deBlock deParseModule(char *fileName, deBlock packageBlock, bool isMainModule) {
+  fileName = utConvertDirSepChars(fileName);
   char *fullName = utAllocString(utFullPath(fileName));
   if (fullName == NULL) {
     utExit("Unable to read file %s", fileName);
