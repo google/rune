@@ -174,7 +174,7 @@ You'll need 6 dependencies installed to compile Rune:
 The first four can be installed with one command:
 
 ```sh
-$ sudo apt-get install bison flex libgmp-dev clang-14
+$ sudo apt-get install bison flex libgmp-dev clang clang-14
 ```
 
 Installing Datadraw requires cloning [the source from
