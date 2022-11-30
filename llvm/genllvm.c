@@ -4135,12 +4135,16 @@ static void generateBlockAssemblyCode(deBlock block, deSignature signature) {
 
 // Print header info.  Declare all the Rune runtime functions.
 static void printHeader(void) {
+#ifdef _WIN32
+  char *triple = "target triple = \"x86_64-w64-windows-gnu\"";
+#else
 #ifdef MAKEFILE_BUILD
   // This is generated on my workstation by clang.
   char *triple = "target triple = \"x86_64-pc-linux-gnu\"";
 #else
   // This is expected when using Blaze.
   char *triple = "target triple = \"x86_64-grtev4-linux-gnu\"";
+#endif
 #endif
   fprintf(llAsmFile, "; ModuleID = '%s'\n", llModuleName);
   fprintf(llAsmFile,
