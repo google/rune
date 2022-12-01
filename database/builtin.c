@@ -199,7 +199,8 @@ static deDatatype bindArrayBuiltinMethod(deBlock scopeBlock, deExpression expres
     utAssert(deExpressionGetType(accessExpr) == DE_EXPR_DOT);
     deExpression arrayExpr = deExpressionGetFirstExpression(accessExpr);
     deRefineAccessExpressionDatatype(scopeBlock, arrayExpr, deArrayDatatypeCreate(paramType));
-    if (paramType != deDatatypeGetElementType(deExpressionGetDatatype(arrayExpr))) {
+    deDatatype elementType = deDatatypeGetElementType(deExpressionGetDatatype(arrayExpr));
+    if (paramType != elementType && paramType != deSetDatatypeNullable(elementType, false, line)) {
       deError(line, "Array.append passed incompatible element");
     }
     return deNoneDatatypeCreate();

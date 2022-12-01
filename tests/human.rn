@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-class Human(self, name: string, mother: Human = null, father: Human = null) {
+class Human(self, name: string, mother: null(Human) = null(self),
+    father: null(Human) = null(self)) {
   self.name = name
   if !isnull(mother) {
     mother.appendMotheredHuman(self)
@@ -36,7 +37,7 @@ class Human(self, name: string, mother: Human = null, father: Human = null) {
 }
 
 relation DoublyLinked Human:"Mother" Human:"Mothered" cascade
-relation DoublyLinked Human:"Fater" Human:"Fathered" cascade
+relation DoublyLinked Human:"Father" Human:"Fathered" cascade
 
 adam = Human("Adam")
 eve = Human("Eve")

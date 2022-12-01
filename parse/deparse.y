@@ -248,6 +248,7 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %token <lineVal> KWMULTRUNCEQUALS
 %token <lineVal> KWNOTEQUAL
 %token <lineVal> KWNULL
+%token <lineVal> KWNOTNULL
 %token <lineVal> KWOPERATOR
 %token <lineVal> KWOR
 %token <lineVal> KWOREQUALS
@@ -1184,16 +1185,17 @@ optFuncTypeExpression: // Empty
 accessExpression: tokenExpression
 | accessExpression '(' callParameterList ')'
 {
-  if (deExpressionGetType($1) != DE_EXPR_NULLSELF) {
-    $$ = deBinaryExpressionCreate(DE_EXPR_CALL, $1, $3, deExpressionGetLine($1));
-  } else {
-    if (deExpressionCountExpressions($3) != 1) {
-      deError($2, "null() expressions can have only one parameter");
-    }
-    deExpressionSetType($3, DE_EXPR_NULL);
-    deExpressionDestroy($1);
-    $$ = $3;
-  }
+  $$ = deBinaryExpressionCreate(DE_EXPR_CALL, $1, $3, deExpressionGetLine($1));
+}
+| KWNULL '(' callParameterList ')'
+{
+  deExpressionSetType($3, DE_EXPR_NULL);
+  $$ = $3;
+}
+| KWNOTNULL '(' callParameterList ')'
+{
+  deExpressionSetType($3, DE_EXPR_NOTNULL);
+  $$ = $3;
 }
 | accessExpression '.' IDENT
 {
@@ -1834,9 +1836,9 @@ tokenExpression: IDENT
   $$ = $2;
 }
 | tupleExpression
-| KWNULL
+| KWNOTNULL
 {
-  $$ = deExpressionCreate(DE_EXPR_NULLSELF, $1);
+  $$ = deExpressionCreate(DE_EXPR_NOTNULL, $1);
 }
 | typeLiteral
 | KWSECRET '(' expression ')'

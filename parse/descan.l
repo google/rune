@@ -320,6 +320,7 @@ static void noDebug(char *foo, ...) {}
 <INITIAL>"iterator" { delval.lineVal = deCurrentLine; myDebug("KWITERATOR\n"); return KWITERATOR; }
 <INITIAL>"mod"    { delval.lineVal = deCurrentLine; myDebug("KWMOD\n"); return KWMOD; }
 <INITIAL>"null"    { delval.lineVal = deCurrentLine; myDebug("KWNULL\n"); return KWNULL; }
+<INITIAL>"notnull" { delval.lineVal = deCurrentLine; myDebug("KWNOTNULL\n"); return KWNOTNULL; }
 <INITIAL>"operator" { delval.lineVal = deCurrentLine; myDebug("KWOPERATOR\n"); return KWOPERATOR; }
 <INITIAL>"prependcode" { delval.lineVal = deCurrentLine; myDebug("KWPREPENDCODE\n"); return KWPREPENDCODE; }
 <INITIAL>"print"   { delval.lineVal = deCurrentLine; myDebug("KWPRINT\n"); return KWPRINT; }

@@ -322,6 +322,7 @@ deDatatype deGetStructTupleDatatype(deDatatype structDatatype);
 deDatatype deEnumClassDatatypeCreate(deFunction enumFunction);
 deDatatype deEnumDatatypeCreate(deFunction enumFunction);
 deDatatype deSetDatatypeSecret(deDatatype datatype, bool secret);
+deDatatype deSetDatatypeNullable(deDatatype datatype, bool nullable, deLine line);
 deDatatype deDatatypeResize(deDatatype datatype, uint32 width);
 deDatatype deDatatypeSetSigned(deDatatype datatype, bool isSigned);
 deTclass deFindDatatypeTclass(deDatatype datatype);

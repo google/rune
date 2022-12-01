@@ -454,8 +454,8 @@ void deDumpExpressionStr(deString string, deExpression expression) {
     case DE_EXPR_NULL:
       dumpBuiltinExpr(string, expression, "null");
       break;
-    case DE_EXPR_NULLSELF:
-      deStringSprintf(string, "null");
+    case DE_EXPR_NOTNULL:
+      dumpBuiltinExpr(string, expression, "notnull");
       break;
     case DE_EXPR_INDEX:
       dumpIndexExpr(string, expression);

@@ -119,7 +119,7 @@ enum ExpressionType
   DE_EXPR_AS  // import foo as bar
   DE_EXPR_IN  // if element in set
   DE_EXPR_NULL  // null(Node())
-  DE_EXPR_NULLSELF  // n = Tree(null, null)
+  DE_EXPR_NOTNULL  // notnull(node)
   DE_EXPR_FUNCADDR  // &max(0u32, 0u32)
   DE_EXPR_ARRAYOF  // arrayof(u32)
   DE_EXPR_TYPEOF  // typeof a
@@ -347,6 +347,7 @@ class DatatypeBin create_only
 class Datatype array
   DatatypeType type
   bool secret
+  bool nullable
   bool containsArray
   uint32 width
   union type

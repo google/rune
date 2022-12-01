@@ -138,6 +138,7 @@ deDatatype copyDatatype(deDatatype datatype) {
   deDatatype copy = datatypeCreate(deDatatypeGetType(datatype),
       deDatatypeGetWidth(datatype), deDatatypeConcrete(datatype));
   deDatatypeSetSecret(copy, deDatatypeSecret(datatype));
+  deDatatypeSetNullable(copy, deDatatypeNullable(datatype));
   deDatatypeSetContainsArray(copy, deDatatypeContainsArray(datatype));
   switch (deDatatypeGetType(datatype)) {
     case DE_TYPE_ARRAY: case DE_TYPE_STRING:
@@ -146,7 +147,7 @@ deDatatype copyDatatype(deDatatype datatype) {
     case DE_TYPE_FUNCPTR:
       deDatatypeSetReturnType(copy, deDatatypeGetReturnType(datatype));
       break;
-    case DE_TYPE_TCLASS:
+    case DE_TYPE_TCLASS: case DE_TYPE_NULL:
       deDatatypeSetTclass(copy, deDatatypeGetTclass(datatype));
       break;
     case DE_TYPE_CLASS:
@@ -156,7 +157,7 @@ deDatatype copyDatatype(deDatatype datatype) {
       deDatatypeSetFunction(copy, deDatatypeGetFunction(datatype));
       break;
     default:
-    break;
+      break;
   }
   uint32 numTypeList = deDatatypeGetNumTypeList(datatype);
   if (numTypeList != 0) {
@@ -171,6 +172,7 @@ deDatatype copyDatatype(deDatatype datatype) {
 static uint32 hashDatatype(deDatatype datatype) {
   uint32 hash = deDatatypeGetType(datatype);
   hash = utHashValues(hash, deDatatypeSecret(datatype));
+  hash = utHashValues(hash, deDatatypeNullable(datatype));
   hash = utHashValues(hash, deDatatypeGetWidth(datatype));
   switch (deDatatypeGetType(datatype)) {
     case DE_TYPE_ARRAY:
@@ -204,6 +206,9 @@ static bool datatypesAreIdentical(deDatatype datatype1, deDatatype datatype2) {
     return false;
   }
   if (deDatatypeSecret(datatype1) != deDatatypeSecret(datatype2)) {
+    return false;
+  }
+  if (deDatatypeNullable(datatype1) != deDatatypeNullable(datatype2)) {
     return false;
   }
   if (deDatatypeGetWidth(datatype1) != deDatatypeGetWidth(datatype2)) {
@@ -326,6 +331,7 @@ deDatatype deNoneDatatypeCreate(void) {
 // tclass.
 deDatatype deNullDatatypeCreate(deTclass tclass) {
   deDatatype datatype = datatypeCreate(DE_TYPE_NULL, deTclassGetRefWidth(tclass), false);
+  deDatatypeSetNullable(datatype, true);
   deDatatypeSetTclass(datatype, tclass);
   return addToHashTable(datatype);
 }
@@ -538,6 +544,24 @@ deDatatype deEnumDatatypeCreate(deFunction enumFunction) {
 
 // Make the datatype secret.  If it already exists in the secret form, return
 // the old one.
+deDatatype deSetDatatypeNullable(deDatatype datatype, bool nullable, deLine line) {
+  if (deDatatypeNullable(datatype) == nullable) {
+    return datatype;
+  }
+  deDatatypeType type = deDatatypeGetType(datatype);
+  if (type != DE_TYPE_CLASS && type != DE_TYPE_TCLASS && type != DE_TYPE_NULL) {
+    deError(line, "Cannot set nullable on non-class types.");
+  }
+  deDatatype nullableDatatype = copyDatatype(datatype);
+  if (type == DE_TYPE_NULL && !nullable) {
+    deDatatypeSetType(nullableDatatype, DE_TYPE_TCLASS);
+  }
+  deDatatypeSetNullable(nullableDatatype, nullable);
+  return addToHashTable(nullableDatatype);
+}
+
+// Make the datatype secret.  If it already exists in the secret form, return
+// the old one.
 deDatatype deSetDatatypeSecret(deDatatype datatype, bool secret) {
   if (deDatatypeSecret(datatype) == secret) {
     return datatype;
@@ -618,7 +642,7 @@ static char *getClassDatatypeParametersTypeString(deDatatype datatype) {
       char *childString;
       utAssert(deDatatypeGetType(paramDatatype) != DE_TYPE_TCLASS);
       if (paramDatatype == datatype) {
-        childString = "null";
+        childString = deGetBlockPath(deClassGetSubBlock(theClass), false);
       } else {
         childString = deDatatypeGetTypeString(paramDatatype);
       }
@@ -840,7 +864,10 @@ char *deDatatypeGetTypeString(deDatatype datatype) {
     case DE_TYPE_TCLASS:
     case DE_TYPE_NULL: {
       deTclass tclass = deDatatypeGetTclass(datatype);
-      return deGetBlockPath(deFunctionGetSubBlock(deTclassGetFunction(tclass)), false);
+      deFunction function = deTclassGetFunction(tclass);
+      deBlock block = deFunctionGetSubBlock(function);
+      char *name = deGetBlockPath(block, false);
+      return utSprintf("null(%s)", name);
     }
     case DE_TYPE_FUNCTION:
       return utSprintf("func %s", deFunctionGetName(deDatatypeGetFunction(datatype)));
@@ -885,7 +912,10 @@ static bool datatypeMatchesIdentExpression(deBlock scopeBlock, deDatatype dataty
     deFunction function = deIdentGetFunction(ident);
     deFunctionType type = deFunctionGetType(function);
     if (type == DE_FUNC_CONSTRUCTOR) {
-      // It is a class.
+      // It is a class.  Don't match nullable types.
+      if (deDatatypeNullable(datatype)) {
+        return false;
+      }
       deTclass tclass = deFunctionGetTclass(deIdentGetFunction(ident));
       if (tclass == deClassTclass) {
         // The point of "Class" is matching all class objects.
@@ -970,6 +1000,11 @@ bool deDatatypeMatchesTypeExpression(deBlock scopeBlock, deDatatype datatype,
     case DE_EXPR_REVEAL:
       deError(line, "Reveal is not allowed in type constraints");
       return false;  // Dummy return.
+    case DE_EXPR_NULL: {
+      deExpression child = deExpressionGetFirstExpression(typeExpression);
+      return deDatatypeMatchesTypeExpression(
+          scopeBlock, deSetDatatypeNullable(datatype, false, line), child);
+    }
     case DE_EXPR_DOT:
     case DE_EXPR_TYPEOF: {
       // We need to bind he typeof() expression.
@@ -1047,13 +1082,13 @@ deDatatype deUnifyDatatypes(deDatatype datatype1, deDatatype datatype2) {
   if (type1 == DE_TYPE_NULL && type2 == DE_TYPE_CLASS) {
     deTclass tclass = deDatatypeGetTclass(datatype1);
     if (deClassGetTclass(deDatatypeGetClass(datatype2)) == tclass) {
-      return datatype2;
+      return deSetDatatypeNullable(datatype2, true, deLineNull);
     }
   }
   if (type2 == DE_TYPE_NULL && type1 == DE_TYPE_CLASS) {
     deTclass tclass = deDatatypeGetTclass(datatype2);
     if (deClassGetTclass(deDatatypeGetClass(datatype1)) == tclass) {
-      return datatype1;
+      return deSetDatatypeNullable(datatype1, true, deLineNull);
     }
   }
   if (type1 != type2) {
@@ -1063,6 +1098,20 @@ deDatatype deUnifyDatatypes(deDatatype datatype1, deDatatype datatype2) {
     return unifyArrayDatatypes(datatype1, datatype2);
   } else if (type1 == DE_TYPE_TUPLE) {
     return unifyTupleDatatypes(datatype1, datatype2);
+  }
+  if (type1 == DE_TYPE_CLASS && type2 == DE_TYPE_CLASS &&
+      deDatatypeGetClass(datatype1) == deDatatypeGetClass(datatype2) &&
+      (deDatatypeNullable(datatype1) || deDatatypeNullable(datatype2))) {
+    deDatatype nullableType = deSetDatatypeNullable(datatype1, true, deLineNull);
+    if (deSetDatatypeNullable(datatype2, true, deLineNull) == nullableType) {
+      return nullableType;
+    }
+  }
+  if ((deDatatypeSecret(datatype1) || deDatatypeSecret(datatype2))) {
+    deDatatype secretType = deSetDatatypeSecret(datatype1, true);
+    if (deSetDatatypeSecret(datatype2, true) == secretType) {
+      return secretType;
+    }
   }
   return deDatatypeNull;
 }
@@ -1223,4 +1272,3 @@ deSecretType deFindDatatypeSectype(deDatatype datatype) {
   }
   return false;  // Dummy return.
 }
-

@@ -213,13 +213,17 @@ static void bindArrayExpression(deBlock scopeBlock, deExpression expression) {
   deExpression firstElement = deExpressionGetFirstExpression(expression);
   bindExpression(scopeBlock, firstElement);
   deDatatype datatype = getDatatype(firstElement);
-  if (deExpressionIsType(firstElement)) {
-    deExpressionSetIsType(expression, true);
-  }
   deExpression nextElement = deExpressionGetNextExpression(firstElement);
   while (nextElement != deExpressionNull) {
     bindExpression(scopeBlock, nextElement);
-    if (getDatatype(nextElement) != datatype) {
+    deDatatype elementType = getDatatype(nextElement);
+    if (elementType != datatype &&
+        deDatatypeGetType(datatype) == deDatatypeGetType(elementType) &&
+        (deDatatypeNullable(datatype) || deDatatypeNullable(elementType))) {
+      datatype = deSetDatatypeNullable(datatype, true, line);
+      elementType = deSetDatatypeNullable(elementType, true, line);
+    }
+    if (elementType != datatype) {
       deError(line, "Array elements must have the same type:%s",
           deGetOldVsNewDatatypeStrings(getDatatype(nextElement), datatype));
     }
@@ -977,6 +981,12 @@ static void verifyCast(deDatatype leftDatatype, deDatatype rightDatatype, deLine
   }
   deDatatypeType leftType = deDatatypeGetType(leftDatatype);
   deDatatypeType rightType = deDatatypeGetType(rightDatatype);
+  if (leftType == DE_TYPE_CLASS && rightType == DE_TYPE_CLASS &&
+      deDatatypeGetClass(leftDatatype) == deDatatypeGetClass(rightDatatype) &&
+      deSetDatatypeNullable(leftDatatype, true, line) ==
+      deSetDatatypeNullable(rightDatatype, true, line)) {
+    return;
+  }
   if (datatypeIsNumberOrEnumClass(leftType) && datatypeIsNumberOrEnum(rightType)) {
     return;
   }
@@ -1049,6 +1059,10 @@ static void bindCastExpression(deBlock scopeBlock, deExpression expression) {
   // We ignore the secrecy of the left type: you can't cast away secrecy.  Just
   // force the left type to have the same secrecy value as the right.
   leftDatatype = deSetDatatypeSecret(leftDatatype, deDatatypeSecret(rightDatatype));
+  if (deDatatypeGetType(leftDatatype) == DE_TYPE_CLASS) {
+    leftDatatype = deSetDatatypeNullable(
+        leftDatatype, deDatatypeNullable(rightDatatype), deLineNull);
+  }
   if (deDatatypeGetType(leftDatatype) == DE_TYPE_ENUMCLASS) {
     // If the cast is to an ENUMCLASS, instead cast to an ENUM.
     deBlock enumBlock = deFunctionGetSubBlock(deDatatypeGetFunction(leftDatatype));
@@ -1095,28 +1109,13 @@ static void bindExpressionList(deBlock scopeBlock, deExpression expressionList) 
   deExpressionSetDatatype(expressionList, deNoneDatatypeCreate());
 }
 
-// Bind a parameter expression, which can use null without parameters.
-static void bindParameterExpression(deBlock scopeBlock, deExpression expression,
-                                    deDatatype selfType) {
-  if (deExpressionGetType(expression) == DE_EXPR_NULLSELF) {
-    if (selfType == deDatatypeNull) {
-      deError(deExpressionGetLine(expression),
-              "Default null expressions are only allowed in constructor calls");
-    }
-    deExpressionSetDatatype(expression, selfType);
-  } else {
-    bindExpression(scopeBlock, expression);
-  }
-}
-
 // Bind a parameter list.  The only special case here is that null is allowed
 // without parameters, meaning null(self), where self is the self added to the
 // constructor call.
-static void bindParameterList(deBlock scopeBlock, deExpression parameterList,
-                              deDatatype selfType) {
+static void bindParameterList(deBlock scopeBlock, deExpression parameterList) {
   deExpression child;
   deForeachExpressionExpression(parameterList, child) {
-    bindParameterExpression(scopeBlock, child, selfType);
+    bindExpression(scopeBlock, child);
   }
   deEndExpressionExpression;
   deExpressionSetDatatype(parameterList, deNoneDatatypeCreate());
@@ -1203,7 +1202,7 @@ static void fillOutDefaultParamters(deBlock block, deDatatype selfType, deDataty
         varDatatype = deExpressionGetDatatype(namedParameter);
       } else {
         // Use the default value.
-        bindParameterExpression(block, defaultValue, selfType);
+        bindExpression(block, defaultValue);
         varDatatype = deExpressionGetDatatype(defaultValue);
       }
       deVariableSetDatatype(variable, varDatatype);
@@ -1495,7 +1494,7 @@ static deDatatype preBindConstructor(deBlock scopeBlock, deDatatype callType,
       deError(line, "Too many parameters to constructor %s", deFunctionGetName(constructor));
     }
     if (deVariableInTclassSignature(var)) {
-      bindParameterExpression(scopeBlock, param, callType);
+      bindExpression(scopeBlock, param);
       deDatatypeArrayAppendDatatype(types, deExpressionGetDatatype(param));
     } else {
       // None datatype will eventually be replaced when we bind a call.
@@ -1510,7 +1509,7 @@ static deDatatype preBindConstructor(deBlock scopeBlock, deDatatype callType,
       deError(line, "Not enough parameters");
     }
     if (deVariableInTclassSignature(var)) {
-      bindParameterExpression(scopeBlock, defaultValue, callType);
+      bindExpression(scopeBlock, defaultValue);
       deDatatypeArrayAppendDatatype(types, deExpressionGetDatatype(defaultValue));
     } else {
       deDatatypeArrayAppendDatatype(types, deNoneDatatypeCreate());
@@ -1598,7 +1597,7 @@ static void bindCallExpression(deBlock scopeBlock, deExpression expression,
     selfType = preBindConstructor(scopeBlock, callType, parameters);
     deDatatypeArrayAppendDatatype(parameterTypes, selfType);
   }
-  bindParameterList(scopeBlock, parameters, selfType);
+  bindParameterList(scopeBlock, parameters);
   deExpression firstNamedParameter = bindPositionalParameters(
       scopeBlock, parameters, parameterTypes);
   deDatatype returnType;
@@ -2121,7 +2120,6 @@ static void bindNullExpression(deBlock scopeBlock, deExpression expression) {
     datatype = deNullDatatypeCreate(deDatatypeGetTclass(datatype));
   }
   switch (deDatatypeGetType(datatype)) {
-    case DE_TYPE_CLASS:
     case DE_TYPE_NULL:
     case DE_TYPE_BOOL:
     case DE_TYPE_STRING:
@@ -2134,6 +2132,9 @@ static void bindNullExpression(deBlock scopeBlock, deExpression expression) {
     case DE_TYPE_ENUMCLASS:
     case DE_TYPE_ENUM:
     case DE_TYPE_FUNCPTR:
+      break;
+    case DE_TYPE_CLASS:
+      datatype = deSetDatatypeNullable(datatype, true, deExpressionGetLine(expression));
       break;
     case DE_TYPE_FUNCTION: {
       deFunctionType type = deFunctionGetType(deDatatypeGetFunction(datatype));
@@ -2148,9 +2149,17 @@ static void bindNullExpression(deBlock scopeBlock, deExpression expression) {
     case DE_TYPE_NONE:
       deError(deExpressionGetLine(expression), "Cannot create default initial value for type %s",
           deDatatypeGetTypeString(datatype));
+      break;
   }
   deExpressionSetDatatype(expression, datatype);
   deInstantiating = savedInstantiating;
+}
+
+// Bind a notnull expression.
+static void bindNotNullExpression(deBlock scopeBlock, deExpression expression) {
+  deDatatype datatype = deSetDatatypeNullable(bindUnaryExpression(scopeBlock, expression), false,
+      deExpressionGetLine(expression));
+  deExpressionSetDatatype(expression, datatype);
 }
 
 // Set all the variables passed as instantiated.  Any function that can be
@@ -2468,9 +2477,8 @@ static void bindExpression(deBlock scopeBlock, deExpression expression) {
     case DE_EXPR_NULL:
       bindNullExpression(scopeBlock, expression);
       break;
-    case DE_EXPR_NULLSELF:
-      deError(deExpressionGetLine(expression),
-              "Null expressions require parameters, except in constructor calls");
+    case DE_EXPR_NOTNULL:
+      bindNotNullExpression(scopeBlock, expression);
       break;
     case DE_EXPR_FUNCADDR:
       bindFunctionPointerExpression(scopeBlock, expression);
@@ -2547,10 +2555,14 @@ static void updateFunctionType(deBlock scopeBlock, deExpression expression, deLi
       if (deExpressionAutocast(expression)) {
         autocastExpression(expression, datatype);
       }
-      if (deExpressionGetDatatype(expression) != datatype) {
+      deDatatype unifiedType = deUnifyDatatypes(datatype, deExpressionGetDatatype(expression));
+      if (unifiedType == deDatatypeNull) {
         deError(line,
             "Return statement has different type than prior return statement:%s",
             deGetOldVsNewDatatypeStrings(deExpressionGetDatatype(expression), datatype));
+      }
+      if (unifiedType != datatype) {
+        setSignatureReturnType(scopeBlock, deCurrentSignature, unifiedType, line);
       }
     }
   }

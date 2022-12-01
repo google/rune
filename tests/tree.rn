@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Polymorphic in that label can be different types.
-class Tree(self: Tree, label: string, child1 = null, child2 = null) {
+class Tree(self: Tree, label: string, child1 = null(self), child2 = null(self)) {
   self.label = label
   if !isnull(child1) {
     self.appendTree(child1)

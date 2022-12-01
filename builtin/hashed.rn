@@ -171,7 +171,7 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
       for i in range(self.$labelB$B_Table.length()) {
         entry = self.$labelB$B_Table[i]
         while !isnull(entry) {
-          yield entry
+          yield notnull(entry)
           entry = entry.nextHashed$A$labelB$B
         }
       }
@@ -182,7 +182,7 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
         entry = self.$labelB$B_Table[i]
         while !isnull(entry) {
           nextEntry = entry.nextHashed$A$labelB$B
-          yield entry
+          yield notnull(entry)
           entry = nextEntry
         }
       }

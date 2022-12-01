@@ -35,7 +35,7 @@ class Node(self, parent, value) {
 
 relation DoublyLinked Node Node cascade
 
-root = Node(null, 123.0f32)
+root = Node(null(Node), 123.0f32)
 node1 = Node(root, 23.0f32)
 node2 = Node(root, 32.0f32)
 node3 = Node(node2, 32.0f32)

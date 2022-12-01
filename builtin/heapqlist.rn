@@ -20,13 +20,13 @@ generator HeapqList(A: Class, B: Class, cascadeDelete:bool = false,
   if (ascend) {
     prependcode A {
       func _compare$labelB$B(self, child1: B, child2: B) -> bool {
-        return child1 < child2
+        return notnull(child1) < notnull(child2)
       }
     }
   } else {
     prependcode A {
       func _compare$labelB$B(self, child1: B, child2: B) -> bool {
-        return child1 > child2
+        return notnull(child1) > notnull(child2)
       }
     }
   }

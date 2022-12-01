@@ -1215,9 +1215,8 @@ bool deBindExpression2(deSignature scopeSig, deBinding binding) {
     case DE_EXPR_NULL:
       // bindNullExpression(scopeSig, binding);
       break;
-    case DE_EXPR_NULLSELF:
-      deError(deBindingGetLine(binding),
-              "Null expressions require parameters, except in constructor calls");
+    case DE_EXPR_NOTNULL:
+      utExit("Write me");
       break;
     case DE_EXPR_FUNCADDR:
       // bindFunctionPointerExpression(binding);

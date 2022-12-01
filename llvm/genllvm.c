@@ -2022,7 +2022,8 @@ static void moveTupleOrObject(llElement dest, llElement source) {
   deDatatype destType = llElementGetDatatype(dest);
   utAssert(datatype == llElementGetDatatype(dest) ||
       deDatatypeGetType(datatype) == DE_TYPE_NULL ||
-      deDatatypeGetType(destType) == DE_TYPE_STRUCT);
+      deDatatypeGetType(destType) == DE_TYPE_STRUCT ||
+      deDatatypeNullable(destType));
   char *type = llGetTypeString(datatype, true);
   char *location = locationInfo();
   llPrintf("  store %s %s, %s* %s%s\n", type, llElementGetName(source), type,
@@ -3392,6 +3393,13 @@ static uint32 findClassRefWidth(deDatatype datatype) {
   return 0;  // Dummy return.
 }
 
+// Generate the sub expression and generate code to verify it is non-null, if it
+// is an object type.
+static void generateNotNullExpression(deExpression expression) {
+  generateExpression(deExpressionGetFirstExpression(expression));
+  // TODO: Generate not-null check here.
+}
+
 // Generate code for an expression.
 static void generateExpression(deExpression expression) {
   llCurrentLine = deExpressionGetLine(expression);
@@ -3629,8 +3637,10 @@ static void generateExpression(deExpression expression) {
       generateTupleExpression(expression);
       break;
     case DE_EXPR_NULL:
-    case DE_EXPR_NULLSELF:
       pushNullValue(datatype);
+      break;
+    case DE_EXPR_NOTNULL:
+      generateNotNullExpression(expression);
       break;
     case DE_EXPR_ARRAYOF:
     case DE_EXPR_TYPEOF:
