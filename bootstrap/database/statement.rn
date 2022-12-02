@@ -137,7 +137,7 @@ export func statementTypeGetKeyword(type: StateType) {
 }
 
 // Represents all statements in Rune.
-class Statement(self: Statement, block: Block, type: StateType, line: Line) {
+class Statement(self, block: Block, type: StateType, line: Line) {
   self.type = type
   self.line = line
   self.instantiated = false
@@ -164,7 +164,7 @@ class Statement(self: Statement, block: Block, type: StateType, line: Line) {
     self.dumpNoSubBlock(text)
     block = self.subBlock
     if !isnull(block) {
-      block.dumpToString(text)
+      notnull(block).dumpToString(text)
     }
   }
 
@@ -179,7 +179,7 @@ class Statement(self: Statement, block: Block, type: StateType, line: Line) {
   func copyExprAndSubBlock(self, newStatement: Statement) {
     expr = self.expr
     if !isnull(expr) {
-      newExpr = expr.copy()
+      newExpr = notnull(expr).copy()
       newStatement.insertExpr(newExpr)
     }
     subBlock = self.subBlock
@@ -193,7 +193,7 @@ class Statement(self: Statement, block: Block, type: StateType, line: Line) {
   func appendCopy(self, destBlock: Block) -> Statement {
     if false {
       // Type hint for recursion.
-      return null(self)
+      return self
     }
     newStatement = Statement(destBlock, self.type, self.line)
     self.copyExprAndSubBlock(newStatement)
@@ -215,7 +215,7 @@ class Statement(self: Statement, block: Block, type: StateType, line: Line) {
   // Append a deep copy of the statement to destStatement's block, right after
   // |destStatement|.
   func appendCopyAfterStatement(self, destStatement: Statement) -> Statement {
-    destBlock = destStatement.block
+    destBlock = notnull(destStatement.block)
     newStatement = self.appendCopy(destBlock)
     destBlock.removeStatement(newStatement)
     destBlock.insertAfterStatement(destStatement, newStatement)

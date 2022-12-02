@@ -234,6 +234,7 @@ static void bindArrayExpression(deBlock scopeBlock, deExpression expression) {
   }
   deDatatype arrayDatatype = deArrayDatatypeCreate(datatype);
   deExpressionSetDatatype(expression, arrayDatatype);
+  deExpressionSetIsType(expression, deExpressionIsType(firstElement));
 }
 
 // Modify the datatype in the constant integer expression tree to match the

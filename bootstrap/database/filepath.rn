@@ -18,7 +18,7 @@ use root
 
 // Use Filepath.new for now to create new Filepath objects, so we can check for
 // an existing one.
-class Filepath(self, path: string, parent: Filepath, isPackage: bool) {
+class Filepath(self, path: string, parent: null(Filepath), isPackage: bool) {
   self.sym = Sym.new(path)
   self.isPackage = isPackage
   getRoot().insertFilepath(self)
@@ -28,12 +28,12 @@ class Filepath(self, path: string, parent: Filepath, isPackage: bool) {
 
   // Create a filepath object that records the path to a module or package.  If
   // it already exists, return the old one.
-  func new(path: string, parent: Filepath, isPackage: bool) -> Filepath {
+  func new(path: string, parent: null(Filepath), isPackage: bool) -> Filepath {
     root = getRoot()
     pathSym = Sym.new(path)
     filepath = root.findFilepath(pathSym)
     if !isnull(filepath) {
-      return filepath
+      return notnull(filepath)
     }
     return Filepath(path, parent, isPackage)
   }

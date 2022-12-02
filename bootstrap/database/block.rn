@@ -27,7 +27,7 @@ class Block(self, line: Line) {
   self.canContinue = false
 
   // Dump the block to the end of |text| for debugging.
-  func dumpToString(self: Block, var text: string) {
+  func dumpToString(self, var text: string) {
     getRoot().indent(text)
     text += "{\n"
     getRoot().incrementIndent()
@@ -75,7 +75,7 @@ class Block(self, line: Line) {
   }
 
   // Append the contents of |self| to |destBlock|, and destroy |self|.
-  func appendToBlock(self:Block , destBlock: Block) {
+  func appendToBlock(self, destBlock: Block) {
     for statement in self.safeStatements() {
       self.removeStatement(statement)
       destBlock.appendStatement(statement)
@@ -96,7 +96,7 @@ class Block(self, line: Line) {
   func copy(self) -> Block {
     if false {
       // Type hint for recursion.
-      return null(self)
+      return notnull(self)
     }
     newBlock = Block(self.line)
     for statement in self.statements() {
@@ -118,7 +118,7 @@ class Block(self, line: Line) {
     }
   }
 
-  func owningBlock(self: Block) -> Block {
+  func owningBlock(self) -> null(Block) {
     if !isnull(self.owningFunction) {
       return self.owningFunction.block
     } else if !isnull(self.owningStatement) {
@@ -133,7 +133,7 @@ class Block(self, line: Line) {
   // Generate a unique name for an identifier in the block, based on |name|.
   // Just use |name| if there is no conflict, otherwise, add _n, where n is an
   // integer to make the name unique in the block.
-  func createUniqueSym(self: Block, sym: Sym) -> Sym {
+  func createUniqueSym(self, sym: Sym) -> Sym {
     if isnull(self.findIdent(sym)) {
       return sym
     }
@@ -158,7 +158,7 @@ unittest {
 
   rootBlock = getRoot().block
   rootLine = rootBlock.line
-  rootFilepath = rootLine.filepath
+  rootFilepath = notnull(rootLine.filepath)
 
   func createEmptyBlock() -> Block {
     line = Line(rootFilepath, "Create empty block", 0u32)
@@ -175,7 +175,7 @@ unittest {
     return block
   }
 
-  func createPrintlnFunction(owningBlock: Block, name: string, text: string) -> Function {
+  func createPrintlnFunction(owningBlock: null(Block), name: string, text: string) -> Function {
     block = createPrintlnBlock(text)
     function = Function(owningBlock, FuncType.Plain, Sym.new(name), Linkage.Module, rootLine)
     function.insertSubBlock(block)
@@ -199,7 +199,7 @@ unittest dumpBlockTest {
 unittest copyStatementsAfterStatementTest {
   block1 = createPrintlnBlock("Second copied line")
   block2 = createPrintlnBlock("First copied line")
-  destStatement = block2.firstStatement
+  destStatement = notnull(block2.firstStatement)
   block1.copyStatementsAfterStatement(destStatement)
   assert countBlockStatements(block1) == 1
   assert countBlockStatements(block2) == 2
@@ -209,7 +209,7 @@ unittest copyStatementsAfterStatementTest {
 unittest moveStatementsAfterStatementTest {
   block1 = createPrintlnBlock("Second moved line")
   block2 = createPrintlnBlock("First stationary line")
-  destStatement = block2.firstStatement
+  destStatement = notnull(block2.firstStatement)
   block1.moveStatementsAfterStatement(destStatement)
   assert countBlockStatements(block1) == 0
   assert countBlockStatements(block2) == 2

@@ -21,7 +21,7 @@ use variable
 use datatype
 use util
 
-class Ident(self: Ident, block: Block, object: Function | Variable, sym: Sym, objLine: Line) {
+class Ident(self, block: Block, object: Function | Variable, sym: Sym, objLine: Line) {
   self.exported = false
   imported = false
   self.sym = sym
@@ -41,7 +41,7 @@ class Ident(self: Ident, block: Block, object: Function | Variable, sym: Sym, ob
   }
 
   // Dump the identifier to the end of |string| for debugging purposes.
-  func dumpToString(self: Ident, var text: string) {
+  func dumpToString(self, var text: string) {
     getRoot().indent(text)
     text.append("ident %s (0x%x) -> " % (ident.sym.name, <u32>ident))
     if !isnull(ident.function) {
@@ -76,7 +76,7 @@ class Ident(self: Ident, block: Block, object: Function | Variable, sym: Sym, ob
 
   // Find the datatype of the identifier.  If a variable has not yet been set, it
   // will return null(datatype).
-  func datatype(self: Ident) -> Datatype {
+  func datatype(self) -> Datatype {
     if !isnull(self.function) {
       return Datatype(self.function)
     }
@@ -84,7 +84,7 @@ class Ident(self: Ident, block: Block, object: Function | Variable, sym: Sym, ob
   }
 
   // Return the sub-block of the identifier, if it has one.
-  func subBlock(self: Ident) -> Block {
+  func subBlock(self) -> Block {
     if !isnull(self.function) {
       return self.function.subBlock
     }
@@ -92,7 +92,7 @@ class Ident(self: Ident, block: Block, object: Function | Variable, sym: Sym, ob
   }
 
   // Return the line of the identifier.
-  func line(self: Ident) -> Line {
+  func line(self) -> Line {
     if !isnull(self.function) {
       return self.function.line
     }
@@ -134,7 +134,7 @@ class Ident(self: Ident, block: Block, object: Function | Variable, sym: Sym, ob
   }
 
   // Rename the identifier.  Also change the sym in its identifier Exprs.
-  func rename(self: Ident, newName: Sym) {
+  func rename(self, newName: Sym) {
     scopeBlock = ident.block
     scopeBlock.removeIdent(ident)
     self.sym = newName
@@ -146,7 +146,7 @@ class Ident(self: Ident, block: Block, object: Function | Variable, sym: Sym, ob
   }
 
   // Find the identifier for the block owning this identifier.
-  func owningIdent(self: Ident) -> Ident {
+  func owningIdent(self) -> null(Ident) {
     owningBlock = self.block.owningBlock()
     if isnull(owningBlock) {
       return null(self)
@@ -155,19 +155,19 @@ class Ident(self: Ident, block: Block, object: Function | Variable, sym: Sym, ob
   }
 
   // Return a path Expr to the function.
-  func createPathExpr(self: Ident) -> Expr {
-    identExpr = Expr.newIdent(self)
+  func createPathExpr(self) -> Expr {
+    identExpr = Expr.newIdent(notnull(self))
     owningIdent = self.owningIdent()
     if isnull(owningIdent) {
       return identExpr
     }
-    prefixExpr = Expr.newIdent(owningIdent)
+    prefixExpr = Expr.newIdent(notnull(owningIdent))
     return Expr.newBinary(ExprType.Dot, prefixExpr, identExpr, self.line())
   }
 
   // Copy the identifier to the destination block.  The caller must ensure the
   // identifier does not already existe on |destBlock|.
-  func copy(self: Ident, destBlock: Block) -> Ident {
+  func copy(self, destBlock: Block) -> Ident {
     newIdent = Ident(destBlock, type, self.sym, self.line)
     if !isnull(self.function) {
       self.function.appendIdent(newIdent)
@@ -178,7 +178,7 @@ class Ident(self: Ident, block: Block, object: Function | Variable, sym: Sym, ob
   }
 
   // Determine if this identifier represents a module or package.
-  func isModuleOrPackage(self: Ident) -> bool {
+  func isModuleOrPackage(self) -> bool {
     if !isnull(ident.function) {
       return ident
     }

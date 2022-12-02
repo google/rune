@@ -598,37 +598,9 @@ deDatatype deDatatypeResize(deDatatype datatype, uint32 width) {
 }
 
 // Return a string of the typelist types, comma separated.
-static char *getClassDatatypeParametersValueString(deDatatype datatype) {
-  // TODO: The compiler will crash if we overflow the temp Datadraw string
+static deString getClassDatatypeParametersTypeString(deDatatype datatype) {
   // buffers.  Fix this.
-  char *parameters = "";
-  bool firstTime = true;
-  // Skip the self parameter in the datatype for theClass.
-  bool skipOne = true;
-  deClass theClass = deDatatypeGetClass(datatype);
-  deSignature signature = deClassGetFirstSignature(theClass);
-  utAssert(signature != deSignatureNull);
-  deParamspec paramspec;
-  deForeachSignatureParamspec(signature, paramspec) {
-    deDatatype paramDatatype = deParamspecGetDatatype(paramspec);
-    if (!skipOne) {
-      char *childString = deDatatypeGetDefaultValueString(paramDatatype);
-      if (!firstTime) {
-        parameters = utSprintf("%s, %s", parameters, childString);
-      } else {
-        parameters = childString;
-      }
-      firstTime = false;
-    }
-    skipOne = false;
-  } deEndSignatureParamspec;
-  return parameters;
-}
-
-// Return a string of the typelist types, comma separated.
-static char *getClassDatatypeParametersTypeString(deDatatype datatype) {
-  // buffers.  Fix this.
-  char *parameters = "";
+  deString parameters = deMutableStringCreate();
   bool firstTime = true;
   // Skip the self parameter in the datatype for theClass.
   bool skipOne = true;
@@ -647,10 +619,9 @@ static char *getClassDatatypeParametersTypeString(deDatatype datatype) {
         childString = deDatatypeGetTypeString(paramDatatype);
       }
       if (!firstTime) {
-        parameters = utSprintf("%s, %s", parameters, childString);
-      } else {
-        parameters = childString;
+        deStringPuts(parameters, ", ");
       }
+      deStringPuts(parameters, childString);
       firstTime = false;
     }
     skipOne = false;
@@ -711,9 +682,11 @@ static char *getClassDefaultValue(deDatatype datatype) {
     char *name = deGetBlockPath(deClassGetSubBlock(theClass), false);
     return utSprintf("null(%s)", name);
   }
-  char *parameters =  getClassDatatypeParametersTypeString(datatype);
+  deString parameters = getClassDatatypeParametersTypeString(datatype);
   char *name = deGetBlockPath(deClassGetSubBlock(theClass), false);
-  return utSprintf("null(%s(%s))", name, parameters);
+  char *result = utSprintf("null(%s(%s))", name, deStringGetCstr(parameters));
+  deStringFree(parameters);
+  return result;
 }
 
 // Return a default value string for the function pointer.
@@ -798,9 +771,11 @@ static char *getClassTypeString(deDatatype datatype) {
     char *name = deGetBlockPath(deClassGetSubBlock(theClass), false);
     return utSprintf("%s", name);
   }
-  char *parameters =  getClassDatatypeParametersTypeString(datatype);
+  deString parameters = getClassDatatypeParametersTypeString(datatype);
   char *name = deGetBlockPath(deClassGetSubBlock(theClass), false);
-  return utSprintf("%s(%s)", name, parameters);
+  char *result = utSprintf("%s(%s)", name, deStringGetCstr(parameters));
+  deStringFree(parameters);
+  return result;
 }
 
 // Return a string representing the funciton pointer type.

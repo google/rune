@@ -39,10 +39,10 @@ void deerror(char *message, ...) {
   buff = utVsprintf(message, ap);
   va_end(ap);
   if (!deInvertReturnCode) {
-    utError("File %s, line %d, token \"%s\": %s", deCurrentFileName,
+    utError("%s:%d: token \"%s\": %s", deCurrentFileName,
         deLineGetLineNum(deCurrentLine), detext, buff);
   }
-  printf("File %s, line %d, token \"%s\": %s\n", deCurrentFileName,
+  printf("%s:%d: token \"%s\": %s\n", deCurrentFileName,
       deLineGetLineNum(deCurrentLine), detext, buff);
   deGenerateDummyLLFileAndExit();
 }

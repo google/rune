@@ -17,7 +17,7 @@ theGlobalRoot = Root()
 class Root(self) {
   self.indentDepth = 0u32  // Used in dump functions.
 
-  func indent(self: Root, var text: string) {
+  func indent(self, var text: string) {
     for i in range(self.indentDepth) {
       text += "  "
     }
@@ -35,4 +35,9 @@ class Root(self) {
 // Returns the global root.
 func getRoot() -> Root {
   return theGlobalRoot
+}
+
+// Return the root block.
+func getRootBlock() -> Block {
+  return notnull(theGlobalRoot.block)
 }

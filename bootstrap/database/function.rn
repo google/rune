@@ -92,7 +92,7 @@ func getFuncTypeName(type: FuncType) -> string {
 }
 
 // Create a new function.
-class Function(self: Function, owningBlock: Block, type: FuncType, sym: Sym,
+class Function(self, owningBlock: null(Block), type: FuncType, sym: Sym,
     linkage: Linkage, line: Line) {
   self.type = type
   self.sym = sym
@@ -101,7 +101,7 @@ class Function(self: Function, owningBlock: Block, type: FuncType, sym: Sym,
   self.isExtern = linkage == Linkage.ExternC || linkage == Linkage.ExternRpc
   if !isnull(owningBlock) {
     owningBlock.appendFunction(self)
-    Ident(owningBlock, self, sym, line)
+    Ident(notnull(owningBlock), self, sym, line)
   }
   subBlock = Block(line)
   // Assume it can return until we learn otherwise.  This is only an issue when
@@ -112,12 +112,12 @@ class Function(self: Function, owningBlock: Block, type: FuncType, sym: Sym,
   return function
 
   // Return the name of the function.
-  func name(self: Function) -> string {
+  func name(self) -> string {
     return self.sym.name
   }
 
   // Dump the function to the end of |string| for debugging purposes.
-  func dumpToString(self: Function, var text: string) {
+  func dumpToString(self, var text: string) {
     func dumpParams(subBlock: Block, var text: string) {
       firstTime = true
       for variable in subBlock.variables() {
@@ -139,7 +139,7 @@ class Function(self: Function, owningBlock: Block, type: FuncType, sym: Sym,
     root = getRoot()
     root.indent(text)
     dumpFuncHeader(self, text)
-    dumpParams(self.subBlock, text)
+    dumpParams(notnull(self.subBlock), text)
     text += ") "
     if !isnull(self.typeExpr) {
       text += "-> "
@@ -150,23 +150,23 @@ class Function(self: Function, owningBlock: Block, type: FuncType, sym: Sym,
   }
 
   // Dump the function to stdout for debugging purposes.
-  func dump(self: Function) {
+  func dump(self) {
     text = ""
     self.dumpToString(text)
     print text
   }
 
   // Make a copy of the function in |destBlock|.
-  func copy(self: Function, destBlock: Block) -> Function {
+  func copy(self, destBlock: Block) -> Function {
     if false {
       // Type hint for recursion.
-      return null(self)
+      return self
     }
     newFunction = Function(destBlock, self.type, self.sym, self.linkage, self.line)
     newBlock = self.subBlock.copy()
     newFunction.insertSubBlock(newBlock)
     if !isnull(self.typeExpr) {
-      newFunction.typeExpr = self.typeExpr.copy()
+      newFunction.typeExpr = notnull(self.typeExpr).copy()
     }
     // TODO: Comment this back in when we port tclass.
     // if self.type == FuncType.Constructor {
@@ -177,7 +177,7 @@ class Function(self: Function, owningBlock: Block, type: FuncType, sym: Sym,
 
   // Prepend a call statement to |childFunction| at the end of |function|.
   // |childFunction| will be called with no parameters.
-  func prependFunctionCall(self: Function, childFunction: Function) -> Statement {
+  func prependFunctionCall(self, childFunction: Function) -> Statement {
     statement = self.appendFunctionCall(childFunction)
     // Move the statement to the start of the block.
     block = self.subBlock
@@ -188,12 +188,12 @@ class Function(self: Function, owningBlock: Block, type: FuncType, sym: Sym,
 
   // Append a call statement to |childFunction| at the end of |function|.
   // |childFunction| will be called with no parameters.
-  func appendFunctionCall(self: Function, childFunction: Function) -> Statement {
+  func appendFunctionCall(self, childFunction: Function) -> Statement {
     ident = childFunction.firstIdent
     pathExpr = ident.createPathExpr()
     text = "%s()\n" % childFunction.name()
-    block = self.subBlock
-    line = Line(block.line.filepath, text, 0u32)
+    block = notnull(self.subBlock)
+    line = Line(notnull(block.line.filepath), text, 0u32)
     emptyParamsExpr = Expr(ExprType.List, line)
     callExpr = Expr.newBinary(ExprType.Call, pathExpr, emptyParamsExpr, line)
     statement = Statement(block, StateType.Call, line)
@@ -205,7 +205,7 @@ class Function(self: Function, owningBlock: Block, type: FuncType, sym: Sym,
   func newIterator(block: Block, name: Sym, selfName: Sym, linkage: Linkage,
       line: Line) -> Function {
     iteratorFunc = Function(block, FuncType.Iterator, name, linkage, line)
-    subBlock = iteratorFunc.subBlock
+    subBlock = notnull(iteratorFunc.subBlock)
     Variable(subBlock, true, false, selfName, null(Expr), null(Expr), false, line)
     return iteratorFunc
   }
@@ -230,11 +230,11 @@ func insertModuleInitializationCall(moduleFunc: Function) {
   pathExpr = ident.createPathExpr()
   block = moduleFunc.subBlock
   text = "%s()\n" % moduleFunc.name()
-  line = Line(block.line.filepath, text, 0u32)
+  line = Line(notnull(block.line.filepath), text, 0u32)
   emptyParamsExpr = Expr(ExprType.List, line)
   callExpression = Expr.newBinary(ExprType.Call, pathExpr, emptyParamsExpr, line)
   root = getRoot()
-  rootBlock = root.block
+  rootBlock = getRootBlock()
   statement = Statement(rootBlock, StateType.Call, line)
   statement.insertExpr(callExpression)
   // Move the statement to after the last initialization call.
@@ -265,7 +265,7 @@ func createMainFunc() {
   typeExpr = Expr(ExprType.IntType, rootLine)
   typeExpr.width = 32u32
   mainFunc.insertTypeExpr(typeExpr)
-  rootBlock = mainFunc.subBlock
+  rootBlock = notnull(mainFunc.subBlock)
   getRoot().insertBlock(rootBlock)
   rootFilepath.insertModuleBlock(rootBlock)
   nullExpr = null(Expr(ExprType.Add, rootLine))
@@ -285,15 +285,15 @@ createMainFunc()
 unittest {
   use statement
 
-  rootBlock = getRoot().block
-  mainFunc = rootBlock.owningFunction
+  rootBlock = notnull(getRoot().block)
+  mainFunc = notnull(rootBlock.owningFunction)
   rootLine = rootBlock.line
   rootFilepath = rootLine.filepath
   argcVar = rootBlock.firstVariable
   argvVar = argcVar.nextBlockVariable
   // Type hint: In these tests, the compiler does not know what exact class is
   // added in the Ident -> Expr relation.
-  expr = Expr.newIdent(argcVar.firstIdent)
+  expr = Expr.newIdent(notnull(argcVar.firstIdent))
 
   func createEmptyFunction(owningBlock: Block, name: string) -> Function {
     return Function(owningBlock, FuncType.Plain, Sym.new(name), Linkage.Module, rootLine)
@@ -314,8 +314,8 @@ unittest prependAndAppendFunctionCallTest {
   block = Block(rootLine)
   mainCopy = mainFunc.copy(block)
   // Create an inner function.
-  topFunc = createEmptyFunction(mainCopy.subBlock, "topFunc")
-  botFunc = createEmptyFunction(mainCopy.subBlock, "botFunc")
+  topFunc = createEmptyFunction(notnull(mainCopy.subBlock), "topFunc")
+  botFunc = createEmptyFunction(notnull(mainCopy.subBlock), "botFunc")
   lastStatement = mainCopy.appendFunctionCall(botFunc)
   firstStatement = mainCopy.prependFunctionCall(topFunc)
   subBlock = mainCopy.subBlock
@@ -336,8 +336,8 @@ unittest newIteratorAndOperatorTest {
 
 unittest insertModuleInitializationCallTest {
   // Create an inner function.
-  function1 = createEmptyFunction(getRoot().block, "module1")
-  function2 = createEmptyFunction(getRoot().block, "module2")
+  function1 = createEmptyFunction(notnull(getRoot().block), "module1")
+  function2 = createEmptyFunction(notnull(getRoot().block), "module2")
   insertModuleInitializationCall(function1)
   insertModuleInitializationCall(function2)
   getRoot().block.dump()

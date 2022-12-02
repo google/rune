@@ -63,8 +63,8 @@ void deApplySignatureBindings(deSignature signature);
 // New event-driven binding funcions.
 void deBind2(void);
 bool deBindExpression2(deSignature scopeSig, deBinding binding);
-void deBindStatement2(deBindState bindstate);
-void deQueueEventBlockedBindStates(deEvent event);
+void deStateBindingment2(deStateBinding statebinding);
+void deQueueEventBlockedStateBindings(deEvent event);
 void deQueueSignature(deSignature signature);
 
 // Block methods.
@@ -442,20 +442,19 @@ void deVerifyRelationshipGraph(void);
 void deAssignEnumEntryConstants(deBlock block);
 deDatatype deFindEnumIntType(deBlock block);
 
-// BindState and Binding methods.
-deBindState deBindStateCreate(deSignature signature, deStatement statement,
-    bool instantiating);
+// StateBinding, BlockBinding, and Binding methods.
+deBlockBinding deBlockBindingCreate(deSignature signature, deBlock block, bool instantiating);
+deStateBinding deStateBindingCreate(deBlockBinding blockBinding, deStatement statement, bool instantiating);
 deBinding deExpressionBindingCreate(deSignature signature, deBinding owningBinding,
     deExpression expression, bool instantiating);
 deBinding deParameterBindingCreate(deSignature signature, deVariable variable,
     deParamspec paramspec);
-deBinding deVariableBindingCreate(deSignature signature, deVariable variable);
 deBinding deFindVariableBinding(deSignature signature, deVariable variable);
 deBinding deFindIdentBinding(deSignature signature, deIdent ident);
 deEvent deSignatureEventCreate(deSignature signature);
 deEvent deUndefinedIdentEventCreate(deIdent ident);
 deEvent deVariableEventCreate(deBinding varBinding);
-deBindState deFindBindingBindState(deBinding binding);
+deStateBinding deFindBindingStateBinding(deBinding binding);
 static inline deExpressionType deBindingGetType(deBinding binding) {
   return deExpressionGetType(deBindingGetExpression(binding));
 }

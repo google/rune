@@ -137,7 +137,7 @@ clean:
 	rm -rf obj lib rune */*database.[ch] *.ps parse/descan.c parse/deparse.[ch] rune.log tests/*.ll tests/*.result crypto_class/*.ll crypto_class/*.result errortests/*.ll
 	for file in tests/*.rn crypto_class/*.rn errortests/*.rn; do exeFile=$$(echo "$$file" | sed 's/.rn$$//'); rm -f "$$exeFile"; done
 	cd runtime ; make clean
-
+	cd bootstrap/database ; make clean
 
 obj: include/dedatabase.h llvm/lldatabase.h
 	mkdir -p obj/database obj/llvm obj/parse obj/runtime obj/src obj/util obj/rpc

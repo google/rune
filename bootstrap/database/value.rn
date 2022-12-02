@@ -47,7 +47,7 @@ func getDatatypeType(value) -> DatatypeType {
   }
 }
 
-class Value(self, value: string | bool | Int | Uint | Bigint | Float | Sym) {
+class Value(self: Value, value: string | bool | Int | Uint | Bigint | Float | Sym) {
   self.type = getDatatypeType(value)
   self.width = 0u32
   // TODO: Merge these values into a union when unions are supported.
@@ -114,7 +114,7 @@ class Value(self, value: string | bool | Int | Uint | Bigint | Float | Sym) {
         return v1.stringVal == v2.stringVal
       }
       case DatatypeType.Uint, DatatypeType.Int {
-        return v1.intVal == v2.intVal
+        return notnull(v1.intVal) == notnull(v2.intVal)
       }
       case DatatypeType.Float {
         return v1.floatVal == v2.floatVal

@@ -768,10 +768,6 @@ class Expr(self, type: ExprType, line: Line) {
 
   // Make a deep copy of the expression.
   func copy(self: Expr) -> Expr {
-    if isnull(self) {
-      // I'm not sure this is a good coding pattern, but let's see if we like it.
-      return self
-    }
     newExpr = Expr(self.type, self.line)
     // TODO: Comment in when we port datatype to Rune.
     // newExpr.datatype = expr.datatype
@@ -790,6 +786,15 @@ class Expr(self, type: ExprType, line: Line) {
     }
     return newExpr
   }
+
+  // Reutrn a copy of the expression, or null if the expression is null.
+  func nullOrCopy(self: null(Expr)) -> null(Expr) {
+    if isnull(self) {
+      return self
+    }
+    return notnull(self).copy()
+  }
+
 }
 
 // Expressions form a tree, with each expression having a doubly-linked list of children.
@@ -807,7 +812,7 @@ unittest {
     // Type hints
     dummyBlock = Block(line)
     dummyFunction = Function(dummyBlock, FuncType.Package, Sym.new("test"), Linkage.Package, line)
-    dummyIdent = dummyFunction.firstIdent
+    dummyIdent = notnull(dummyFunction.firstIdent)
     dummyKxpr = Expr.newIdent(dummyIdent)
   }
 
@@ -856,7 +861,7 @@ unittest unaryTest {
 unittest newIdentTest {
   block = Block(line)
   function = Function(block, FuncType.Package, Sym.new("test"), Linkage.Package, line)
-  ident = function.firstIdent
+  ident = notnull(function.firstIdent)
   expr = Expr.newIdent(ident)
   expr.dump()
 }

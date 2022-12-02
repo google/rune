@@ -46,7 +46,17 @@ void deError(deLine line, char* format, ...) {
   va_start(ap, format);
   buff = utVsprintf(format, ap);
   va_end(ap);
+  if (line != deLineNull) {
+    deFilepath filepath = deLineGetFilepath(line);
+    utAssert(filepath != deFilepathNull);
+    char *path = deFilepathGetRelativePath(filepath);
+    if (*path != '\0') {
+      printf("%s:%u: ", path, deLineGetLineNum(line));
+  }
   printf("Error: %s\n", buff);
+  fputs(deLineGetText(line), stdout);
+
+  }
   if (deCurrentStatement != deStatementNull) {
     if (!deStatementGenerated(deCurrentStatement)) {
       deDumpLine(line);

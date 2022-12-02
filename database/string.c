@@ -85,8 +85,8 @@ deString deUniquifyString(deString string) {
   uint32 len =  deStringGetUsed(string);
   deStringSetText(newString, deStringGetText(string), len);
   deStringSetUsed(string, len);
-  deRootInsertString(deTheRoot, string);
-  return string;
+  deRootInsertString(deTheRoot, newString);
+  return newString;
 }
 
 // Compare two non-uniquified strings for equality.

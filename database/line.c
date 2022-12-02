@@ -34,7 +34,7 @@ void deDumpLine(deLine line) {
   utAssert(filepath != deFilepathNull);
   char *path = deFilepathGetRelativePath(filepath);
   if (*path != '\0') {
-    printf("File %s, line %u: ", path, deLineGetLineNum(line));
+    printf("%s:%u: ", path, deLineGetLineNum(line));
   } else {
     printf("Auto-generated: ");
   }

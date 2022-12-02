@@ -103,9 +103,9 @@ static void generateRootBlockArrays(deClass theClass) {
   deVariable variable;
   deForeachBlockVariable(block, variable) {
     utAssert(deVariableInstantiated(variable) && !deVariableIsType(variable));
+    char *defaultValue = deDatatypeGetDefaultValueString(deVariableGetDatatype(variable));
     deSprintToString("  %1$s_%2$s = [%3$s]\n",
-        path, deVariableGetName(variable),
-        deDatatypeGetDefaultValueString(deVariableGetDatatype(variable)));
+        path, deVariableGetName(variable), defaultValue);
   } deEndBlockVariable;
   deAddString("}\n");
   utFree(path);
