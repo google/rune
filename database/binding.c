@@ -14,15 +14,15 @@
 
 #include "de.h"
 
-// Create a StateBinding object representing the state of binding of a statement
+// Create a BindState object representing the state of binding of a statement
 // for a given function signature.
-deStateBinding deStateBindingCreate(deSignature signature, deStatement statement, bool instantiating) {
-  deStateBinding statebinding = deStateBindingAlloc();
-  deStateBindingSetInstantiated(statebinding, true);
-  deStatementAppendStateBinding(statement, statebinding);
-  deSignatureAppendStateBinding(signature, statebinding);
-  deSignatureAppendBindingStateBinding(signature, statebinding);
-  return statebinding;
+deBindState deBindStateCreate(deSignature signature, deStatement statement, bool instantiating) {
+  deBindState bindstate = deBindStateAlloc();
+  deBindStateSetInstantiated(bindstate, true);
+  deStatementAppendBindState(statement, bindstate);
+  deSignatureAppendBindState(signature, bindstate);
+  deSignatureAppendBindingBindState(signature, bindstate);
+  return bindstate;
 }
 
 // Create a binding object representing an expression that is in-flight binding
@@ -57,9 +57,7 @@ deBinding deVariableBindingCreate(deSignature signature, deVariable variable) {
 // for a specific function signature.
 deBinding deParameterBindingCreate(deSignature signature, deVariable variable,
     deParamspec paramspec) {
-  deIdent ident = deVariableGetIdent(variable);
-  deBinding binding = deIdentBindingCreate(signature, variable);
-deBinding deFindIdentBinding(deSignature signature, deIdent ident) {
+  deBinding binding = deVariableBindingCreate(signature, variable);
   deBindingSetDatatype(binding, deParamspecGetDatatype(paramspec));
   deBindingSetInstantiating(binding, deParamspecInstantiated(paramspec));
   return binding;
@@ -72,7 +70,7 @@ static deEvent createEvent(void) {
   return event;
 }
 
-// Create a Event that will keep track of all StateBindings blocked on binding
+// Create a Event that will keep track of all BindStates blocked on binding
 // of signature.  If it already exists, just return it.
 deEvent deSignatureEventCreate(deSignature signature) {
   deEvent event = deSignatureGetReturnEvent(signature);
@@ -128,15 +126,15 @@ deBinding deFindIdentBinding(deSignature signature, deIdent ident) {
   return deBindingNull;
 }
 
-// Find the statebinding owning this binding.  Bindings are in a tree, so recurse
+// Find the bindstate owning this binding.  Bindings are in a tree, so recurse
 // up until we find the root.
-deStateBinding deFindBindingStateBinding(deBinding binding) {
-  while (binding != deBindingNull && deBindingGetRootStateBinding(binding) == deStateBindingNull) {
+deBindState deFindBindingBindState(deBinding binding) {
+  while (binding != deBindingNull && deBindingGetRootBindState(binding) == deBindStateNull) {
     binding = deBindingGetBinding(binding);
   }
   if (binding == deBindingNull) {
-    return deStateBindingNull;
+    return deBindStateNull;
   }
-  return deBindingGetRootStateBinding(binding);
+  return deBindingGetRootBindState(binding);
 }
 

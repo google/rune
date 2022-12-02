@@ -162,15 +162,15 @@ correspond to call statements in BindState objects.
 #include "de.h"
 
 // If the event exists, move all of its statbinds to the binding queue.
-void deQueueEventBlockedBindings(deEvent event) {
+void deQueueEventBlockedBindStates(deEvent event) {
   if (event == deEventNull) {
     return;
   }
-  deBinding binding;
-  deSafeForeachEventBinding(event, binding) {
-    deEventRemoveBinding(event, binding);
-    deRootAppendBinding(deTheRoot, binding);
-  } deEndSafeEventBinding;
+  deBindState bindstate;
+  deSafeForeachEventBindState(event, bindstate) {
+    deEventRemoveBindState(event, bindstate);
+    deRootAppendBindingBindState(deTheRoot, bindstate);
+  } deEndSafeEventBindState;
   deEventDestroy(event);
 }
 
@@ -193,70 +193,63 @@ static bool instantiateSubExpressions(deExpressionType type) {
   }
 }
 
-// Return true for expression types that have an intrinsic type, such as 1u32.
-static bool typeCanBindNow(type) {
-  switch (type) {
-  case DE_EXPR_INTEGER:
-  case DE_EXPR_FLOAT:
-  case DE_EXPR_RANDUINT:
-  case DE_EXPR_BOOL:
-  case DE_EXPR_STRING:
-  case DE_EXPR_IDENT:
-  case DE_EXPR_ARRAY:
-  case DE_EXPR_MODINT:
-  case DE_EXPR_UINTTYPE:
-  case DE_EXPR_INTTYPE:
-  case DE_EXPR_FLOATTYPE:
-  case DE_EXPR_STRINGTYPE:
-  case DE_EXPR_BOOLTYPE:
-    return true;
-  default:
-    break;
+// For assignments, bind the access unless it is a lone identifier, or the
+// identifier to the right of a dot at the end.  In these two special cases,
+// the identifier binding will exist but will be removed from the binding
+// queue.  The bind assignment handler needs to handle these two cases and create
+// variables or class data members if needed, and update the variable datatype.
+static void  postProcessAssignment(deBinding binding) {
+  deBinding access = deBindingGetFirstBinding(binding);
+  deExpressionType type = deExpressionGetType(deBindingGetExpression(access));
+  if (type == DE_EXPR_IDENT || type == DE_EXPR_DOT) {
+    // If it is a dot expression, its ident binding was already removed.
+    deBindStateRemoveBinding(deBindingGetBindState(binding), access);
   }
-  return false;
 }
 
-// Return true for identifier expressions which are not on the right of dot expressions.
-// Lone identifier expressions can be bound immediately to identifiers.  For
-// example, x = y has two identifiers that can be bound, while foo.x = x only
-// has one, since foo's type must be inferred before we can lookup x.
-static bool isLoneIdent(deExpression expression) {
-  deExpression owningExpr = deExpressionGetExpression(expression);
-  if (owningExpr == deExpressionNull || deExpressionGetType(owningExpr) != DE_EXPR_DOT) {
-    return false;
-  }
-  return deExpressionGetLastExpression(owningExpr) != expression;
+// Remove the identifier to the right of the dot from the binding queue.  The
+// handler for binding dot expressions must bind this once the scope from the
+// expression to the left is bound.
+static void  postProcessDotExpression(deBinding binding) {
+  deBinding identBinding = deBindingGetNextBinding(deBindingGetFirstBinding(binding));
+  deBindStateRemoveBinding(deBindingGetBindState(binding), identBinding);
 }
 
 // Queue the expression for binding.
-static void queueExpression(deSignature scopeSig, deStatement statement,
+static deBinding queueExpression(deSignature scopeSig, deBindState bindstate,
     deBinding owningBinding, deExpression expression, bool instantiating) {
-  deBinding binding = deExpressionBindingCreate(scopeSig, statement,
-      owningBinding, expression, instantiating);
+  deBinding binding = deExpressionBindingCreate(scopeSig, owningBinding, expression, instantiating);
   deExpressionType type = deExpressionGetType(expression);
-  if (typeCanBindNow(type) || isLoneIdent(expression)) {
-    deRootAppendBinding(deTheRoot, binding);
-  } else {
-    deRootAppendUnqueuedBinding(deTheRoot, binding);
-  }
   bool firstTime = true;
   deExpression child;
   deForeachExpressionExpression(expression, child) {
     // Only the first sub-expression is ever not instantiated.
     bool instantiateSubExpr = instantiating && (!firstTime || instantiateSubExpressions(type));
     firstTime = false;
-    queueExpression(scopeSig, statement, binding, child, instantiateSubExpr);
+    queueExpression(scopeSig, bindstate, binding, child, instantiateSubExpr);
   } deEndExpressionExpression;
+  // All child bindings are queued before this one.
+  deBindStateAppendBinding(bindstate, binding);
+  if (type == DE_EXPR_EQUALS) {
+    postProcessAssignment(binding);
+  } else if (type == DE_EXPR_DOT) {
+    postProcessDotExpression(binding);
+  }
+  return binding;
 }
 
 // Throw all the expressions in the block into the queue to be bound.
 static void queueBlockStatements(deSignature signature, deBlock block, bool instantiating) {
   deStatement statement;
   deForeachBlockStatement(block, statement) {
+    deBindState bindstate = deBindStateCreate(signature, statement, instantiating);
     deExpression expression = deStatementGetExpression(statement);
     if (expression != deExpressionNull) {
-      queueExpression(signature, statement, deBindingNull, expression, instantiating);
+      deBinding rootBinding = queueExpression(signature, bindstate,
+          deBindingNull, expression, instantiating);
+      deBindStateInsertRootBinding(bindstate, rootBinding);
     }
+    deRootAppendBindingBindState(deTheRoot, bindstate);
     deBlock subBlock = deStatementGetSubBlock(statement);
     if (subBlock != deBlockNull) {
       queueBlockStatements(signature, subBlock, instantiating);
@@ -264,7 +257,7 @@ static void queueBlockStatements(deSignature signature, deBlock block, bool inst
   } deEndBlockStatement;
 }
 
-// Set bound bindings on parameters from the signature.
+// Set bound bindings on narameters from the signature.
 static void bindSignatureParameters(deSignature signature) {
   deBlock block = deSignatureGetBlock(signature);
   deVariable variable = deBlockGetFirstVariable(block);
@@ -299,13 +292,38 @@ void deQueueSignature(deSignature signature) {
   bindSignatureParameters(signature);
 }
 
+// Once we finish binding a signature, update its paramspecs.
+static void updateSignatureFromVariableBindings(deSignature signature) {
+  deBlock block = deSignatureGetBlock(signature);
+  deVariable var = deBlockGetFirstVariable(block);
+  deParamspec param;
+  deForeachSignatureParamspec(signature, param) {
+    utAssert(var != deVariableNull && deVariableGetType(var) == DE_VAR_PARAMETER);
+    deBinding varBinding = deFindVariableBinding(signature, var);
+    utAssert(varBinding != deBindingNull);
+    deParamspecSetIsType(param, deBindingIsType(varBinding));
+    deParamspecSetInstantiated(param, deBindingInstantiating(varBinding));
+    var = deVariableGetNextBlockVariable(var);
+  } deEndSignatureParamspec;
+  utAssert(var == deVariableNull || deVariableGetType(var) != DE_VAR_PARAMETER);
+}
+
 // Bind signatures until binding is done.
 static void bindAllSignatures(void) {
-  deBinding binding = deRootGetFirstBinding(deTheRoot);
-  while (binding != deBindingNull) {
-    deRootRemoveBinding(deTheRoot, binding);
-    deBindExpression2(binding);
-    binding = deRootGetFirstBinding(deTheRoot);
+  deBindState bindstate = deRootGetFirstBindingBindState(deTheRoot);
+  while (bindstate != deBindStateNull) {
+    deRootRemoveBindingBindState(deTheRoot, bindstate);
+    deBindStatement2(bindstate);
+    if (deBindStateGetFirstBinding(bindstate) ==  deBindingNull) {
+      // The statement is now fully bound.
+      deSignature signature = deBindStateGetSignature(bindstate);
+      deSignatureRemoveBindingBindState(signature, bindstate);
+      if (deSignatureGetFirstBindingBindState(signature) == deBindStateNull) {
+        // The signature is now fully bound.
+        updateSignatureFromVariableBindings(signature);
+      }
+    }
+    bindstate = deRootGetFirstBindingBindState(deTheRoot);
   }
 }
 
@@ -357,31 +375,6 @@ static void reportUnboundBindStates(void) {
   } deEndRootEvent;
 }
 
-// Once we finish binding a signature, update its paramspecs.
-static void updateSignatureFromVariableBindings(deSignature signature) {
-  deBlock block = deSignatureGetBlock(signature);
-  deVariable var = deBlockGetFirstVariable(block);
-  deParamspec param;
-  deForeachSignatureParamspec(signature, param) {
-    utAssert(var != deVariableNull && deVariableGetType(var) == DE_VAR_PARAMETER);
-    deBinding varBinding = deFindVariableBinding(signature, var);
-    utAssert(varBinding != deBindingNull);
-    deParamspecSetIsType(param, deBindingIsType(varBinding));
-    deParamspecSetInstantiated(param, deBindingInstantiating(varBinding));
-    var = deVariableGetNextBlockVariable(var);
-  } deEndSignatureParamspec;
-  utAssert(var == deVariableNull || deVariableGetType(var) != DE_VAR_PARAMETER);
-}
-
-// After binding everything, update all signature paramspecs from their
-// bindings.
-static void updateSignaturesFromBindings(void) {
-  deSignature signature;
-  deForeachRootSignature(deTheRoot, signature) {
-    updateSignatureFromVariableBindings(signature);
-  } deEndRootSignature;
-}
-
 // Bind expressions everywhere.
 void deBind2(void) {
   deBlock rootBlock = deRootGetBlock(deTheRoot);
@@ -396,7 +389,6 @@ void deBind2(void) {
   bindAllSignatures();
   destroyUnusedTclassesContents();
   reportUnboundBindStates();
-  updateSignaturesFromBindings();
 }
 
 // Apply variable bindings to the variables.
