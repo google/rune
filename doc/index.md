@@ -39,6 +39,8 @@ keys. Rune has several properties to help protect those secrets:
     secret until "revealed".
 -   Integer overflow is detected, except in unsafe mode.
 -   Index out of bounds is detected, except in unsafe mode.
+-   Rune supports null safety.  Null is either not possible, or checked at
+    runtime.
 -   Uninitialized memory access is impossible.
 -   Secrets are automatically zeroed when no longer used
 -   All behavior is fully defined.

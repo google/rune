@@ -59,7 +59,8 @@ As for the speed and safety of Rune's memory management, consider a simple
 both SQL and Rune.
 
 ```
-class Human(self, name: string, mother: Human = null, father: Human = null) {
+class Human(self:Human, name: string, mother: null(Human) = null(self),
+    father: null(Human) = null(self)) {
   self.name = name
   if !isnull(mother) {
     mother.appendMotheredHuman(self)
@@ -112,7 +113,7 @@ Eve
 
 Note that Abel and Malory are not listed.  This is because we didn't just kill
 Abel, we destroyed Abel, and this caused all of Abel's children to be
-recursively destroyed.
+recursively destroyed.  Also note that Rune now supports null safety.  Null safety does not mean null does not exist in the language.  It means types by default cannot be null.  This can be overridden with null(...) in the type constraint.
 
 Relation statements are similar to columns in SQL tables.  A table with a Mother
 and Father column has two many-to-one relations in a database.

@@ -337,16 +337,19 @@ n4 = Tree("N4", null, Tree("L5"))  // null here is assumed to be Tree
 root = Tree("root", n3, n4)
 ```
 
-To test if a variable is null, use isnull():
+Rune supports null safety.  By default, type constraints declare variables to
+be non-null.  To test if a variable is null, use isnull():
 
 ```rune
 if !isnull(point) {
-	println point  // Works if Point has a toString method.
+	println notnull(point).toString()  // Works if Point has a toString method.
 }
 ```
 
 Rune creates a default .toString() method for you in debug mode (using -g flag),
-which can be called from gdb.
+which can be called from gdb.  The notnull type cast checks that a value is not
+null null at compile time unless the compiler can prove this check is not
+needed.
 
 ## Printing
 

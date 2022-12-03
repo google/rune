@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-class Human(self, name: string, mother: null(Human) = null(self),
+class Human(self: Human, name: string, mother: null(Human) = null(self),
     father: null(Human) = null(self)) {
   self.name = name
   if !isnull(mother) {
