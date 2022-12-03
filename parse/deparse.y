@@ -1187,16 +1187,6 @@ accessExpression: tokenExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_CALL, $1, $3, deExpressionGetLine($1));
 }
-| KWNULL '(' callParameterList ')'
-{
-  deExpressionSetType($3, DE_EXPR_NULL);
-  $$ = $3;
-}
-| KWNOTNULL '(' callParameterList ')'
-{
-  deExpressionSetType($3, DE_EXPR_NOTNULL);
-  $$ = $3;
-}
 | accessExpression '.' IDENT
 {
   deExpression identExpr = deIdentExpressionCreate($3, $2);
@@ -1836,10 +1826,6 @@ tokenExpression: IDENT
   $$ = $2;
 }
 | tupleExpression
-| KWNOTNULL
-{
-  $$ = deExpressionCreate(DE_EXPR_NOTNULL, $1);
-}
 | typeLiteral
 | KWSECRET '(' expression ')'
 {
@@ -1869,9 +1855,19 @@ tokenExpression: IDENT
 {
   $$ = deUnaryExpressionCreate(DE_EXPR_WIDTHOF, $3, $1);
 }
+| KWNULL '(' callParameterList ')'
+{
+  deExpressionSetType($3, DE_EXPR_NULL);
+  $$ = $3;
+}
 | KWISNULL '(' expression ')'
 {
   $$ = deUnaryExpressionCreate(DE_EXPR_ISNULL, $3, $1);
+}
+| KWNOTNULL '(' callParameterList ')'
+{
+  deExpressionSetType($3, DE_EXPR_NOTNULL);
+  $$ = $3;
 }
 ;
 

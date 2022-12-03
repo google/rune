@@ -46,6 +46,21 @@ destroyed when the parent is destroyed. This is the single most important tool
 the compiler has for efficiently managing object lifetimes. For most memory
 intensive applications, most objects should be in cascade-delete relationships.
 
+### Rules for null safety
+Types returned by constructors are not null, adding some null safety without
+any type constraints.  Nullable types are created with null(<Class name>).  All
+nullable types are checked before dereferencing, which in Rune happens
+naturally as in index-out-of-bounds checks.  While this is a compiler-specific
+non-user-visible detail, the current Rune compiler uses -1 as null, rather than
+0, and null dereferencing is caught through array bounds checking.
+
+For improved safety and efficiency, nullable types should be converted to
+non-nullable with notnull(<expression>), which checks for non-null, and returns
+a non-nullable type.
+
+Exactly how generators for relations should handle null safety is a work in
+progress.
+
 ### Rules for memory safety
 
 Memory corruption is impossible in Rune, assuming relationship generators are
@@ -337,17 +352,17 @@ types.
 ### Random values
 
 ## Keywords
-
 ```
-appendcode  debug      for        isnull       relation  unittest
-arrayof     default    func       iterator     return    unref
-as          do         generate   mod          reveal    unsigned
-assert      else       generator  null         secret    use
-bool        export     if         operator     signed    var
-cascade     exportlib  import     prependcode  string    while
-case        exportrpc  importlib  print        switch    widthof
-class       extern     importrpc  println      throw     yield
-const       final      in         ref          typeof
+appendcode arrayof   as        assert   bool      cascade
+case       class     debug     default  do        else
+enum       export    exportlib extern   f32       f64
+final      for       func      generate generator if
+import     importlib importrpc in       isnull    iterator
+message    mod       notnull   null     operator  prependcode
+print      println   ref       relation return    reveal
+rpc        secret    signed    string   struct    switch
+throw      typeof    unittest  unref    unsigned  use
+var        while     widthof   yield
 ```
 
 ## Datatypes
@@ -521,13 +536,15 @@ class       foreach  import     relation     unref
 ### Operators
 
 ```
-!    !=   &=  :     <=  >>=   []  |=
-!+   %    ()  <     <>  >>>=  ^   ||
-!+=  %=    +  <<    =   @     ^=  ||=
-!-   &    +=  <<<   ==  @=    /    ~
-!-=  &&    ,  <<<=  >   @@    /=
-!<   &&=   -- <<=   >=  @@=   |
+!     !*    !*=   !+    !+=   !-    !-=   !<
+!=    %     %=    &     &&    &&=   &=    *
+*=    +     +=    -     -=    .     ...   /
+/=    <     <<    <<<   <<<=  <<=   <=    =
+==    >     >=    >>    >>=   >>>   >>>=  ?
+@     @=    @@    @@=   []    ^     ^=    |
+|=    ||    ||=   ~
 ```
+
 
 #### Precedence
 
@@ -781,7 +798,6 @@ tokenExpression ::=  IDENT
     | '[' oneOrMoreExpressions ']'
     | '(' expression ')'
     | tupleExpression
-    | "null"
     | typeLiteral
     | "secret" '(' expression ')'
     | "reveal" '(' expression ')'
@@ -790,7 +806,9 @@ tokenExpression ::=  IDENT
     | "unsigned" '(' expression ')'
     | "signed" '(' expression ')'
     | "widthof" '(' expression ')'
+    | "null" '(' expression ')'
     | "isnull" '(' expression ')'
+    | "notnull" '(' expression ')'
 typeLiteral ::=  UINTTYPE | INTTYPE | "string" | "bool" | "f32" | "f64"
 pathExpression ::=  IDENT
     | pathExpression '.' IDENT
