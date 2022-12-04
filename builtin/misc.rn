@@ -34,7 +34,7 @@ func chr(x: Int | Uint) -> string {
 
 // Emulate the Python ord builtin.
 func ord(s: string | u8) {
-  switch typeof(s) {
+  typeswitch s {
     case string {
       return s[0]
     }
@@ -50,7 +50,7 @@ func ord(s: string | u8) {
 // if statement away.  TODO: Have Rune remove unreachable code after constant
 // propagation.
 func issecret(value) -> bool {
-  switch typeof(value) {
+  typeswitch value {
     case typeof(reveal(value)) {
       return false
     }
@@ -62,7 +62,7 @@ func issecret(value) -> bool {
 
 // Determine if the value is signed or not.
 func issigned(value: Int | Uint) {
-  switch typeof(value) {
+  typeswitch value {
     case Int {
       return true
     }

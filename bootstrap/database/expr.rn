@@ -788,11 +788,11 @@ class Expr(self, type: ExprType, line: Line) {
   }
 
   // Reutrn a copy of the expression, or null if the expression is null.
-  func nullOrCopy(self: null(Expr)) -> null(Expr) {
+  func nullOrCopy(self: Expr?) -> Expr? {
     if isnull(self) {
       return self
     }
-    return notnull(self).copy()
+    return self!.copy()
   }
 
 }
@@ -812,7 +812,7 @@ unittest {
     // Type hints
     dummyBlock = Block(line)
     dummyFunction = Function(dummyBlock, FuncType.Package, Sym.new("test"), Linkage.Package, line)
-    dummyIdent = notnull(dummyFunction.firstIdent)
+    dummyIdent = dummyFunction.firstIdent!
     dummyKxpr = Expr.newIdent(dummyIdent)
   }
 
@@ -861,7 +861,7 @@ unittest unaryTest {
 unittest newIdentTest {
   block = Block(line)
   function = Function(block, FuncType.Package, Sym.new("test"), Linkage.Package, line)
-  ident = notnull(function.firstIdent)
+  ident = function.firstIdent!
   expr = Expr.newIdent(ident)
   expr.dump()
 }

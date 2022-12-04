@@ -78,7 +78,7 @@ func printReachableNodes(node: Node, var reachedNodes) {
   node.visited = true
   reachedNodes.append(node)
   for edge in node.outEdges() {
-    otherNode = notnull(edge.toNode)
+    otherNode = edge.toNode!
     if !otherNode.visited {
       printReachableNodes(otherNode, reachedNodes)
     }

@@ -16,7 +16,7 @@ use bigint
 use datatype
 
 func getDatatypeType(value) -> DatatypeType {
-  switch typeof(value) {
+  typeswitch value {
     case string {
       return DatatypeType.String
     }
@@ -56,7 +56,7 @@ class Value(self: Value, value: string | bool | Int | Uint | Bigint | Float | Sy
   self.intVal = null(Bigint)
   self.floatVal = 0.0f64
   self.symVal = null(Sym)
-  switch typeof(value) {
+  typeswitch value {
     case string {
       self.stringVal = value
     }
@@ -114,7 +114,7 @@ class Value(self: Value, value: string | bool | Int | Uint | Bigint | Float | Sy
         return v1.stringVal == v2.stringVal
       }
       case DatatypeType.Uint, DatatypeType.Int {
-        return notnull(v1.intVal) == notnull(v2.intVal)
+        return v1.intVal! == v2.intVal!
       }
       case DatatypeType.Float {
         return v1.floatVal == v2.floatVal

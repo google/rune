@@ -15,7 +15,7 @@
 t = ()
 println t
 
-switch typeof(t) {
+typeswitch t {
   case () {
     println "Empty tuple"
   }

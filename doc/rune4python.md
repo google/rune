@@ -322,7 +322,7 @@ self:
 
 ```rune
 // null on its own here is assumed to be of the same type as self.
-class Tree(self: Tree, label: string, left = null, right = null) {
+class Tree(self: Tree, label: string, left = null(Tree), right = null(Tree)) {
 	self.label = label
 	self.left = left
 	self.right = right
@@ -333,7 +333,7 @@ class Tree(self: Tree, label: string, left = null, right = null) {
 n1 = Tree("N1", Tree("L1"), Tree("L2"))
 n2 = Tree("N2", Tree("L3"), Tree("L4"))
 n3 = Tree("N3", n1, n2)
-n4 = Tree("N4", null, Tree("L5"))  // null here is assumed to be Tree
+n4 = Tree("N4", null(Tree), Tree("L5"))
 root = Tree("root", n3, n4)
 ```
 
@@ -342,13 +342,13 @@ be non-null.  To test if a variable is null, use isnull():
 
 ```rune
 if !isnull(point) {
-	println notnull(point).toString()  // Works if Point has a toString method.
+	println point!.toString()  // Works if Point has a toString method.
 }
 ```
 
 Rune creates a default .toString() method for you in debug mode (using -g flag),
-which can be called from gdb.  The notnull type cast checks that a value is not
-null null at compile time unless the compiler can prove this check is not
+which can be called from gdb.  The ! suffix checks that a value is not null
+null at compile time unless the compiler can prove this check is not
 needed.
 
 ## Printing

@@ -146,7 +146,7 @@ class Ident(self, block: Block, object: Function | Variable, sym: Sym, objLine: 
   }
 
   // Find the identifier for the block owning this identifier.
-  func owningIdent(self) -> null(Ident) {
+  func owningIdent(self) -> Ident? {
     owningBlock = self.block.owningBlock()
     if isnull(owningBlock) {
       return null(self)
@@ -156,12 +156,12 @@ class Ident(self, block: Block, object: Function | Variable, sym: Sym, objLine: 
 
   // Return a path Expr to the function.
   func createPathExpr(self) -> Expr {
-    identExpr = Expr.newIdent(notnull(self))
+    identExpr = Expr.newIdent(self!)
     owningIdent = self.owningIdent()
     if isnull(owningIdent) {
       return identExpr
     }
-    prefixExpr = Expr.newIdent(notnull(owningIdent))
+    prefixExpr = Expr.newIdent(owningIdent!)
     return Expr.newBinary(ExprType.Dot, prefixExpr, identExpr, self.line())
   }
 

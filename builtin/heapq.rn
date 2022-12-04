@@ -14,7 +14,7 @@
 
 class Heapq(self, <valueType>) {
 
-  class Element(self, heapq: typeof(Heapq(typeof(value))), <value>) {
+  class Element(self, heapq: typeof(Heapq(value)), <value>) {
     self.value = value
     heapq.pushElement(self)
 

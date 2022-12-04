@@ -92,7 +92,7 @@ func getFuncTypeName(type: FuncType) -> string {
 }
 
 // Create a new function.
-class Function(self, owningBlock: null(Block), type: FuncType, sym: Sym,
+class Function(self, owningBlock: Block?, type: FuncType, sym: Sym,
     linkage: Linkage, line: Line) {
   self.type = type
   self.sym = sym
@@ -101,7 +101,7 @@ class Function(self, owningBlock: null(Block), type: FuncType, sym: Sym,
   self.isExtern = linkage == Linkage.ExternC || linkage == Linkage.ExternRpc
   if !isnull(owningBlock) {
     owningBlock.appendFunction(self)
-    Ident(notnull(owningBlock), self, sym, line)
+    Ident(owningBlock!, self, sym, line)
   }
   subBlock = Block(line)
   // Assume it can return until we learn otherwise.  This is only an issue when
@@ -139,7 +139,7 @@ class Function(self, owningBlock: null(Block), type: FuncType, sym: Sym,
     root = getRoot()
     root.indent(text)
     dumpFuncHeader(self, text)
-    dumpParams(notnull(self.subBlock), text)
+    dumpParams(self.subBlock!, text)
     text += ") "
     if !isnull(self.typeExpr) {
       text += "-> "
@@ -166,7 +166,7 @@ class Function(self, owningBlock: null(Block), type: FuncType, sym: Sym,
     newBlock = self.subBlock.copy()
     newFunction.insertSubBlock(newBlock)
     if !isnull(self.typeExpr) {
-      newFunction.typeExpr = notnull(self.typeExpr).copy()
+      newFunction.typeExpr = self.typeExpr!.copy()
     }
     // TODO: Comment this back in when we port tclass.
     // if self.type == FuncType.Constructor {
@@ -192,8 +192,8 @@ class Function(self, owningBlock: null(Block), type: FuncType, sym: Sym,
     ident = childFunction.firstIdent
     pathExpr = ident.createPathExpr()
     text = "%s()\n" % childFunction.name()
-    block = notnull(self.subBlock)
-    line = Line(notnull(block.line.filepath), text, 0u32)
+    block = self.subBlock!
+    line = Line(block.line.filepath!, text, 0u32)
     emptyParamsExpr = Expr(ExprType.List, line)
     callExpr = Expr.newBinary(ExprType.Call, pathExpr, emptyParamsExpr, line)
     statement = Statement(block, StateType.Call, line)
@@ -205,7 +205,7 @@ class Function(self, owningBlock: null(Block), type: FuncType, sym: Sym,
   func newIterator(block: Block, name: Sym, selfName: Sym, linkage: Linkage,
       line: Line) -> Function {
     iteratorFunc = Function(block, FuncType.Iterator, name, linkage, line)
-    subBlock = notnull(iteratorFunc.subBlock)
+    subBlock = iteratorFunc.subBlock!
     Variable(subBlock, true, false, selfName, null(Expr), null(Expr), false, line)
     return iteratorFunc
   }
@@ -230,7 +230,7 @@ func insertModuleInitializationCall(moduleFunc: Function) {
   pathExpr = ident.createPathExpr()
   block = moduleFunc.subBlock
   text = "%s()\n" % moduleFunc.name()
-  line = Line(notnull(block.line.filepath), text, 0u32)
+  line = Line(block.line.filepath!, text, 0u32)
   emptyParamsExpr = Expr(ExprType.List, line)
   callExpression = Expr.newBinary(ExprType.Call, pathExpr, emptyParamsExpr, line)
   root = getRoot()
@@ -265,7 +265,7 @@ func createMainFunc() {
   typeExpr = Expr(ExprType.IntType, rootLine)
   typeExpr.width = 32u32
   mainFunc.insertTypeExpr(typeExpr)
-  rootBlock = notnull(mainFunc.subBlock)
+  rootBlock = mainFunc.subBlock!
   getRoot().insertBlock(rootBlock)
   rootFilepath.insertModuleBlock(rootBlock)
   nullExpr = null(Expr(ExprType.Add, rootLine))
@@ -285,15 +285,15 @@ createMainFunc()
 unittest {
   use statement
 
-  rootBlock = notnull(getRoot().block)
-  mainFunc = notnull(rootBlock.owningFunction)
+  rootBlock = getRoot().block!
+  mainFunc = rootBlock.owningFunction!
   rootLine = rootBlock.line
   rootFilepath = rootLine.filepath
   argcVar = rootBlock.firstVariable
   argvVar = argcVar.nextBlockVariable
   // Type hint: In these tests, the compiler does not know what exact class is
   // added in the Ident -> Expr relation.
-  expr = Expr.newIdent(notnull(argcVar.firstIdent))
+  expr = Expr.newIdent(argcVar.firstIdent!)
 
   func createEmptyFunction(owningBlock: Block, name: string) -> Function {
     return Function(owningBlock, FuncType.Plain, Sym.new(name), Linkage.Module, rootLine)
@@ -314,8 +314,8 @@ unittest prependAndAppendFunctionCallTest {
   block = Block(rootLine)
   mainCopy = mainFunc.copy(block)
   // Create an inner function.
-  topFunc = createEmptyFunction(notnull(mainCopy.subBlock), "topFunc")
-  botFunc = createEmptyFunction(notnull(mainCopy.subBlock), "botFunc")
+  topFunc = createEmptyFunction(mainCopy.subBlock!, "topFunc")
+  botFunc = createEmptyFunction(mainCopy.subBlock!, "botFunc")
   lastStatement = mainCopy.appendFunctionCall(botFunc)
   firstStatement = mainCopy.prependFunctionCall(topFunc)
   subBlock = mainCopy.subBlock
@@ -336,8 +336,8 @@ unittest newIteratorAndOperatorTest {
 
 unittest insertModuleInitializationCallTest {
   // Create an inner function.
-  function1 = createEmptyFunction(notnull(getRoot().block), "module1")
-  function2 = createEmptyFunction(notnull(getRoot().block), "module2")
+  function1 = createEmptyFunction(getRoot().block!, "module1")
+  function2 = createEmptyFunction(getRoot().block!, "module2")
   insertModuleInitializationCall(function1)
   insertModuleInitializationCall(function2)
   getRoot().block.dump()

@@ -164,7 +164,7 @@ class Statement(self, block: Block, type: StateType, line: Line) {
     self.dumpNoSubBlock(text)
     block = self.subBlock
     if !isnull(block) {
-      notnull(block).dumpToString(text)
+      block!.dumpToString(text)
     }
   }
 
@@ -179,7 +179,7 @@ class Statement(self, block: Block, type: StateType, line: Line) {
   func copyExprAndSubBlock(self, newStatement: Statement) {
     expr = self.expr
     if !isnull(expr) {
-      newExpr = notnull(expr).copy()
+      newExpr = expr!.copy()
       newStatement.insertExpr(newExpr)
     }
     subBlock = self.subBlock
@@ -215,7 +215,7 @@ class Statement(self, block: Block, type: StateType, line: Line) {
   // Append a deep copy of the statement to destStatement's block, right after
   // |destStatement|.
   func appendCopyAfterStatement(self, destStatement: Statement) -> Statement {
-    destBlock = notnull(destStatement.block)
+    destBlock = destStatement.block!
     newStatement = self.appendCopy(destBlock)
     destBlock.removeStatement(newStatement)
     destBlock.insertAfterStatement(destStatement, newStatement)

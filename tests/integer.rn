@@ -13,7 +13,7 @@
 // limitations under the License.
 
 func isSigned(value: Int | Uint) -> bool {
-  switch typeof(value) {
+  typeswitch value {
     case Int {
       return true
     }

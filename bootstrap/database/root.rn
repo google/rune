@@ -39,5 +39,5 @@ func getRoot() -> Root {
 
 // Return the root block.
 func getRootBlock() -> Block {
-  return notnull(theGlobalRoot.block)
+  return theGlobalRoot.block!
 }

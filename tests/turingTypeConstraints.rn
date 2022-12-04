@@ -17,7 +17,7 @@ func countParens(x) -> Uint {
     // Type hint.
     return 0
   }
-  switch typeof(x) {
+  typeswitch x {
     case () {
       println "x is the empty tuple: ", x
       return 1
@@ -38,7 +38,7 @@ func decParens(x) {
 }
 
 func addParens(a, b) {
-  switch typeof(a) {
+  typeswitch a {
     case () {
       // The empty tuple represents 0.
       return b
@@ -51,7 +51,7 @@ func addParens(a, b) {
 
 // Input a must have at least as many parens as b.
 func subParens(a, b) {
-  switch typeof(b) {
+  typeswitch b {
     case () {
       return a
     }
@@ -66,12 +66,12 @@ func doubleParens(x) {
 }
 
 func mulParens(a, b) {
-  switch typeof(a) {
+  typeswitch a {
     case () {
       return a
     }
-    case ((),) {
-      // ((),) represents 1.
+    case (()) {
+      // (()) represents 1.
       return b
     }
     default {
@@ -84,17 +84,17 @@ func equalsParens(a, b) -> bool {
   if false {
     return true
   }
-  switch (typeof(a), typeof(b)) {
+  typeswitch (a, b) {
     case ((), ()) {
       return true
     }
     default {
-      switch typeof(a) {
+      typeswitch a {
         case () {
           return false
         }
         default {
-          switch typeof(b) {
+          typeswitch b {
             case () {
               return false
             }

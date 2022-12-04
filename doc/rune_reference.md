@@ -55,7 +55,7 @@ non-user-visible detail, the current Rune compiler uses -1 as null, rather than
 0, and null dereferencing is caught through array bounds checking.
 
 For improved safety and efficiency, nullable types should be converted to
-non-nullable with notnull(<expression>), which checks for non-null, and returns
+non-nullable with <expression>!, which checks for non-null, and returns
 a non-nullable type.
 
 Exactly how generators for relations should handle null safety is a work in
@@ -353,16 +353,16 @@ types.
 
 ## Keywords
 ```
-appendcode arrayof   as        assert   bool      cascade
-case       class     debug     default  do        else
-enum       export    exportlib extern   f32       f64
-final      for       func      generate generator if
-import     importlib importrpc in       isnull    iterator
-message    mod       notnull   null     operator  prependcode
-print      println   ref       relation return    reveal
-rpc        secret    signed    string   struct    switch
-throw      typeof    unittest  unref    unsigned  use
-var        while     widthof   yield
+appendcode arrayof   as        assert   bool        cascade
+case       class     debug     default  do          else
+enum       export    exportlib extern   f32         f64
+final      for       func      generate generator   if
+import     importlib importrpc in       isnull      iterator
+message    mod       null      operator prependcode print'
+println    ref       relation  return   reveal      rpc
+secret     signed    string    struct   switch      throw
+typeof     unittest  unref     unsigned use         var
+while      widthof   yield
 ```
 
 ## Datatypes

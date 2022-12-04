@@ -19,7 +19,7 @@ enum ValueType {
 }
 
 func getValueType(value) {
-  switch typeof(value) {
+  typeswitch value {
     case string {
       return ValueType.String
     }
@@ -37,7 +37,7 @@ class Value(self, value: string | bool | i64) {
   self.stringVal = ""
   self.boolVal = false
   self.intVal = 0i64
-  switch typeof(value) {
+  typeswitch value {
     case string {
       self.stringVal = value
     }
@@ -50,7 +50,7 @@ class Value(self, value: string | bool | i64) {
   }
 
   func toString(self) -> string {
-    switch self.type {
+    typeswitch self.type {
       case ValueType.String {
         return self.stringVal
       }

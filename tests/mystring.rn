@@ -13,7 +13,7 @@
 // limitations under the License.
 
 class MyString(self, value) {
-  switch (typeof(value)) {
+  typeswitch value {
     case string {
       self.value: string = value
     }

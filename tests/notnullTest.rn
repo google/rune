@@ -18,18 +18,18 @@ class Foo(self, name: string) {
 
 foo = null(Foo)
 assert isnull(foo)
-switch typeof(foo) {
+typeswitch foo {
   case Foo {
     println "Should not match Foo"
   }
-  case null(Foo) {
+  case Foo? {
     foo = Foo("test")  // Nullable variables can hold non-null values.
-    switch typeof(notnull(foo)) {
+    typeswitch foo! {
       case Foo {
         println "Passed"
       }
-      case null(Foo) {
-        println "Should not match null(Foo)"
+      case Foo? {
+        println "Should not match Foo?"
       }
     }
   }

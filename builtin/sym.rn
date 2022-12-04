@@ -21,7 +21,7 @@ class Symbin(self, hash: u64) {
   self.hash = hash
   theSymbolTable.insertSymbin(self)
 
-  func findSym(self, name: string) -> null(Sym) {
+  func findSym(self, name: string) -> Sym? {
     for sym in self.syms() {
       if sym.name == name {
         return sym
@@ -46,9 +46,9 @@ class Sym(self, symbin: Symbin, name: string) {
     }
     sym = symbin.findSym(name)
     if !isnull(sym) {
-      return notnull(sym)
+      return sym!
     }
-    return Sym(notnull(symbin), name)
+    return Sym(symbin!, name)
   }
 }
 

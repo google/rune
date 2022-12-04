@@ -13,7 +13,7 @@
 // limitations under the License.
 
 iterator range(first, second = false, third = false) {
-  switch typeof(second) {
+  typeswitch second {
     case bool {
       // This is a one-parameter range, eg range(10).
       for i = <first>0, i < first, i += <first>1 {
@@ -21,7 +21,7 @@ iterator range(first, second = false, third = false) {
       }
     }
     default {
-      switch typeof(third) {
+      typeswitch third {
         case bool {
           // This is a two-parameter range, eg range(1, 11).
           for i = first, i < second, i += <first>1 {

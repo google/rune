@@ -2662,19 +2662,27 @@ static void bindCaseStatements(deBlock scopeBlock, deStatement switchStatement, 
   deCurrentStatement = savedStatement;
 }
 
-// Bind a switch statement.  If the switch expression is not a type, bind
-// all cases and confirm the expressions have the same type.  If it is a type,
-// only bind the first matching type expression.
+// Bind a switch statement.  Bind all cases and confirm the expressions have
+// the same type.
 static void bindSwitchStatement(deBlock scopeBlock, deStatement switchStatement) {
   deExpression switchExpression = deStatementGetExpression(switchStatement);
   bindExpression(scopeBlock, switchExpression);
   deDatatype datatype = deExpressionGetDatatype(switchExpression);
   if (deExpressionIsType(switchExpression)) {
-    bindFirstMatchingCaseTypeStatement(scopeBlock, switchStatement, datatype);
-  } else {
-    bindCaseStatements(scopeBlock, switchStatement, datatype);
+    deError(deExpressionGetLine(switchExpression),
+        "Cannot switch on a type.  Did you mean typeswitch?");
   }
+  bindCaseStatements(scopeBlock, switchStatement, datatype);
 }
+
+// Only bind the first matching type expression.
+static void bindTypeswitchStatement(deBlock scopeBlock, deStatement switchStatement) {
+  deExpression switchExpression = deStatementGetExpression(switchStatement);
+  bindExpression(scopeBlock, switchExpression);
+  deDatatype datatype = deExpressionGetDatatype(switchExpression);
+  bindFirstMatchingCaseTypeStatement(scopeBlock, switchStatement, datatype);
+}
+
 // Bind the statement.
 static void bindStatement(deBlock scopeBlock, deStatement statement) {
   deStatement savedStatement = deCurrentStatement;
@@ -2682,6 +2690,11 @@ static void bindStatement(deBlock scopeBlock, deStatement statement) {
   deStatementType statementType = deStatementGetType(statement);
   if (statementType == DE_STATEMENT_SWITCH) {
     bindSwitchStatement(scopeBlock, statement);
+    deCurrentStatement = savedStatement;
+    return;
+  }
+  if (statementType == DE_STATEMENT_TYPESWITCH) {
+    bindTypeswitchStatement(scopeBlock, statement);
     deCurrentStatement = savedStatement;
     return;
   }
@@ -2889,6 +2902,7 @@ static void updateReachability(deStatement statement, bool* canContinue, bool* c
       }
       break;
     case DE_STATEMENT_SWITCH:
+    case DE_STATEMENT_TYPESWITCH:
       *canContinue &= subBlockCanContinue;
       break;
     case DE_STATEMENT_DO:

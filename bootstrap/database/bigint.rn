@@ -33,7 +33,7 @@ kMaxBigintWidth = 0x1000000u32
 // to say if issecret(foo) { ... which can cause timing leak due to aggressive
 // speculative execution.
 func isSecret(value) -> bool {
-  switch typeof(value) {
+  typeswitch value {
     case typeof(reveal(value)) {
       return false
     }
@@ -45,7 +45,7 @@ func isSecret(value) -> bool {
 
 // Determine if the value is signed or not.
 func isSigned(value: Int | Uint) {
-  switch typeof(value) {
+  typeswitch value {
     case Int {
       return true
     }
@@ -63,7 +63,7 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   self.width = 0u32
   self.isSigned = false
   self.isSecret = false
-  switch typeof(value) {
+  typeswitch value {
     case Int | Uint {
       if widthof(value) > kMaxBigintWidth {
         throw "Integer width too large.  Pass in BigintArray instead."

@@ -20,7 +20,7 @@ use datatype
 use expr
 
 class Variable(self, block: Block, isParam: bool, isConst: bool, sym: Sym,
-    initializer: null(Expr), typeExpr: null(Expr), generated: bool, line: Line) {
+    initializer: Expr?, typeExpr: Expr?, generated: bool, line: Line) {
   self.isParam = isParam  // Otherwise, it is a local variable.
   self.isConst = isConst
   self.sym = sym

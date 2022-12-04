@@ -28,8 +28,8 @@ func hashString(value: string) -> u64 {
 
 // Hash an integer of any size.
 func hashInteger(value: Uint | Int) -> u64 {
-  switch typeof(value) {
-    case (u1 ... u64) | (i1 ... i64) {
+  typeswitch value {
+    case u1 ... u64 | i1 ... i64 {
       return hashValues(0u64, <u64>value)
     }
     default {
@@ -46,7 +46,7 @@ func hashInteger(value: Uint | Int) -> u64 {
 
 func hashValue(value) -> u64 {
   // Only one of these cases will be instatiated per func instantiation.
-  switch typeof(value) {
+  typeswitch value {
     case String {
       return hashString(value)
     }
@@ -171,7 +171,7 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
       for i in range(self.$labelB$B_Table.length()) {
         entry = self.$labelB$B_Table[i]
         while !isnull(entry) {
-          yield notnull(entry)
+          yield entry!
           entry = entry.nextHashed$A$labelB$B
         }
       }
@@ -182,7 +182,7 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
         entry = self.$labelB$B_Table[i]
         while !isnull(entry) {
           nextEntry = entry.nextHashed$A$labelB$B
-          yield notnull(entry)
+          yield entry!
           entry = nextEntry
         }
       }

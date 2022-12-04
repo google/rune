@@ -96,7 +96,7 @@ class Block(self, line: Line) {
   func copy(self) -> Block {
     if false {
       // Type hint for recursion.
-      return notnull(self)
+      return self!
     }
     newBlock = Block(self.line)
     for statement in self.statements() {
@@ -118,7 +118,7 @@ class Block(self, line: Line) {
     }
   }
 
-  func owningBlock(self) -> null(Block) {
+  func owningBlock(self) -> Block? {
     if !isnull(self.owningFunction) {
       return self.owningFunction.block
     } else if !isnull(self.owningStatement) {
@@ -158,7 +158,7 @@ unittest {
 
   rootBlock = getRoot().block
   rootLine = rootBlock.line
-  rootFilepath = notnull(rootLine.filepath)
+  rootFilepath = rootLine.filepath!
 
   func createEmptyBlock() -> Block {
     line = Line(rootFilepath, "Create empty block", 0u32)
@@ -175,7 +175,7 @@ unittest {
     return block
   }
 
-  func createPrintlnFunction(owningBlock: null(Block), name: string, text: string) -> Function {
+  func createPrintlnFunction(owningBlock: Block?, name: string, text: string) -> Function {
     block = createPrintlnBlock(text)
     function = Function(owningBlock, FuncType.Plain, Sym.new(name), Linkage.Module, rootLine)
     function.insertSubBlock(block)
@@ -199,7 +199,7 @@ unittest dumpBlockTest {
 unittest copyStatementsAfterStatementTest {
   block1 = createPrintlnBlock("Second copied line")
   block2 = createPrintlnBlock("First copied line")
-  destStatement = notnull(block2.firstStatement)
+  destStatement = block2.firstStatement!
   block1.copyStatementsAfterStatement(destStatement)
   assert countBlockStatements(block1) == 1
   assert countBlockStatements(block2) == 2
@@ -209,7 +209,7 @@ unittest copyStatementsAfterStatementTest {
 unittest moveStatementsAfterStatementTest {
   block1 = createPrintlnBlock("Second moved line")
   block2 = createPrintlnBlock("First stationary line")
-  destStatement = notnull(block2.firstStatement)
+  destStatement = block2.firstStatement!
   block1.moveStatementsAfterStatement(destStatement)
   assert countBlockStatements(block1) == 0
   assert countBlockStatements(block2) == 2

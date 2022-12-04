@@ -23,7 +23,7 @@ class Integer(self, value) {
 }
 
 func getValueType(value) {
-  switch typeof(value) {
+  typeswitch value {
     case String {
       return ValueType.String
     }

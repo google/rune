@@ -30,6 +30,7 @@ char* deStatementTypeGetKeyword(deStatementType type) {
     case DE_STATEMENT_THROW: return "throw";
     case DE_STATEMENT_RETURN: return "return";
     case DE_STATEMENT_SWITCH: return "switch";
+    case DE_STATEMENT_TYPESWITCH: return "typeswitch";
     case DE_STATEMENT_CASE: return "case";
     case DE_STATEMENT_DEFAULT: return "default";
     case DE_STATEMENT_RELATION: return "relation";

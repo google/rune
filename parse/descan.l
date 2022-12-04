@@ -320,7 +320,6 @@ static void noDebug(char *foo, ...) {}
 <INITIAL>"iterator" { delval.lineVal = deCurrentLine; myDebug("KWITERATOR\n"); return KWITERATOR; }
 <INITIAL>"mod"    { delval.lineVal = deCurrentLine; myDebug("KWMOD\n"); return KWMOD; }
 <INITIAL>"null"    { delval.lineVal = deCurrentLine; myDebug("KWNULL\n"); return KWNULL; }
-<INITIAL>"notnull" { delval.lineVal = deCurrentLine; myDebug("KWNOTNULL\n"); return KWNOTNULL; }
 <INITIAL>"operator" { delval.lineVal = deCurrentLine; myDebug("KWOPERATOR\n"); return KWOPERATOR; }
 <INITIAL>"prependcode" { delval.lineVal = deCurrentLine; myDebug("KWPREPENDCODE\n"); return KWPREPENDCODE; }
 <INITIAL>"print"   { delval.lineVal = deCurrentLine; myDebug("KWPRINT\n"); return KWPRINT; }
@@ -334,6 +333,7 @@ static void noDebug(char *foo, ...) {}
 <INITIAL>"string"  { delval.lineVal = deCurrentLine; myDebug("KWSTRING\n"); return KWSTRING; }
 <INITIAL>("struct"|"message")  { delval.lineVal = deCurrentLine; myDebug("KWSTRUCT\n"); return KWSTRUCT; }
 <INITIAL>"switch"  { delval.lineVal = deCurrentLine; myDebug("KWSWITCH\n"); return KWSWITCH; }
+<INITIAL>"typeswitch"  { delval.lineVal = deCurrentLine; myDebug("KWTYPESWITCH\n"); return KWTYPESWITCH; }
 <INITIAL>"throw"   { delval.lineVal = deCurrentLine; myDebug("KWTHROW\n"); return KWTHROW; }
 <INITIAL>"true"                 { delval.boolVal = true; myDebug("true\n"); return BOOL; }
 <INITIAL>"typeof"  { delval.lineVal = deCurrentLine; myDebug("KWTYPEOF\n"); return KWTYPEOF; }

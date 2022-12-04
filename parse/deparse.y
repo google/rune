@@ -155,6 +155,7 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %type <exprTypeVal> assignmentOp
 %type <exprTypeVal> operator
 %type <exprVal> accessExpression
+%type <exprVal> callExpression
 %type <exprVal> addExpression
 %type <exprVal> andExpression
 %type <exprVal> assignmentExpression
@@ -179,6 +180,11 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %type <exprVal> optInitializer
 %type <exprVal> optLabel
 %type <exprVal> optTypeExpression
+%type <exprVal> typeExpression
+%type <exprVal> typeRangeExpression
+%type <exprVal> compoundTypeExpression
+%type <exprVal> typeRangeExpressionList
+%type <exprVal> basicTypeExpression
 %type <exprVal> orExpression
 %type <exprVal> pathExpression
 %type <exprVal> pathExpressionWithAlias
@@ -188,6 +194,7 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %type <exprVal> selectExpression
 %type <exprVal> shiftExpression
 %type <exprVal> switchCaseHeaders
+%type <exprVal> typeswitchCaseHeaders
 %type <exprVal> tokenExpression
 %type <exprVal> tupleExpression
 %type <exprVal> twoOrMoreExpressions
@@ -248,7 +255,6 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %token <lineVal> KWMULTRUNCEQUALS
 %token <lineVal> KWNOTEQUAL
 %token <lineVal> KWNULL
-%token <lineVal> KWNOTNULL
 %token <lineVal> KWOPERATOR
 %token <lineVal> KWOR
 %token <lineVal> KWOREQUALS
@@ -277,6 +283,7 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %token <lineVal> KWSWITCH
 %token <lineVal> KWTHROW
 %token <lineVal> KWTYPEOF
+%token <lineVal> KWTYPESWITCH
 %token <lineVal> KWUNITTEST
 %token <lineVal> KWUNREF
 %token <lineVal> KWUNSIGNED
@@ -358,6 +365,7 @@ statement: appendCode
 | returnStatement
 | struct
 | switchStatement
+| typeswitchStatement
 | throwStatement
 | unitTestStatement
 | unrefStatement
@@ -966,20 +974,45 @@ switchStatement: switchStatementHeader expression switchBlock
 }
 ;
 
+typeswitchStatement: typeswitchStatementHeader expression typeswitchBlock
+{
+  finishBlockStatement($2);
+}
+;
+
 switchStatementHeader: KWSWITCH
 {
   createBlockStatement(DE_STATEMENT_SWITCH);
 }
 ;
 
+typeswitchStatementHeader: KWTYPESWITCH
+{
+  createBlockStatement(DE_STATEMENT_TYPESWITCH);
+}
+;
+
 switchBlock: '{' newlines switchCases optDefaultCase '}' optNewlines
+;
+
+typeswitchBlock: '{' newlines typeswitchCases optDefaultCase '}' optNewlines
 ;
 
 switchCases:  // Empty
 | switchCases switchCase
 ;
 
+typeswitchCases:  // Empty
+| typeswitchCases typeswitchCase
+;
+
 switchCase: KWCASE switchCaseHeaders block
+{
+  finishBlockStatement(deExpressionNull);
+}
+;
+
+typeswitchCase: KWCASE typeswitchCaseHeaders block
 {
   finishBlockStatement(deExpressionNull);
 }
@@ -993,6 +1026,20 @@ switchCaseHeaders: expression
   deExpressionAppendExpression($$, $1);
 }
 | switchCaseHeaders ',' optNewlines expression
+{
+  deExpressionAppendExpression($1, $4);
+  $$ = $1;
+}
+;
+
+typeswitchCaseHeaders: typeExpression
+{
+  deStatement statement = createBlockStatement(DE_STATEMENT_CASE);
+  $$ = deExpressionCreate(DE_EXPR_LIST, deExpressionGetLine($1));
+  deStatementInsertExpression(statement, $$);
+  deExpressionAppendExpression($$, $1);
+}
+| typeswitchCaseHeaders ',' optNewlines typeExpression
 {
   deExpressionAppendExpression($1, $4);
   $$ = $1;
@@ -1166,9 +1213,68 @@ optTypeExpression: // Empty
 {
   $$ = deExpressionNull;
 }
-| ':' expression
+| ':' typeExpression
 {
   $$ = $2;
+}
+;
+
+typeExpression: typeRangeExpression
+| typeExpression '|' typeRangeExpression
+{
+  $$ = deBinaryExpressionCreate(DE_EXPR_BITOR, $1, $3, $2);
+}
+;
+
+typeRangeExpression: compoundTypeExpression
+| typeLiteral KWDOTDOTDOT typeLiteral
+{
+  $$ = deBinaryExpressionCreate(DE_EXPR_DOTDOTDOT, $1, $3, $2);
+}
+;
+
+compoundTypeExpression: basicTypeExpression
+| '[' typeRangeExpressionList ']'
+{
+  // Modify the type from DE_EXPR_LIST to DE_EXPR_ARRAY.
+  deExpressionSetType($2, DE_EXPR_ARRAY);
+  $$ = $2;
+}
+| '(' typeRangeExpressionList ')'
+{
+  // Modify the type from DE_EXPR_LIST to DE_EXPR_TUPLE.
+  deExpressionSetType($2, DE_EXPR_TUPLE);
+  $$ = $2;
+}
+| '(' ')'
+{
+  $$ = deExpressionCreate(DE_EXPR_TUPLE, $1);
+}
+;
+
+typeRangeExpressionList: typeRangeExpression
+{
+  $$ = deUnaryExpressionCreate(DE_EXPR_LIST, $1, deExpressionGetLine($1));
+}
+| typeRangeExpressionList ',' typeRangeExpression
+{
+  deExpressionAppendExpression($1, $3);
+}
+;
+
+basicTypeExpression: pathExpression
+| KWTYPEOF '(' expression ')'
+{
+  $$ = deUnaryExpressionCreate(DE_EXPR_TYPEOF, $3, $1);
+}
+| typeLiteral
+| pathExpression '?'
+{
+  $$ = deUnaryExpressionCreate(DE_EXPR_NULL, $1, $2);
+}
+| KWSECRET '(' typeRangeExpression ')'
+{
+  $$ = deUnaryExpressionCreate(DE_EXPR_SECRET, $3, $1);
 }
 ;
 
@@ -1176,17 +1282,14 @@ optFuncTypeExpression: // Empty
 {
   $$ = deExpressionNull;
 }
-| KWARROW expression
+| KWARROW typeExpression
 {
   $$ = $2;
 }
 ;
 
 accessExpression: tokenExpression
-| accessExpression '(' callParameterList ')'
-{
-  $$ = deBinaryExpressionCreate(DE_EXPR_CALL, $1, $3, deExpressionGetLine($1));
-}
+| callExpression
 | accessExpression '.' IDENT
 {
   deExpression identExpr = deIdentExpressionCreate($3, $2);
@@ -1200,6 +1303,16 @@ accessExpression: tokenExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_SLICE, $1, $3, $2);
   deExpressionAppendExpression($$, $5);
+}
+| postfixExpression '!'
+{
+  $$ = deUnaryExpressionCreate(DE_EXPR_NOTNULL, $1, $2);
+}
+;
+
+callExpression: accessExpression '(' callParameterList ')'
+{
+  $$ = deBinaryExpressionCreate(DE_EXPR_CALL, $1, $3, deExpressionGetLine($1));
 }
 ;
 
@@ -1752,6 +1865,7 @@ mulExpression: prefixExpression
   $$ = deBinaryExpressionCreate(DE_EXPR_MULTRUNC, $1, $3, $2);
 }
 ;
+;
 
 prefixExpression: exponentiateExpression
 | '!' prefixExpression
@@ -1864,12 +1978,6 @@ tokenExpression: IDENT
 {
   $$ = deUnaryExpressionCreate(DE_EXPR_ISNULL, $3, $1);
 }
-| KWNOTNULL '(' callParameterList ')'
-{
-  deExpressionSetType($3, DE_EXPR_NOTNULL);
-  $$ = $3;
-}
-;
 
 typeLiteral: UINTTYPE
 {
