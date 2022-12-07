@@ -119,11 +119,11 @@ Relation statements are similar to columns in SQL tables.  A table with a Mother
 and Father column has two many-to-one relations in a database.
 
 Relation statements give the Rune compiler critical hints for memory
-optimization.  Objects which the compiler can prove are always in cascade-delete
-relationships do not need to be reference counted.  The relation statements also
-inform the compiler to update Node's destructor to recursively destroy children.
-**Rune programmers never write destructors**, removing this footgun from the
-language.
+optimization.  Objects which the compiler can prove are always in
+cascade-delete relationships do not need to be reference counted.  The relation
+statements also inform the compiler to update Human's destructor to recursively
+destroy children.  **Rune programmers never write destructors**, removing this
+footgun from the language.
 
 To understand why Rune's generated SoA code is so efficient, consider the arrays
 of properties created for the Human example above:
@@ -179,8 +179,7 @@ $ sudo apt-get install bison flex libgmp-dev clang clang-14
 ```
 
 Installing Datadraw requires cloning [the source from
-github](https://github.com/waywardgeek/datadraw), or getting it from
-//third\_party/datadraw.
+github](https://github.com/waywardgeek/datadraw).
 
 ```sh
 $ git clone https://github.com/waywardgeek/datadraw.git

@@ -684,16 +684,19 @@ no need for a break statement.
 
 ## Switching on types
 
-In Rune, only operators can be overloaded, not functions.  This leads to
-situations where we wish we had different functionality in a function based on
-the types of arguments passed.  In Python we can use `isinstance(object, type)` or [`functools.singledispatch`](https://docs.python.org/3/library/functools.html#functools.singledispatch) to test the object type and change a function’s behavior.
+Like Python, in Rune, only operators can be overloaded, not functions.  This
+leads to situations where we wish we had different functionality in a function
+based on the types of arguments passed.  In Python we can use
+`isinstance(object, type)` or
+[`functools.singledispatch`](https://docs.python.org/3/library/functools.html#functools.singledispatch)
+to test the object type and change a function’s behavior.
 
 Similarly, in Rune, we can switch on the type of an object, and only the
 matching case is instantiated in the compiled code:
 
 ```rune
 class MyString(self, value) {
-	switch (typeof(value)) {
+	typeswitch value {
 		case string {
 			self.value: string = value
 		}
@@ -714,14 +717,22 @@ The compiler figures out the type of value at compile time and only instantiates
 the matching case.  Types are first-class citizens in Rune.  You can pass them
 to functions, assign them to variables, and use them in switch statements.
 
-## Import statements
+## Import and use statements
 
 The basic Python module import statement is supported, but not `from foo import
 *`. Rune also supports `import as`, e.g. `import numpy as np`.
 
 To import modules in the same package (directory), use `use foo` syntax, which
-means you can access that module's global variables and functions, even when not
-marked "export".
+means you can access that module's functions, even when not marked "export",
+and you don't have to use a module prefix.
+
+```rune
+import math as m  // Import Rune's math package.
+use hashing  // Only works if hashing.rn is in the same directory.
+
+println "hashValue(123) = ", hashValue(123)
+println "math.sqrt(123.0f64) = ", m.sqrt(123.0f64)
+```
 
 ## Linking with C functions
 

@@ -1,4 +1,5 @@
 ## Short term
+Enhance gdb pretty printer so that we don't have to generate show methods.
 Figure out when relationship generators should run.  Right now it is in the order statements are bound so that module-level variables can be passed into the generators, but we assume all generators are run before binding a constructor, which is currently false.  Figure out the right thing and do it.
 Use concrete type constraints in binding.  This can help eleminate problems
   in binding recursive functions, and also non-template classes.

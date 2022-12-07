@@ -55,8 +55,8 @@ non-user-visible detail, the current Rune compiler uses -1 as null, rather than
 0, and null dereferencing is caught through array bounds checking.
 
 For improved safety and efficiency, nullable types should be converted to
-non-nullable with <expression>!, which checks for non-null, and returns
-a non-nullable type.
+non-nullable with <expression>!, which checks for non-null at runtime, and
+returns a non-nullable type.
 
 Exactly how generators for relations should handle null safety is a work in
 progress.

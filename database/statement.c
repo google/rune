@@ -86,6 +86,7 @@ void deDumpStatement(deStatement statement) {
 deStatement deStatementCreate(deBlock block, deStatementType type, deLine line) {
   deStatement statement = deStatementAlloc();
   deStatementSetType(statement, type);
+  utAssert(line != deLineNull);
   deStatementSetLine(statement, line);
   deStatementSetGenerated(statement, deGenerating || deInIterator);
   deBlockAppendStatement(block, statement);

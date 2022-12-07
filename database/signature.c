@@ -185,14 +185,28 @@ bool deSignatureIsMethod(deSignature signature) {
   return block != deRootGetBlock(deTheRoot);
 }
 
-// Change any parameter types other than the self variable from TCLASS to the
-// return type of the signature.  Return true if we change the signature.
+// Determine if the signature is a constructor.
+bool deSignatureIsConstructor(deSignature signature) {
+  deFunction function = deSignatureGetFunction(signature);
+  if (function == deFunctionNull) {
+    return false;
+  }
+  return deFunctionGetType(function) == DE_FUNC_CONSTRUCTOR;
+}
+
+ // Change any parameter types other than the self variable from TCLASS to the
+ // return type of the signature.  Return true if we change the signature.
 static bool resolveSignatureParamTypes(deSignature signature) {
   deDatatype classType = deSignatureGetReturnType(signature);
   deTclass tclass = deClassGetTclass(deDatatypeGetClass(classType));
   deDatatype nullType = deNullDatatypeCreate(tclass);
-  bool firstTime = true;
+  deParamspec selfParam = deSignatureGetiParamspec(signature, 0);
   bool changedType = false;
+  if (deParamspecGetDatatype(selfParam) != classType) {
+    deParamspecSetDatatype(selfParam, classType);
+    changedType = true;
+  }
+  bool firstTime = true;
   deParamspec paramspec;
   deForeachSignatureParamspec(signature, paramspec) {
     // Skip the self variable, which we leave as the tclass type.

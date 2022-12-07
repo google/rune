@@ -46,6 +46,14 @@ void deDumpIdent(deIdent ident) {
   deStringDestroy(string);
 }
 
+// Copy the identifier to all classes of the tclass.
+static void copyIdentToClasses(deTclass tclass, deIdent ident) {
+  deClass theClass;
+  deForeachTclassClass(tclass, theClass) {
+    deCopyIdent(ident, deClassGetSubBlock(theClass));
+  } deEndTclassClass;
+}
+
 // Create a new identifier object that lies in the block's hash table of
 // identifiers.
 deIdent deIdentCreate(deBlock block, deIdentType type, utSym name, deLine line) {
@@ -55,8 +63,10 @@ deIdent deIdentCreate(deBlock block, deIdentType type, utSym name, deLine line) 
     if (oldIdent != deIdentNull) {
       // Undefined identifiers can be created during binding.  If this has not
       // a function or variable, update it.
-      if (deIdentGetFunction(oldIdent) == deFunctionNull &&
-          deIdentGetVariable(oldIdent) == deVariableNull) {
+      if (deIdentGetType(oldIdent) == DE_IDENT_UNDEFINED) {
+        if (type != DE_IDENT_UNDEFINED) {
+          deQueueEventBlockedStateBindings(deIdentGetUndefinedEvent(oldIdent));
+        }
         deIdentSetType(oldIdent, type);
         return oldIdent;
       }
@@ -69,6 +79,14 @@ deIdent deIdentCreate(deBlock block, deIdentType type, utSym name, deLine line) 
   deIdentSetSym(ident, name);
   if (block != deBlockNull) {
     deBlockAppendIdent(block, ident);
+    if (deUseNewBinder && deIdentGetType(ident) == DE_IDENT_FUNCTION &&
+        deBlockGetType(block) == DE_BLOCK_FUNCTION) {
+      // The new binder prefers importing function identifiers as soon as available.
+      deFunction function = deBlockGetOwningFunction(block);
+      if (deFunctionGetType(function) == DE_FUNC_CONSTRUCTOR) {
+        copyIdentToClasses(deFunctionGetTclass(function), ident);
+      }
+    }
   }
   return ident;
 }

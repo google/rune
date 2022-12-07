@@ -418,7 +418,7 @@ class Paramspec
 
 // This class tracks statement binding.  See the header comment in src/bind2.c
 // for details.
-class BindState
+class StateBinding
   bool instantiated
 
 // This class tracks binding of an expression in a signature.  The same
@@ -430,12 +430,11 @@ class Binding
   bool autocast
   bool const
   bool instantiating
-  bool nonNull  // Set for left of dot expressions or array access.
   String altString
   Datatype datatype
   Signature callSignature  // Only set on function call expressions.
 
-// When an identifier is fully bound, this event can unblock BindState objects
+// When an identifier is fully bound, this event can unblock StateBinding objects
 // that are blocked on this event.  These events take certain forms:  A
 // signature has been bound, a module's global variable has been assigned a
 // non-null type, or a local variable in a class or function as been bound to
@@ -472,18 +471,18 @@ class MemberRel
 
 relationship Root Block cascade
 // We bind signatures breadth-first.
-relationship Root:Binding BindState:Binding doubly_linked
+relationship Root:Binding StateBinding:Binding doubly_linked
 relationship Root Event doubly_linked
-relationship Event BindState doubly_linked
-relationship Signature BindState doubly_linked mandatory
+relationship Event StateBinding doubly_linked
+relationship Signature StateBinding doubly_linked mandatory
 relationship Signature:Return Event:Return cascade
 relationship Binding:Variable Event:Variable cascade
 relationship Ident:Undefined Event:Undefined cascade
 relationship Signature Binding doubly_linked mandatory
-relationship Signature:Binding BindState:Binding doubly_linked
-relationship BindState Binding doubly_linked cascade
-relationship BindState:Root Binding:Root
-relationship Statement BindState doubly_linked mandatory
+relationship Signature:Binding StateBinding:Binding doubly_linked
+relationship StateBinding Binding doubly_linked
+relationship StateBinding:Root Binding:Root cascade
+relationship Statement StateBinding doubly_linked mandatory
 relationship Expression Binding doubly_linked cascade
 relationship Binding Binding doubly_linked cascade
 relationship Ident Binding doubly_linked cascade

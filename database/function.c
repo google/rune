@@ -16,6 +16,10 @@
 
 // Return the name of the function.
 char *deFunctionGetName(deFunction function) {
+  deBlock rootBlock = deRootGetBlock(deTheRoot);
+  if (deFunctionGetSubBlock(function) == rootBlock) {
+    return "main";
+  }
   return deIdentGetName(deFunctionGetFirstIdent(function));
 }
 

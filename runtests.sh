@@ -17,7 +17,26 @@
 numPassed="0"
 numFailed="0"
 
-rm -f tests/*.result tests/*.ll
+rm -f tests/*.result tests/*.ll newtests/*.result newtests/*.ll
+
+for outFile in newtests/*.stdout; do
+  test=$(echo "$outFile" | sed 's/stdout$/rn/')
+  resFile=$(echo "$outFile" | sed 's/stdout$/result/')
+  inputFile=$(echo "$outFile" | sed 's/stdout$/stdin/')
+  executable=$(echo "$test" | sed 's/\.rn$//')
+  if [ -e "$inputFile" ]; then
+    ./rune -X -b -g "$test" && "./$executable"  > "$resFile" < "$inputFile"
+  else
+    ./rune -X -b -g "$test" && "./$executable"  > "$resFile"
+  fi
+  if cmp -s "$outFile" "$resFile"; then
+    echo "$test passed"
+    numPassed=$((numPassed + 1))
+  else
+    echo "$test failed *****************************************"
+    numFailed=$((numFailed + 1))
+  fi
+done
 
 for outFile in tests/*.stdout crypto_class/*.stdout; do
   test=$(echo "$outFile" | sed 's/stdout$/rn/')
