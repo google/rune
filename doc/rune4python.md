@@ -742,7 +742,12 @@ If you need to call a C/C++ function, use the extern "C" declaration:
 extern "C" putchar(c: u8)
 ```
 
-Currently, you can pass in or receive back small integers (<= u64).
+You can use ordinary types, and Rune will take care of the integration
+```rune
+extern "C" func readln(maxLen: u64 = 0u64) -> string
+```
+
+**Currently**, if you are passing of receiving integers there is a limitation, you can only use small integers (`<= u64`).
 
 ## Operators
 
