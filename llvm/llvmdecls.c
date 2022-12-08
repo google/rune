@@ -337,6 +337,7 @@ static void declareRuntimeFunctions(void) {
       "declare dso_local i%s @runtime_stringRfind(%%struct.runtime_array*, %%struct.runtime_array*, i%s)", llSize, llSize));
   createFuncDecl("runtime_throwExceptionCstr", "declare dso_local void @runtime_throwExceptionCstr(i8*, ...) noreturn");
   createFuncDecl("runtime_throwException", "declare dso_local void @runtime_throwException(%struct.runtime_array*, ...) noreturn");
+  createFuncDecl("runtime_throwOverflow", "declare dso_local void @runtime_throwOverflow() noreturn");
   createFuncDecl("runtime_vsprintf", "declare dso_local void @runtime_vsprintf(%struct.runtime_array*, %struct.runtime_array*, %struct.__va_list_tag*)");
   createFuncDecl("runtime_sprintf", "declare dso_local void @runtime_sprintf(%struct.runtime_array*, %struct.runtime_array*, ...)");
   createFuncDecl("runtime_makeEmptyArray",

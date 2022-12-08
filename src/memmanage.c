@@ -186,7 +186,7 @@ static void generateRefAndDerefString(deClass theClass) {
       "\n"
       "  func %1$s_unref(object) {\n"
       "    if !isnull(object) && %1$s_nextFree[<u%2$u>object] != -1u%2$u {\n"
-      "      %1$s_nextFree[<u%2$u>object] -= 1u%2$u\n"
+      "      %1$s_nextFree[<u%2$u>object] !-= 1u%2$u\n"
       "      if %1$s_nextFree[<u%2$u>object] == 0u%2$u {\n"
       "        object.destroy()\n"
       "      }\n"

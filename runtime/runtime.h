@@ -146,6 +146,7 @@ void runtime_printf(const char *format, ...);
 void runtime_vsprintf(runtime_array *array, const runtime_array *format, va_list ap);
 void runtime_throwException(const runtime_array *format, ...);
 void runtime_throwExceptionCstr(const char *format, ...);
+void runtime_throwOverflow();
 void runtime_panic(const runtime_array *format, ...);
 void runtime_nativeIntToString(runtime_array *string, uint64_t value, uint32_t base, bool isSigned);
 void runtime_bigintToString(runtime_array *string, runtime_array *bigint, uint32_t base);

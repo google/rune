@@ -180,6 +180,12 @@ void runtime_throwExceptionCstr(const char *format, ...) {
   exitOrLongjmp();
 }
 
+// Throw an overflow exception.
+void runtime_throwOverflow(void) {
+  runtime_putsCstr("Exception: overflow\n");
+  exitOrLongjmp();
+}
+
 // Print an error message and exit.
 void runtime_panic(const runtime_array *format, ...) {
   va_list ap;

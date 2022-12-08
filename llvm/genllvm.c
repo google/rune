@@ -929,16 +929,16 @@ static char *findExpressionFunction(deExpression expression) {
   }
   switch (deExpressionGetType(expression)) {
     case DE_EXPR_ADD: return "runtime_bigintAdd";
-    case DE_EXPR_ADDTRUNC: return "runtime_bigintAddTrunc";
+    case DE_EXPR_ADDTRUNC: return deUnsafeMode? "runtime_bigintAdd" : "runtime_bigintAddTrunc";
     case DE_EXPR_SUB: return "runtime_bigintSub";
-    case DE_EXPR_SUBTRUNC: return "runtime_bigintSubTrunc";
+    case DE_EXPR_SUBTRUNC: return deUnsafeMode? "runtime_bigintSub" : "runtime_bigintSubTrunc";
     case DE_EXPR_MUL: return "runtime_bigintMul";
-    case DE_EXPR_MULTRUNC: return "runtime_bigintMulTrunc";
+    case DE_EXPR_MULTRUNC: return deUnsafeMode? "runtime_bigintMul" : "runtime_bigintMulTrunc";
     case DE_EXPR_DIV: return "runtime_bigintDiv";
     case DE_EXPR_MOD: return "runtime_bigintMod";
     case DE_EXPR_EXP: return "runtime_bigintExp";
     case DE_EXPR_NEGATE: return "runtime_bigintNeg";
-    case DE_EXPR_NEGATETRUNC: return "runtime_bigintNegTrunc";
+    case DE_EXPR_NEGATETRUNC: return deUnsafeMode? "runtime_bigintNeg" : "runtime_bigintNegTrunc";
     case DE_EXPR_BITNOT: return "runtime_bigintNot";
     case DE_EXPR_SHR: return "runtime_bigintShr";
     case DE_EXPR_SHL: return "runtime_bigintShl";
@@ -1111,8 +1111,8 @@ static void copyArray(llElement access, llElement value, bool freeDest) {
       boolVal(hasSubArrays), location);
 }
 
-// Generate a concatenate expression.
-static void generateConcatExpression(llElement left, llElement right) {
+// Generate concatenation of a string or array.
+static void generateConcat(llElement left, llElement right) {
   deDatatype datatype = llElementGetDatatype(left);
   deDatatype elementDatatype = deDatatypeGetElementType(datatype);
   llElement sizeValue = findDatatypeSize(elementDatatype);
@@ -1126,6 +1126,17 @@ static void generateConcatExpression(llElement left, llElement right) {
       "  call void @runtime_concatArrays(%%struct.runtime_array* %s, %%struct.runtime_array* %s, "
       "i%s %s, i1 zeroext %s)%s\n", llElementGetName(*destArray), llElementGetName(right),
       llSize, llElementGetName(sizeValue), boolVal(hasSubArrays), location);
+}
+
+// Generate a concatenate expression.
+static void generateConcatExpression(deExpression expression) {
+  deExpression leftExpr = deExpressionGetFirstExpression(expression);
+  deExpression rightExpr = deExpressionGetNextExpression(leftExpr);
+  generateExpression(leftExpr);
+  llElement left = popElement(false);
+  generateExpression(rightExpr);
+  llElement right = popElement(false);
+  generateConcat(left, right);
 }
 
 // Generate a concatenate expression.
@@ -1322,11 +1333,6 @@ static void generateBinaryExpression(deExpression expression, char *op) {
   generateExpression(right);
   llElement rightElement = popElement(true);
   deExpressionType exprType = deExpressionGetType(expression);
-  if ((exprDatatype == DE_TYPE_ARRAY || exprDatatype == DE_TYPE_STRING) &&
-      exprType == DE_EXPR_ADD) {
-    generateConcatExpression(leftElement, rightElement);
-    return;
-  }
   if (exprDatatype == DE_TYPE_STRING && exprType == DE_EXPR_BITXOR) {
     generateXorStringsExpression(leftElement, rightElement);
     return;
@@ -1337,6 +1343,80 @@ static void generateBinaryExpression(deExpression expression, char *op) {
       llElementGetName(leftElement), llElementGetName(rightElement),
       locationInfo());
   pushValue(datatype, value, false);
+}
+
+// Return the LLVM name for the trucating expression.
+char *findTruncatingOpName(deExpression expression) {
+  deDatatypeType type = deDatatypeGetType(deExpressionGetDatatype(expression));
+  bool isSigned = type == DE_TYPE_INT;
+  switch (deExpressionGetType(expression)) {
+    case DE_EXPR_ADD: return isSigned? "sadd" : "uadd";
+    case DE_EXPR_SUB: return isSigned? "ssub" : "usub";
+    case DE_EXPR_MUL: return isSigned? "smul" : "umul";
+    default:
+      utExit("Unexpected binary truncating operator");
+  }
+  return NULL;  // Dummy return;
+}
+
+// Create a new label name.
+static utSym newLabel(char *name) {
+  utSym sym = utSymCreateFormatted("%s%u", name, llLabelNum);
+  llLabelNum++;
+  return sym;
+}
+
+// Print the label, if it exists.
+static void printLabel(utSym label) {
+  if (label != utSymNull) {
+    llPrintf("%s:\n", utSymGetName(label));
+    llPrevLabel = label;
+  }
+  freeElements(false);
+}
+
+// Generate code for a binary expression which can throw an overflow exception.
+static void generateBinaryExpressionWithOverflow(deExpression expression) {
+  deSignature signature = deExpressionGetSignature(expression);
+  if (signature != deSignatureNull) {
+    generateOperatorOverloadCall(expression, signature);
+    return;
+  }
+  deDatatype datatype = deExpressionGetDatatype(expression);
+  if (llDatatypeIsBigint(datatype)) {
+    generateBigintBinaryExpression(expression);
+    return;
+  }
+  deDatatypeType exprDatatype = deDatatypeGetType(datatype);
+  utAssert(exprDatatype == DE_TYPE_INT || exprDatatype == DE_TYPE_UINT);
+  deExpression left = deExpressionGetFirstExpression(expression);
+  deExpression right = deExpressionGetNextExpression(left);
+  generateExpression(left);
+  llElement leftElement = popElement(true);
+  generateExpression(right);
+  llElement rightElement = popElement(true);
+  uint32 structValue = printNewValue();
+  uint32_t width = deDatatypeGetWidth(datatype);
+  char *opType = findTruncatingOpName(expression);
+  llDeclareOverloadedFunction(utSprintf(
+      "declare {i%u, i1} @llvm.%s.with.overflow.i%u(i%u, i%u)\n",
+      width, opType, width, width, width));
+  llPrintf("call {i%u, i1} @llvm.%s.with.overflow.i%u(i%u %s, i%u %s)%s\n",
+      width, opType, width, width, llElementGetName(leftElement),
+      width, llElementGetName(rightElement), locationInfo());
+  uint32 resValue = printNewValue();
+  llPrintf("extractvalue {i%u, i1} %%%u, 0\n", width, structValue);
+  uint32 overflowValue = printNewValue();
+  llPrintf("extractvalue {i%u, i1} %%%u, 1\n", width, structValue);
+  utSym passed = newLabel("overflowCheckPassed");
+  utSym failed = newLabel("overflowCheckFailed");
+  llPrintf("  br i1 %%%u, label %%%s, label %%%s\n",
+      overflowValue, utSymGetName(failed), utSymGetName(passed));
+  printLabel(failed);
+  llDeclareRuntimeFunction("runtime_throwOverflow");
+  llPrintf("  call void @runtime_throwOverflow()\n  unreachable\n");
+  printLabel(passed);
+  pushValue(datatype, resValue, false);
 }
 
 // Determine if the array has sub-arrays.
@@ -1480,8 +1560,30 @@ static llElement storeElementAndReturnRef(llElement element) {
   return createTmpValueElement(llElementGetDatatype(element), value, true);
 }
 
+// Forward declaration for recursion.
+static llElement resizeSmallInteger(llElement element, uint32 newWidth,
+    bool isSigned, bool truncate);
+
+// Check that truncation won't change the value of the integer.  Thrown an
+// overflow exception if the value would change.
+static void checkTruncation(llElement element, llElement result,
+    uint32 oldWidth, uint32 newWidth, bool isSigned) {
+  llElement checkValue = resizeSmallInteger(result, oldWidth, isSigned, false);
+  generateComparison(element, checkValue, "icmp eq");
+  llElement condition = popElement(true);
+  utSym passedLabel = newLabel("truncCheckPassed");
+  utSym failedLabel = newLabel("truncCheckFailed");
+  llPrintf("  br i1 %s, label %%%s, label %%%s\n",
+      llElementGetName(condition), utSymGetName(passedLabel), utSymGetName(failedLabel));
+  printLabel(failedLabel);
+  llDeclareRuntimeFunction("runtime_throwOverflow");
+  llPuts("  call void @runtime_throwOverflow()\n  unreachable\n");
+  printLabel(passedLabel);
+}
+
 // Resize a small integer.
-static llElement resizeSmallInteger(llElement element, uint32 newWidth, bool isSigned) {
+static llElement resizeSmallInteger(llElement element, uint32 newWidth,
+    bool isSigned, bool truncate) {
   deDatatype oldDatatype = llElementGetDatatype(element);
   uint32 oldWidth = deDatatypeGetWidth(oldDatatype);
   deDatatype newDatatype = deDatatypeSetSigned(deDatatypeResize(oldDatatype, newWidth), isSigned);
@@ -1505,7 +1607,11 @@ static llElement resizeSmallInteger(llElement element, uint32 newWidth, bool isS
   uint32 value = printNewValue();
   llPrintf("%s i%u %s to i%u%s\n",
       operation, oldWidth, llElementGetName(element), newWidth, locationInfo());
-  return createValueElement(newDatatype, value, false);
+  llElement result = createValueElement(newDatatype, value, false);
+  if (!truncate && !deUnsafeMode && newWidth < oldWidth) {
+    checkTruncation(element, result, oldWidth, newWidth, isSigned);
+  }
+  return result;
 }
 
 // Convert a small integer to a bigint on the array heap.
@@ -1513,7 +1619,7 @@ static llElement convertSmallIntToBigint(llElement element, uint32 newWidth, boo
   deDatatype datatype = llElementGetDatatype(element);
   uint32 oldWidth = deDatatypeGetWidth(datatype);
   if (oldWidth < llSizeWidth) {
-    element = resizeSmallInteger(element, llSizeWidth, isSigned);
+    element = resizeSmallInteger(element, llSizeWidth, isSigned, false);
   }
   deDatatype newDatatype = deDatatypeSetSigned(deDatatypeResize(datatype, newWidth), isSigned);
   allocateTempArray(newDatatype);
@@ -1533,10 +1639,11 @@ static llElement convertBigintToSmallInt(llElement bigintArray, uint32 newWidth,
   char *func = truncate? "runtime_bigintToIntegerTrunc" : "runtime_bigintToInteger";
   llDeclareRuntimeFunction(func);
   uint32 value = printNewValue();
-  llPrintf("call i%s @%s(%%struct.runtime_array* %s)\n", llSize, func, llElementGetName(bigintArray));
+  llPrintf("call i%s @%s(%%struct.runtime_array* %s)\n", llSize, func,
+      llElementGetName(bigintArray));
   llElement result = createValueElement(llSizeType, value, false);
   if (newWidth != llSizeWidth || isSigned) {
-    result = resizeSmallInteger(result, newWidth, isSigned);
+    result = resizeSmallInteger(result, newWidth, isSigned, truncate);
   }
   return result;
 }
@@ -1572,7 +1679,7 @@ static llElement resizeInteger(llElement element, uint32 newWidth, bool isSigned
   } else if (newWidth > llSizeWidth) {
     return resizeBigint(element, newWidth, isSigned, truncate);
   }
-  return resizeSmallInteger(element, newWidth, isSigned);
+  return resizeSmallInteger(element, newWidth, isSigned, truncate);
 }
 
 // Convert the top element to u64.
@@ -1695,11 +1802,11 @@ static void generateSelectExpression(deExpression expression) {
 static void generateIntegerToString(llElement value, llElement base) {
   deDatatype datatype = llElementGetDatatype(value);
   uint32 width = deDatatypeGetWidth(datatype);
-  base = resizeSmallInteger(base, 32, false);
+  utAssert(llElementGetDatatype(base) == deUintDatatypeCreate(32));
   llElement result = allocateTempValue(deStringDatatypeCreate());
   if (width <= llSizeWidth) {
     bool isSigned = deDatatypeGetType(datatype) == DE_TYPE_INT;
-    value = resizeSmallInteger(value, llSizeWidth, isSigned);
+    value = resizeSmallInteger(value, llSizeWidth, isSigned, false);
     llDeclareRuntimeFunction("runtime_nativeIntToString");
     llPrintf("  call void @runtime_nativeIntToString("
         "%%struct.runtime_array* %s, i%s %s, i32 %s, i1 zeroext %s)%s\n",
@@ -1811,7 +1918,7 @@ static void generateBuiltinMethod(deExpression expression) {
       deExpression array2Expression = deExpressionGetFirstExpression(parameters);
       generateExpression(array2Expression);
       llElement array2 = popElement(false);
-      generateConcatExpression(access, array2);
+      generateConcat(access, array2);
       deDatatype datatype = llElementGetDatatype(access);
       deDatatype elementDatatype = deDatatypeGetElementType(datatype);
       llElement sizeValue = findDatatypeSize(elementDatatype);
@@ -1934,7 +2041,7 @@ static void generateBuiltinMethod(deExpression expression) {
         base = popElement(true);
         base = resizeInteger(base, 32, false, false);
       } else {
-        base = createElement(llSizeType, "10", false);
+        base = createElement(deUintDatatypeCreate(32), "10", false);
       }
       generateIntegerToString(access, base);
       break;
@@ -2268,13 +2375,6 @@ static void generateCallExpression(deExpression expression) {
   } else if (returnsValuePassedByReference) {
     pushElement(returnElement, false);
   }
-}
-
-// Create a new label name.
-static utSym newLabel(char *name) {
-  utSym sym = utSymCreateFormatted("%s%u", name, llLabelNum);
-  llLabelNum++;
-  return sym;
 }
 
 // Generate code to bounds check a value.  The message will be passed to
@@ -2862,8 +2962,7 @@ static void generateModularSmallnumExp(deExpression expression, llElement modulu
   generateExpression(exp);
   resizeTop(llSizeWidth);
   llElement expElement = popElement(true);
-  modulusElement =
-      resizeSmallInteger(modulusElement, llSizeWidth, false);
+  modulusElement = resizeSmallInteger(modulusElement, llSizeWidth, false, false);
   uint32 value = printNewValue();
   llPrintf("call i%s @runtime_smallnumModularExp(i%s %s, i%s %s, i%s %s, i1 %s)%s\n", llSize,
       llSize, llElementGetName(baseElement), llSize, llElementGetName(expElement),
@@ -2946,11 +3045,17 @@ static void generateNegateExpression(deExpression expression) {
     llPrintf("fneg %s %s\n", type, llElementGetName(leftElement));
     pushValue(datatype, value, false);
   } else if (deDatatypeGetWidth(datatype) > llSizeWidth) {
-    llDeclareRuntimeFunction("runtime_bigintNegate");
+    char *funcName = "runtime_bigintNegate";
+    if (!deUnsafeMode && deExpressionGetType(expression) == DE_EXPR_NEGATETRUNC) {
+      funcName = "runtime_bigintNegateTrunc";
+    }
+    llDeclareRuntimeFunction(funcName);
     llElement resultArray = allocateTempValue(datatype);
     llPrintf(
-      "  call void @runtime_bigintNegate(%%struct.runtime_array* %s, %%struct.runtime_array* %s)\n",
-      llElementGetName(resultArray), llElementGetName(leftElement));
+      "  call void @%s(%%struct.runtime_array* %s, %%struct.runtime_array* %s)\n",
+      funcName, llElementGetName(resultArray), llElementGetName(leftElement));
+  } else if (deUnsafeMode) {
+    utExit("Write me");
   } else {
     char *type = llGetTypeString(datatype, false);
     uint32 value = printNewValue();
@@ -3101,7 +3206,7 @@ static void generateBinaryModularExpression(deExpression expression, llElement m
   generateModularExpression(right, modulusElement);
   if (!llDatatypeIsBigint(datatype)) {
     resizeTop(llSizeWidth);
-    modulusElement = resizeSmallInteger(modulusElement, llSizeWidth, false);
+    modulusElement = resizeSmallInteger(modulusElement, llSizeWidth, false, false);
   }
   llElement rightElement = popElement(true);
   char *function = findExpressionFunction(expression);
@@ -3164,8 +3269,9 @@ static void modularReduction(deExpression expression,
       pushValue(modDatatype, value, false);
     } else {
       // Edge cases are ugly, so call the runtime function to help.
-      valueElement = resizeSmallInteger(valueElement, llSizeWidth, deDatatypeSigned(valDatatype));
-      modulusElement = resizeSmallInteger(modulusElement, llSizeWidth, false);
+      valueElement = resizeSmallInteger(valueElement, llSizeWidth,
+          deDatatypeSigned(valDatatype), false);
+      modulusElement = resizeSmallInteger(modulusElement, llSizeWidth, false, false);
       char *function = "runtime_smallnumModReduce";
       llDeclareRuntimeFunction(function);
       uint32 value = printNewValue();
@@ -3175,7 +3281,7 @@ static void modularReduction(deExpression expression,
       pushValue(llSizeType, value, false);
       if (modWidth < llSizeWidth) {
         llElement resultElement = popElement(true);
-        pushElement(resizeSmallInteger(resultElement, modWidth, false), false);
+        pushElement(resizeSmallInteger(resultElement, modWidth, false, false), false);
       }
     }
   }
@@ -3406,7 +3512,8 @@ static void generateExpression(deExpression expression) {
   deDatatype datatype = deExpressionGetDatatype(expression);
   deDatatypeType type = deDatatypeGetType(datatype);
   bool isSigned = deDatatypeGetType(datatype) == DE_TYPE_INT;
-  switch (deExpressionGetType(expression)) {
+  deExpressionType exprType = deExpressionGetType(expression);
+  switch (exprType) {
     case DE_EXPR_INTEGER:
       pushInteger(expression);
       break;
@@ -3435,28 +3542,46 @@ static void generateExpression(deExpression expression) {
     case DE_EXPR_MODINT:
       generateModintExpression(expression);
       break;
-    case DE_EXPR_ADD:
     case DE_EXPR_ADDTRUNC:
+      generateBinaryExpression(expression, "add");
+      break;
+    case DE_EXPR_SUBTRUNC:
+      generateBinaryExpression(expression, "sub");
+      break;
+    case DE_EXPR_MULTRUNC:
+      generateBinaryExpression(expression, "mul");
+      break;
+    case DE_EXPR_ADD:
       if (type == DE_TYPE_FLOAT) {
         generateBinaryExpression(expression, "fadd");
-      } else {
+      } else if ((type == DE_TYPE_ARRAY || type == DE_TYPE_STRING) && exprType == DE_EXPR_ADD) {
+        generateConcatExpression(expression);
+      } else if (deUnsafeMode) {
         generateBinaryExpression(expression, "add");
+      } else {
+        generateBinaryExpressionWithOverflow(expression);
       }
       break;
     case DE_EXPR_SUB:
-    case DE_EXPR_SUBTRUNC:
       if (type == DE_TYPE_FLOAT) {
         generateBinaryExpression(expression, "fsub");
       } else {
-        generateBinaryExpression(expression, "sub");
+        if (deUnsafeMode) {
+          generateBinaryExpression(expression, "sub");
+        } else {
+          generateBinaryExpressionWithOverflow(expression);
+        }
       }
       break;
     case DE_EXPR_MUL:
-    case DE_EXPR_MULTRUNC:
       if (type == DE_TYPE_FLOAT) {
         generateBinaryExpression(expression, "fmul");
       } else {
-        generateBinaryExpression(expression, "mul");
+        if (deUnsafeMode) {
+          generateBinaryExpression(expression, "mul");
+        } else {
+          generateBinaryExpressionWithOverflow(expression);
+        }
       }
       break;
     case DE_EXPR_DIV:
@@ -3578,14 +3703,14 @@ static void generateExpression(deExpression expression) {
     case DE_EXPR_NEGATETRUNC:
       generateNegateExpression(expression);
       break;
-    case DE_EXPR_CAST:
-      generateCastExpression(expression, false);
-      break;
     case DE_EXPR_UNSIGNED:
       generateSignedCastExpression(expression, false);
       break;
     case DE_EXPR_SIGNED:
       generateSignedCastExpression(expression, true);
+      break;
+    case DE_EXPR_CAST:
+      generateCastExpression(expression, false);
       break;
     case DE_EXPR_CASTTRUNC:
       generateCastExpression(expression, true);
@@ -3697,15 +3822,6 @@ static bool blockEndsInReturn(deBlock subBlock) {
   }
   deStatementType type = deStatementGetType(lastStatement);
   return type == DE_STATEMENT_RETURN || type == DE_STATEMENT_THROW;
-}
-
-// Print the label, if it exists.
-static void printLabel(utSym label) {
-    if (label != utSymNull) {
-      llPrintf("%s:\n", utSymGetName(label));
-      llPrevLabel = label;
-    }
-    freeElements(false);
 }
 
 // Generate instructions for the if statement.

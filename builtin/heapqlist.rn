@@ -73,7 +73,7 @@ generator HeapqList(A: Class, B: Class, cascadeDelete:bool = false,
     func _heapqUp$labelB$B(self, startX: u32) {
       x = startX
       do {
-        parentIndex = (x - 1u32) >> 1
+        parentIndex = (x !- 1u32) >> 1
       } while x > 0u32 && self._compare$labelB$B(self.$labelB$pluralB[x], self.$labelB$pluralB[parentIndex]) {
         self._swap$labelB$B(parentIndex, x)
         x = parentIndex
