@@ -25,7 +25,7 @@ static void generateConstructorString(deClass theClass) {
   deSprintToString(
       "appendcode {\n"
       "  func %1$s_allocate() {\n"
-      "    if %1$s_firstFree != -1u%3$u {\n"
+      "    if %1$s_firstFree != ~0u%3$u {\n"
       "      object = <%2$s>%1$s_firstFree\n"
       "      %1$s_firstFree = %1$s_nextFree[<u%3$u>object]\n"
       "    } else {\n"
@@ -98,7 +98,7 @@ static void generateRootBlockArrays(deClass theClass) {
       "prependcode {\n"
       "  %1$s_allocated = 1u%2$u\n"
       "  %1$s_used = 0u%2$u\n"
-      "  %1$s_firstFree = -1u%2$u\n",
+      "  %1$s_firstFree = ~0u%2$u\n",
       path, deClassGetRefWidth(theClass));
   deVariable variable;
   deForeachBlockVariable(block, variable) {
@@ -179,13 +179,13 @@ static void generateRefAndDerefString(deClass theClass) {
   deSprintToString(
       "appendcode {\n"
       "  func %1$s_ref(object) {\n"
-      "    if !isnull(object) && %1$s_nextFree[<u%2$u>object] != -1u%2$u {\n"
+      "    if !isnull(object) && %1$s_nextFree[<u%2$u>object] != ~0u%2$u {\n"
       "      %1$s_nextFree[<u%2$u>object] += 1u%2$u\n"
       "    }\n"
       "  }\n"
       "\n"
       "  func %1$s_unref(object) {\n"
-      "    if !isnull(object) && %1$s_nextFree[<u%2$u>object] != -1u%2$u {\n"
+      "    if !isnull(object) && %1$s_nextFree[<u%2$u>object] != ~0u%2$u {\n"
       "      %1$s_nextFree[<u%2$u>object] !-= 1u%2$u\n"
       "      if %1$s_nextFree[<u%2$u>object] == 0u%2$u {\n"
       "        object.destroy()\n"

@@ -43,7 +43,7 @@ static int deRead(char *buf, int maxSize) {
       if (c == '\r') {
         c = getc(deFile);
         if (c != '\n') {
-          deError(deCurrentLine, "Invalid control character");
+          deerror("Invalid control character");
         }
       }
       // defend against Trojan source attacks.
@@ -56,7 +56,7 @@ static int deRead(char *buf, int maxSize) {
           numChars++;
           c = getc(deFile);
           if ((c >= 0xAA && c <= 0xAE) || c == 0x8B) {
-            deError(deCurrentLine, "Invalid control character");
+            deerror("Invalid control character");
           }
         }
         if (c == 0x81) {
@@ -64,13 +64,13 @@ static int deRead(char *buf, int maxSize) {
           numChars++;
           c = getc(deFile);
           if (c >= 0xA6 && c <= 0xA9) {
-            deError(deCurrentLine, "Invalid control character");
+            deerror("Invalid control character");
           }
         }
       }
       if (c != EOF) {
         if (isInvalidControlChar(c)) {
-          deError(deCurrentLine, "Invalid control character");
+          deerror("Invalid control character");
         }
         *p++ = c;
         numChars++;
@@ -87,7 +87,7 @@ static int deRead(char *buf, int maxSize) {
       if (c == '\r') {
         c = deInputString[deInputStringPos++];
         if (c != '\n') {
-          deError(deCurrentLine, "Invalid control character");
+          deerror("Invalid control character");
         }
       }
       // defend against Trojan source attacks.
@@ -100,7 +100,7 @@ static int deRead(char *buf, int maxSize) {
           numChars++;
           c = getc(deFile);
           if ((c >= 0xAA && c <= 0xAE) || c == 0x8B) {
-            deError(deCurrentLine, "Invalid control character");
+            deerror("Invalid control character");
           }
         }
         if (c == 0x81) {
@@ -108,13 +108,13 @@ static int deRead(char *buf, int maxSize) {
           numChars++;
           c = getc(deFile);
           if (c >= 0xA6 && c <= 0xA9) {
-            deError(deCurrentLine, "Invalid control character");
+            deerror("Invalid control character");
           }
         }
       }
       if (c != EOF) {
         if (isInvalidControlChar(c)) {
-          deError(deCurrentLine, "Invalid control character");
+          deerror("Invalid control character");
         }
         *p++ = c;
         numChars++;
@@ -177,14 +177,14 @@ static deString unescape(char *string) {
       } else if (*string == 'x') {
         string++;
         if (!isxdigit(string[0]) || !isxdigit(string[1])) {
-          deError(deCurrentLine, "Invalid hex escape sequence");
+          deerror("Invalid hex escape sequence");
         }
         *p++ = hexToChar(string[0], string[1]);
         string += 2;
       } else {
         *p++ = *string++;
         if (*string == '\0') {
-          deError(deCurrentLine, "Cannot escape terminating quote.");
+          deerror("Cannot escape terminating quote.");
         }
       }
     } else {
@@ -210,9 +210,9 @@ static inline void checkIdentifierChars(char *text) {
   while (*p != '\0') {
     char c = *p++;
     if (c == '_') {
-      deError(deCurrentLine, "Underscores are not permitted except in code generators");
+      deerror("Underscores are not permitted except in code generators");
     } else if (c == '$') {
-      deError(deCurrentLine, "Dollar signs are not permitted except in code generators");
+      deerror("Dollar signs are not permitted except in code generators");
     }
   }
 }
@@ -222,7 +222,7 @@ static double safeAtof(char *text, uint32 width) {
   if (width == 32) {
     float floatVal = strtof(text, NULL);
     if (floatVal == HUGE_VALF) {
-      deError(deCurrentLine, "Floating point value %s does not fit in a 32-bit float.", text);
+      deerror("Floating point value %s does not fit in a 32-bit float.", text);
     }
     return floatVal;
   } else if (width != 64) {
@@ -230,7 +230,7 @@ static double safeAtof(char *text, uint32 width) {
   }
   double doubleVal = strtod(text, NULL);
   if (doubleVal == HUGE_VAL) {
-    deError(deCurrentLine, "Floating point value %s does not fit in a 64-bit float.", text);
+    deerror("Floating point value %s does not fit in a 64-bit float.", text);
   }
   return doubleVal;
 }
@@ -427,10 +427,10 @@ static void noDebug(char *foo, ...) {}
 <INITIAL>"rand"[0-9]+           { char *end;
                                   uint32 width = strtol(detext + 4, &end, 10);
                                   if (*end != '\0' || width > UINT16_MAX) {
-                                    deError(deCurrentLine, "Random integer is too large");
+                                    deerror("Random integer is too large");
                                   }
                                   if (width == 0) {
-                                    deError(deCurrentLine, "Zero-width integers are not allowed");
+                                    deerror("Zero-width integers are not allowed");
                                   }
                                   delval.uint16Val = width;
                                   myDebug("%s\n", detext);
@@ -438,10 +438,10 @@ static void noDebug(char *foo, ...) {}
 <INITIAL>"u"[0-9]+              { char *end;
                                   uint32 width = strtol(detext + 1, &end, 10);
                                   if (*end != '\0' || width > UINT16_MAX) {
-                                    deError(deCurrentLine, "Random integer is too large");
+                                    deerror("Random integer is too large");
                                   }
                                   if (width == 0) {
-                                    deError(deCurrentLine, "Zero-width integers are not allowed");
+                                    deerror("Zero-width integers are not allowed");
                                   }
                                   delval.uint16Val = width;
                                   myDebug("%s\n", detext);
@@ -449,10 +449,10 @@ static void noDebug(char *foo, ...) {}
 <INITIAL>"i"[0-9]+              { char *end;
                                   uint32 width = strtol(detext + 1, &end, 10);
                                   if (*end != '\0' || width > UINT16_MAX) {
-                                    deError(deCurrentLine, "Random integer is too large");
+                                    deerror("Random integer is too large");
                                   }
                                   if (width == 0) {
-                                    deError(deCurrentLine, "Zero-width integers are not allowed");
+                                    deerror("Zero-width integers are not allowed");
                                   }
                                   delval.uint16Val = width;
                                   myDebug("%s\n", detext);

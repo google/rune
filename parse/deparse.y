@@ -38,12 +38,14 @@ void deerror(char *message, ...) {
   va_start(ap, message);
   buff = utVsprintf(message, ap);
   va_end(ap);
-  if (!deInvertReturnCode) {
-    utError("%s:%d: token \"%s\": %s", deCurrentFileName,
-        deLineGetLineNum(deCurrentLine), detext, buff);
+  uint32 lineNum = deLineNum;
+  if (deCurrentLine != deLineNull) {
+    lineNum = deLineGetLineNum(deCurrentLine);
   }
-  printf("%s:%d: token \"%s\": %s\n", deCurrentFileName,
-      deLineGetLineNum(deCurrentLine), detext, buff);
+  if (!deInvertReturnCode) {
+    utError("%s:%d: token \"%s\": %s", deCurrentFileName, lineNum, detext, buff);
+  }
+  printf("%s:%d: token \"%s\": %s\n", deCurrentFileName, lineNum, detext, buff);
   deGenerateDummyLLFileAndExit();
 }
 
