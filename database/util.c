@@ -52,19 +52,15 @@ void deError(deLine line, char* format, ...) {
     char *path = deFilepathGetRelativePath(filepath);
     if (*path != '\0') {
       printf("%s:%u: ", path, deLineGetLineNum(line));
+    }
   }
   printf("Error: %s\n", buff);
-  fputs(deLineGetText(line), stdout);
-
+  if (line != deLineNull) {
+    fputs(deLineGetText(line), stdout);
   }
-  if (deCurrentStatement != deStatementNull) {
-    if (!deStatementGenerated(deCurrentStatement)) {
-      deDumpLine(line);
-    } else {
-      deDumpStatement(deCurrentStatement);
-    }
-  } else if (line != deLineNull) {
-    deDumpLine(line);
+  if (deCurrentStatement != deStatementNull && deStatementGenerated(deCurrentStatement)) {
+    printf("After generation: ");
+    deDumpStatement(deCurrentStatement);
   }
   dePrintStack();
   if (!deInvertReturnCode) {

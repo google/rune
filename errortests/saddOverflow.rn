@@ -12,9 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-println signed(0xffu8)
-println signed(~0u256)
-println 0xdeadbeefu32
-println signed(255u8)
-println unsigned(255i8)
-println unsigned(0x80i8)
+println 1i9 + 0xffi9

@@ -12,5 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-t = (12, ("test", (6.5f64, (-1i1,))))
+t = (12, ("test", (6.5f64, (~0i1,))))
 println t

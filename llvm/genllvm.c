@@ -1353,6 +1353,7 @@ char *findTruncatingOpName(deExpression expression) {
     case DE_EXPR_ADD: return isSigned? "sadd" : "uadd";
     case DE_EXPR_SUB: return isSigned? "ssub" : "usub";
     case DE_EXPR_MUL: return isSigned? "smul" : "umul";
+    case DE_EXPR_NEGATE: return isSigned? "ssub" : "usub";
     default:
       utExit("Unexpected binary truncating operator");
   }
@@ -3039,12 +3040,13 @@ static void generateNegateExpression(deExpression expression) {
   generateExpression(left);
   llElement leftElement = popElement(true);
   deDatatype datatype = llElementGetDatatype(leftElement);
+  uint32_t width = deDatatypeGetWidth(datatype);
   if (deDatatypeIsFloat(datatype)) {
     char *type = llGetTypeString(datatype, false);
     uint32 value = printNewValue();
     llPrintf("fneg %s %s\n", type, llElementGetName(leftElement));
     pushValue(datatype, value, false);
-  } else if (deDatatypeGetWidth(datatype) > llSizeWidth) {
+  } else if (width > llSizeWidth) {
     char *funcName = "runtime_bigintNegate";
     if (!deUnsafeMode && deExpressionGetType(expression) == DE_EXPR_NEGATETRUNC) {
       funcName = "runtime_bigintNegateTrunc";
@@ -3054,8 +3056,28 @@ static void generateNegateExpression(deExpression expression) {
     llPrintf(
       "  call void @%s(%%struct.runtime_array* %s, %%struct.runtime_array* %s)\n",
       funcName, llElementGetName(resultArray), llElementGetName(leftElement));
-  } else if (deUnsafeMode) {
-    utExit("Write me");
+  } else if (!deUnsafeMode && deExpressionGetType(expression) != DE_EXPR_NEGATETRUNC) {
+    uint32 structValue = printNewValue();
+    char *opType = findTruncatingOpName(expression);
+    llDeclareOverloadedFunction(utSprintf(
+        "declare {i%u, i1} @llvm.%s.with.overflow.i%u(i%u, i%u)\n",
+        width, opType, width, width, width));
+    llPrintf("call {i%u, i1} @llvm.%s.with.overflow.i%u(i%u 0, i%u %s)%s\n",
+             width, opType, width, width, width, llElementGetName(leftElement),
+             locationInfo());
+    uint32 value = printNewValue();
+    llPrintf("extractvalue {i%u, i1} %%%u, 0\n", width, structValue);
+    uint32 overflowValue = printNewValue();
+    llPrintf("extractvalue {i%u, i1} %%%u, 1\n", width, structValue);
+    utSym passed = newLabel("overflowCheckPassed");
+    utSym failed = newLabel("overflowCheckFailed");
+    llPrintf("  br i1 %%%u, label %%%s, label %%%s\n",
+        overflowValue, utSymGetName(failed), utSymGetName(passed));
+    printLabel(failed);
+    llDeclareRuntimeFunction("runtime_throwOverflow");
+    llPrintf("  call void @runtime_throwOverflow()\n  unreachable\n");
+    printLabel(passed);
+    pushValue(datatype, value, false);
   } else {
     char *type = llGetTypeString(datatype, false);
     uint32 value = printNewValue();

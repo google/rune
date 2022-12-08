@@ -15,7 +15,7 @@
 s = "0123456789aBcDeF"
 for i in range(s.length()) {
   c = s[i]
-  println c, " = ", (9 & -(c >> 6)) + (c & 0xf)
+  println c, " = ", (9 & !-(c >> 6)) + (c & 0xf)
 }
 for val = 0u8, val < 16, val += 1 {
   bit1 = val >> 1
@@ -23,6 +23,6 @@ for val = 0u8, val < 16, val += 1 {
   bit3 = val >> 3
   delta = "a"[0] - "0"[0] - 10
   s = "0"
-  s[0] = (-((bit1 | bit2) & bit3) & delta) + "0"[0] + val
+  s[0] = (!-((bit1 | bit2) & bit3) & delta) + "0"[0] + val
   println s
 }
