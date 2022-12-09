@@ -710,10 +710,12 @@ static void declareGlobalVariable(deVariable variable) {
   if (llDatatypeIsArray(datatype) || type == DE_TYPE_TUPLE || type == DE_TYPE_STRUCT ||
       type == DE_TYPE_FLOAT) {
     initializer = "zeroinitializer";
+  } else if (type == DE_TYPE_CLASS) {
+    initializer = "-1";
   } else {
     initializer = "0";
   }
-  llPrintf("%s = common dso_local global %s %s%s\n",
+  llPrintf("%s = dso_local global %s %s%s\n",
       llGetVariableName(variable), typeString, initializer, getVariableTag(variable));
 }
 
