@@ -26,9 +26,9 @@ println ciphertext
 func encrypt(password: string, plaintext: string) -> string {
   M = plaintext.toUintLE(u512)  // Convert a short string to a 512-bit integer.
   P = password.toUintLE(u512)
-  M @= P  // XOR P into M.
+  M ^= P  // XOR P into M.
   permute(M)
-  M @= P  // XOR P onto M.
+  M ^= P  // XOR P onto M.
   ciphertext = M.toStringLE()
   return ciphertext.toHex()
 }

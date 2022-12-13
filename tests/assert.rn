@@ -14,5 +14,5 @@
 
 assert 1u8 == 1u8, "This should not appear."
 assert "" == ""
-assert -1 == 5^2 mod 13, "one", "two", "three"
+assert -1 == 5**2 mod 13, "one", "two", "three"
 println "Pass!"

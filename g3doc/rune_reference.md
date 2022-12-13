@@ -431,7 +431,7 @@ Rune currently supports f32 (C float), and f64 (C double) types:
 
 ```
 x = 0.1; y = 0.8
-dist = sqrt(x^2 + y^2)
+dist = sqrt(x**2 + y**2)
 Println “distance = %f” % dis
 ```
 
@@ -541,7 +541,7 @@ class       foreach  import     relation     unref
 *=    +     +=    -     -=    .     ...   /
 /=    <     <<    <<<   <<<=  <<=   <=    =
 ==    >     >=    >>    >>=   >>>   >>>=  ?
-@     @=    @@    @@=   []    ^     ^=    |
+^     ^=    ^^    ^^=   []    **    **=   |
 |=    ||    ||=   ~
 ```
 

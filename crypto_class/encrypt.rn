@@ -22,7 +22,7 @@ func  encrypt(key: secret(string), info: string, plaintext: string) -> string {
   nonce = randString(16)  // A nonce is usually 96 random bits or more.
   sponge.absorb(nonce)
   pad = sponge.squeeze(plaintext.length())
-  ciphertext = plaintext @ pad  // XOR the plaintext and pad together.
+  ciphertext = plaintext ^ pad  // XOR the plaintext and pad together.
   mac = computeMac(key, nonce + info + ciphertext, 16)
   return nonce + ciphertext + mac
 }

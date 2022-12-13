@@ -14,7 +14,7 @@
 
 // Hash together two values
 func hashValues(val1: u64, val2: u64) -> u64 {
-  return ((val1 @ <val1>0xdeadbeef31415927u64) >>> 23) !* val2
+  return ((val1 ^ <val1>0xdeadbeef31415927u64) >>> 23) !* val2
 }
 
 // Hash a string.

@@ -57,7 +57,7 @@ struct MyStruct {
   age: u256  // Celestial beings can be pretty old
 }
 // TODO: Fix bugs printing structs.
-// println "MyStruct(string, u256): ", null(MyStruct("the flying spaghetti monster", 10u256^100))
+// println "MyStruct(string, u256): ", null(MyStruct("the flying spaghetti monster", 10u256**100))
 
 // Enum
 enum Day {

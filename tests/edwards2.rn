@@ -20,16 +20,16 @@ class EdwardsCurve(self, <m>, d: typeof(m), gy: typeof(m)) {
   self.gy = gy
   self.gx = self.computeX(gy)
 
-  // Verify (gx, gy) is on the curve: -x^2 + y^2 = 1 + dx^2y^2:
+  // Verify (gx, gy) is on the curve: -x**2 + y**2 = 1 + dx**2y**2:
   func pointOnCurve(self, P) -> bool {
     x = P.x; y = P.y
     m = self.m; d = self.d
-    return -x^2 + y^2 == 1 + d*x^2*y^2 mod m
+    return -x**2 + y**2 == 1 + d*x**2*y**2 mod m
   }
 
   // Return the positive X coordinate given Y.
   func computeX(self, y) {
-    root = math.msqrt((y^2 - 1)/(self.d*y^2 + 1) mod self.m, self.m)
+    root = math.msqrt((y**2 - 1)/(self.d*y**2 + 1) mod self.m, self.m)
     return min(root, self.m - root)
   }
 }
@@ -58,7 +58,7 @@ class Point(self, <curve>: EdwardsCurve, x: typeof(curve.m), y: typeof(curve.m))
   // Only scalar multiplication is defined for elliptic curve points.
   operator * (k: Uint, P: Point) {
     R: typeof(P) = Point(P.curve, <P.x>0, <P.y>1)
-    M: typeof(P) = P  // M is 2^n*P
+    M: typeof(P) = P  // M is 2**n*P
     f = k
     while f != <f>0 {
       if f & <f>1 != <f>0 {
@@ -73,7 +73,7 @@ class Point(self, <curve>: EdwardsCurve, x: typeof(curve.m), y: typeof(curve.m))
 
 unittest edwardsTest {
   // Curve 25519 parameters.
-  m = <u255>(2u256^255 - 19)
+  m = <u255>(2u256**255 - 19)
   d = -121665/121666 mod m
   // Curve 25519 generator's Y coordinate.
   gy = 4 / 5 mod m

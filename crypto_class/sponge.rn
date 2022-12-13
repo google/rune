@@ -22,7 +22,7 @@ class Sponge(self) {
 
   // XOR block onto R, and call permute.
   func absorbBlock(self, block: u256) {
-    self.R @= block
+    self.R ^= block
     self.permute()
   }
 

@@ -214,7 +214,7 @@ modulus = 2**255 - 19  # Prime number used in curve25519 elliptic curve crypto.
 Rune:
 
 ```rune
-modulus = 2u256^255 - 19u256
+modulus = 2u256**255 - 19u256
 ```
 
 Rune integer constants without a type suffix are unsigned 64-bit integers.  To
@@ -364,7 +364,7 @@ println rand32  // An error because rand32 generates a secret random value.
 Like Python before [literal string interpolation](https://peps.python.org/pep-0498/), Rune embraces printf-like formatting with the % operator
 
 ```rune
-println "%x" % (2u256^255 - 19u256)  // Print curve25519’s modulus in hex.
+println "%x" % (2u256**255 - 19u256)  // Print curve25519’s modulus in hex.
 ```
 
 Currently supported format specifiers are:
@@ -754,8 +754,8 @@ extern "C" func readln(maxLen: u64 = 0u64) -> string
 Like many languages, Rune has support for most C operators.  The ones that have
 changed are:
 
-*   `x^2` means x squared, orphaning the XOR operator.  Rune is for crypto, so math comes first.
-*   `A @ B` means A XOR B, because ^ means "to the power of".
+*   `x**2` means x squared.
+*   `A ^ B` means A XOR B
 *   `i++, ++i, i--, --i` are deleted, as in Python.
 *   Rotation operators (often used in cryptography) are added: `x <<< dist`, and `x >>> dist`.
 *   Arithmetic overflow throws an error!  An exception is `-1u32` is allowed.
@@ -767,11 +767,11 @@ notion of "mod" has been added:
 
 ```rune
 // A is Alice’s pubkey, a is her privkey, g is the group generator, and p the prime modulus.
-A = g^a mod p
-B = g^b mod p
-aliceShared = B^a mod p
-bobShared = A^b mod p
-assert A^b == B^a mod p
+A = g**a mod p
+B = g**b mod p
+aliceShared = B**a mod p
+bobShared = A**b mod p
+assert A**b == B**a mod p
 ```
 
 Mathematical expressions to the left of mod are evaluated modulo the modulus.

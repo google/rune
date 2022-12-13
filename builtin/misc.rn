@@ -24,7 +24,10 @@ func min(a, b) {
 
 // Return the absolute value of |a|.  Safe to use with secrets.
 func abs(a) {
-  return a >= <a>0? a : -a
+  if a >= <a>0 {
+    return a
+  }
+  return -a
 }
 
 // Emulate the Python chr builtin.

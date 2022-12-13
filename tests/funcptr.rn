@@ -27,7 +27,7 @@ func  manhattanDistance(object) {
 }
 
 func magnitude(object) {
-    return object.x^2 + object.y^2
+    return object.x**2 + object.y**2
 }
 
 func arraySum(array, distancefunc) {

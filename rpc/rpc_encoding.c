@@ -51,7 +51,7 @@ static void encodeInteger(RpcEncoderContext *ctx, deExpression integerExpr) {
         rpcEncodeS64(ctx, val);
         break;
       default:
-        deError(0, "Invalid integer width: expected 8, 16, 32, or 64.  Got ^u", width);
+        deError(0, "Invalid integer width: expected 8, 16, 32, or 64.  Got %u", width);
     }
   } else {
     uint64 val = deBigintGetUint64(bigint, 0);
@@ -78,7 +78,7 @@ static void encodeInteger(RpcEncoderContext *ctx, deExpression integerExpr) {
         rpcEncodeU64(ctx, val);
         break;
       default:
-        deError(0, "Invalid integer width: expected 8, 16, 32, or 64.  Got ^u", width);
+        deError(0, "Invalid integer width: expected 8, 16, 32, or 64.  Got %u", width);
     }
   }
 }

@@ -751,14 +751,6 @@ char *llEscapeText(char *text) {
   return escapeString(text, strlen(text));
 }
 
-// Write debug tags.
-static void writeDebugTags(void) {
-  llTag tag;
-  llForeachRootTag(deTheRoot, tag) {
-    llPrintf("!%u = %s\n", llTagGetNum(tag), llTagGetText(tag));
-  } llEndRootTag;
-}
-
 // Print declarations for all used functions.
 void llWriteDeclarations(void) {
   if (llDebugMode) {

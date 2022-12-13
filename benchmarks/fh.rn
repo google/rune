@@ -30,7 +30,7 @@ relation DoublyLinked Root Element cascade
 relation HeapqList Root:"Heap" Element:"Heap" cascade
 
 func hashValues(val1, val2) {
-  return (0xdeadbeefu32*val1) @ val2
+  return (0xdeadbeefu32*val1) ^ val2
 }
 
 root = Root()

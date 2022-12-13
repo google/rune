@@ -18,6 +18,6 @@ if argv.length() != 2 {
 p = argv[1].fromHex().toUintBE(u2048)
 privateKey = rand2048 % p
 g = 2u2048  // Group generator.  Using 2 is fine, modulo a prime.
-publicKey = reveal(g^privateKey mod p)
+publicKey = reveal(g**privateKey mod p)
 println "privateKey=", reveal(privateKey.toStringBE().toHex())
 println "publicKey=", publicKey.toStringBE().toHex()

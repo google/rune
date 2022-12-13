@@ -37,11 +37,11 @@ enum ExprType {
   Mod  // a % b
   And  // a && b
   Or   // a || b
-  Xor  // a @@ b
+  Xor  // a ^^ b
   Bitand  // a & b
   Bitor   // a | b
-  Bitxor  // a @ b
-  Exp  // a ^ b
+  Bitxor  // a ^ b
+  Exp  // a ** b
   Shl  // a << b
   Shr  // a >> b
   Rotl  // a <<< b
@@ -77,11 +77,11 @@ enum ExprType {
   ModEquals  // a %= b
   AndEquals  // a &&= b
   OrEquals   // a ||= b
-  XorEquals  // a @@= b
+  XorEquals  // a ^^= b
   BitandEquals  // a &= b
   BitorEquals   // a |= b
-  BitxorEquals  // a @= b
-  ExpEquals  // a ^= b
+  BitxorEquals  // a ^= b
+  ExpEquals  // a **= b
   ShlEquals  // a <<= b
   ShrEquals  // a >>= b
   RotlEquals  // a <<<= b
@@ -192,7 +192,7 @@ func getExprTypeName(type: ExprType) -> string {
       return "&&"
     }
     case ExprType.Xor {
-      return "@@"
+      return "^^"
     }
     case ExprType.Or {
       return "||"
@@ -231,7 +231,7 @@ func getExprTypeName(type: ExprType) -> string {
       return "&"
     }
     case ExprType.Bitxor {
-      return "@"
+      return "^"
     }
     case ExprType.Bitor {
       return "|"
@@ -252,7 +252,7 @@ func getExprTypeName(type: ExprType) -> string {
       return "%"
     }
     case ExprType.Exp {
-      return "^"
+      return "**"
     }
     case ExprType.Not {
       return "!"
@@ -532,7 +532,7 @@ class Expr(self, type: ExprType, line: Line) {
         self.dumpBinary(text, "||", parentPrecedence)
       }
       case ExprType.Xor {
-        self.dumpBinary(text, "@@", parentPrecedence)
+        self.dumpBinary(text, "^^", parentPrecedence)
       }
       case ExprType.Bitand {
         self.dumpBinary(text, "&", parentPrecedence)
@@ -541,10 +541,10 @@ class Expr(self, type: ExprType, line: Line) {
         self.dumpBinary(text, "|", parentPrecedence)
       }
       case ExprType.Bitxor {
-        self.dumpBinary(text, "@", parentPrecedence)
+        self.dumpBinary(text, "^", parentPrecedence)
       }
       case ExprType.Exp {
-        self.dumpBinary(text, "^", parentPrecedence)
+        self.dumpBinary(text, "**", parentPrecedence)
       }
       case ExprType.Shl {
         self.dumpBinary(text, "<<", parentPrecedence)
@@ -680,10 +680,10 @@ class Expr(self, type: ExprType, line: Line) {
         self.dumpBinary(text, "||=", parentPrecedence)
       }
       case ExprType.XorEquals {
-        self.dumpBinary(text, "@@=", parentPrecedence)
+        self.dumpBinary(text, "^^=", parentPrecedence)
       }
       case ExprType.ExpEquals {
-        self.dumpBinary(text, "^=", parentPrecedence)
+        self.dumpBinary(text, "**=", parentPrecedence)
       }
       case ExprType.ShlEquals {
         self.dumpBinary(text, "<<=", parentPrecedence)
@@ -713,7 +713,7 @@ class Expr(self, type: ExprType, line: Line) {
         self.dumpBinary(text, "|=", parentPrecedence)
       }
       case ExprType.BitxorEquals {
-        self.dumpBinary(text, "@=", parentPrecedence)
+        self.dumpBinary(text, "^=", parentPrecedence)
       }
       case ExprType.As {
         self.dumpBinary(text, " as ", parentPrecedence)

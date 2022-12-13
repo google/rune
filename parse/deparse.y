@@ -229,6 +229,7 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %token <lineVal> KWELSE
 %token <lineVal> KWENUM
 %token <lineVal> KWEQUAL
+%token <lineVal> KWEXP
 %token <lineVal> KWEXPEQUALS
 %token <lineVal> KWEXPORT
 %token <lineVal> KWEXPORTLIB
@@ -314,10 +315,9 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %token <lineVal> '='
 %token <lineVal> '>'
 %token <lineVal> '?'
-%token <lineVal> '@'
+%token <lineVal> '^'
 %token <lineVal> '['
 %token <lineVal> ']'
-%token <lineVal> '^'
 %token <lineVal> '{'
 %token <lineVal> '|'
 %token <lineVal> '}'
@@ -724,11 +724,11 @@ operator: '+'
 {
   $$ = DE_EXPR_BITOR;
 }
-| '@'
+| '^'
 {
   $$ = DE_EXPR_BITXOR;
 }
-| '^'
+| KWEXP
 {
   $$ = DE_EXPR_EXP;
 }
@@ -1794,7 +1794,7 @@ bitorExpression: bitxorExpression
 ;
 
 bitxorExpression: bitandExpression
-| bitxorExpression '@' bitandExpression
+| bitxorExpression '^' bitandExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_BITXOR, $1, $3, $2);
 }
@@ -1893,7 +1893,7 @@ prefixExpression: exponentiateExpression
 ;
 
 exponentiateExpression: postfixExpression
-| postfixExpression '^' exponentiateExpression  // Binds right to left.
+| postfixExpression KWEXP exponentiateExpression  // Binds right to left.
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_EXP, $1, $3, $2);
 }

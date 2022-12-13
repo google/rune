@@ -28,6 +28,6 @@ func  decrypt(key: secret(string), info: string, ciphertext: string) -> string {
   sponge.absorb(info)
   sponge.absorb(nonce)
   pad = sponge.squeeze(encryptedText.length())
-  plaintext = encryptedText @ pad  // XOR the plaintext and pad together.
+  plaintext = encryptedText ^ pad  // XOR the plaintext and pad together.
   return plaintext
 }

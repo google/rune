@@ -24,4 +24,4 @@ func foo(a) {
 }
 
 println foo(1u256), foo(2i32)
-println "%x" % (0xdeadbeef @ (123 * (456 + 589)))
+println "%x" % (0xdeadbeef ^ (123 * (456 + 589)))

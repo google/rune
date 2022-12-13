@@ -33,7 +33,7 @@ func fromMontForm(aR: Uint) -> Uint {
 N = (1u256 << 255) - 19
 Rexp = 256
 R = 1u257 << Rexp
-RsqModN = R^2 mod N
+RsqModN = R**2 mod N
 Np = <u256>(-1/N mod R)
 
 // Test of Montgomery Multiplication.

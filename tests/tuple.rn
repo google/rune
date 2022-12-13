@@ -13,7 +13,7 @@
 // limitations under the License.
 
 func Foo(a, b) {
-  return (a*b + a + b, a^2 + b^2)
+  return (a*b + a + b, a**2 + b**2)
 }
 
 t = Foo(3, 5)

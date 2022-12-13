@@ -21,7 +21,7 @@ theirPubkey = argv[1].fromHex().toUintBE(u2048)
 yourPrivkey = secret(argv[2]).fromHex().toUintBE(u2048)
 p = argv[3].fromHex().toUintBE(u2048)
 
-sharedPreKey = theirPubkey^yourPrivkey mod p
+sharedPreKey = theirPubkey**yourPrivkey mod p
 sharedKey = KDF(sharedPreKey.toStringBE(), "Shared key", 32)
 println "sharedKey = ", reveal(sharedKey.toHex())
 fingerPrint = reveal(KDF(sharedKey, "Key fingerprint", 16))

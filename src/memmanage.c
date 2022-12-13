@@ -52,13 +52,6 @@ static void generateConstructorString(deClass theClass) {
   utFree(theClassPath);
 }
 
-// Just indent to the depth.
-static void indent(uint32 depth) {
-  for (uint32 i = 0; i < depth; i++) {
-    deAddString("  ");
-  }
-}
-
 // Free the self object in the destructor.
 static void generateDestructorString(deClass theClass) {
   deStringPos = 0;

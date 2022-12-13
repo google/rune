@@ -29,7 +29,7 @@ func isSafePrime(p) {
 func isPrime(p) {
   for i in range(64) {
     w = reveal(rand2048) % p  // w is called a "witness"
-    x = w^(p-<p>1) mod p
+    x = w**(p-<p>1) mod p
     if x != <p>1 {
       return false;
     }

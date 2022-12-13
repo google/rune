@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Verify (gx, gy) is on the curve: -x^2 + y^2 = 1 + dx^2y^2:
+// Verify (gx, gy) is on the curve: -x**2 + y**2 = 1 + dx**2y**2:
 func verifyPoint(p, d, m) {
   x = p[0]; y = p[1]
   println "x = ", x, ", y = ", y
-  if -x^2 + y^2 != 1 + d*x^2*y^2 mod m {
+  if -x**2 + y**2 != 1 + d*x**2*y**2 mod m {
     throw "Point not on curve"
   }
 }
 
 // Curve 25519
-m = <u255>(2u256^255 - 19u256)
+m = <u255>(2u256**255 - 19u256)
 println "modulus = ", m
 d = -121665/121666 mod m
 println "d = ", d

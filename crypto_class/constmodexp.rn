@@ -20,12 +20,12 @@ func constCodularExponentiation(g, a, m) {
     if a & <m>1 {
       result = result * temp mod m
     }
-    square = square^2 mod m
+    square = square**2 mod m
     a >>= 1;
   }
 }
 
 g = 2u255
-m = <u255>(2u256^255 - 19)
+m = <u255>(2u256**255 - 19)
 a = 23736007888857889066926411552984762136200774587310032634278555383971956518710u255
-println g^a mod m
+println g**a mod m

@@ -22,7 +22,7 @@ func findSecretLSB(A, m) {
 }
 
 g = 2u255
-m = <u255>(2u256^255 - 19)
+m = <u255>(2u256**255 - 19)
 a = 23736007888857889066926411552984762136200774587310032634278555383971956518710u255
-A = g^a mod m  // Compute Alice's public key.
+A = g**a mod m  // Compute Alice's public key.
 println "Alice's secret has LSB set = ", findSecretLSB(A, m)

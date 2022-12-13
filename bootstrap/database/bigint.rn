@@ -25,7 +25,7 @@ import runtime
 kBigintSizeThreshold = 64u32
 
 // The largest width supported.  Integers bigger than this will result in a
-// compiler error.  Currently it is set to 2^24, or about 16 million bits.
+// compiler error.  Currently it is set to 2**24, or about 16 million bits.
 kMaxBigintWidth = 0x1000000u32
 
 // Determine if a value is secret or not.  This is not a native feature of
@@ -229,8 +229,8 @@ operator >= (a: Bigint, b: Bigint) -> bool {
   return runtime.compareBigints(runtime.ComparisonType.Ge, a.bigint, b.bigint)
 }
 
-// Overload the exponentiation ^ operator.
-operator ^ (base: Bigint, exponent: u32) -> Bigint {
+// Overload the exponentiation ** operator.
+operator ** (base: Bigint, exponent: u32) -> Bigint {
   return Bigint(runtime.bigintExp(base.bigint, exponent))
 }
 
@@ -279,8 +279,8 @@ operator | (a: Bigint, b: Bigint) -> Bigint {
   return Bigint(runtime.bigintBitwiseOr(a.bigint, b.bigint))
 }
 
-// Overload the bitwise-XOR @ operator.
-operator @ (a: Bigint, b: Bigint) -> Bigint {
+// Overload the bitwise-XOR ^ operator.
+operator ^ (a: Bigint, b: Bigint) -> Bigint {
   return Bigint(runtime.bigintBitwiseXor(a.bigint, b.bigint))
 }
 
@@ -346,13 +346,13 @@ unittest testArithmeticOperators {
   assert a % c == Bigint(0x227fu32)
 }
 
-// Test the exponentiation ^ operator.
+// Test the exponentiation ** operator.
 unittest testExponentiation {
   a = Bigint(2i32)
   b = Bigint(4i32)
   c = Bigint(-3i32)
   x = Bigint(5i32)
-  y = a*x^2u32 + b*x + c
+  y = a*x**2u32 + b*x + c
   assert y == Bigint(67i32)
 }
 
@@ -392,5 +392,5 @@ unittest testBitwiseOperators {
   assert a & b == Bigint(0u16)
   assert a & (b >> 1u32) == Bigint(0x80u16)
   assert a | b == Bigint(0xffffu16)
-  assert a @ (b >> 1u32) == Bigint(0x7f7fu16)
+  assert a ^ (b >> 1u32) == Bigint(0x7f7fu16)
 }

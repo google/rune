@@ -16,5 +16,5 @@ a = "aaaaaa"
 a = a.fromHex()
 b = "555555"
 b = b.fromHex()
-c = a @ b  // XOR the two strings
+c = a ^ b  // XOR the two strings
 println c.toHex()

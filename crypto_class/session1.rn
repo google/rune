@@ -24,17 +24,17 @@ println "plaintext = ", recoveredPlaintext
 func encrypt(password: string, plaintext: string) -> string {
   M = plaintext.toUintLE(u512)  // Convert a short string to a 512-bit integer.
   P = password.toUintLE(u512)
-  M @= P  // XOR P into M.
+  M ^= P  // XOR P into M.
   permute(M)
-  M @= P  // XOR P onto M.
+  M ^= P  // XOR P onto M.
   return M.toStringLE()  // Convert 512-bit integer back to a string.
 }
 
 func decrypt(password: string, ciphertext: string) -> string {
   M = ciphertext.toUintLE(u512)
   P = password.toUintLE(u512)
-  M @= P  // XOR P into M.
+  M ^= P  // XOR P into M.
   inversePermute(M)
-  M @= P  // XOR P into M.
+  M ^= P  // XOR P into M.
   return M.toStringLE()
 }

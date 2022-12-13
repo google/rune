@@ -24,7 +24,7 @@ func permute(var block: u512) {
 
 // Mix the low portion of the block with the upper portion of the block and vice-versa.
 func round(var upper: u256, var lower: u256) {
-  upper @= lower  // XOR lower onto upper.
+  upper ^= lower  // XOR lower onto upper.
   lower >>>= 101  // Rotate right by 101.
   lower !+= upper  // Add upper to lower. The ! means ingore any overflow.
 }
@@ -41,7 +41,7 @@ func inversePermute(var block: u512) {
 func inverseRound(var upper: u256, var lower: u256) {
   lower !-= upper  // Subtract upper from lower, ignoring any overflow.
   lower <<<= 101  // Rotate lower right by 101.
-  upper @= lower  // XOR lower onto upper.
+  upper ^= lower  // XOR lower onto upper.
 }
 
 unittest prpTest {

@@ -67,7 +67,7 @@ char *deExpressionTypeGetName(deExpressionType type) {
   switch (type) {
     case DE_EXPR_MODINT: return "mod";
     case DE_EXPR_AND: return "&&";
-    case DE_EXPR_XOR: return "@@";
+    case DE_EXPR_XOR: return "^^";
     case DE_EXPR_OR: return "||";
     case DE_EXPR_LT: return "<";
     case DE_EXPR_LE: return "<=";
@@ -80,7 +80,7 @@ char *deExpressionTypeGetName(deExpressionType type) {
     case DE_EXPR_ROTL: return "<<<";
     case DE_EXPR_ROTR: return ">>>";
     case DE_EXPR_BITAND: return "&";
-    case DE_EXPR_BITXOR: return "@";
+    case DE_EXPR_BITXOR: return "^";
     case DE_EXPR_BITOR: return "|";
     case DE_EXPR_NEGATE:
     case DE_EXPR_SUB:
@@ -94,7 +94,7 @@ char *deExpressionTypeGetName(deExpressionType type) {
     case DE_EXPR_MULTRUNC: return "!*";
     case DE_EXPR_DIV: return "/";
     case DE_EXPR_MOD: return "%";
-    case DE_EXPR_EXP: return "^";
+    case DE_EXPR_EXP: return "**";
     case DE_EXPR_NOT: return "!";
     case DE_EXPR_BITNOT: return "~";
     case DE_EXPR_DOT: return ".";
@@ -353,7 +353,7 @@ void deDumpExpressionStr(deString string, deExpression expression) {
       dumpBinaryExpr(string, expression, "||", parentPrecedence);
       break;
     case DE_EXPR_XOR:
-      dumpBinaryExpr(string, expression, "@@", parentPrecedence);
+      dumpBinaryExpr(string, expression, "^^", parentPrecedence);
       break;
     case DE_EXPR_BITAND:
       dumpBinaryExpr(string, expression, "&", parentPrecedence);
@@ -362,10 +362,10 @@ void deDumpExpressionStr(deString string, deExpression expression) {
       dumpBinaryExpr(string, expression, "|", parentPrecedence);
       break;
     case DE_EXPR_BITXOR:
-      dumpBinaryExpr(string, expression, "@", parentPrecedence);
+      dumpBinaryExpr(string, expression, "^", parentPrecedence);
       break;
     case DE_EXPR_EXP:
-      dumpBinaryExpr(string, expression, "^", parentPrecedence);
+      dumpBinaryExpr(string, expression, "**", parentPrecedence);
       break;
     case DE_EXPR_SHL:
       dumpBinaryExpr(string, expression, "<<", parentPrecedence);
@@ -496,10 +496,10 @@ void deDumpExpressionStr(deString string, deExpression expression) {
       dumpBinaryExpr(string, expression, "||=", parentPrecedence);
       break;
     case DE_EXPR_XOR_EQUALS:
-      dumpBinaryExpr(string, expression, "@@=", parentPrecedence);
+      dumpBinaryExpr(string, expression, "^^=", parentPrecedence);
       break;
     case DE_EXPR_EXP_EQUALS:
-      dumpBinaryExpr(string, expression, "^=", parentPrecedence);
+      dumpBinaryExpr(string, expression, "**=", parentPrecedence);
       break;
     case DE_EXPR_SHL_EQUALS:
       dumpBinaryExpr(string, expression, "<<=", parentPrecedence);
@@ -529,7 +529,7 @@ void deDumpExpressionStr(deString string, deExpression expression) {
       dumpBinaryExpr(string, expression, "|=", parentPrecedence);
       break;
     case DE_EXPR_BITXOR_EQUALS:
-      dumpBinaryExpr(string, expression, "@=", parentPrecedence);
+      dumpBinaryExpr(string, expression, "^=", parentPrecedence);
       break;
     case DE_EXPR_AS:
       dumpBinaryExpr(string, expression, " as ", parentPrecedence);

@@ -15,7 +15,7 @@
 x = 12345u49
 s = x.toString()
 println s
-y = -<i256>(2u256^255 - 19u256)
+y = -<i256>(2u256**255 - 19u256)
 s = y.toString()
 println s
 z = -1i8

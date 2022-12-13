@@ -357,7 +357,8 @@ static void noDebug(char *foo, ...) {}
 <INITIAL>"/="     { delval.lineVal = deCurrentLine; myDebug("KWDIVEQUALS\n"); return KWDIVEQUALS; }
 <INITIAL>"..."    { delval.lineVal = deCurrentLine; myDebug("KWDOTDOTDOT\n"); return KWDOTDOTDOT; }
 <INITIAL>"=="     { delval.lineVal = deCurrentLine; myDebug("KWEQUAL\n"); return KWEQUAL; }
-<INITIAL>"^="     { delval.lineVal = deCurrentLine; myDebug("KWEXPEQUALS\n"); return KWEXPEQUALS; }
+<INITIAL>"**"     { delval.lineVal = deCurrentLine; myDebug("KWEXPEQUALS\n"); return KWEXP; }
+<INITIAL>"**="    { delval.lineVal = deCurrentLine; myDebug("KWEXPEQUALS\n"); return KWEXPEQUALS; }
 <INITIAL>">="     { delval.lineVal = deCurrentLine; myDebug("KWGE\n"); return KWGE; }
 <INITIAL>"<="     { delval.lineVal = deCurrentLine; myDebug("KWLE\n"); return KWLE; }
 <INITIAL>"%="     { delval.lineVal = deCurrentLine; myDebug("KWMODEQUALS\n"); return KWMODEQUALS; }
@@ -379,9 +380,9 @@ static void noDebug(char *foo, ...) {}
 <INITIAL>"-="     { delval.lineVal = deCurrentLine; myDebug("KWSUBEQUALS\n"); return KWSUBEQUALS; }
 <INITIAL>"!-="    { delval.lineVal = deCurrentLine; myDebug("KWSUBTRUNCEQUALS\n"); return KWSUBTRUNCEQUALS; }
 <INITIAL>"!-"     { delval.lineVal = deCurrentLine; myDebug("KWSUBTRUNC\n"); return KWSUBTRUNC; }
-<INITIAL>"@="     { delval.lineVal = deCurrentLine; myDebug("KWXOREQUALS\n"); return KWBITXOREQUALS; }
-<INITIAL>"@@="    { delval.lineVal = deCurrentLine; myDebug("KWXOREQUALS\n"); return KWXOREQUALS; }
-<INITIAL>"@@"     { delval.lineVal = deCurrentLine; myDebug("KWXOR\n"); return KWXOR; }
+<INITIAL>"^="     { delval.lineVal = deCurrentLine; myDebug("KWXOREQUALS\n"); return KWBITXOREQUALS; }
+<INITIAL>"^^="    { delval.lineVal = deCurrentLine; myDebug("KWXOREQUALS\n"); return KWXOREQUALS; }
+<INITIAL>"^^"     { delval.lineVal = deCurrentLine; myDebug("KWXOR\n"); return KWXOR; }
 <INITIAL>"f32"    { delval.lineVal = deCurrentLine; myDebug("KWF32\n"); return KWF32; }
 <INITIAL>"f64"    { delval.lineVal = deCurrentLine; myDebug("KWF64\n"); return KWF64; }
 
