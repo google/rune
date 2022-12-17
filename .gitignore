@@ -16,5 +16,18 @@
 *.o
 
 # Test results
-*.result
-/newtests/*
+/tests/
+!/tests/*.rn
+!/tests/*.stdout
+
+/newtests/
+!/newtests/*.rn
+!/newtests/*.stdout
+
+/errortests/
+!/errortests/*.rn
+!/errortests/*.stdout
+
+/crypto_class/
+!/crypto_class/*.rn
+!/crypto_class/*.stdout
