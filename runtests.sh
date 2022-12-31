@@ -29,6 +29,8 @@ for outFile in newtests/*.stdout; do
   else
     ./rune -X -b -g "$test" && "./$executable"  > "$resFile"
   fi
+  sed 's/\r$//' -i "$outFile"
+  sed 's/\r$//' -i "$resFile"
   if cmp -s "$outFile" "$resFile"; then
     echo "$test passed"
     numPassed=$((numPassed + 1))
@@ -47,6 +49,8 @@ for outFile in tests/*.stdout crypto_class/*.stdout; do
   else
     ./runl "$test" > "$resFile"
   fi
+  sed 's/\r$//' -i "$outFile"
+  sed 's/\r$//' -i "$resFile"
   if cmp -s "$outFile" "$resFile"; then
     echo "$test passed"
     numPassed=$((numPassed + 1))
