@@ -563,6 +563,33 @@ static bool bindIdentExpression(deSignature scopeSig, deBlock scopeBlock,
   return false;  // Dummy return.
 }
 
+// The % operator is overloaded: two integer/float types or a string on the
+// left and tuple on the right.  This results in sprintf(left, members of
+// tuple...), returning a string.
+static void bindModExpression(deSignature scopeSig, deBinding binding) {
+  deDatatype leftType, rightType;
+  bindBinaryExpression(scopeSig, binding, &leftType, &rightType, false);
+  deLine line = deBindingGetLine(binding);
+  deDatatypeType type = deDatatypeGetType(leftType);
+  if (deDatatypeTypeIsInteger(type) || type == DE_TYPE_FLOAT) {
+    if (!typesAreEquivalent(leftType, rightType)) {
+      deError(line, "Non-equal types passed to binary operator");
+    }
+    deBindingSetDatatype(binding, leftType);
+    return;
+  }
+  if (deDatatypeGetType(leftType) != DE_TYPE_STRING) {
+    deError(line, "Invalid left operand type for %% operator");
+  }
+  deVerifyPrintfParameters(binding);
+  deDatatype datatype = deStringDatatypeCreate();
+  if (deDatatypeSecret(leftType) || deDatatypeSecret(rightType)) {
+    datatype = deSetDatatypeSecret(datatype, true);
+  }
+  deBindingSetDatatype(binding, datatype);
+}
+
+
 // Bind and AND, OR, or XOR operator.  If operating on numbers, bitwise
 // operators are used.  If operating on Boolean values, logical operators are
 // used.
@@ -766,6 +793,16 @@ static void bindCastExpression(deBinding binding) {
   deBindingSetDatatype(binding, leftDatatype);
 }
 
+// Verify that it is OK for code to call the function.
+static void verifyFunctionIsCallable(deBlock scopeBlock, deFunction function) {
+  deFunctionType type = deFunctionGetType(function);
+  if ((type == DE_FUNC_MODULE || type == DE_FUNC_PACKAGE) &&
+      deFunctionGetType(deBlockGetOwningFunction(scopeBlock)) != DE_FUNC_PACKAGE) {
+    deError(deFunctionGetLine(function), "Cannot call function %s, which which has type %s\n",
+       deFunctionGetName(function), deGetFunctionTypeName(type));
+  }
+}
+
 // Determin if the access binding is a method call.
 static bool isMethodCall(deBinding access) {
   if (deDatatypeGetType(deBindingGetDatatype(access)) != DE_TYPE_FUNCTION ||
@@ -787,28 +824,51 @@ static deDatatypeArray findCallDatatypes(deSignature scopeSig,
     deBinding binding, deFunction function, deBinding params) {
   deDatatypeArray paramTypes = deDatatypeArrayAlloc();
   deBlock block = deFunctionGetSubBlock(function);
+  deDatatypeArrayResizeDatatypes(paramTypes, deBlockCountParameterVariables(block));
   deVariable var = deBlockGetFirstVariable(block);
   deBinding access = deBindingGetFirstBinding(binding);
+  uint32 xParam = 0;
   if (deFunctionGetType(function) == DE_FUNC_CONSTRUCTOR) {
     deTclass tclass = deFunctionGetTclass(function);
-    deDatatypeArrayAppendDatatype(paramTypes, deTclassDatatypeCreate(tclass));
+    deDatatypeArraySetiDatatype(paramTypes, xParam, deTclassDatatypeCreate(tclass));
+    xParam++;
     var = deVariableGetNextBlockVariable(var);
   } else if (isMethodCall(access)) {
     // Add the type of the object on the left of the dot expression as self parameter.
     deDatatype selfType = deBindingGetDatatype(deBindingGetFirstBinding(access));
-    deDatatypeArrayAppendDatatype(paramTypes, selfType);
+    deDatatypeArraySetiDatatype(paramTypes, xParam, selfType);
+    xParam++;
     var = deVariableGetNextBlockVariable(var);
   }
   deBinding param = deBindingGetFirstBinding(params);
+  bool foundNamedParam = false;
   while (param != deBindingNull) {
-    if (var == deVariableNull || deVariableGetType(var) != DE_VAR_PARAMETER) {
-      error(params, "Too many arguments passed to function %s", deFunctionGetName(function));
+    foundNamedParam |= deExpressionGetType(deBindingGetExpression(binding)) == DE_EXPR_NAMEDPARAM;
+    if (!foundNamedParam) {
+      if (var == deVariableNull || deVariableGetType(var) != DE_VAR_PARAMETER) {
+        error(params, "Too many arguments passed to function %s", deFunctionGetName(function));
+      }
+      deDatatypeArraySetiDatatype(paramTypes, xParam, deBindingGetDatatype(param));
+      xParam++;
+      var = deVariableGetNextBlockVariable(var);
+    } else {
+      var = findNamedParam(block, param);
+      uint32 index = deBlockFindVariableIndex(block, var);
+      if (deDatatypeArrayGetiDatatype(paramTypes, index) != deDatatypeNull) {
+        error(param, "Named parameter assigned twice");
+      }
+      deDatatypeArraySetiDatatype(paramTypes, index, deBindingGetDatatype(param));
     }
-    deDatatypeArrayAppendDatatype(paramTypes, deBindingGetDatatype(param));
     param = deBindingGetNextBinding(param);
+  }
+  bindDefaultParameters(block, paramTypes);
+  var = deBlockGetFirstVariable(block);
+  for (uint32 xParam = 0; xParam < deDatatypeArrayGetNumDatatype(paramTypes); xParam++) {
+    if (deDatatypeArrayGetiDatatype(paramTypes, xParam) == deDatatypeNull) {
+      setDefaultDatatype(paramTypes, xParam, var);
+    }
     var = deVariableGetNextBlockVariable(var);
   }
-  // TODO: deal with default parameters, and named parameters.
   if (var != deVariableNull && deVariableGetType(var) == DE_VAR_PARAMETER) {
     error(params, "Too few arguments passed to function %s", deFunctionGetName(function));
   }
@@ -855,22 +915,26 @@ static deSignature resolveConstructorSignature(deSignature signature) {
 }
 
 // Bind a call expression.
-// TODO: Handle method calls, builtin calls, and structure constructors.
 static bool bindCallExpression(deSignature scopeSig, deBinding binding) {
   deBinding access = deBindingGetFirstBinding(binding);
   deBinding params = deBindingGetNextBinding(access);
   deFunction function = findCalledFunction(access);
+  verifyFunctionIsCallable(deSignatureGetBlock(scopeSig), function);
   deDatatypeArray paramTypes = findCallDatatypes(scopeSig, binding, function, params);
+  deLine line = deBindingGetLine(binding);
   if (deFunctionBuiltin(function)) {
     deDatatype returnType = deBindBuiltinCall(deSignatureGetBlock(scopeSig),
         function, paramTypes, deBindingGetExpression(binding));
     deBindingSetDatatype(binding, returnType);
     deDatatypeArrayFree(paramTypes);
     return true;
+  } else if (deFunctionGetType(function) == DE_FUNC_STRUCT) {
+    deDatatype returnType = deStructDatatypeCreate(function, paramTypes, line);
+    deBindingSetDatatype(binding, returnType);
+    return true;
   }
   deSignature signature = deLookupSignature(function, paramTypes);
   if (signature == deSignatureNull) {
-    deLine line = deBindingGetLine(access);
     setStackTraceGlobals(binding);
     signature = deSignatureCreate(function, paramTypes, line);
     if (deSignatureIsConstructor(signature)) {
@@ -1203,8 +1267,13 @@ static void bindIsnullExpression(deSignature scopeSig, deBinding binding) {
   deBindingSetDatatype(binding, deBoolDatatypeCreate());
 }
 
-// TODO: Write this.
-static void bindNamedParameter(deSignature scopeSig, deBinding binding){}
+// Bind a named parameter.  Just skip the name, and set the type to the type of
+// the expression on the right.
+static void bindNamedParameter(deBlock scopeBlock, deBinding binding) {
+  deBinding right = deBindingGetLastBinding(binding);
+  deBindingSetDatatype(binding, deBindingGetDatatype(right));
+  deBindingSetIsType(binding, deBindingIsType(right));
+}
 
 // Bind the binding's expression.
 bool deBindExpression2(deSignature scopeSig, deBinding binding) {
@@ -1223,7 +1292,11 @@ bool deBindExpression2(deSignature scopeSig, deBinding binding) {
       deBindingSetDatatype(binding, deStringDatatypeCreate());
       break;
     case DE_EXPR_IDENT:
-      return bindIdentExpression(scopeSig, deBlockNull, deBindingGetStateBinding(binding), binding);
+      if (!bindIdentExpression(scopeSig, deBlockNull,
+          deBindingGetStateBinding(binding), binding)) {
+        return false;
+      }
+      break;
     case DE_EXPR_ARRAY:
       bindArrayExpression(scopeSig, binding);
       break;
@@ -1267,9 +1340,7 @@ bool deBindExpression2(deSignature scopeSig, deBinding binding) {
       break;
     case DE_EXPR_MOD:
     case DE_EXPR_MOD_EQUALS:
-      // TODO: Write this.
-      // bindModExpression(scopeSig, binding);
-      utExit("Write me");
+      bindModExpression(scopeSig, binding);
       break;
     case DE_EXPR_AND:
     case DE_EXPR_AND_EQUALS:
@@ -1319,7 +1390,10 @@ bool deBindExpression2(deSignature scopeSig, deBinding binding) {
       bindSelectExpression(scopeSig, binding);
       break;
     case DE_EXPR_CALL:
-      return bindCallExpression(scopeSig, binding);
+      if (!bindCallExpression(scopeSig, binding)) {
+        return false;
+      }
+      break;
     case DE_EXPR_INDEX:
       bindIndexExpression(scopeSig, binding);
       break;
@@ -1335,7 +1409,10 @@ bool deBindExpression2(deSignature scopeSig, deBinding binding) {
       bindAssignmentExpression(scopeSig, binding);
       break;
     case DE_EXPR_DOT:
-      return bindDotExpression(scopeSig, binding);
+      if (!bindDotExpression(scopeSig, binding)) {
+        return false;
+      }
+      break;
     case DE_EXPR_DOTDOTDOT:
       bindDotDotDotExpression(scopeSig, binding);
       break;

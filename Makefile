@@ -59,6 +59,7 @@ parse/parse.c \
 src/bind.c \
 src/bind2.c \
 src/bindexpr.c \
+src/bindformat.c \
 src/constprop.c \
 src/generator.c \
 src/iterator.c \
@@ -135,7 +136,7 @@ install: rune
 
 clean:
 	rm -rf obj lib rune */*database.[ch] *.ps parse/descan.c parse/deparse.[ch] rune.log tests/*.ll tests/*.result newtests/*.ll newtests/*.result crypto_class/*.ll crypto_class/*.result errortests/*.ll
-	for file in tests/*.rn crypto_class/*.rn errortests/*.rn; do exeFile=$$(echo "$$file" | sed 's/.rn$$//'); rm -f "$$exeFile"; done
+	for file in tests/*.rn crypto_class/*.rn errortests/*.rn newtests/*.rn; do exeFile=$$(echo "$$file" | sed 's/.rn$$//'); rm -f "$$exeFile"; done
 	cd runtime ; make clean
 	cd bootstrap/database ; make clean
 

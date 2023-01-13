@@ -480,6 +480,7 @@ relationship Binding:Variable Event:Variable cascade
 relationship Ident:Undefined Event:Undefined cascade
 relationship Signature Binding doubly_linked mandatory
 relationship Signature:Binding StateBinding:Binding doubly_linked
+// This is the queue of unbound bindings on the statebinding.
 relationship StateBinding Binding doubly_linked
 relationship StateBinding:Root Binding:Root cascade
 relationship Statement StateBinding doubly_linked mandatory

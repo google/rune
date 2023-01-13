@@ -60,12 +60,15 @@ void deBindBlock(deBlock block, deSignature signature, bool inlineIterators);
 void deBindExpression(deBlock scopeBlock, deExpression expression);
 void deApplySignatureBindings(deSignature signature);
 
-// New event-driven binding funcions.
+// New event-driven binding functions.
 void deBind2(void);
 bool deBindExpression2(deSignature scopeSig, deBinding binding);
 void deBindStatement2(deStateBinding statebinding);
 void deQueueEventBlockedStateBindings(deEvent event);
 void deQueueSignature(deSignature signature);
+void deVerifyPrintfParameters(deBinding binding);
+deBinding deQueueExpression(deSignature scopeSig, deStateBinding statebinding,
+    deBinding owningBinding, deExpression expression, bool instantiating);
 
 // Block methods.
 deBlock deBlockCreate(deFilepath filepath, deBlockType type, deLine line);
@@ -104,6 +107,18 @@ static inline deVariable deBlockIndexVariable(deBlock block, uint32 index) {
     i++;
   } deEndBlockVariable;
   utExit("Indexed past end of block variables");
+  return deVariableNull;
+}
+static inline uint32 deBlockFindVariableIndex(deBlock block, deVariable variable) {
+  deVariable var;
+  uint32 i = 0;
+  deForeachBlockVariable(block, var) {
+    if (var == variable) {
+      return i;
+    }
+    i++;
+  } deEndBlockVariable;
+  utExit("Varaible not found on block");
   return deVariableNull;
 }
 

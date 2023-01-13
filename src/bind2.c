@@ -235,7 +235,7 @@ static void  postProcessDotExpression(deBinding binding) {
 }
 
 // Queue the expression for binding.
-static deBinding queueExpression(deSignature scopeSig, deStateBinding statebinding,
+deBinding deQueueExpression(deSignature scopeSig, deStateBinding statebinding,
     deBinding owningBinding, deExpression expression, bool instantiating) {
   deBinding binding = deExpressionBindingCreate(scopeSig, owningBinding, expression, instantiating);
   deExpressionType type = deExpressionGetType(expression);
@@ -245,7 +245,7 @@ static deBinding queueExpression(deSignature scopeSig, deStateBinding statebindi
     // Only the first sub-expression is ever not instantiated.
     bool instantiateSubExpr = instantiating && (!firstTime || instantiateSubExpressions(type));
     firstTime = false;
-    queueExpression(scopeSig, statebinding, binding, child, instantiateSubExpr);
+    deQueueExpression(scopeSig, statebinding, binding, child, instantiateSubExpr);
   } deEndExpressionExpression;
   // All child bindings are queued before this one.
   deStateBindingAppendBinding(statebinding, binding);
@@ -263,8 +263,8 @@ static void queueBlockStatements(deSignature signature, deBlock block, bool inst
   deForeachBlockStatement(block, statement) {
     deStateBinding statebinding = deStateBindingCreate(signature, statement, instantiating);
     deExpression expression = deStatementGetExpression(statement);
-    if (expression != deExpressionNull) {
-      deBinding rootBinding = queueExpression(signature, statebinding,
+    if (expression != deExpressionNull && !deStatementIsImport(statement)) {
+      deBinding rootBinding = deQueueExpression(signature, statebinding,
           deBindingNull, expression, instantiating);
       deStateBindingInsertRootBinding(statebinding, rootBinding);
     }
@@ -450,6 +450,7 @@ static void applyExpressionBinding(deBinding binding) {
   deExpressionSetDatatype(expr, deBindingGetDatatype(binding));
   deExpressionSetIsType(expr, deBindingIsType(binding));
   deExpressionSetSignature(expr, deBindingGetCallSignature(binding));
+  deExpressionSetAltString(expr, deBindingGetAltString(binding));
   deBinding child;
   deForeachBindingBinding(binding, child) {
     applyExpressionBinding(child);
