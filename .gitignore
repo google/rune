@@ -19,18 +19,18 @@
 *.o
 
 # Test results
-/tests/
-!/tests/*.rn
-!/tests/*.stdout
+#/tests/
+#!/tests/*.rn
+#!/tests/*.stdout
 
-/newtests/
-!/newtests/*.rn
-!/newtests/*.stdout
+#/newtests/
+#!/newtests/*.rn
+#!/newtests/*.stdout
 
-/errortests/
-!/errortests/*.rn
-!/errortests/*.stdout
+#/errortests/
+#!/errortests/*.rn
+#!/errortests/*.stdout
 
-/crypto_class/
-!/crypto_class/*.rn
-!/crypto_class/*.stdout
+#/crypto_class/
+#!/crypto_class/*.rn
+#!/crypto_class/*.stdout
