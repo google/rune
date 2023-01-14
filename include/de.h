@@ -58,7 +58,6 @@ void deBind(void);
 void deBindNewStatement(deBlock scopeBlock, deStatement statement);
 void deBindBlock(deBlock block, deSignature signature, bool inlineIterators);
 void deBindExpression(deBlock scopeBlock, deExpression expression);
-void deApplySignatureBindings(deSignature signature);
 
 // New event-driven binding functions.
 void deBind2(void);
@@ -69,6 +68,8 @@ void deQueueSignature(deSignature signature);
 void deVerifyPrintfParameters(deBinding binding);
 deBinding deQueueExpression(deSignature scopeSig, deStateBinding statebinding,
     deBinding owningBinding, deExpression expression, bool instantiating);
+void deApplySignatureBindings(deSignature signature);
+void deApplyDefaultValueBindings(deSignature signature);
 
 // Block methods.
 deBlock deBlockCreate(deFilepath filepath, deBlockType type, deLine line);
@@ -119,7 +120,7 @@ static inline uint32 deBlockFindVariableIndex(deBlock block, deVariable variable
     i++;
   } deEndBlockVariable;
   utExit("Varaible not found on block");
-  return deVariableNull;
+  return 0;  // Dummy return.
 }
 
 // Function methods.
@@ -460,7 +461,13 @@ deDatatype deFindEnumIntType(deBlock block);
 
 // StateBinding and Binding methods.
 deStateBinding deStateBindingCreate(deSignature signature,
-                                    deStatement statement, bool instantiating);
+    deStatement statement, bool instantiating);
+deStateBinding deVariableInitializerStateBindingCreate(deSignature signature,
+    deVariable variable, bool instantiating);
+deStateBinding deVariableConstraintStateBindingCreate(deSignature signature,
+    deVariable variable, bool instantiating);
+deStateBinding deFunctionConstraintStateBindingCreate(deSignature signature,
+    deFunction function, bool instantiating);
 deBinding deExpressionBindingCreate(deSignature signature, deBinding owningBinding,
     deExpression expression, bool instantiating);
 deBinding deParameterBindingCreate(deSignature signature, deVariable variable,
@@ -468,6 +475,7 @@ deBinding deParameterBindingCreate(deSignature signature, deVariable variable,
 deBinding deVariableBindingCreate(deSignature signature, deVariable variable);
 deBinding deFindVariableBinding(deSignature signature, deVariable variable);
 deBinding deFindIdentBinding(deSignature signature, deIdent ident);
+deBinding deFindExpressionBinding(deSignature signature, deExpression expression);
 deEvent deSignatureEventCreate(deSignature signature);
 deEvent deUndefinedIdentEventCreate(deIdent ident);
 deEvent deVariableEventCreate(deBinding varBinding);

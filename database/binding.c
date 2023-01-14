@@ -16,12 +16,50 @@
 
 // Create a StateBinding object representing the state of binding of a statement
 // for a given function signature.
-deStateBinding deStateBindingCreate(deSignature signature, deStatement statement, bool instantiating) {
+static deStateBinding stateBindingCreate(deSignature signature,
+    deStateBindingType type, bool instantiating) {
   deStateBinding statebinding = deStateBindingAlloc();
+  deStateBindingSetType(statebinding, type);
   deStateBindingSetInstantiated(statebinding, true);
-  deStatementAppendStateBinding(statement, statebinding);
   deSignatureAppendStateBinding(signature, statebinding);
   deSignatureAppendBindingStateBinding(signature, statebinding);
+  return statebinding;
+}
+
+// Create a StateBinding object representing the state of binding of a statement
+// for a given function signature.
+deStateBinding deStateBindingCreate(deSignature signature,
+    deStatement statement, bool instantiating) {
+  deStateBinding statebinding = stateBindingCreate(signature,
+      DE_STATEBIND_STATEMENT, instantiating);
+  deStatementAppendStateBinding(statement, statebinding);
+  return statebinding;
+}
+
+// Create a StateBinding object to help bind a default value initializer.
+deStateBinding deVariableInitializerStateBindingCreate(deSignature signature,
+    deVariable variable, bool instantiating) {
+  deStateBinding statebinding = stateBindingCreate(signature,
+      DE_STATEBIND_DEFAULT_VALUE, instantiating);
+  deVariableAppendInitializerStateBinding(variable, statebinding);
+  return statebinding;
+}
+
+// Create a StateBinding object to help bind a variable type constraint.
+deStateBinding deVariableConstraintStateBindingCreate(deSignature signature,
+    deVariable variable, bool instantiating) {
+  deStateBinding statebinding = stateBindingCreate(signature,
+      DE_STATEBIND_VAR_CONSTRAINT, instantiating);
+  deVariableAppendTypeStateBinding(variable, statebinding);
+  return statebinding;
+}
+
+// Create a StateBinding object to help bind a function type constraint.
+deStateBinding deFunctionConstraintStateBindingCreate(deSignature signature,
+    deFunction function, bool instantiating) {
+  deStateBinding statebinding = stateBindingCreate(signature,
+      DE_STATEBIND_FUNC_CONSTRAINT, instantiating);
+  deFunctionAppendTypeStateBinding(function, statebinding);
   return statebinding;
 }
 
@@ -53,7 +91,7 @@ deBinding deVariableBindingCreate(deSignature signature, deVariable variable) {
   return binding;
 }
 
-// Create a binding object representing an expression that is in-flight binding
+// Create a binding object representing a variable that is in-flight binding
 // for a specific function signature.
 deBinding deParameterBindingCreate(deSignature signature, deVariable variable,
     deParamspec paramspec) {
@@ -112,6 +150,17 @@ deBinding deFindVariableBinding(deSignature signature, deVariable variable) {
       return binding;
     }
   } deEndVariableBinding;
+  return deBindingNull;
+}
+
+// Find the binding for the expression on the signature.
+deBinding deFindExpressionBinding(deSignature signature, deExpression expression) {
+  deBinding binding;
+  deForeachExpressionBinding(expression, binding) {
+    if (deBindingGetSignature(binding) == signature) {
+      return binding;
+    }
+  } deEndExpressionBinding;
   return deBindingNull;
 }
 

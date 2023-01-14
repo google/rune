@@ -819,12 +819,31 @@ static bool isMethodCall(deBinding access) {
   return type != DE_TYPE_TCLASS  && type != DE_TYPE_FUNCTION;
 }
 
-// Find call datatypes.
+// Return the named parameter variable.
+static deVariable findNamedParam(deBlock block, deBinding param) {
+  deExpression paramExpr = deBindingGetExpression(param);
+  utSym name = deExpressionGetName(deExpressionGetFirstExpression(paramExpr));
+  deIdent ident = deBlockFindIdent(block, name);
+  if (ident == deIdentNull || deIdentGetType(ident) != DE_IDENT_VARIABLE) {
+    error(param, "Undefined named parameter: %s", utSymGetName(name));
+  }
+  deVariable var = deIdentGetVariable(ident);
+  if (deVariableGetType(var) != DE_VAR_PARAMETER) {
+    error(param, "Undefined named parameter: %s", utSymGetName(name));
+  }
+  return var;
+}
+
+// Find call datatypes.  For default parameters with default values that are
+// not specified by the caller, use deNullDatatype, as this will be bound when
+// binding the function.
 static deDatatypeArray findCallDatatypes(deSignature scopeSig,
     deBinding binding, deFunction function, deBinding params) {
   deDatatypeArray paramTypes = deDatatypeArrayAlloc();
   deBlock block = deFunctionGetSubBlock(function);
-  deDatatypeArrayResizeDatatypes(paramTypes, deBlockCountParameterVariables(block));
+  uint32 numParams = deBlockCountParameterVariables(block);
+  deDatatypeArrayResizeDatatypes(paramTypes, numParams);
+  deDatatypeArraySetUsedDatatype(paramTypes, numParams);
   deVariable var = deBlockGetFirstVariable(block);
   deBinding access = deBindingGetFirstBinding(binding);
   uint32 xParam = 0;
@@ -861,11 +880,11 @@ static deDatatypeArray findCallDatatypes(deSignature scopeSig,
     }
     param = deBindingGetNextBinding(param);
   }
-  bindDefaultParameters(block, paramTypes);
   var = deBlockGetFirstVariable(block);
   for (uint32 xParam = 0; xParam < deDatatypeArrayGetNumDatatype(paramTypes); xParam++) {
-    if (deDatatypeArrayGetiDatatype(paramTypes, xParam) == deDatatypeNull) {
-      setDefaultDatatype(paramTypes, xParam, var);
+    if (deDatatypeArrayGetiDatatype(paramTypes, xParam) == deDatatypeNull &&
+        deVariableGetInitializerExpression(var) == deExpressionNull) {
+      error(params, "Parameter %s was not set and has no default value", deVariableGetName(var));
     }
     var = deVariableGetNextBlockVariable(var);
   }
@@ -1091,8 +1110,7 @@ static deVariable findOrCreateVariable(deSignature scopeSig, deBinding access) {
 }
 
 // Update a variable from an assignment binding.
-static void updateVariable(deSignature scopeSig, deBinding accessBinding, deBinding targetBinding) {
-  deVariable variable = findOrCreateVariable(scopeSig, accessBinding);
+static void updateVariable(deSignature scopeSig, deVariable variable, deBinding targetBinding) {
   deBinding varBinding = deFindVariableBinding(scopeSig, variable);
   if (varBinding == deBindingNull && deVariableGetBlock(variable) ==
       deSignatureGetBlock(scopeSig)) {
@@ -1112,10 +1130,9 @@ static void updateVariable(deSignature scopeSig, deBinding accessBinding, deBind
     datatype = deUnifyDatatypes(oldDatatype, newDatatype);
   }
   if (datatype == deDatatypeNull) {
-    error(accessBinding, "Assigning different type to %s than assigned before:%s",
+    error(targetBinding, "Assigning different type to %s than assigned before:%s",
       deVariableGetName(variable), deGetOldVsNewDatatypeStrings(oldDatatype, newDatatype));
   }
-  deBindingSetDatatype(accessBinding, datatype);
   if (varBinding == deBindingNull) {
     deVariableSetDatatype(variable, datatype);
   } else {
@@ -1134,10 +1151,13 @@ static void bindAssignmentExpression(deSignature scopeSig, deBinding binding) {
   deBinding targetBinding = deBindingGetNextBinding(accessBinding);
   deExpression access = deBindingGetExpression(accessBinding);
   deExpressionType type  = deExpressionGetType(access);
+  deDatatype targetDatatype = deBindingGetDatatype(targetBinding);
   if (type == DE_EXPR_IDENT || type == DE_EXPR_DOT) {
-    updateVariable(scopeSig, accessBinding, targetBinding);
+    deVariable variable = findOrCreateVariable(scopeSig, accessBinding);
+    updateVariable(scopeSig, variable, targetBinding);
+    deBindingSetDatatype(accessBinding, targetDatatype);
   }
-  deBindingSetDatatype(binding, deBindingGetDatatype(targetBinding));
+  deBindingSetDatatype(binding, targetDatatype);
 }
 
 // Bind the array expression.
@@ -1269,7 +1289,7 @@ static void bindIsnullExpression(deSignature scopeSig, deBinding binding) {
 
 // Bind a named parameter.  Just skip the name, and set the type to the type of
 // the expression on the right.
-static void bindNamedParameter(deBlock scopeBlock, deBinding binding) {
+static void bindNamedParameter(deSignature scopeSig, deBinding binding) {
   deBinding right = deBindingGetLastBinding(binding);
   deBindingSetDatatype(binding, deBindingGetDatatype(right));
   deBindingSetIsType(binding, deBindingIsType(right));
@@ -1523,6 +1543,12 @@ static void postProcessBoundStatement(deStateBinding statebinding) {
   }
 }
 
+// Set the datatype of variable to that if its default value.
+static void setDefaultVariableType(deSignature scopeSig, deStateBinding statebinding) {
+  deVariable var = deStateBindingGetInitializerVariable(statebinding);
+  updateVariable(scopeSig, var, deStateBindingGetRootBinding(statebinding));
+}
+
 // Bind or continue binding the statement.
 void deBindStatement2(deStateBinding statebinding) {
   deBinding binding = deStateBindingGetFirstBinding(statebinding);
@@ -1534,5 +1560,16 @@ void deBindStatement2(deStateBinding statebinding) {
     deStateBindingRemoveBinding(statebinding, binding);
     binding = deStateBindingGetFirstBinding(statebinding);
   }
-  postProcessBoundStatement(statebinding);
+  switch (deStateBindingGetType(statebinding)) {
+    case  DE_STATEBIND_STATEMENT:
+      postProcessBoundStatement(statebinding);
+      break;
+    case DE_STATEBIND_DEFAULT_VALUE:
+      setDefaultVariableType(scopeSig, statebinding);
+      break;
+    case DE_STATEBIND_VAR_CONSTRAINT:
+    case DE_STATEBIND_FUNC_CONSTRAINT:
+      break;
+
+  }
 }

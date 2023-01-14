@@ -276,13 +276,29 @@ static void queueBlockStatements(deSignature signature, deBlock block, bool inst
   } deEndBlockStatement;
 }
 
-// Set bound bindings on narameters from the signature.
+// Create a StateBinding for the variable's default initializer value.
+static void createDefaultValueStateBinding(deSignature scopeSig, deVariable var) {
+  deStateBinding statebinding = deVariableInitializerStateBindingCreate(scopeSig, var, true);
+  deExpression expr = deVariableGetInitializerExpression(var);
+  utAssert(expr != deExpressionNull);
+  deBinding rootBinding = deQueueExpression(scopeSig, statebinding, deBindingNull, expr, true);
+  deStateBindingInsertRootBinding(statebinding, rootBinding);
+  deRootAppendBindingStateBinding(deTheRoot, statebinding);
+}
+
+// Set bound bindings on parameters from the signature.  For parameters with
+// deNullDatatype, there must be a default value.  Create deStateBind objects
+// for such variables so they will be bound first.  Also create StateBind
+// objects for parameter type constraints.
 static void bindSignatureParameters(deSignature signature) {
   deBlock block = deSignatureGetBlock(signature);
   deVariable variable = deBlockGetFirstVariable(block);
   deParamspec paramspec;
   deForeachSignatureParamspec(signature, paramspec) {
     deParameterBindingCreate(signature, variable, paramspec);
+    if (deParamspecGetDatatype(paramspec) == deDatatypeNull) {
+      createDefaultValueStateBinding(signature, variable);
+    }
     variable = deVariableGetNextBlockVariable(variable);
   } deEndSignatureParamspec;
 }
@@ -314,8 +330,8 @@ void deQueueSignature(deSignature signature) {
   if (!deFunctionBuiltin(deSignatureGetFunction(signature))) {
     addReturnIfMissing(block);
   }
-  queueBlockStatements(signature, block, true);
   bindSignatureParameters(signature);
+  queueBlockStatements(signature, block, true);
 }
 
 // Once we finish binding a signature, update its paramspecs.
@@ -485,11 +501,29 @@ void deApplySignatureBindings(deSignature signature) {
   applyVariableBindings(signature);
   deStateBinding statebinding;
   deForeachSignatureStateBinding(signature, statebinding) {
-    deStatement statement = deStateBindingGetStatement(statebinding);
-    deStatementSetInstantiated(statement, deStateBindingInstantiated(statebinding));
     deBinding binding = deStateBindingGetRootBinding(statebinding);
     if (binding != deBindingNull) {
       applyExpressionBinding(binding);
     }
+    if (deStateBindingGetType(statebinding) == DE_STATEBIND_STATEMENT) {
+      deStatement statement = deStateBindingGetStatement(statebinding);
+      deStatementSetInstantiated(statement, deStateBindingInstantiated(statebinding));
+    }
   } deEndSignatureStateBinding;
+}
+
+// Apply parameter default value bindings.
+void deApplyDefaultValueBindings(deSignature signature) {
+  deParamspec paramspec;
+  deForeachSignatureParamspec(signature, paramspec) {
+    if (deParamspecGetDatatype(paramspec) == deDatatypeNull) {
+      // This parameter uses its default value.
+      deVariable var = deParamspecGetVariable(paramspec);
+      deExpression defaultExpr = deVariableGetInitializerExpression(var);
+      utAssert(defaultExpr != deExpressionNull);
+      deBinding binding = deFindExpressionBinding(signature, defaultExpr);
+      utAssert(binding != deBindingNull);
+      applyExpressionBinding(binding);
+    }
+  } deEndSignatureParamspec;
 }

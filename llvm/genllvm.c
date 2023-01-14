@@ -1196,6 +1196,10 @@ static uint32 countBlockParamVars(deBlock block) {
 // Evaluate parameters in reverse order.
 static void evaluateParameters(deSignature signature, deDatatype datatype,
     deExpression parameters, bool isMethodCall) {
+  if (deUseNewBinder && signature != deSignatureNull) {
+    // The new binder binds default parameters when binding the called function.
+    deApplyDefaultValueBindings(signature);
+  }
   deExpression parameter;
   deExpression firstNamedParameter;
   deBlock block;

@@ -243,6 +243,12 @@ enum SecretType
   DE_SECTYPE_ALL_SECRET
   DE_SECTYPE_MIXED
 
+enum StateBindingType
+  DE_STATEBIND_STATEMENT  // For binding statement expressions.
+  DE_STATEBIND_DEFAULT_VALUE  // For binding parameter default vaules.
+  DE_STATEBIND_VAR_CONSTRAINT  // For binding variable type constraints.
+  DE_STATEBIND_FUNC_CONSTRAINT  // For binding function type constraints.
+
 class Root create_only
   Statement lastInitializerStatement
 
@@ -419,6 +425,7 @@ class Paramspec
 // This class tracks statement binding.  See the header comment in src/bind2.c
 // for details.
 class StateBinding
+  StateBindingType type
   bool instantiated
 
 // This class tracks binding of an expression in a signature.  The same
@@ -483,7 +490,10 @@ relationship Signature:Binding StateBinding:Binding doubly_linked
 // This is the queue of unbound bindings on the statebinding.
 relationship StateBinding Binding doubly_linked
 relationship StateBinding:Root Binding:Root cascade
-relationship Statement StateBinding doubly_linked mandatory
+relationship Statement StateBinding doubly_linked cascade
+relationship Variable:Initializer StateBinding:Initializer doubly_linked cascade
+relationship Variable:Type StateBinding:Type doubly_linked cascade
+relationship Function:Type StateBinding:Type doubly_linked cascade
 relationship Expression Binding doubly_linked cascade
 relationship Binding Binding doubly_linked cascade
 relationship Ident Binding doubly_linked cascade

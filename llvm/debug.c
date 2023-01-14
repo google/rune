@@ -452,7 +452,9 @@ static uint32 createSignatureTypeTag(deSignature signature) {
   bool mustUseValue = deSignatureIsCalledByFuncptr(signature);
   bool firstTime = true;
   for (uint32 i = 0; i < deSignatureGetNumParamspec(signature); i++) {
-    if (mustUseValue || deSignatureParamInstantiated(signature, i)) {
+    deParamspec paramspec = deSignatureGetiParamspec(signature, i);
+    if (mustUseValue || (deParamspecInstantiated(paramspec) &&
+        deParamspecGetDatatype(paramspec) != deDatatypeNull)) {
       llTag typeTag = createDatatypeTag(deSignatureGetiType(signature, i));
       if (!firstTime) {
         deStringSprintf(buf, ", !%u", llTagGetNum(typeTag));
