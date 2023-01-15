@@ -509,7 +509,7 @@ char *deBytesToHex(void *bytes, uint32 len, bool littleEndian) {
 // Determine if the identifier conforms to: [-a-zA-Z$._][-a-zA-Z$._0-9]*
 bool deIsLegalIdentifier(char *identifier) {
   uint8 *p = (uint8*)identifier;
-  uint8 len = strlen(identifier);
+  uint8 *end = p +  strlen(identifier);
   uint8 c = *p++;
   if (!isalpha(c) && c != '_' && c != '$' && c < 0xc0) {
     return false;
@@ -518,7 +518,7 @@ bool deIsLegalIdentifier(char *identifier) {
   do {
     c = *p++;
   } while (c >= 0x80 && c <= 0xbf);
-  for (uint32 i = 1; i < len; i++) {
+  while (p < end) {
     if (!isalnum(c) && !isdigit(c) && c != '_' && c != '$' && c < 0xc0) {
       return false;
     }

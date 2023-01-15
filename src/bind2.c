@@ -185,8 +185,6 @@ static bool instantiateSubExpressions(deExpressionType type) {
   case DE_EXPR_FUNCADDR:
   case DE_EXPR_ARRAYOF:
   case DE_EXPR_TYPEOF:
-  case DE_EXPR_UNSIGNED:
-  case DE_EXPR_SIGNED:
   case DE_EXPR_WIDTHOF:
     return false;
   default:
@@ -234,6 +232,14 @@ static void  postProcessDotExpression(deBinding binding) {
   deStateBindingRemoveBinding(deBindingGetStateBinding(binding), identBinding);
 }
 
+// Remove the identifier to the left of the named parameter expression from the
+// binding queue.  The handler for binding named parameter expressions must bind
+// this once the right hand side is bound.
+static void  postProcessNamedParameterExpression(deBinding binding) {
+  deBinding identBinding = deBindingGetFirstBinding(binding);
+  deStateBindingRemoveBinding(deBindingGetStateBinding(binding), identBinding);
+}
+
 // Queue the expression for binding.
 deBinding deQueueExpression(deSignature scopeSig, deStateBinding statebinding,
     deBinding owningBinding, deExpression expression, bool instantiating) {
@@ -253,6 +259,8 @@ deBinding deQueueExpression(deSignature scopeSig, deStateBinding statebinding,
     postProcessAssignment(binding);
   } else if (type == DE_EXPR_DOT) {
     postProcessDotExpression(binding);
+  } else if (type == DE_EXPR_NAMEDPARAM) {
+    postProcessNamedParameterExpression(binding);
   }
   return binding;
 }

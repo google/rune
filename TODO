@@ -37,6 +37,7 @@ Add LLVM compiler hints and optmizations as described at
 Support named parameters, like Python
 
 ## Medium Term
+Write tests to verify that constant time processing of secrets is achieved.  E.g. if (issecret(foo)...
 Add support for fixed-sized arrays for improved speed.
 Make modular inverse constant time.
 Upgrade from lineNum to an object specifying the text of the line, position, and file name.

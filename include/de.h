@@ -110,7 +110,8 @@ static inline deVariable deBlockIndexVariable(deBlock block, uint32 index) {
   utExit("Indexed past end of block variables");
   return deVariableNull;
 }
-static inline uint32 deBlockFindVariableIndex(deBlock block, deVariable variable) {
+static inline uint32 deBlockFindVariableIndex(deBlock block,
+    deVariable variable) {
   deVariable var;
   uint32 i = 0;
   deForeachBlockVariable(block, var) {
@@ -118,19 +119,19 @@ static inline uint32 deBlockFindVariableIndex(deBlock block, deVariable variable
       return i;
     }
     i++;
-  } deEndBlockVariable;
+  }
+  deEndBlockVariable;
   utExit("Varaible not found on block");
   return 0;  // Dummy return.
 }
 
 // Function methods.
 deFunction deFunctionCreate(deFilepath filepath, deBlock block,
-                            deFunctionType type, utSym name, deLinkage linkage,
-                            deLine line);
+    deFunctionType type, utSym name, deLinkage linkage, deLine line);
 deFunction deIteratorFunctionCreate(deBlock block, utSym name, utSym selfName,
-                                    deLinkage linkage, deLine line);
+    deLinkage linkage, deLine line);
 deFunction deOperatorFunctionCreate(deBlock block, deExpressionType opType,
-                                    deLine line);
+    deLine line);
 char *deGetFunctionTypeName(deFunctionType type);
 void deDumpFunction(deFunction function);
 void deDumpFunctionStr(deString string, deFunction function);
@@ -192,8 +193,7 @@ static inline deBlock deGeneratorGetSubBlock(deGenerator generator) {
 
 // Variable methods.
 deVariable deVariableCreate(deBlock block, deVariableType type, bool isConst,
-                            utSym name, deExpression initializer,
-                            bool generated, deLine line);
+    utSym name, deExpression initializer, bool generated, deLine line);
 deVariable deCopyVariable(deVariable variable, deBlock destBlock);
 void deDumpVariable(deVariable variable);
 void deDumpVariableStr(deString str, deVariable variable);
@@ -227,10 +227,8 @@ deExpression deStringExpressionCreate(deString, deLine line);
 deExpression deCStringExpressionCreate(char *text, deLine line);
 deExpression deBoolExpressionCreate(bool value, deLine line);
 deExpression deBinaryExpressionCreate(deExpressionType type,
-                                      deExpression leftExpr,
-                                      deExpression rightExpr, deLine line);
-deExpression deUnaryExpressionCreate(deExpressionType type, deExpression expr,
-                                     deLine line);
+    deExpression leftExpr, deExpression rightExpr, deLine line);
+deExpression deUnaryExpressionCreate(deExpressionType type, deExpression expr, deLine line);
 void deDumpExpression(deExpression expression);
 void deDumpExpressionStr(deString string, deExpression expression);
 deStatement deFindExpressionStatement(deExpression expression);
@@ -332,8 +330,7 @@ deDatatype deNullDatatypeCreate(deTclass tclass);
 deDatatype deFunctionDatatypeCreate(deFunction function);
 deDatatype deFuncptrDatatypeCreate(deDatatype returnType, deDatatypeArray parameterTypes);
 deDatatype deTupleDatatypeCreate(deDatatypeArray types);
-deDatatype deStructDatatypeCreate(deFunction structFunction,
-                                  deDatatypeArray types, deLine line);
+deDatatype deStructDatatypeCreate(deFunction structFunction, deDatatypeArray types, deLine line);
 deDatatype deGetStructTupleDatatype(deDatatype structDatatype);
 deDatatype deEnumClassDatatypeCreate(deFunction enumFunction);
 deDatatype deEnumDatatypeCreate(deFunction enumFunction);
@@ -374,7 +371,7 @@ static inline bool deDatatypeIsNumber(deDatatype datatype) {
 // Signature, SignatureBin, and Paramspec methods.
 deSignature deLookupSignature(deFunction function, deDatatypeArray parameterTypes);
 deSignature deSignatureCreate(deFunction function,
-                              deDatatypeArray parameterTypes, deLine line);
+    deDatatypeArray parameterTypes, deLine line);
 deSignature deResolveConstructorSignature(deSignature signature);
 bool deSignatureIsConstructor(deSignature signature);
 bool deSignatureIsMethod(deSignature signature);
@@ -517,8 +514,7 @@ bool deIsLegalIdentifier(char *identifier);
 char *deSnakeCase(char *camelCase);
 char *deUpperSnakeCase(char *camelCase);
 void deGenerateDummyLLFileAndExit(void);
-char *deGetOldVsNewDatatypeStrings(deDatatype oldDatatype,
-                                   deDatatype newDatatype);
+char *deGetOldVsNewDatatypeStrings(deDatatype oldDatatype, deDatatype newDatatype);
 static inline uint32 deBitsToBytes(uint32 bits) {
   return (bits + 7) / 8;
 }

@@ -2327,9 +2327,9 @@ static void generateCallExpression(deExpression expression) {
   deSignature signature = deExpressionGetSignature(expression);
   deDatatype returnType = deExpressionGetDatatype(expression);
   uint32 savedStackPos = llStackPos;
+  bool isMethodCall = deExpressionIsMethodCall(accessExpression);
   if (signature != deSignatureNull) {
-    evaluateParameters(signature, deDatatypeNull, parameters,
-        deExpressionIsMethodCall(accessExpression));
+    evaluateParameters(signature, deDatatypeNull, parameters, isMethodCall);
   } else {
     evaluateIndirectCallParameters(parameters);
   }
@@ -2339,9 +2339,13 @@ static void generateCallExpression(deExpression expression) {
   deDatatypeType accessType = deDatatypeGetType(accessDatatype);
   if (llElementIsDelegate(element)) {
     // If this is a delegate, the self expression is still on the stack, and
-    // needs to be derefed
-    llElement *selfElement = topOfStack();
-    derefElement(selfElement);
+    // needs to be derefed or popped if not used.
+    if (!deSignatureParamInstantiated(signature, 0)) {
+      popElement(false);
+    } else {
+      llElement *selfElement = topOfStack();
+      derefElement(selfElement);
+    }
   }
   llElement returnElement;
   bool returnsValuePassedByReference = llDatatypePassedByReference(returnType);

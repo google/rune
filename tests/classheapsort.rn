@@ -27,7 +27,7 @@ class Element(self, name, age) {
   }
 }
 
-relation HeapList Root Element cascade
+relation HeapqList Root Element cascade
 
 root = Root()
 root.pushElement(Element("Fred", 44))

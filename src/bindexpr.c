@@ -84,11 +84,10 @@ static void checkBinaryExpression(deSignature scopeSig, deBinding binding,
   if (compareTypes && !typesAreEquivalent(*leftType, *rightType)) {
     // Try auto-cast.
     if (deBindingAutocast(left) && !deBindingAutocast(right)) {
-      // TODO: Comment in when we test autocast.
-      // coautocastExpression(left, *rightType);
+      autocastExpression(left, *rightType);
       *leftType = deBindingGetDatatype(left);
     } else if (deBindingAutocast(right) && !deBindingAutocast(left)) {
-      // autocastExpression(right, *leftType);
+      autocastExpression(right, *leftType);
       *rightType = deBindingGetDatatype(right);
     }
   }
@@ -152,11 +151,10 @@ static void bindBinaryExpression(deSignature scopeSig, deBinding binding,
   if (compareTypes && !typesAreEquivalent(*leftType, *rightType)) {
     // Try auto-cast.
     if (deBindingAutocast(left) && !deBindingAutocast(right)) {
-      // TODO: Comment in when we test autocast.
-      // autocastExpression(left, *rightType);
+      autocastExpression(left, *rightType);
       *leftType = deBindingGetDatatype(left);
     } else if (deBindingAutocast(right) && !deBindingAutocast(left)) {
-      // autocastExpression(right, *leftType);
+      autocastExpression(right, *leftType);
       *rightType = deBindingGetDatatype(right);
     }
   }
@@ -1293,6 +1291,23 @@ static void bindNamedParameter(deSignature scopeSig, deBinding binding) {
   deBinding right = deBindingGetLastBinding(binding);
   deBindingSetDatatype(binding, deBindingGetDatatype(right));
   deBindingSetIsType(binding, deBindingIsType(right));
+  // Find the variable in the called function so we can bind to it.
+  deBinding call = deBindingGetBinding(deBindingGetBinding(binding));
+  utAssert(deBindingGetType(call) == DE_EXPR_CALL);
+  deBinding callAccess = deBindingGetFirstBinding(call);
+  deFunction function = findCalledFunction(callAccess);
+  deBlock block = deFunctionGetSubBlock(function);
+  deBinding paramNameBinding = deBindingGetFirstBinding(binding);
+  utSym paramName = deExpressionGetName(deBindingGetExpression(paramNameBinding));
+  deIdent ident = deBlockFindIdent(block, paramName);
+  if (ident == deIdentNull || deIdentGetType(ident) != DE_IDENT_VARIABLE) {
+    error(binding, "No parameter named %s found", utSymGetName(paramName));
+  }
+  deVariable var = deIdentGetVariable(ident);
+  if (deVariableGetType(var) != DE_VAR_PARAMETER) {
+    error(binding, "Variable %s is a local variable, not a parameter", utSymGetName(paramName));
+  }
+  deIdentAppendBinding(ident, paramNameBinding);
 }
 
 // Bind the binding's expression.
