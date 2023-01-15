@@ -192,21 +192,6 @@ static bool instantiateSubExpressions(deExpressionType type) {
   }
 }
 
-// Create an undefined identifier in the local scope if not already defined.
-// This keeps locals from being shadowed by globals while the local assignments
-// are still binding.
-static void createUndefinedIdent(deBinding binding) {
-  deSignature scopeSig = deBindingGetSignature(binding);
-  deBlock block = deSignatureGetBlock(scopeSig);
-  deExpression identExpr = deBindingGetExpression(binding);
-  utSym name = deExpressionGetName(identExpr);
-  utAssert(name != utSymNull);
-  deIdent oldIdent = deBlockFindIdent(block, name);
-  if (oldIdent == deIdentNull) {
-    deUndefinedIdentCreate(block, name);
-  }
-}
-
 // For assignments, bind the access unless it is a lone identifier, or the
 // identifier to the right of a dot at the end.  In these two special cases,
 // the identifier binding will exist but will be removed from the binding
@@ -218,9 +203,6 @@ static void  postProcessAssignment(deBinding binding) {
   if (type == DE_EXPR_IDENT || type == DE_EXPR_DOT) {
     // If it is a dot expression, its ident binding was already removed.
     deStateBindingRemoveBinding(deBindingGetStateBinding(binding), access);
-    if (type == DE_EXPR_IDENT) {
-      createUndefinedIdent(access);
-    }
   }
 }
 

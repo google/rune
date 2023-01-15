@@ -1090,7 +1090,7 @@ static deVariable findOrCreateVariable(deSignature scopeSig, deBinding access) {
   }
   utAssert(deExpressionGetType(identExpr) == DE_EXPR_IDENT);
   utSym sym = deExpressionGetName(identExpr);
-  deIdent ident = deBlockFindIdent(scopeBlock, sym);
+  deIdent ident = deFindIdent(scopeBlock, sym);
   if (ident == deIdentNull || deIdentGetType(ident) == DE_IDENT_UNDEFINED) {
     bool generated = deStatementGenerated(deStateBindingGetStatement(deFindBindingStateBinding(access)));
     deLine line = deExpressionGetLine(identExpr);

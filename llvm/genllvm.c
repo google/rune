@@ -2233,11 +2233,23 @@ static void copyOrMoveElement(llElement dest, llElement source, bool freeDest) {
   }
 }
 
+// Determine if the access expression accesses an unused local varaible.
+static bool isUnusedVariable(deExpression accessExpression) {
+  if (deExpressionGetType(accessExpression) != DE_EXPR_IDENT) {
+    return false;
+  }
+  deVariable var = deIdentGetVariable(deExpressionGetIdent(accessExpression));
+  return !deVariableInstantiated(var);
+}
+
 // Generate write expression.  The top level operator of the access expression
 // needs to be evaluated differently, since it needs to give us the address to
 // write to rather than the value contained there.
 static void generateWriteExpression(deExpression accessExpression) {
   llElement value = popElement(true);
+  if (isUnusedVariable(accessExpression)) {
+    return;
+  }
   generateExpression(accessExpression);
   llElement access = popElement(false);
   deDatatype datatype = llElementGetDatatype(access);

@@ -20,9 +20,9 @@ printable = [
   '\', ']', '^', '_', '`', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
   'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y',
   'z', '{', '|', '}', '~']
-escapes = ['\a', '\b', '\e', '\f', '\n', '\r', '\t', '\v']
+escapeStrings = ['\a', '\b', '\e', '\f', '\n', '\r', '\t', '\v']
 println printable.length()
 println <string>printable
-println escapes
+println escapeStrings
 str = "\a\b\e\f\n\r\t\v"
-println str == <string>escapes
+println str == <string>escapeStrings
