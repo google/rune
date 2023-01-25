@@ -79,14 +79,6 @@ deIdent deIdentCreate(deBlock block, deIdentType type, utSym name, deLine line) 
   deIdentSetSym(ident, name);
   if (block != deBlockNull) {
     deBlockAppendIdent(block, ident);
-    if (deUseNewBinder && deIdentGetType(ident) == DE_IDENT_FUNCTION &&
-        deBlockGetType(block) == DE_BLOCK_FUNCTION) {
-      // The new binder prefers importing function identifiers as soon as available.
-      deFunction function = deBlockGetOwningFunction(block);
-      if (deFunctionGetType(function) == DE_FUNC_CONSTRUCTOR) {
-        copyIdentToClasses(deFunctionGetTclass(function), ident);
-      }
-    }
   }
   return ident;
 }

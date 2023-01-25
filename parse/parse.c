@@ -128,7 +128,14 @@ static void loadUseStatement(deStatement statement, deBlock packageBlock) {
     deFilepath filepath = deBlockGetFilepath(functionBlock);
     char *fileName = utSprintf("%s/%s.rn", utDirName(deFilepathGetName(filepath)),
         utSymGetName(deExpressionGetName(pathExpr)));
-    moduleBlock = deParseModule(fileName, packageBlock, false);
+    if (utFileExists(fileName)) {
+      moduleBlock = deParseModule(fileName, packageBlock, false);
+    } else {
+      // Try looking in the std module.
+      char *fileName = utSprintf("%s/std/%s.rn", dePackageDir,
+          utSymGetName(deExpressionGetName(pathExpr)));
+      moduleBlock = deParseModule(fileName, deRootGetBlock(deTheRoot), false);
+    }
   }
   importModuleIdentifiers(functionBlock, moduleBlock, deStatementGetLine(statement));
 }
@@ -422,6 +429,7 @@ void deParseString(char* string, deBlock currentBlock) {
 }
 
 static bool deParsedBuilinFile;
+
 // Callback to parse a builtin file.
 static void parseBuiltinFile(char *dirName, char *fileName) {
   char *suffix = utSuffix(fileName);

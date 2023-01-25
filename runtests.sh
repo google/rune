@@ -25,9 +25,9 @@ for outFile in newtests/*.stdout; do
   inputFile=$(echo "$outFile" | sed 's/stdout$/stdin/')
   executable=$(echo "$test" | sed 's/\.rn$//')
   if [ -e "$inputFile" ]; then
-    ./rune -X -b -g "$test" && "./$executable"  > "$resFile" < "$inputFile"
+    ./rune -X -g "$test" && "./$executable"  > "$resFile" < "$inputFile"
   else
-    ./rune -X -b -g "$test" && "./$executable"  > "$resFile"
+    ./rune -X -g "$test" && "./$executable"  > "$resFile"
   fi
   sed 's/\r$//' -i "$outFile"
   sed 's/\r$//' -i "$resFile"

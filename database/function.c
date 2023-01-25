@@ -20,6 +20,12 @@ char *deFunctionGetName(deFunction function) {
   if (deFunctionGetSubBlock(function) == rootBlock) {
     return "main";
   }
+  deIdent ident = deFunctionGetFirstIdent(function);
+  if (ident == deIdentNull) {
+    deSignature signature = deFunctionGetUniquifiedSignature(function);
+    utAssert(signature != deSignatureNull);
+    return deFunctionGetName(deSignatureGetFunction(signature));
+  }
   return deIdentGetName(deFunctionGetFirstIdent(function));
 }
 

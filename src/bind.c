@@ -2067,7 +2067,7 @@ static void bindDotExpression(deBlock scopeBlock, deExpression expression) {
   utSym name = deExpressionGetName(rightExpression);
   deIdent ident = deBlockFindIdent(classBlock, name);
   if (ident == deIdentNull) {
-    deError(line, "No method name %s was found", utSymGetName(name));
+    deError(line, "No method named %s was found", utSymGetName(name));
   }
   bindExpression(classBlock, rightExpression);
   deExpressionSetDatatype(expression, deExpressionGetDatatype(rightExpression));
