@@ -823,27 +823,11 @@ exportFunctionHeader: KWEXPORT KWFUNC IDENT
 ;
 
 parameters:
-| varargParameter
 | oneOrMoreParameters
 ;
 
-oneOrMoreParameters: fixedOneOrMoreParameters
-| fixedOneOrMoreParameters ',' varargParameter
-;
-
-fixedOneOrMoreParameters: parameter
-| fixedOneOrMoreParameters ',' optNewlines parameter
-;
-
-varargParameter: KWDOTDOTDOT IDENT optTypeExpression
-{
-  deVariable parameter = deVariableCreate(deCurrentBlock, DE_VAR_PARAMETER, false, $2,
-      deExpressionNull, deGenerating || deInIterator, $1);
-  deVariableSetIsVarargs(parameter, true);
-  if ($3 != deExpressionNull) {
-    deVariableInsertTypeExpression(parameter, $3);
-  }
-}
+oneOrMoreParameters: parameter
+| oneOrMoreParameters ',' optNewlines parameter
 ;
 
 parameter: optVar IDENT optTypeExpression

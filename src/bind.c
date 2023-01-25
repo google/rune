@@ -1181,16 +1181,6 @@ static void restoreParameterDatatypes(deBlock block) {
   } deEndBlockVariable;
 }
 
-// Modify parameter datatypes to pass a tuple of remaining parameters to the
-// varargs parameter.
-static void bindVarargs(deVariable variable, deDatatypeArray paramTypes, uint32 xDatatype) {
-  deDatatypeArray tupleTypes = deDatatypeArrayAlloc();
-  for (; xDatatype < deDatatypeArrayGetUsedDatatype(paramTypes); xDatatype++) {
-    deDatatypeArrayAppendDatatype(tupleTypes, deDatatypeArrayGetiDatatype(xDatatype));
-  }
-  deDatatype tupleType = deTupleDatatypeCreate(tupleTypes);
-}
-
 // Fill out the parameter types passed to the function using default parameter values.
 static void fillOutDefaultParamters(deBlock block, deDatatype selfType, deDatatypeArray paramTypes,
     deExpression firstNamedParameter, deLine line) {
@@ -1198,8 +1188,7 @@ static void fillOutDefaultParamters(deBlock block, deDatatype selfType, deDataty
   deVariable variable = deBlockGetFirstVariable(block);
   uint32 xDatatype = 0;  // Index into signature datatypes.
   deFunctionType funcType = deFunctionGetType(deBlockGetOwningFunction(block));
-  while (variable != deVariableNull && deVariableGetType(variable) == DE_VAR_PARAMETER &&
-         !deVariableIsVarargs(variable)) {
+  while (variable != deVariableNull && deVariableGetType(variable) == DE_VAR_PARAMETER) {
     deVariableSetSavedDatatype(variable, deVariableGetDatatype(variable));
     if (xDatatype == deDatatypeArrayGetUsedDatatype(paramTypes)) {
       // We've past the positional parameters.  Only named parameters remain.
@@ -1249,9 +1238,7 @@ static void fillOutDefaultParamters(deBlock block, deDatatype selfType, deDataty
     xDatatype++;
     variable = deVariableGetNextBlockVariable(variable);
   }
-  if (deVariableIsVarargs(variable)) {
-    bindVarargs(variable, paramTypes, xDatatype);
-  } else if (xDatatype < deDatatypeArrayGetUsedDatatype(paramTypes)) {
+  if (xDatatype < deDatatypeArrayGetUsedDatatype(paramTypes)) {
     deError(line, "Too many parameters");
   }
   checkParameterTypeConstraints(block, line);

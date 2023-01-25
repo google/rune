@@ -329,9 +329,6 @@ class Variable
   bool generated  // We don't reference count via generated variables.
   uint32 entryValue  // Set for variables representing enum entries.
   Datatype savedDatatype  // Used in matching overloaded operators.
-  // If true, this variable will be assigned a tuple of all remaining
-  // parameters passed to the function.
-  bool isVarargs
 
 // Used during generation to compute expression values.  May also get used for constant propagation.
 class Value
