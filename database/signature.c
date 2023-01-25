@@ -22,7 +22,11 @@
 void deDumpParamspecStr(deString string, deParamspec paramspec) {
   deVariable variable = deParamspecGetVariable(paramspec);
   deDatatype datatype = deParamspecGetDatatype(paramspec);
-  deStringSprintf(string, "%s: %s", deVariableGetName(variable), deDatatypeGetTypeString(datatype));
+  if (datatype != deDatatypeNull) {
+    deStringSprintf(string, "%s: %s", deVariableGetName(variable), deDatatypeGetTypeString(datatype));
+  } else {
+    deStringSprintf(string, "%s: <default>", deVariableGetName(variable));
+  }
 }
 
 // Dump the paramspec to stdout for debugging.
@@ -172,6 +176,9 @@ deSignature deSignatureCreate(deFunction function,
     deStatementAppendCallSignature(deCurrentStatement, signature);
   }
   deRootAppendSignature(deTheRoot, signature);
+  if (deUseNewBinder) {
+    deUniquifySignatureFunction(signature);
+  }
   return signature;
 }
 
@@ -332,4 +339,36 @@ deSignature deCreateFullySpecifiedSignature(deFunction function) {
     deParamspecSetInstantiated(paramspec, true);
   } deEndSignatureParamspec;
   return signature;
+}
+
+// Determine if a functionn is already unique, such as a module or package.
+static bool functionIsUnique(deFunction function) {
+  switch (deFunctionGetType(function)) {
+    case DE_FUNC_PLAIN:
+    case DE_FUNC_OPERATOR:
+    case DE_FUNC_CONSTRUCTOR:
+    case DE_FUNC_ITERATOR:
+    case DE_FUNC_STRUCT:
+    case DE_FUNC_DESTRUCTOR:
+    case DE_FUNC_FINAL:
+      return false;
+    case DE_FUNC_PACKAGE:
+    case DE_FUNC_MODULE:
+    case DE_FUNC_ENUM:
+    case DE_FUNC_GENERATOR:
+    case DE_FUNC_UNITTEST:
+      break;
+  }
+  return true;
+}
+
+// Make a copy of the function which is owned by this signature, except for
+// functions that are always unique, such as packages and modules.
+void deUniquifySignatureFunction(deSignature signature) {
+  deFunction oldFunc = deSignatureGetFunction(signature);
+  deFunction newFunc = oldFunc;
+  if (!functionIsUnique(oldFunc)) {
+    newFunc = deShallowCopyFunction(oldFunc, deBlockNull);
+  }
+  deSignatureInsertUniquifiedFunction(signature, newFunc);
 }

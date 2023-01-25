@@ -594,7 +594,7 @@ static void generateCallToAllocateFunc(deBlock block, deSignature signature) {
   }
 }
 
-// Generate a call the free function for the destructor.
+// Generate a call to the free function for the destructor.
 static void generateCallToFreeFunc() {
   deVariable selfVar = deBlockGetFirstVariable(llCurrentScopeBlock);
   deClass theClass = deDatatypeGetClass(deVariableGetDatatype(selfVar));
@@ -1193,13 +1193,18 @@ static uint32 countBlockParamVars(deBlock block) {
   return numParamVars;
 }
 
+// For the new binder, return the uniquified sub-function's block.  For the old
+// binder, return the sub-block of the signature's function.
+static deBlock getSignatureBlock(deSignature signature) {
+  if (deUseNewBinder) {
+    return deFunctionGetSubBlock(deSignatureGetUniquifiedFunction(signature));
+  }
+  return deSignatureGetBlock(signature);
+}
+
 // Evaluate parameters in reverse order.
 static void evaluateParameters(deSignature signature, deDatatype datatype,
     deExpression parameters, bool isMethodCall) {
-  if (deUseNewBinder && signature != deSignatureNull) {
-    // The new binder binds default parameters when binding the called function.
-    deApplyDefaultValueBindings(signature);
-  }
   deExpression parameter;
   deExpression firstNamedParameter;
   deBlock block;
@@ -1208,7 +1213,7 @@ static void evaluateParameters(deSignature signature, deDatatype datatype,
     // We're creating a structure.
     block = deFunctionGetSubBlock(deDatatypeGetFunction(datatype));
   } else {
-    block = deSignatureGetBlock(signature);
+    block = getSignatureBlock(signature);
   }
   uint32 numParamVars = countBlockParamVars(block);
   uint32 numParams = countPositionalParams(parameters, &firstNamedParameter);
@@ -4362,22 +4367,16 @@ void llGenerateLLVMAssemblyCode(char* fileName, bool debugMode) {
   deSignature signature;
   deForeachRootSignature(deTheRoot, signature) {
     if (deSignatureInstantiated(signature)) {
-      deBlock block = deSignatureGetBlock(signature);
+      deBlock block = getSignatureBlock(signature);
       deFunction function = deBlockGetOwningFunction(block);
-      if (block != rootBlock && deFunctionGetType(function) != DE_FUNC_ITERATOR &&
+      deFunctionType type = deFunctionGetType(function);
+      if (block != rootBlock && type != DE_FUNC_ITERATOR && type != DE_FUNC_STRUCT &&
           deFunctionGetLinkage(function) != DE_LINK_EXTERN_C) {
-        deBlock snapshot = deBlockNull;
-        if (deFunctionNeedsUniquification(function)) {
-          snapshot = deSaveBlockSnapshot(block);
-        }
         deBindBlock(block, signature, true);
         deResetString();
         llDeclareBlockGlobals(block);
         generateBlockAssemblyCode(block, signature);
         flushStringBuffer();
-        if (deFunctionNeedsUniquification(function)) {
-          deRestoreBlockSnapshot(block, snapshot);
-        }
       }
     }
   } deEndRootSignature;

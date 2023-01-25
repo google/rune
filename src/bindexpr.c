@@ -12,60 +12,64 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Code for binding statements and expressions.
+// Code for expression statements and expressions.
 
 #include "de.h"
 
 // TODO: Re-implement overloaded operators.
 
+typedef enum {
+  DE_BINDRES_OK,
+  DE_BINDRES_BLOCKED,
+  DE_BINDRES_REBIND,
+} deBindRes;
+
 // These globals currently have to be set so we can report a proper stack trace.
-static void setStackTraceGlobals(deBinding binding) {
-  deStateBinding statebinding = deFindBindingStateBinding(binding);
-  deCurrentStatement = deStateBindingGetStatement(statebinding);
-  deCurrentSignature = deStateBindingGetBindingSignature(statebinding);
+static void setStackTraceGlobals(deExpression expression) {
+  deCurrentStatement = deFindExpressionStatement(expression);
+  deBinding binding = deStatementGetBinding(deCurrentStatement);
+  deCurrentSignature = deBindingGetSignature(binding);
 }
 
-// Report an error at a given binding.
-static void error(deBinding binding, char* format, ...) {
+// Report an error at a given expression.
+static void error(deExpression expression, char* format, ...) {
   char *buff;
   va_list ap;
   va_start(ap, format);
   buff = utVsprintf(format, ap);
   va_end(ap);
-  setStackTraceGlobals(binding);
+  setStackTraceGlobals(expression);
   deError(deStatementGetLine(deCurrentStatement), "%s", buff);
 }
 
 // Set the float expression's datatype.
-static void bindFloatExpression(deBinding binding){
-  deExpression expression = deBindingGetExpression(binding);
+static void bindFloatExpression(deExpression expression){
   deFloat floatVal = deExpressionGetFloat(expression);
   uint32 width = deFloatGetWidth(floatVal);
   deDatatype datatype = deFloatDatatypeCreate(width);
-  deBindingSetDatatype(binding, datatype);
+  deExpressionSetDatatype(expression, datatype);
 }
 
 // Set the random uint expression's datatype, which is just an unsigned integer.
-static void bindRandUintExpression(deBinding binding) {
-  deExpression expression = deBindingGetExpression(binding);
+static void bindRandUintExpression(deExpression expression) {
   uint32 width = deExpressionGetWidth(expression);
   deDatatype datatype = deUintDatatypeCreate(width);
   datatype = deSetDatatypeSecret(datatype, true);
-  deBindingSetDatatype(binding, datatype);
+  deExpressionSetDatatype(expression, datatype);
 }
 
-// Modify the datatype in the constant integer binding tree to match the
+// Modify the datatype in the constant integer expression tree to match the
 // datatype.
-static void autocastExpression(deBinding binding, deDatatype datatype) {
-  deDatatype oldDatatype = deBindingGetDatatype(binding);
+static void autocastExpression(deExpression expression, deDatatype datatype) {
+  deDatatype oldDatatype = deExpressionGetDatatype(expression);
   if (!deDatatypeIsInteger(oldDatatype) || !deDatatypeIsInteger(datatype)) {
     return;  // We only auto-cast integers without type specifiers to integers.
   }
-  deBindingSetDatatype(binding, datatype);
-  deBinding child;
-  deForeachBindingBinding(binding, child) {
+  deExpressionSetDatatype(expression, datatype);
+  deExpression child;
+  deForeachExpressionExpression(expression, child) {
     autocastExpression(child, datatype);
-  } deEndBindingBinding;
+  } deEndExpressionExpression;
 }
 
 // Return true if the types are the same, other than for their secret bit.
@@ -75,100 +79,99 @@ static bool typesAreEquivalent(deDatatype type1, deDatatype type2) {
 
 // Bind a binary expression, returning the datatypes of the left and right
 // sub-expressions.
-static void checkBinaryExpression(deSignature scopeSig, deBinding binding,
+static void checkBinaryExpression(deBlock scopeBlock, deExpression expression,
     deDatatype* leftType, deDatatype* rightType, bool compareTypes) {
-  deBinding left = deBindingGetFirstBinding(binding);
-  deBinding right = deBindingGetNextBinding(left);
-  *leftType = deBindingGetDatatype(left);
-  *rightType = deBindingGetDatatype(right);
+  deExpression left = deExpressionGetFirstExpression(expression);
+  deExpression right = deExpressionGetNextExpression(left);
+  *leftType = deExpressionGetDatatype(left);
+  *rightType = deExpressionGetDatatype(right);
   if (compareTypes && !typesAreEquivalent(*leftType, *rightType)) {
     // Try auto-cast.
-    if (deBindingAutocast(left) && !deBindingAutocast(right)) {
+    if (deExpressionAutocast(left) && !deExpressionAutocast(right)) {
       autocastExpression(left, *rightType);
-      *leftType = deBindingGetDatatype(left);
-    } else if (deBindingAutocast(right) && !deBindingAutocast(left)) {
+      *leftType = deExpressionGetDatatype(left);
+    } else if (deExpressionAutocast(right) && !deExpressionAutocast(left)) {
       autocastExpression(right, *leftType);
-      *rightType = deBindingGetDatatype(right);
+      *rightType = deExpressionGetDatatype(right);
     }
   }
-  if (compareTypes && deBindingAutocast(left) && deBindingAutocast(right)) {
-    deBindingSetAutocast(binding, true);
+  if (compareTypes && deExpressionAutocast(left) && deExpressionAutocast(right)) {
+    deExpressionSetAutocast(expression, true);
   }
 }
 
 // Bind a binary arithmetic expression.  The left and right types should have
 // the same numeric type, resulting in the same type.
-static void bindBinaryArithmeticExpression(deSignature scopeSig, deBinding binding) {
+static void bindBinaryArithmeticExpression(deBlock scopeBlock, deExpression expression) {
   deDatatype leftType, rightType;
-  checkBinaryExpression(scopeSig, binding, &leftType, &rightType, true);
+  checkBinaryExpression(scopeBlock, expression, &leftType, &rightType, true);
   if (deDatatypeSecret(leftType)) {
     rightType = deSetDatatypeSecret(rightType, true);
   } else if (deDatatypeSecret(rightType)) {
     leftType = deSetDatatypeSecret(leftType, true);
   }
   if (leftType != rightType) {
-    error(binding, "Non-equal types passed to binary operator");
+    error(expression, "Non-equal types passed to binary operator");
   }
   // Allow addition on strings and arrays.
   deDatatypeType type = deDatatypeGetType(leftType);
-  deExpression expression = deBindingGetExpression(binding);
   deExpressionType exprType = deExpressionGetType(expression);
   if ((type != DE_TYPE_ARRAY || exprType != DE_EXPR_ADD) &&
       (type != DE_TYPE_STRING || (exprType != DE_EXPR_ADD && exprType != DE_EXPR_BITXOR)) &&
       !deDatatypeIsInteger(leftType) && type != DE_TYPE_FLOAT) {
-    error(binding, "Invalid types for binary arithmetic operator");
+    error(expression, "Invalid types for binary arithmetic operator");
   }
-  deBindingSetDatatype(binding, leftType);
+  deExpressionSetDatatype(expression, leftType);
 }
 
 // Bind a bitwise OR expression.  This is different from the other bitwise
 // operators because it also used in type unions, such as "a: Uint | Int".
-static void bindBitwiseOrExpression(deSignature scopeSig, deBinding binding) {
-  deBinding left = deBindingGetFirstBinding(binding);
-  deBinding right = deBindingGetNextBinding(left);
+static void bindBitwiseOrExpression(deBlock scopeBlock, deExpression expression) {
+  deExpression left = deExpressionGetFirstExpression(expression);
+  deExpression right = deExpressionGetNextExpression(left);
   deDatatype leftType, rightType;
-  checkBinaryExpression(scopeSig, binding, &leftType, &rightType, false);
-  if (deBindingIsType(left)) {
-    deLine line = deBindingGetLine(binding);
-    if (!deBindingIsType(right)) {
+  checkBinaryExpression(scopeBlock, expression, &leftType, &rightType, false);
+  if (deExpressionIsType(left)) {
+    deLine line = deExpressionGetLine(expression);
+    if (!deExpressionIsType(right)) {
       deError(line, "Non-equal types passed to binary operator");
     }
-    deBindingSetIsType(binding, true);
-    deBindingSetDatatype(binding, deNoneDatatypeCreate());
+    deExpressionSetIsType(expression, true);
+    deExpressionSetDatatype(expression, deNoneDatatypeCreate());
   } else {
-    bindBinaryArithmeticExpression(scopeSig, binding);
+    bindBinaryArithmeticExpression(scopeBlock, expression);
   }
 }
 
 // Bind a binary expression, returning the datatypes of the left and right
 // sub-expressions.
-static void bindBinaryExpression(deSignature scopeSig, deBinding binding,
+static void bindBinaryExpression(deBlock scopeBlock, deExpression expression,
     deDatatype* leftType, deDatatype* rightType, bool compareTypes) {
-  deBinding left = deBindingGetFirstBinding(binding);
-  deBinding right = deBindingGetNextBinding(left);
-  *leftType = deBindingGetDatatype(left);
-  *rightType = deBindingGetDatatype(right);
+  deExpression left = deExpressionGetFirstExpression(expression);
+  deExpression right = deExpressionGetNextExpression(left);
+  *leftType = deExpressionGetDatatype(left);
+  *rightType = deExpressionGetDatatype(right);
   if (compareTypes && !typesAreEquivalent(*leftType, *rightType)) {
     // Try auto-cast.
-    if (deBindingAutocast(left) && !deBindingAutocast(right)) {
+    if (deExpressionAutocast(left) && !deExpressionAutocast(right)) {
       autocastExpression(left, *rightType);
-      *leftType = deBindingGetDatatype(left);
-    } else if (deBindingAutocast(right) && !deBindingAutocast(left)) {
+      *leftType = deExpressionGetDatatype(left);
+    } else if (deExpressionAutocast(right) && !deExpressionAutocast(left)) {
       autocastExpression(right, *leftType);
-      *rightType = deBindingGetDatatype(right);
+      *rightType = deExpressionGetDatatype(right);
     }
   }
-  if (compareTypes && deBindingAutocast(left) && deBindingAutocast(right)) {
-    deBindingSetAutocast(binding, true);
+  if (compareTypes && deExpressionAutocast(left) && deExpressionAutocast(right)) {
+    deExpressionSetAutocast(expression, true);
   }
 }
 
 // Bind an exponentiation expression.  Exponent must be a non-secret uint, while
 // the base can be a uint or modint.
-static void bindExponentiationExpression(deSignature scopeSig, deBinding binding) {
+static void bindExponentiationExpression(deBlock scopeBlock, deExpression expression) {
   deDatatype leftType, rightType;
-  bindBinaryExpression(scopeSig, binding, &leftType, &rightType, false);
-  deLine line = deBindingGetLine(binding);
+  bindBinaryExpression(scopeBlock, expression, &leftType, &rightType, false);
+  deLine line = deExpressionGetLine(expression);
   if (!deDatatypeIsInteger(leftType)) {
     deError(line, "Base of exponentiation operator must be uint or modint");
   }
@@ -178,19 +181,19 @@ static void bindExponentiationExpression(deSignature scopeSig, deBinding binding
   if (deDatatypeSecret(rightType)) {
     deError(line, "Exponent cannot be secret");
   }
-  deBindingSetDatatype(binding, leftType);
+  deExpressionSetDatatype(expression, leftType);
 }
 
 // Bind a select expression.  The selector must be Boolean, and the two data
 // values must have the same type.
-static void bindSelectExpression(deSignature scopeSig, deBinding binding) {
-  deBinding select = deBindingGetFirstBinding(binding);
-  deBinding left = deBindingGetNextBinding(select);
-  deBinding right = deBindingGetNextBinding(left);
-  deDatatype selectType = deBindingGetDatatype(select);
-  deDatatype leftType = deBindingGetDatatype(left);
-  deDatatype rightType = deBindingGetDatatype(right);
-  deLine line = deBindingGetLine(binding);
+static void bindSelectExpression(deBlock scopeBlock, deExpression expression) {
+  deExpression select = deExpressionGetFirstExpression(expression);
+  deExpression left = deExpressionGetNextExpression(select);
+  deExpression right = deExpressionGetNextExpression(left);
+  deDatatype selectType = deExpressionGetDatatype(select);
+  deDatatype leftType = deExpressionGetDatatype(left);
+  deDatatype rightType = deExpressionGetDatatype(right);
+  deLine line = deExpressionGetLine(expression);
   if (deDatatypeSecret(leftType)) {
     rightType = deSetDatatypeSecret(rightType, true);
   } else if (deDatatypeSecret(rightType)) {
@@ -203,19 +206,19 @@ static void bindSelectExpression(deSignature scopeSig, deBinding binding) {
     deError(line, "Select operator applied to different data types:%s",
         deGetOldVsNewDatatypeStrings(leftType, rightType));
   }
-  deBindingSetDatatype(binding, leftType);
+  deExpressionSetDatatype(expression, leftType);
 }
 
 // Bind the slice expression.
-static void bindSliceExpression(deSignature scopeSig, deBinding binding) {
-  deBinding left = deBindingGetFirstBinding(binding);
-  deBinding lower = deBindingGetNextBinding(left);
-  deBinding upper = deBindingGetNextBinding(lower);
+static void bindSliceExpression(deBlock scopeBlock, deExpression expression) {
+  deExpression left = deExpressionGetFirstExpression(expression);
+  deExpression lower = deExpressionGetNextExpression(left);
+  deExpression upper = deExpressionGetNextExpression(lower);
   deDatatype leftType, lowerType, upperType;
-  leftType = deBindingGetDatatype(left);
-  lowerType = deBindingGetDatatype(lower);
-  upperType = deBindingGetDatatype(upper);
-  deLine line = deBindingGetLine(binding);
+  leftType = deExpressionGetDatatype(left);
+  lowerType = deExpressionGetDatatype(lower);
+  upperType = deExpressionGetDatatype(upper);
+  deLine line = deExpressionGetLine(expression);
   if (deDatatypeGetType(lowerType) != DE_TYPE_UINT ||
       deDatatypeGetType(upperType) != DE_TYPE_UINT) {
     deError(line, "Index values must be unsigned integers");
@@ -227,45 +230,42 @@ static void bindSliceExpression(deSignature scopeSig, deBinding binding) {
   if (type != DE_TYPE_ARRAY && type != DE_TYPE_STRING) {
     deError(line, "Slicing a non-array/non-string type");
   }
-  deBindingSetDatatype(binding, leftType);
+  deExpressionSetDatatype(expression, leftType);
 }
 
 // Bind a unary expression, returning the datatype of the child.
-static deDatatype bindUnaryExpression(deSignature scopeSig, deBinding expression) {
-  deBinding child = deBindingGetFirstBinding(expression);
-  return deBindingGetDatatype(child);
+static deDatatype bindUnaryExpression(deBlock scopeBlock, deExpression expression) {
+  deExpression child = deExpressionGetFirstExpression(expression);
+  return deExpressionGetDatatype(child);
 }
 
-// Bind the markSecret or markPublic expression.
-static void bindMarkSecretOrPublic(deSignature scopeSig, deBinding binding) {
-  deDatatype datatype = bindUnaryExpression(scopeSig, binding);
+// Bind the secret or markPublic expression.
+static void bindMarkSecretOrPublic(deBlock scopeBlock, deExpression expression) {
+  deDatatype datatype = bindUnaryExpression(scopeBlock, expression);
   deDatatypeType type = deDatatypeGetType(datatype);
-  // TODO: This check is wrong!  Fix it.  The base types of secrets can only be
-  // integers, and strings since their base type is u8.  Structs, tuples, and
-  // array datatypes that contain only integer and string base types are OK.
   if (type == DE_TYPE_CLASS || type == DE_TYPE_NULL) {
-    deError(deBindingGetLine(binding), "Object references cannot be marked secret");
+    deError(deExpressionGetLine(expression), "Object references cannot be marked secret");
   }
-  bool secret = deBindingGetType(binding) == DE_EXPR_SECRET;
+  bool secret = deExpressionGetType(expression) == DE_EXPR_SECRET;
   datatype = deSetDatatypeSecret(datatype, secret);
-  deBindingSetDatatype(binding, datatype);
-  deBindingSetIsType(binding, deBindingIsType(deBindingGetFirstBinding(binding)));
-  deBindingSetConst(binding, deBindingConst(deBindingGetFirstBinding(binding)));
+  deExpressionSetDatatype(expression, datatype);
+  deExpressionSetIsType(expression, deExpressionIsType(deExpressionGetFirstExpression(expression)));
+  deExpressionSetConst(expression, deExpressionConst(deExpressionGetFirstExpression(expression)));
 }
 
 // Bind a ... expression, eg case u1 ... u32.
-static void bindDotDotDotExpression(deSignature scopeSig, deBinding binding) {
+static void bindDotDotDotExpression(deBlock scopeBlock, deExpression expression) {
   deDatatype leftDatatype, rightDatatype;
-  bindBinaryExpression(scopeSig, binding, &leftDatatype, &rightDatatype, true);
-  deLine line = deBindingGetLine(binding);
-  deBinding left = deBindingGetFirstBinding(binding);
-  deBinding right = deBindingGetNextBinding(left);
-  if (deBindingIsType(left) != deBindingIsType(right)) {
+  bindBinaryExpression(scopeBlock, expression, &leftDatatype, &rightDatatype, true);
+  deLine line = deExpressionGetLine(expression);
+  deExpression left = deExpressionGetFirstExpression(expression);
+  deExpression right = deExpressionGetNextExpression(left);
+  if (deExpressionIsType(left) != deExpressionIsType(right)) {
     deError(line, "Ranges must be either types or integers, eg not u32 .. 64");
   }
   deDatatypeType leftType = deDatatypeGetType(leftDatatype);
   deDatatypeType rightType = deDatatypeGetType(rightDatatype);
-  if (deBindingIsType(left)) {
+  if (deExpressionIsType(left)) {
     if (leftType != DE_TYPE_UINT && leftType != DE_TYPE_INT) {
       deError(line, "Type ranges are only allowed for Int and Uint types, eg u1 ... u32");
     }
@@ -278,8 +278,8 @@ static void bindDotDotDotExpression(deSignature scopeSig, deBinding binding) {
       deError(line, "Left type width must be <= right type width, eg i64 ... i256");
     }
     deTclass tclass = deFindDatatypeTclass(leftDatatype);
-    deBindingSetDatatype(binding, deTclassDatatypeCreate(tclass));
-    deBindingSetIsType(binding, true);
+    deExpressionSetDatatype(expression, deTclassDatatypeCreate(tclass));
+    deExpressionSetIsType(expression, true);
   } else {
     if (leftType != DE_TYPE_UINT && leftType != DE_TYPE_INT) {
       deError(line, "Integer ranges are only allowed for Int and Uint types, eg u1 ... u32");
@@ -288,31 +288,31 @@ static void bindDotDotDotExpression(deSignature scopeSig, deBinding binding) {
       deError(line, "Type ranges limits must have the same type, eg 1 ... 10 or 1i32 ... 10i32:%s",
           deGetOldVsNewDatatypeStrings(leftDatatype, rightDatatype));
     }
-    deBindingSetDatatype(binding, leftDatatype);
+    deExpressionSetDatatype(expression, leftDatatype);
   }
 }
 
 // Create an array of datatypes for the expression's children.
-static deDatatypeArray listDatatypes(deBinding list) {
+static deDatatypeArray listDatatypes(deExpression list) {
   deDatatypeArray types = deDatatypeArrayAlloc();
-  deBinding child;
-  deForeachBindingBinding(list, child) {
-    deDatatypeArrayAppendDatatype(types, deBindingGetDatatype(child));
-  } deEndBindingBinding;
+  deExpression child;
+  deForeachExpressionExpression(list, child) {
+    deDatatypeArrayAppendDatatype(types, deExpressionGetDatatype(child));
+  } deEndExpressionExpression;
   return types;
 }
 
 // Bind the tuple expression.
-static void bindTupleExpression(deSignature scopeSig, deBinding binding) {
-  deDatatypeArray types = listDatatypes(binding);
+static void bindTupleExpression(deBlock scopeBlock, deExpression expression) {
+  deDatatypeArray types = listDatatypes(expression);
   deDatatype tupleType = deTupleDatatypeCreate(types);
-  deBindingSetDatatype(binding, tupleType);
-  deBinding child;
-  deForeachBindingBinding(binding, child) {
-    if (deBindingIsType(child)) {
-      deBindingSetIsType(binding, true);
+  deExpressionSetDatatype(expression, tupleType);
+  deExpression child;
+  deForeachExpressionExpression(expression, child) {
+    if (deExpressionIsType(child)) {
+      deExpressionSetIsType(expression, true);
     }
-  } deEndBindingBinding;
+  } deEndExpressionExpression;
 }
 
 // Bind a null expression.  We can say null(f32), which returns 0.0f32, or
@@ -323,8 +323,8 @@ static void bindTupleExpression(deSignature scopeSig, deBinding binding) {
 // define which class the variable is bound to.  That is resolved later if
 // another assignment to the variable is made with a fully qualified class
 // constructor.
-static void bindNullExpression(deSignature scopeSig, deBinding binding) {
-  deDatatype datatype = bindUnaryExpression(scopeSig, binding);
+static void bindNullExpression(deBlock scopeBlock, deExpression expression) {
+  deDatatype datatype = bindUnaryExpression(scopeBlock, expression);
   if (deDatatypeGetType(datatype) == DE_TYPE_TCLASS) {
     // If there are no template parameters, we can find the class.
     deClass theClass = deTclassGetDefaultClass(deDatatypeGetTclass(datatype));
@@ -354,17 +354,17 @@ static void bindNullExpression(deSignature scopeSig, deBinding binding) {
     case DE_TYPE_FUNCTION: {
       deFunctionType type = deFunctionGetType(deDatatypeGetFunction(datatype));
       if (type != DE_FUNC_STRUCT && type != DE_FUNC_ENUM) {
-        deError(deBindingGetLine(binding), "Cannot create default initial value for type %s",
+        deError(deExpressionGetLine(expression), "Cannot create default initial value for type %s",
             deDatatypeGetTypeString(datatype));
       }
       break;
     }
     case DE_TYPE_MODINT:
     case DE_TYPE_NONE:
-      deError(deBindingGetLine(binding), "Cannot create default initial value for type %s",
+      deError(deExpressionGetLine(expression), "Cannot create default initial value for type %s",
           deDatatypeGetTypeString(datatype));
   }
-  deBindingSetDatatype(binding, datatype);
+  deExpressionSetDatatype(expression, datatype);
 }
 
 // Set all the variables passed as instantiated.  Any function that can be
@@ -378,87 +378,87 @@ static void setAllSignatureVariablesToInstantiated(deSignature signature) {
 }
 
 // Bind a function pointer expression.  We have to mark all the parameter
-// variables as not types during binding, even though we typically specify only
+// variables as not types during expression, even though we typically specify only
 // the parameter types in the function address expression.  When we call through
 // the function pointer, all parameters will be instantiated, which may lead to
 // some unused parameters being instantiated.  Any function signature that has
 // its address taken is called by passing all parameters, since that's how we
 // call it through the function pointer.  In case we pass a type to the function
 // when called directly, we push default values for the type parameters.
-static void bindFunctionPointerExpression(deBinding binding) {
-  deBinding functionCallBinding = deBindingGetFirstBinding(binding);
-  deDatatype returnType = deBindingGetDatatype(functionCallBinding);
-  deBinding functionBinding = deBindingGetFirstBinding(functionCallBinding);
-  deBinding parameters = deBindingGetNextBinding(functionBinding);
+static void bindFunctionPointerExpression(deExpression expression) {
+  deExpression functionCallExpression = deExpressionGetFirstExpression(expression);
+  deDatatype returnType = deExpressionGetDatatype(functionCallExpression);
+  deExpression functionExpression = deExpressionGetFirstExpression(functionCallExpression);
+  deExpression parameters = deExpressionGetNextExpression(functionExpression);
   deDatatypeArray paramTypes = deDatatypeArrayAlloc();
-  deBinding parameter;
-  deForeachBindingBinding(parameters, parameter) {
-    deDatatype datatype = deBindingGetDatatype(parameter);
+  deExpression parameter;
+  deForeachExpressionExpression(parameters, parameter) {
+    deDatatype datatype = deExpressionGetDatatype(parameter);
     deDatatypeArrayAppendDatatype(paramTypes, datatype);
-  } deEndBindingBinding;
+  } deEndExpressionExpression;
   deDatatype funcptrType = deFuncptrDatatypeCreate(returnType, paramTypes);
-  deDatatype functionDatatype = deBindingGetDatatype(functionBinding);
+  deDatatype functionDatatype = deExpressionGetDatatype(functionExpression);
   utAssert(deDatatypeGetType(functionDatatype) == DE_TYPE_FUNCTION);
   deFunction function = deDatatypeGetFunction(functionDatatype);
   deSignature signature = deLookupSignature(function, paramTypes);
-  deLine line = deBindingGetLine(binding);
+  deLine line = deExpressionGetLine(expression);
   if (signature == deSignatureNull) {
     signature = deSignatureCreate(function, paramTypes, line);
   }
   deSignatureSetIsCalledByFuncptr(signature, true);
   setAllSignatureVariablesToInstantiated(signature);
-  deBindingSetSignature(binding, signature);
-  deBindingSetDatatype(binding, funcptrType);
+  deExpressionSetSignature(expression, signature);
+  deExpressionSetDatatype(expression, funcptrType);
 }
 
 // Bind an arrayof expression.
-static void bindArrayofExpression(deSignature scopeSig, deBinding binding) {
-  deDatatype datatype = bindUnaryExpression(scopeSig, binding);
+static void bindArrayofExpression(deBlock scopeBlock, deExpression expression) {
+  deDatatype datatype = bindUnaryExpression(scopeBlock, expression);
   if (deDatatypeGetType(datatype) == DE_TYPE_TCLASS) {
     datatype = deNullDatatypeCreate(deDatatypeGetTclass(datatype));
   }
-  deBindingSetDatatype(binding, deArrayDatatypeCreate(datatype));
+  deExpressionSetDatatype(expression, deArrayDatatypeCreate(datatype));
 }
 
 // Bind a typeof expression.
-static void bindTypeofExpression(deSignature scopeSig, deBinding binding) {
-  deDatatype datatype = bindUnaryExpression(scopeSig, binding);
-  deBindingSetDatatype(binding, datatype);
-  deBindingSetIsType(binding, true);
+static void bindTypeofExpression(deBlock scopeBlock, deExpression expression) {
+  deDatatype datatype = bindUnaryExpression(scopeBlock, expression);
+  deExpressionSetDatatype(expression, datatype);
+  deExpressionSetIsType(expression, true);
 }
 
 // Bind a signed() or unsigned() type conversion expression.
-static void bindSignConversionExpression(deSignature scopeSig, deBinding binding) {
-  deBinding child = deBindingGetFirstBinding(binding);
-  deDatatype datatype = deBindingGetDatatype(child);
+static void bindSignConversionExpression(deBlock scopeBlock, deExpression expression) {
+  deExpression child = deExpressionGetFirstExpression(expression);
+  deDatatype datatype = deExpressionGetDatatype(child);
   deDatatypeType type = deDatatypeGetType(datatype);
   if (type != DE_TYPE_UINT && type != DE_TYPE_INT) {
-    deError(deBindingGetLine(binding), "Cannot  change sign of non-integer");
+    deError(deExpressionGetLine(expression), "Cannot  change sign of non-integer");
   }
-  datatype = deDatatypeSetSigned(datatype, deBindingGetType(binding)== DE_EXPR_SIGNED);
-  deBindingSetDatatype(binding, datatype);
+  datatype = deDatatypeSetSigned(datatype, deExpressionGetType(expression)== DE_EXPR_SIGNED);
+  deExpressionSetDatatype(expression, datatype);
 }
 
 
 // Bind a widthof expression.  The expression type is u32.
-static void bindWidthofExpression(deSignature scopeSig, deBinding binding) {
+static void bindWidthofExpression(deBlock scopeBlock, deExpression expression) {
   bool savedInstantiating = deInstantiating;
   deInstantiating = false;
-  deDatatype datatype = bindUnaryExpression(scopeSig, binding);
+  deDatatype datatype = bindUnaryExpression(scopeBlock, expression);
   if (!deDatatypeIsNumber(datatype)) {
-    deError(deBindingGetLine(binding), "widthof applied to non-number");
+    deError(deExpressionGetLine(expression), "widthof applied to non-number");
   }
-  deBindingSetDatatype(binding, deUintDatatypeCreate(32));
+  deExpressionSetDatatype(expression, deUintDatatypeCreate(32));
   deInstantiating = savedInstantiating;
 }
 
 // Bind an "in" expression.  These are all overloads.
 // TODO: This code should check that the left-hand datatype can actually be in
 // the right-hand datatype.
-static void bindInExpression(deSignature scopeSig, deBinding binding) {
+static void bindInExpression(deBlock scopeBlock, deExpression expression) {
   deDatatype leftType, rightType;
-  bindBinaryExpression(scopeSig, binding, &leftType, &rightType, false);
-  deBindingSetDatatype(binding, deBoolDatatypeCreate());
+  bindBinaryExpression(scopeBlock, expression, &leftType, &rightType, false);
+  deExpressionSetDatatype(expression, deBoolDatatypeCreate());
 }
 
 // Determine if the datatype is a number or enumerated value.
@@ -473,8 +473,7 @@ static bool datatypeIsNumberOrEnumClass(deDatatypeType type) {
 
 // Return a string that can be printed on two lines to show the old type vs new type.
 // Set the integer expression's datatype.
-static void bindIntegerExpression(deBinding binding) {
-  deExpression expression = deBindingGetExpression(binding);
+static void bindIntegerExpression(deExpression expression) {
   deBigint bigint = deExpressionGetBigint(expression);
   uint32 width = deBigintGetWidth(bigint);
   deDatatype datatype;
@@ -483,78 +482,53 @@ static void bindIntegerExpression(deBinding binding) {
   } else {
     datatype = deUintDatatypeCreate(width);
   }
-  deBindingSetDatatype(binding, datatype);
-  deBindingSetAutocast(binding, deBigintWidthUnspecified(bigint));
-}
-
-// Find a global variable's binding, or create one if it does not exist.
-static deBinding findVariableBinding(deSignature scopeSig, deVariable variable) {
-  deBinding varBinding;
-  if (deVariableGetBlock(variable) != deSignatureGetBlock(scopeSig)) {
-    varBinding = deVariableGetFirstBinding(variable);
-    if (varBinding == deBindingNull) {
-      varBinding = deVariableBindingCreate(deSignatureNull, variable);
-      deBindingSetDatatype(varBinding, deVariableGetDatatype(variable));
-      deBindingSetIsType(varBinding, deVariableIsType(variable));
-    }
-  } else {
-    varBinding = deFindVariableBinding(scopeSig, variable);
-    if (varBinding == deBindingNull) {
-      varBinding = deVariableBindingCreate(scopeSig, variable);
-    }
-  }
-  return varBinding;
+  deExpressionSetDatatype(expression, datatype);
+  deExpressionSetAutocast(expression, deBigintWidthUnspecified(bigint));
 }
 
 // Bind the identifier expression to a type.  If the identifier does not exist,
 // create an unbound identifier.  If unbound or if the identifier has not been
-// bound to a datatype, add statebinding to the identifier's event and return
-// false.  If we succeed in binding the identifier, queue statebindings blocked on
+// bound to a datatype, add binding to the identifier's event and return
+// false.  If we succeed in expression the identifier, queue bindings blocked on
 // this event.  scopeBlock, if present, is from a dot operation, and we must
 // look only for identifiers in that block.
-static bool bindIdentExpression(deSignature scopeSig, deBlock scopeBlock,
-    deStateBinding statebinding, deBinding binding) {
-  deExpression expression = deBindingGetExpression(binding);
+static bool bindIdentExpression(deBlock scopeBlock, deExpression expression, bool inScopeBlock) {
   utSym sym = deExpressionGetName(expression);
-  deIdent ident = deBindingGetIdent(binding);
+  deIdent ident = deExpressionGetIdent(expression);
   if (ident == deIdentNull) {
-    if (scopeBlock == deBlockNull) {
-      ident = deFindIdent(deSignatureGetBlock(scopeSig), sym);
-      if (ident == deIdentNull) {
-        // Create an undefined identifier.
-        ident = deUndefinedIdentCreate(deSignatureGetBlock(scopeSig), sym);
-      }
+    if (!inScopeBlock) {
+      ident = deFindIdent(scopeBlock, sym);
     } else {
       ident = deBlockFindIdent(scopeBlock, sym);
-      if (ident == deIdentNull) {
-        // Create an undefined identifier.
-        ident = deUndefinedIdentCreate(scopeBlock, sym);
-      }
     }
-    deIdentAppendBinding(ident, binding);
+    if (ident == deIdentNull) {
+      // Create an undefined identifier.
+      ident = deUndefinedIdentCreate(scopeBlock, sym);
+    }
+    deIdentAppendExpression(ident, expression);
   }
   switch (deIdentGetType(ident)) {
     case DE_IDENT_VARIABLE: {
       deVariable variable = deIdentGetVariable(ident);
-      deBinding varBinding = findVariableBinding(scopeSig, variable);
-      deDatatype datatype = deBindingGetDatatype(varBinding);
+      deDatatype datatype = deVariableGetDatatype(variable);
       if (datatype == deDatatypeNull || deDatatypeGetType(datatype) == DE_TYPE_NULL) {
-        deEvent event = deVariableEventCreate(varBinding);
-        deEventAppendStateBinding(event, statebinding);
+        deEvent event = deVariableEventCreate(variable);
+        deEventAppendBinding(event, deExpressionGetBinding(expression));
         return false;
       }
-      deBindingSetDatatype(binding, datatype);
-      deBindingSetIsType(binding, deBindingIsType(varBinding));
-      deBindingSetInstantiating(varBinding, deBindingInstantiating(varBinding) ||
-          deBindingInstantiating(binding));
+      deExpressionSetDatatype(expression, datatype);
+      deExpressionSetIsType(expression, deVariableIsType(variable));
+      deVariableSetInstantiated(variable, deVariableInstantiated(variable) ||
+          deExpressionInstantiating(expression));
       return true;
     }
     case DE_IDENT_FUNCTION:
-      deBindingSetDatatype(binding, deFunctionDatatypeCreate(deIdentGetFunction(ident)));
+      deExpressionSetDatatype(expression, deFunctionDatatypeCreate(deIdentGetFunction(ident)));
       return true;
     case DE_IDENT_UNDEFINED: {
       deEvent event = deUndefinedIdentEventCreate(ident);
-      deEventAppendStateBinding(event, statebinding);
+      deStatement statement = deFindExpressionStatement(expression);
+      deEventAppendBinding(event, deStatementGetBinding(statement));
       return false;
     }
   }
@@ -564,55 +538,55 @@ static bool bindIdentExpression(deSignature scopeSig, deBlock scopeBlock,
 // The % operator is overloaded: two integer/float types or a string on the
 // left and tuple on the right.  This results in sprintf(left, members of
 // tuple...), returning a string.
-static void bindModExpression(deSignature scopeSig, deBinding binding) {
+static void bindModExpression(deBlock scopeBlock, deExpression expression) {
   deDatatype leftType, rightType;
-  bindBinaryExpression(scopeSig, binding, &leftType, &rightType, false);
-  deLine line = deBindingGetLine(binding);
+  bindBinaryExpression(scopeBlock, expression, &leftType, &rightType, false);
+  deLine line = deExpressionGetLine(expression);
   deDatatypeType type = deDatatypeGetType(leftType);
   if (deDatatypeTypeIsInteger(type) || type == DE_TYPE_FLOAT) {
     if (!typesAreEquivalent(leftType, rightType)) {
       deError(line, "Non-equal types passed to binary operator");
     }
-    deBindingSetDatatype(binding, leftType);
+    deExpressionSetDatatype(expression, leftType);
     return;
   }
   if (deDatatypeGetType(leftType) != DE_TYPE_STRING) {
     deError(line, "Invalid left operand type for %% operator");
   }
-  deVerifyPrintfParameters(binding);
+  deVerifyPrintfParameters(expression);
   deDatatype datatype = deStringDatatypeCreate();
   if (deDatatypeSecret(leftType) || deDatatypeSecret(rightType)) {
     datatype = deSetDatatypeSecret(datatype, true);
   }
-  deBindingSetDatatype(binding, datatype);
+  deExpressionSetDatatype(expression, datatype);
 }
 
 
 // Bind and AND, OR, or XOR operator.  If operating on numbers, bitwise
 // operators are used.  If operating on Boolean values, logical operators are
 // used.
-static void bindBinaryBool(deSignature scopeSig, deBinding binding) {
+static void bindBinaryBool(deBlock scopeBlock, deExpression expression) {
   deDatatype leftType, rightType;
-  checkBinaryExpression(scopeSig, binding, &leftType, &rightType, true);
+  checkBinaryExpression(scopeBlock, expression, &leftType, &rightType, true);
   if (deDatatypeSecret(leftType)) {
     rightType = deSetDatatypeSecret(rightType, true);
   } else if (deDatatypeSecret(rightType)) {
     leftType = deSetDatatypeSecret(leftType, true);
   }
-  deLine line = deBindingGetLine(binding);
+  deLine line = deExpressionGetLine(expression);
   if (deDatatypeGetType(leftType) != DE_TYPE_BOOL ||
       deDatatypeGetType(rightType) != DE_TYPE_BOOL) {
     deError(line, "Non-Boolean types passed to Boolean operator");
   }
-  deBindingSetDatatype(binding, leftType);
+  deExpressionSetDatatype(expression, leftType);
 }
 
 // Bind a shift/rotate expression.  The distance must be a uint.  The value
 // being shifted (left operand) must be an integer.
-static void bindShiftExpression(deSignature scopeSig, deBinding binding) {
+static void bindShiftExpression(deBlock scopeBlock, deExpression expression) {
   deDatatype leftType, rightType;
-  bindBinaryExpression(scopeSig, binding, &leftType, &rightType, false);
-  deLine line = deBindingGetLine(binding);
+  bindBinaryExpression(scopeBlock, expression, &leftType, &rightType, false);
+  deLine line = deExpressionGetLine(expression);
   if (!deDatatypeIsInteger(leftType)) {
     deError(line, "Only integers can be shifted/rotated");
   }
@@ -622,36 +596,36 @@ static void bindShiftExpression(deSignature scopeSig, deBinding binding) {
   if (deDatatypeSecret(rightType)) {
     deError(line, "Shift/rotate distance cannot be secret");
   }
-  deBindingSetDatatype(binding, leftType);
+  deExpressionSetDatatype(expression, leftType);
 }
 
 // Bind a relational operator.  Both operands must be strings, arrays, or integers.
-static void bindRelationalExpression(deSignature scopeSig, deBinding binding) {
+static void bindRelationalExpression(deBlock scopeBlock, deExpression expression) {
   deDatatype leftType, rightType;
-  bindBinaryExpression(scopeSig, binding, &leftType, &rightType, true);
+  bindBinaryExpression(scopeBlock, expression, &leftType, &rightType, true);
   if (deDatatypeSecret(leftType)) {
     rightType = deSetDatatypeSecret(rightType, true);
   } else if (deDatatypeSecret(rightType)) {
     leftType = deSetDatatypeSecret(leftType, true);
   }
   if (!typesAreEquivalent(leftType, rightType)) {
-    error(binding, "Non-equal types passed to relational operator:%s",
+    error(expression, "Non-equal types passed to relational operator:%s",
         deGetOldVsNewDatatypeStrings(leftType, rightType));
   }
   deDatatypeType type = deDatatypeGetType(leftType);
   if (type != DE_TYPE_UINT && type != DE_TYPE_INT && type != DE_TYPE_FLOAT &&
       type != DE_TYPE_STRING && type != DE_TYPE_ARRAY) {
-    error(binding, "Invalid types passed to relational operator");
+    error(expression, "Invalid types passed to relational operator");
   }
   bool secret = deDatatypeSecret(leftType) || deDatatypeSecret(rightType);
-  deBindingSetDatatype(binding, deSetDatatypeSecret(deBoolDatatypeCreate(), secret));
+  deExpressionSetDatatype(expression, deSetDatatypeSecret(deBoolDatatypeCreate(), secret));
 }
 
 // Bind an equality operator.  Both operands must be integers.
-static void bindEqualityExpression(deSignature scopeSig, deBinding binding) {
+static void bindEqualityExpression(deBlock scopeBlock, deExpression expression) {
   deDatatype leftType, rightType;
-  bindBinaryExpression(scopeSig, binding, &leftType, &rightType, true);
-  deLine line = deBindingGetLine(binding);
+  bindBinaryExpression(scopeBlock, expression, &leftType, &rightType, true);
+  deLine line = deExpressionGetLine(expression);
   if (deDatatypeSecret(leftType)) {
     rightType = deSetDatatypeSecret(rightType, true);
   } else if (deDatatypeSecret(rightType)) {
@@ -664,31 +638,31 @@ static void bindEqualityExpression(deSignature scopeSig, deBinding binding) {
           deGetOldVsNewDatatypeStrings(leftType, rightType));
     }
   }
-  deBindingSetDatatype(binding, deSetDatatypeSecret(deBoolDatatypeCreate(),
+  deExpressionSetDatatype(expression, deSetDatatypeSecret(deBoolDatatypeCreate(),
       deDatatypeSecret(leftType)));
 }
 
 // Bind a negate expression.  The operand must be an integer.
-static void bindUnaryArithmeticExpression(deSignature scopeSig, deBinding binding) {
-  deDatatype childType = bindUnaryExpression(scopeSig, binding);
-  deLine line = deBindingGetLine(binding);
+static void bindUnaryArithmeticExpression(deBlock scopeBlock, deExpression expression) {
+  deDatatype childType = bindUnaryExpression(scopeBlock, expression);
+  deLine line = deExpressionGetLine(expression);
   if (!deDatatypeIsInteger(childType) && !deDatatypeIsFloat(childType)) {
     deError(line, "Only integers can be negated");
   }
-  deBindingSetDatatype(binding, childType);
-  deBinding child = deBindingGetFirstBinding(binding);
-  deBindingSetAutocast(binding, deBindingAutocast(child));
+  deExpressionSetDatatype(expression, childType);
+  deExpression child = deExpressionGetFirstExpression(expression);
+  deExpressionSetAutocast(expression, deExpressionAutocast(child));
 }
 
 // Bind a not expression.  It does logical not on Boolean operands, and
 // complement on integer operands.
-static void bindNotExpression(deSignature scopeSig, deBinding binding) {
-  deDatatype childType = bindUnaryExpression(scopeSig, binding);
-  deLine line = deBindingGetLine(binding);
+static void bindNotExpression(deBlock scopeBlock, deExpression expression) {
+  deDatatype childType = bindUnaryExpression(scopeBlock, expression);
+  deLine line = deExpressionGetLine(expression);
   if (deDatatypeGetType(childType) != DE_TYPE_BOOL) {
     deError(line, "Not operator only works on Boolean types");
   }
-  deBindingSetDatatype(binding, childType);
+  deExpressionSetDatatype(expression, childType);
 }
 
 // Verify the cast expression is valid, and return the resulting datatype.
@@ -697,19 +671,19 @@ static void bindNotExpression(deSignature scopeSig, deBinding binding) {
 // can be cast to their underlying integer type and back, e.g  <u32>Point(1,2),
 // or <Point(u64, u64)>1u32.  Object-to-integer casts are dangerous and we
 // should probably restrict its use to code generators.
-static void verifyCast(deBinding binding, deDatatype leftDatatype,
+static void verifyCast(deExpression expression, deDatatype leftDatatype,
     deDatatype rightDatatype, deLine line) {
   if (leftDatatype == rightDatatype) {
     return;  // The cast is a nop.
   }
   if (leftDatatype == deDatatypeNull) {
-    error(binding, "Casts require qualified types");
+    error(expression, "Casts require qualified types");
   }
   if (deDatatypeGetType(leftDatatype) == DE_TYPE_CLASS &&
       deDatatypeGetType(rightDatatype) == DE_TYPE_NULL) {
-    // This looks like a type binding hint.
+    // This looks like a type expression hint.
     if (deClassGetTclass(deDatatypeGetClass(leftDatatype)) != deDatatypeGetTclass(rightDatatype)) {
-      error(binding, "Casting to different class types is not allowed.");
+      error(expression, "Casting to different class types is not allowed.");
     }
     return;
   }
@@ -728,31 +702,31 @@ static void verifyCast(deBinding binding, deDatatype leftDatatype,
     rightType = deDatatypeGetType(rightDatatype);
   }
   if (!deDatatypeTypeIsInteger(leftType) && leftType != DE_TYPE_STRING) {
-    error(binding, "Invalid cast: only casting from/to integers and from/to string are allowed");
+    error(expression, "Invalid cast: only casting from/to integers and from/to string are allowed");
   }
   if (leftType == DE_TYPE_STRING) {
     if (rightType != DE_TYPE_ARRAY ||
         deDatatypeGetType(deDatatypeGetElementType(rightDatatype)) !=
             DE_TYPE_UINT) {
-      error(binding, "Invalid string conversion.  Only conversions from/to [u8] are allowed.");
+      error(expression, "Invalid string conversion.  Only conversions from/to [u8] are allowed.");
     }
     return;
   }
   if (rightType == DE_TYPE_ARRAY) {
     deDatatype elementDatatype = deDatatypeGetElementType(rightDatatype);
     if (deDatatypeGetType(elementDatatype) != DE_TYPE_UINT) {
-      error(binding, "Invalid cast: can only convert from/to uint arrays");
+      error(expression, "Invalid cast: can only convert from/to uint arrays");
     }
     return;
   }
   if (!deDatatypeTypeIsInteger(rightType) && rightType != DE_TYPE_CLASS) {
-    error(binding, "Invalid cast");
+    error(expression, "Invalid cast");
   }
   if (rightType  == DE_TYPE_CLASS) {
     // Verify the integer width matches the class reference width.
     deClass theClass = deDatatypeGetClass(rightDatatype);
     if (deDatatypeGetWidth(leftDatatype) != deClassGetRefWidth(theClass)) {
-      error(binding, "Invalid cast: integer width does not match class reference width");
+      error(expression, "Invalid cast: integer width does not match class reference width");
     }
   }
 }
@@ -773,12 +747,12 @@ static void verifyCast(deBinding binding, deDatatype leftDatatype,
 //
 // Integers are converted little-endian.  An exception is thrown if a conversion
 // results in data loss.
-static void bindCastExpression(deBinding binding) {
-  deBinding left = deBindingGetFirstBinding(binding);
-  deBinding right = deBindingGetNextBinding(left);
-  deDatatype leftDatatype = deBindingGetDatatype(left);
-  deDatatype rightDatatype = deBindingGetDatatype(right);
-  deLine line = deBindingGetLine(binding);
+static void bindCastExpression(deExpression expression) {
+  deExpression left = deExpressionGetFirstExpression(expression);
+  deExpression right = deExpressionGetNextExpression(left);
+  deDatatype leftDatatype = deExpressionGetDatatype(left);
+  deDatatype rightDatatype = deExpressionGetDatatype(right);
+  deLine line = deExpressionGetLine(expression);
   // We ignore the secrecy of the left type: you can't cast away secrecy.  Just
   // force the left type to have the same secrecy value as the right.
   leftDatatype = deSetDatatypeSecret(leftDatatype, deDatatypeSecret(rightDatatype));
@@ -787,8 +761,8 @@ static void bindCastExpression(deBinding binding) {
     deBlock enumBlock = deFunctionGetSubBlock(deDatatypeGetFunction(leftDatatype));
     leftDatatype = deFindEnumIntType(enumBlock);
   }
-  verifyCast(binding, leftDatatype, rightDatatype, line);
-  deBindingSetDatatype(binding, leftDatatype);
+  verifyCast(expression, leftDatatype, rightDatatype, line);
+  deExpressionSetDatatype(expression, leftDatatype);
 }
 
 // Verify that it is OK for code to call the function.
@@ -801,14 +775,14 @@ static void verifyFunctionIsCallable(deBlock scopeBlock, deFunction function) {
   }
 }
 
-// Determin if the access binding is a method call.
-static bool isMethodCall(deBinding access) {
-  if (deDatatypeGetType(deBindingGetDatatype(access)) != DE_TYPE_FUNCTION ||
-      deBindingGetType(access) != DE_EXPR_DOT) {
+// Determin if the access expression is a method call.
+static bool isMethodCall(deExpression access) {
+  if (deDatatypeGetType(deExpressionGetDatatype(access)) != DE_TYPE_FUNCTION ||
+      deExpressionGetType(access) != DE_EXPR_DOT) {
     return false;
   }
-  deBinding left = deBindingGetFirstBinding(access);
-  deDatatype datatype = deBindingGetDatatype(left);
+  deExpression left = deExpressionGetFirstExpression(access);
+  deDatatype datatype = deExpressionGetDatatype(left);
   deDatatypeType type = deDatatypeGetType(datatype);
   if (type == DE_TYPE_CLASS) {
     return true;
@@ -818,9 +792,8 @@ static bool isMethodCall(deBinding access) {
 }
 
 // Return the named parameter variable.
-static deVariable findNamedParam(deBlock block, deBinding param) {
-  deExpression paramExpr = deBindingGetExpression(param);
-  utSym name = deExpressionGetName(deExpressionGetFirstExpression(paramExpr));
+static deVariable findNamedParam(deBlock block, deExpression param) {
+  utSym name = deExpressionGetName(deExpressionGetFirstExpression(param));
   deIdent ident = deBlockFindIdent(block, name);
   if (ident == deIdentNull || deIdentGetType(ident) != DE_IDENT_VARIABLE) {
     error(param, "Undefined named parameter: %s", utSymGetName(name));
@@ -834,16 +807,16 @@ static deVariable findNamedParam(deBlock block, deBinding param) {
 
 // Find call datatypes.  For default parameters with default values that are
 // not specified by the caller, use deNullDatatype, as this will be bound when
-// binding the function.
-static deDatatypeArray findCallDatatypes(deSignature scopeSig,
-    deBinding binding, deFunction function, deBinding params) {
+// expression the function.
+static deDatatypeArray findCallDatatypes(deBlock scopeBlock,
+    deExpression expression, deFunction function, deExpression params) {
   deDatatypeArray paramTypes = deDatatypeArrayAlloc();
   deBlock block = deFunctionGetSubBlock(function);
   uint32 numParams = deBlockCountParameterVariables(block);
   deDatatypeArrayResizeDatatypes(paramTypes, numParams);
   deDatatypeArraySetUsedDatatype(paramTypes, numParams);
   deVariable var = deBlockGetFirstVariable(block);
-  deBinding access = deBindingGetFirstBinding(binding);
+  deExpression access = deExpressionGetFirstExpression(expression);
   uint32 xParam = 0;
   if (deFunctionGetType(function) == DE_FUNC_CONSTRUCTOR) {
     deTclass tclass = deFunctionGetTclass(function);
@@ -852,20 +825,20 @@ static deDatatypeArray findCallDatatypes(deSignature scopeSig,
     var = deVariableGetNextBlockVariable(var);
   } else if (isMethodCall(access)) {
     // Add the type of the object on the left of the dot expression as self parameter.
-    deDatatype selfType = deBindingGetDatatype(deBindingGetFirstBinding(access));
+    deDatatype selfType = deExpressionGetDatatype(deExpressionGetFirstExpression(access));
     deDatatypeArraySetiDatatype(paramTypes, xParam, selfType);
     xParam++;
     var = deVariableGetNextBlockVariable(var);
   }
-  deBinding param = deBindingGetFirstBinding(params);
+  deExpression param = deExpressionGetFirstExpression(params);
   bool foundNamedParam = false;
-  while (param != deBindingNull) {
-    foundNamedParam |= deExpressionGetType(deBindingGetExpression(binding)) == DE_EXPR_NAMEDPARAM;
+  while (param != deExpressionNull) {
+    foundNamedParam |= deExpressionGetType(param) == DE_EXPR_NAMEDPARAM;
     if (!foundNamedParam) {
       if (var == deVariableNull || deVariableGetType(var) != DE_VAR_PARAMETER) {
         error(params, "Too many arguments passed to function %s", deFunctionGetName(function));
       }
-      deDatatypeArraySetiDatatype(paramTypes, xParam, deBindingGetDatatype(param));
+      deDatatypeArraySetiDatatype(paramTypes, xParam, deExpressionGetDatatype(param));
       xParam++;
       var = deVariableGetNextBlockVariable(var);
     } else {
@@ -874,9 +847,9 @@ static deDatatypeArray findCallDatatypes(deSignature scopeSig,
       if (deDatatypeArrayGetiDatatype(paramTypes, index) != deDatatypeNull) {
         error(param, "Named parameter assigned twice");
       }
-      deDatatypeArraySetiDatatype(paramTypes, index, deBindingGetDatatype(param));
+      deDatatypeArraySetiDatatype(paramTypes, index, deExpressionGetDatatype(param));
     }
-    param = deBindingGetNextBinding(param);
+    param = deExpressionGetNextExpression(param);
   }
   var = deBlockGetFirstVariable(block);
   for (uint32 xParam = 0; xParam < deDatatypeArrayGetNumDatatype(paramTypes); xParam++) {
@@ -895,8 +868,8 @@ static deDatatypeArray findCallDatatypes(deSignature scopeSig,
 // Find the function being called from the bound access expression.  There are
 // three cases: a normal function call, a method call on a Tclass, and a call on
 // a concrete type such as an array.
-static deFunction findCalledFunction(deBinding access) {
-  deDatatype accessDatatype = deBindingGetDatatype(access);
+static deFunction findCalledFunction(deExpression access) {
+  deDatatype accessDatatype = deExpressionGetDatatype(access);
   deDatatypeType accessType = deDatatypeGetType(accessDatatype);
   bool isTclass = accessType == DE_TYPE_TCLASS;
   if (!isTclass && accessType != DE_TYPE_FUNCTION) {
@@ -927,32 +900,28 @@ static deSignature resolveConstructorSignature(deSignature signature) {
     deClassAppendSignature(theClass, signature);
   }
   deSignatureSetBound(signature, true);
+  deQueueEventBlockedBindings(deSignatureGetReturnEvent(signature));
   deClassSetBound(theClass, true);
   return signature;
 }
 
 // Bind a call expression.
-static bool bindCallExpression(deSignature scopeSig, deBinding binding) {
-  deBinding access = deBindingGetFirstBinding(binding);
-  deBinding params = deBindingGetNextBinding(access);
+static bool bindCallExpression(deBlock scopeBlock, deExpression expression) {
+  deExpression access = deExpressionGetFirstExpression(expression);
+  deExpression params = deExpressionGetNextExpression(access);
   deFunction function = findCalledFunction(access);
-  verifyFunctionIsCallable(deSignatureGetBlock(scopeSig), function);
-  deDatatypeArray paramTypes = findCallDatatypes(scopeSig, binding, function, params);
-  deLine line = deBindingGetLine(binding);
+  verifyFunctionIsCallable(scopeBlock, function);
+  deDatatypeArray paramTypes = findCallDatatypes(scopeBlock, expression, function, params);
+  deLine line = deExpressionGetLine(expression);
   if (deFunctionBuiltin(function)) {
-    deDatatype returnType = deBindBuiltinCall(deSignatureGetBlock(scopeSig),
-        function, paramTypes, deBindingGetExpression(binding));
-    deBindingSetDatatype(binding, returnType);
+    deDatatype returnType = deBindBuiltinCall(scopeBlock, function, paramTypes, expression);
+    deExpressionSetDatatype(expression, returnType);
     deDatatypeArrayFree(paramTypes);
-    return true;
-  } else if (deFunctionGetType(function) == DE_FUNC_STRUCT) {
-    deDatatype returnType = deStructDatatypeCreate(function, paramTypes, line);
-    deBindingSetDatatype(binding, returnType);
     return true;
   }
   deSignature signature = deLookupSignature(function, paramTypes);
   if (signature == deSignatureNull) {
-    setStackTraceGlobals(binding);
+    setStackTraceGlobals(expression);
     signature = deSignatureCreate(function, paramTypes, line);
     if (deSignatureIsConstructor(signature)) {
       // TODO: also resolve methods so factory functions can take null types.
@@ -962,26 +931,26 @@ static bool bindCallExpression(deSignature scopeSig, deBinding binding) {
   } else {
     deDatatypeArrayFree(paramTypes);
   }
-  deBindingSetCallSignature(binding, signature);
+  deExpressionSetSignature(expression, signature);
   deSignatureSetInstantiated(signature,
-      deSignatureInstantiated(signature) || deBindingInstantiating(binding));
+      deSignatureInstantiated(signature) || deExpressionInstantiating(expression));
   if (!deSignatureBound(signature)) {
     deEvent event = deSignatureEventCreate(signature);
-    deStateBinding statebinding = deBindingGetStateBinding(binding);
-    deEventAppendStateBinding(event, statebinding);
+    deBinding binding = deExpressionGetBinding(expression);
+    deEventAppendBinding(event, binding);
     return false;
   }
-  deBindingSetDatatype(binding, deSignatureGetReturnType(signature));
+  deExpressionSetDatatype(expression, deSignatureGetReturnType(signature));
   return true;  // Success.
 }
 
 // Bind the index expression.
-static void bindIndexExpression(deSignature scopeSig, deBinding binding) {
-  deBinding left = deBindingGetFirstBinding(binding);
-  deBinding right = deBindingGetNextBinding(left);
+static void bindIndexExpression(deBlock scopeBlock, deExpression expression) {
+  deExpression left = deExpressionGetFirstExpression(expression);
+  deExpression right = deExpressionGetNextExpression(left);
   deDatatype leftType, rightType;
-  bindBinaryExpression(scopeSig, binding, &leftType, &rightType, false);
-  deLine line = deBindingGetLine(binding);
+  bindBinaryExpression(scopeBlock, expression, &leftType, &rightType, false);
+  deLine line = deExpressionGetLine(expression);
   if (deDatatypeGetType(rightType) != DE_TYPE_UINT) {
     deError(line, "Index values must be uint");
   }
@@ -989,31 +958,31 @@ static void bindIndexExpression(deSignature scopeSig, deBinding binding) {
     deError(line, "Indexing with a secret is not allowed");
   }
   deDatatypeType type = deDatatypeGetType(leftType);
-  if (type != DE_TYPE_ARRAY && type != DE_TYPE_STRING && type != DE_TYPE_TUPLE) {
+  if (type != DE_TYPE_ARRAY && type != DE_TYPE_STRING && type != DE_TYPE_TUPLE &&
+      type != DE_TYPE_STRUCT) {
     deError(line, "Index into non-array/non-string/non-tuple type");
   }
-  if (type == DE_TYPE_TUPLE) {
-    deExpression rightExpr = deBindingGetExpression(right);
-    if (deExpressionGetType(rightExpr) != DE_EXPR_INTEGER) {
+  if (type == DE_TYPE_TUPLE || type == DE_TYPE_STRUCT) {
+    if (deExpressionGetType(right) != DE_EXPR_INTEGER) {
       deError(line,
           "Tuples can only be indexed by constant integers, like y = point[1]");
     }
-    uint32 index = deBigintGetUint32(deExpressionGetBigint(rightExpr), line);
+    uint32 index = deBigintGetUint32(deExpressionGetBigint(right), line);
     if (index >= deDatatypeGetNumTypeList(leftType)) {
       deError(line, "Tuple index out of bounds");
     }
-    deBindingSetDatatype(binding, deDatatypeGetiTypeList(leftType, index));
+    deExpressionSetDatatype(expression, deDatatypeGetiTypeList(leftType, index));
   } else {
     deDatatype elementType = deDatatypeGetElementType(leftType);
-    deBindingSetDatatype(binding, elementType);
+    deExpressionSetDatatype(expression, elementType);
   }
-  deBindingSetConst(binding, deBindingConst(left));
+  deExpressionSetConst(expression, deExpressionConst(left));
 }
 
-// Find the scope signature for the datatype bound on the binding.  If non
+// Find the scope signature for the datatype bound on the expression.  If non
 // exists, report an error.
-static deBlock findBindingSubScope(deBinding binding) {
-  deDatatype datatype = deBindingGetDatatype(binding);
+static deBlock findExpressionSubScope(deExpression expression) {
+  deDatatype datatype = deExpressionGetDatatype(expression);
   utAssert(datatype != deDatatypeNull);
   switch (deDatatypeGetType(datatype)) {
     case DE_TYPE_NONE:
@@ -1027,7 +996,7 @@ static deBlock findBindingSubScope(deBinding binding) {
     case DE_TYPE_ENUM:
     case DE_TYPE_NULL:
     case DE_TYPE_FUNCPTR:
-      error(binding, "Cannot use '.' on  datatype %s", deDatatypeGetTypeString(datatype));
+      error(expression, "Cannot use '.' on  datatype %s", deDatatypeGetTypeString(datatype));
       break;
     case DE_TYPE_CLASS:
       return deClassGetSubBlock(deDatatypeGetClass(datatype));
@@ -1042,206 +1011,202 @@ static deBlock findBindingSubScope(deBinding binding) {
   return deBlockNull;  // Dummy return;
 }
 
-// Create a binding for the variable if the variable is in a function or
-// constructor, not a struct or enum.
-static void createVariableBinding(deSignature scopeSig, deBinding access, deVariable var) {
-  deBlock block = deVariableGetBlock(var);
-  if (deBlockGetOwningClass(block) != deClassNull) {
-     return;  // We don't create bindings for variables in class blocks.
-  }
-  deFunction function = deBlockGetOwningFunction(block);
-  utAssert(function != deFunctionNull);
-  if (block == deSignatureGetBlock(scopeSig)) {
-    // This is a local variable in this signature's function.
-    deVariableBindingCreate(scopeSig, var);
-    return;
-  }
-  deFunctionType type = deFunctionGetType(function);
-  if (type == DE_FUNC_PACKAGE || type == DE_FUNC_MODULE) {
-    // Created a global variable.
-    // TODO: Check if we're allowed to create variables here.
-    deSignature signature = deFunctionGetFirstSignature(function);
-    if (signature != deSignatureNull) {
-      deVariableBindingCreate(signature, var);
-    }
-    return;
-  }
-  error(access, "Cannot create a variable %s in %s", deVariableGetName(var),
-      deGetBlockPath(block, false));
-}
-
 // Find an existing variable with the given name, or create it if it does not exist.
-// Also bind the ident expression binding to its identifier.
-static deVariable findOrCreateVariable(deSignature scopeSig, deBinding access) {
-  deExpression accessExpr = deBindingGetExpression(access);
+// Also bind the ident expression expression to its identifier.
+static deVariable findOrCreateVariable(deBlock scopeBlock, deExpression access) {
   deExpression identExpr;
-  deBlock scopeBlock;
-  deBinding identBinding;
-  if (deExpressionGetType(accessExpr) == DE_EXPR_IDENT) {
-    identExpr = accessExpr;
-    scopeBlock = deSignatureGetBlock(scopeSig);
-    identBinding = access;
+  if (deExpressionGetType(access) == DE_EXPR_IDENT) {
+    identExpr = access;
   } else {
-    utAssert(deExpressionGetType(accessExpr) == DE_EXPR_DOT);
-    deBinding dotAccess = deBindingGetFirstBinding(access);
-    identBinding = deBindingGetNextBinding(dotAccess);
-    identExpr = deBindingGetExpression(identBinding);
-    scopeBlock = findBindingSubScope(dotAccess);
+    utAssert(deExpressionGetType(access) == DE_EXPR_DOT);
+    deExpression dotAccess = deExpressionGetFirstExpression(access);
+    identExpr = deExpressionGetNextExpression(dotAccess);
+    scopeBlock = findExpressionSubScope(dotAccess);
   }
   utAssert(deExpressionGetType(identExpr) == DE_EXPR_IDENT);
+  deIdent ident = deExpressionGetIdent(identExpr);
+  if (ident != deIdentNull) {
+    deIdentRemoveExpression(ident, identExpr);
+  }
   utSym sym = deExpressionGetName(identExpr);
-  deIdent ident = deFindIdent(scopeBlock, sym);
+  ident = deFindIdent(scopeBlock, sym);
   if (ident == deIdentNull || deIdentGetType(ident) == DE_IDENT_UNDEFINED) {
-    bool generated = deStatementGenerated(deStateBindingGetStatement(deFindBindingStateBinding(access)));
+    bool generated = deStatementGenerated(deFindExpressionStatement(access));
     deLine line = deExpressionGetLine(identExpr);
     deVariable var = deVariableCreate(scopeBlock, DE_VAR_LOCAL, false, sym,
         deExpressionNull, generated, line);
     deVariableSetInstantiated(var, true);
     ident = deVariableGetIdent(var);
-    createVariableBinding(scopeSig, access, var);
   }
   if (deIdentGetType(ident) == DE_IDENT_FUNCTION) {
     error(access, "%s is a function, and cannot be assigned.", utSymGetName(sym));
   }
-  deIdentAppendBinding(ident, identBinding);
+  deIdentAppendExpression(ident, identExpr);
   return deIdentGetVariable(ident);
 }
 
-// Update a variable from an assignment binding.
-static void updateVariable(deSignature scopeSig, deVariable variable, deBinding targetBinding) {
-  deBinding varBinding = deFindVariableBinding(scopeSig, variable);
-  if (varBinding == deBindingNull && deVariableGetBlock(variable) ==
-      deSignatureGetBlock(scopeSig)) {
-    varBinding = deVariableBindingCreate(scopeSig, variable);
-  }
-  deDatatype newDatatype = deBindingGetDatatype(targetBinding);
+// Update a variable from an assignment expression.
+static void updateVariable(deBlock scopeBlock, deVariable variable, deExpression targetExpression) {
+  deDatatype newDatatype = deExpressionGetDatatype(targetExpression);
   utAssert(newDatatype != deDatatypeNull);
-  deDatatype oldDatatype;
-  if (varBinding != deBindingNull) {
-    oldDatatype = deBindingGetDatatype(varBinding);
-  } else {
-    // This happens when we access other scopes with dot expressions.
-    oldDatatype = deVariableGetDatatype(variable);
-  }
+  deDatatype oldDatatype = deVariableGetDatatype(variable);
   deDatatype datatype = newDatatype;
   if (oldDatatype != deDatatypeNull) {
     datatype = deUnifyDatatypes(oldDatatype, newDatatype);
   }
   if (datatype == deDatatypeNull) {
-    error(targetBinding, "Assigning different type to %s than assigned before:%s",
+    error(targetExpression, "Assigning different type to %s than assigned before:%s",
       deVariableGetName(variable), deGetOldVsNewDatatypeStrings(oldDatatype, newDatatype));
   }
-  if (varBinding == deBindingNull) {
-    deVariableSetDatatype(variable, datatype);
-  } else {
-    deBindingSetDatatype(varBinding, datatype);
-    if ((oldDatatype == deDatatypeNull || deDatatypeGetType(oldDatatype) == DE_TYPE_NULL) &&
-       deDatatypeGetType(datatype) != DE_TYPE_NULL) {
-      // TODO: Block on sub-elements being null, not just variables.
-      deQueueEventBlockedStateBindings(deBindingGetVariableEvent(varBinding));
+  deVariableSetDatatype(variable, datatype);
+  if ((oldDatatype == deDatatypeNull || deDatatypeGetType(oldDatatype) == DE_TYPE_NULL) &&
+     deDatatypeGetType(datatype) != DE_TYPE_NULL) {
+    // TODO: Block on sub-elements being null, not just variables.
+    deQueueEventBlockedBindings(deVariableGetEvent(variable));
+  }
+}
+
+// Determine if the expression is bound to an iterator.
+static bool datatypeIsIterator(deDatatype datatype) {
+  if (deDatatypeGetType(datatype) != DE_TYPE_FUNCTION) {
+    return false;
+  }
+  deFunction function = deDatatypeGetFunction(datatype);
+  return deFunctionGetType(function) == DE_FUNC_ITERATOR;
+}
+
+// Automatically add .values() in for <var> in <expr> statements when <expr>
+// does not already name an iterator.  This lets us use Python-like loops like
+// 'for i in [1, 2, 3] {'.  It also allows classes to define 'iterator
+// values(self)' so for example, an instance of Set called set could work with
+// 'for element in set'.
+static bool addValuesIteratorIfNeeded(deBlock scopeBlock, deStatement statement) {
+  deExpression assignment = deStatementGetExpression(statement);
+  deExpression access = deExpressionGetFirstExpression(assignment);
+  deExpression callExpr = deExpressionGetNextExpression(access);
+  if (deExpressionGetType(callExpr) == DE_EXPR_CALL) {
+    deDatatype datatype = deExpressionGetDatatype(deExpressionGetFirstExpression(callExpr));
+    if (datatypeIsIterator(datatype)) {
+      return false;  // Already have an iterator.
     }
   }
+  // Add .values().
+  deExpressionRemoveExpression(assignment, callExpr);
+  deLine line = deExpressionGetLine(callExpr);
+  deExpression valuesExpr = deIdentExpressionCreate(utSymCreate("values"), line);
+  deExpression dotExpr = deBinaryExpressionCreate(DE_EXPR_DOT, callExpr, valuesExpr, line);
+  deExpression emptyParamsExpr = deExpressionCreate(DE_EXPR_LIST, line);
+  deExpression valuesCallExpr = deBinaryExpressionCreate(DE_EXPR_CALL, dotExpr,
+      emptyParamsExpr, line);
+  deExpressionAppendExpression(assignment, valuesCallExpr);
+  return true;
 }
 
 // Bind an assignment expression.
-static void bindAssignmentExpression(deSignature scopeSig, deBinding binding) {
-  deBinding accessBinding = deBindingGetFirstBinding(binding);
-  deBinding targetBinding = deBindingGetNextBinding(accessBinding);
-  deExpression access = deBindingGetExpression(accessBinding);
+static deBindRes bindAssignmentExpression(deBlock scopeBlock, deExpression expression) {
+  deExpression access = deExpressionGetFirstExpression(expression);
+  deExpression target = deExpressionGetNextExpression(access);
   deExpressionType type  = deExpressionGetType(access);
-  deDatatype targetDatatype = deBindingGetDatatype(targetBinding);
-  if (type == DE_EXPR_IDENT || type == DE_EXPR_DOT) {
-    deVariable variable = findOrCreateVariable(scopeSig, accessBinding);
-    updateVariable(scopeSig, variable, targetBinding);
-    deBindingSetDatatype(accessBinding, targetDatatype);
+  deDatatype targetDatatype = deExpressionGetDatatype(target);
+  if (deDatatypeGetType(targetDatatype) == DE_TYPE_NONE) {
+    error(expression, "Right side of assignment does not return a value.");
   }
-  deBindingSetDatatype(binding, targetDatatype);
+  deStatement statement = deExpressionGetStatement(expression);
+  if (statement != deStatementNull && deStatementGetType(statement) == DE_STATEMENT_FOREACH) {
+    if (addValuesIteratorIfNeeded(scopeBlock, statement)) {
+      return DE_BINDRES_REBIND;
+    }
+  }
+  if (type == DE_EXPR_IDENT || type == DE_EXPR_DOT) {
+    deVariable variable = findOrCreateVariable(scopeBlock, access);
+    updateVariable(scopeBlock, variable, target);
+    deExpressionSetDatatype(access, targetDatatype);
+  }
+  deExpressionSetDatatype(expression, targetDatatype);
+  return DE_BINDRES_OK;
 }
 
 // Bind the array expression.
-static void bindArrayExpression(deSignature scopeSig, deBinding binding) { 
-  deLine line = deBindingGetLine(binding);
-  deBinding firstElement = deBindingGetFirstBinding(binding);
-  deDatatype datatype = deBindingGetDatatype(firstElement);
-  if (deBindingIsType(firstElement)) {
-    deBindingSetIsType(binding, true);
+static void bindArrayExpression(deBlock scopeBlock, deExpression expression) { 
+  deLine line = deExpressionGetLine(expression);
+  deExpression firstElement = deExpressionGetFirstExpression(expression);
+  deDatatype datatype = deExpressionGetDatatype(firstElement);
+  if (deExpressionIsType(firstElement)) {
+    deExpressionSetIsType(expression, true);
   }
-  deBinding nextElement = deBindingGetNextBinding(firstElement);
-  while (nextElement != deBindingNull) {
-    if (deBindingGetDatatype(nextElement) != datatype) {
+  deExpression nextElement = deExpressionGetNextExpression(firstElement);
+  while (nextElement != deExpressionNull) {
+    if (deExpressionGetDatatype(nextElement) != datatype) {
       deError(line, "Array elements must have the same type:%s",
-          deGetOldVsNewDatatypeStrings(deBindingGetDatatype(nextElement), datatype));
+          deGetOldVsNewDatatypeStrings(deExpressionGetDatatype(nextElement), datatype));
     }
-    if (deBindingIsType(nextElement)) {
+    if (deExpressionIsType(nextElement)) {
       deError(line, "Array type expressions can contain only one type, like [u32]");
     }
-    nextElement = deBindingGetNextBinding(nextElement);
+    nextElement = deExpressionGetNextExpression(nextElement);
   }
   deDatatype arrayDatatype = deArrayDatatypeCreate(datatype);
-  deBindingSetDatatype(binding, arrayDatatype);
+  deExpressionSetDatatype(expression, arrayDatatype);
 }
 
 // A class data member was defined with a null datatype, such as self.point =
 // null(Point).  This does not tell us what the class of self.point is, if
 // Point is a template class.  We have to wait for an assignment to be bound
-// that clarifies the type.  Statement binding can block on null type
+// that clarifies the type.  Statement expression can block on null type
 // resolution of a class data member.
 //
 // Report an error when null types appear anywhere but in an assignment to a
 // data member or variable with a non-composite type.  We still can't bind
 // constructs like rectangle = {null(Point), null(Point)}, because null type
-// resolution only happens on variables.  Binding this would require blocking
-// on access expressions like rectangle[0], which would require rebinding the
+// resolution only happens on variables.  Expression this would require blocking
+// on access expressions like rectangle[0], which would require reexpression the
 // access expressions when the variable type is refined.
-static void blockOnNullResolution(deSignature scopeSig, deBinding access) {
-  deExpressionType type = deBindingGetType(access);
-  deLine line = deBindingGetLine(access);
-  deSignature varScopeSig;
+static void blockOnNullResolution(deBlock scopeBlock, deExpression access) {
+  deExpressionType type = deExpressionGetType(access);
+  deLine line = deExpressionGetLine(access);
+  deBlock varScopeBlock;
   utSym sym;
   if (type == DE_EXPR_IDENT) {
     // This is a local in the current scope.
-    varScopeSig = scopeSig;
-    sym = deExpressionGetName(deBindingGetExpression(access));
+    varScopeBlock = scopeBlock;
+    sym = deExpressionGetName(access);
   } else if (type == DE_EXPR_DOT) {
-    deBinding left = deBindingGetFirstBinding(access);
-    deDatatype classType = deBindingGetDatatype(left);
+    deExpression left = deExpressionGetFirstExpression(access);
+    deDatatype classType = deExpressionGetDatatype(left);
     if (deDatatypeGetType(classType) != DE_TYPE_CLASS) {
       deError(line, "Null type found on non-variable or data member.");
     }
-    deBinding right = deBindingGetNextBinding(left);
-    utAssert(deBindingGetType(right) == DE_EXPR_IDENT);
+    deExpression right = deExpressionGetNextExpression(left);
+    utAssert(deExpressionGetType(right) == DE_EXPR_IDENT);
     deClass theClass = deDatatypeGetClass(classType);
-    varScopeSig = deClassGetFirstSignature(theClass);
-    sym = deExpressionGetName(deBindingGetExpression(right));
+    varScopeBlock = deClassGetSubBlock(theClass);
+    sym = deExpressionGetName(right);
   } else {
     deError(line, "Null type expressions can only be assigned to variables and class members.");
     return;
   }
-  deIdent ident = deBlockFindIdent(deSignatureGetBlock(varScopeSig), sym);
+  deIdent ident = deBlockFindIdent(varScopeBlock, sym);
   utAssert(ident != deIdentNull && deIdentGetType(ident) == DE_IDENT_VARIABLE);
   deVariable variable = deIdentGetVariable(ident);
-  deBinding varBinding = findVariableBinding(varScopeSig, variable);
-  utAssert(varBinding != deBindingNull);
-  deEvent event = deVariableEventCreate(varBinding);
-  deEventAppendStateBinding(event, deBindingGetStateBinding(access));
+  deEvent event = deVariableEventCreate(variable);
+  deEventAppendBinding(event, deExpressionGetBinding(access));
 }
 
-// Bind a dot expression.  If we're binding a constructor, search in the
+// Bind a dot expression.  If we're expression a constructor, search in the
 // current theClass rather than the class constructor.  We can't bind the ident
-// to the right of the dot using scopeSig as the scope.  We instead must wait
+// to the right of the dot using scopeBlock as the scope.  We instead must wait
 // until the left side is bound.  We bind the right hand side identifier
 // expression here.
-static bool bindDotExpression(deSignature scopeSig, deBinding binding) {
-  deBinding accessBinding = deBindingGetFirstBinding(binding);
-  deExpression accessExpr = deBindingGetExpression(accessBinding);
+static bool bindDotExpression(deBlock scopeBlock, deExpression expression) {
+  deExpression accessExpr = deExpressionGetFirstExpression(expression);
   deExpression identExpr = deExpressionGetNextExpression(accessExpr);
-  deDatatype datatype = deBindingGetDatatype(accessBinding);
+  deDatatype datatype = deExpressionGetDatatype(accessExpr);
   deDatatypeType type = deDatatypeGetType(datatype);
   deBlock classBlock;
   if (type == DE_TYPE_CLASS) {
     classBlock = deClassGetSubBlock(deDatatypeGetClass(datatype));
   } else if (type == DE_TYPE_NULL) {
-    blockOnNullResolution(scopeSig, binding);
+    blockOnNullResolution(scopeBlock, expression);
     return false;
   } else if (type == DE_TYPE_TCLASS) {
     classBlock = deFunctionGetSubBlock(deTclassGetFunction(deDatatypeGetTclass(datatype)));
@@ -1250,7 +1215,7 @@ static bool bindDotExpression(deSignature scopeSig, deBinding binding) {
     deFunctionType funcType = deFunctionGetType(function);
     if (funcType != DE_FUNC_PACKAGE && funcType != DE_FUNC_MODULE &&
         funcType != DE_FUNC_STRUCT && funcType != DE_FUNC_ENUM) {
-      deLine line = deBindingGetLine(binding);
+      deLine line = deExpressionGetLine(expression);
       deError(line, "Cannot access identifiers inside function %s", deFunctionGetName(function));
     }
     classBlock = deFunctionGetSubBlock(function);
@@ -1260,92 +1225,92 @@ static bool bindDotExpression(deSignature scopeSig, deBinding binding) {
     classBlock = deFunctionGetSubBlock(deTclassGetFunction(tclass));
   }
   utAssert(deExpressionGetType(identExpr) == DE_EXPR_IDENT);
-  // Make the right-hand binding, if we haven't already.
-  deBinding identBinding = deBindingGetNextBinding(accessBinding);
-  if (identBinding == deBindingNull) {
-    identBinding = deExpressionBindingCreate(scopeSig, binding, identExpr,
-        deBindingInstantiating(binding));
+  // Make the right-hand expression, if we haven't already.
+  deExpression identExpression = deExpressionGetNextExpression(accessExpr);
+  utAssert(identExpression != deExpressionNull);
+  if (classBlock != deBlockNull) {
+    if (!bindIdentExpression(classBlock, identExpression, true)) {
+      return false;
+    }
+  } else {
+    if (!bindIdentExpression(scopeBlock, identExpression, false)) {
+      return false;
+    }
   }
-  deStateBinding statebinding = deBindingGetStateBinding(binding);
-  if (!bindIdentExpression(scopeSig, classBlock, statebinding, identBinding)) {
-    return false;
-  }
-  deBindingSetDatatype(binding, deBindingGetDatatype(identBinding));
-  deBindingSetConst(binding, deBindingConst(identBinding));
+  deExpressionSetDatatype(expression, deExpressionGetDatatype(identExpression));
+  deExpressionSetConst(expression, deExpressionConst(identExpression));
   return true;
 }
 
 // Bind an isnull expression.  The expression type is bool.
-static void bindIsnullExpression(deSignature scopeSig, deBinding binding) {
-  deDatatype datatype = bindUnaryExpression(scopeSig, binding);
+static void bindIsnullExpression(deBlock scopeBlock, deExpression expression) {
+  deDatatype datatype = bindUnaryExpression(scopeBlock, expression);
   deDatatypeType type = deDatatypeGetType(datatype);
   if (type != DE_TYPE_CLASS && type != DE_TYPE_NULL) {
-    deError(deBindingGetLine(binding), "isnull applied to non-object");
+    deError(deExpressionGetLine(expression), "isnull applied to non-object");
   }
-  deBindingSetDatatype(binding, deBoolDatatypeCreate());
+  deExpressionSetDatatype(expression, deBoolDatatypeCreate());
 }
 
 // Bind a named parameter.  Just skip the name, and set the type to the type of
 // the expression on the right.
-static void bindNamedParameter(deSignature scopeSig, deBinding binding) {
-  deBinding right = deBindingGetLastBinding(binding);
-  deBindingSetDatatype(binding, deBindingGetDatatype(right));
-  deBindingSetIsType(binding, deBindingIsType(right));
+static void bindNamedParameter(deBlock scopeBlock, deExpression expression) {
+  deExpression right = deExpressionGetLastExpression(expression);
+  deExpressionSetDatatype(expression, deExpressionGetDatatype(right));
+  deExpressionSetIsType(expression, deExpressionIsType(right));
   // Find the variable in the called function so we can bind to it.
-  deBinding call = deBindingGetBinding(deBindingGetBinding(binding));
-  utAssert(deBindingGetType(call) == DE_EXPR_CALL);
-  deBinding callAccess = deBindingGetFirstBinding(call);
+  deExpression call = deExpressionGetExpression(deExpressionGetExpression(expression));
+  utAssert(deExpressionGetType(call) == DE_EXPR_CALL);
+  deExpression callAccess = deExpressionGetFirstExpression(call);
   deFunction function = findCalledFunction(callAccess);
   deBlock block = deFunctionGetSubBlock(function);
-  deBinding paramNameBinding = deBindingGetFirstBinding(binding);
-  utSym paramName = deExpressionGetName(deBindingGetExpression(paramNameBinding));
+  deExpression paramNameExpression = deExpressionGetFirstExpression(expression);
+  utSym paramName = deExpressionGetName(paramNameExpression);
   deIdent ident = deBlockFindIdent(block, paramName);
   if (ident == deIdentNull || deIdentGetType(ident) != DE_IDENT_VARIABLE) {
-    error(binding, "No parameter named %s found", utSymGetName(paramName));
+    error(expression, "No parameter named %s found", utSymGetName(paramName));
   }
   deVariable var = deIdentGetVariable(ident);
   if (deVariableGetType(var) != DE_VAR_PARAMETER) {
-    error(binding, "Variable %s is a local variable, not a parameter", utSymGetName(paramName));
+    error(expression, "Variable %s is a local variable, not a parameter", utSymGetName(paramName));
   }
-  deIdentAppendBinding(ident, paramNameBinding);
+  deIdentAppendExpression(ident, paramNameExpression);
 }
 
-// Bind the binding's expression.
-bool deBindExpression2(deSignature scopeSig, deBinding binding) {
-  deExpression expression = deBindingGetExpression(binding);
+// Bind the expression's expression.
+static deBindRes bindExpression(deBlock scopeBlock, deExpression expression) {
   switch (deExpressionGetType(expression)) {
     case DE_EXPR_INTEGER:
-      bindIntegerExpression(binding);
+      bindIntegerExpression(expression);
       break;
     case DE_EXPR_FLOAT:
-      bindFloatExpression(binding);
+      bindFloatExpression(expression);
       break;
     case DE_EXPR_BOOL:
-      deBindingSetDatatype(binding, deBoolDatatypeCreate());
+      deExpressionSetDatatype(expression, deBoolDatatypeCreate());
       break;
     case DE_EXPR_STRING:
-      deBindingSetDatatype(binding, deStringDatatypeCreate());
+      deExpressionSetDatatype(expression, deStringDatatypeCreate());
       break;
     case DE_EXPR_IDENT:
-      if (!bindIdentExpression(scopeSig, deBlockNull,
-          deBindingGetStateBinding(binding), binding)) {
-        return false;
+      if (!bindIdentExpression(scopeBlock, expression, false)) {
+        return DE_BINDRES_BLOCKED;
       }
       break;
     case DE_EXPR_ARRAY:
-      bindArrayExpression(scopeSig, binding);
+      bindArrayExpression(scopeBlock, expression);
       break;
     case DE_EXPR_RANDUINT:
-      bindRandUintExpression(binding);
+      bindRandUintExpression(expression);
       break;
     case DE_EXPR_MODINT:
       // TODO: Write this.
-      // bindModintExpression(scopeSig, binding);
+      // bindModintExpression(scopeBlock, expression);
       utExit("Write me");
       break;
     case DE_EXPR_BITOR :
     case DE_EXPR_BITOR_EQUALS:
-      bindBitwiseOrExpression(scopeSig, binding);
+      bindBitwiseOrExpression(scopeBlock, expression);
       break;
     case DE_EXPR_ADD:
     case DE_EXPR_ADD_EQUALS:
@@ -1355,7 +1320,7 @@ bool deBindExpression2(deSignature scopeSig, deBinding binding) {
     case DE_EXPR_MUL_EQUALS:
     case DE_EXPR_DIV:
     case DE_EXPR_DIV_EQUALS:
-      bindBinaryArithmeticExpression(scopeSig, binding);
+      bindBinaryArithmeticExpression(scopeBlock, expression);
       break;
     case DE_EXPR_BITAND:
     case DE_EXPR_BITAND_EQUALS:
@@ -1367,15 +1332,15 @@ bool deBindExpression2(deSignature scopeSig, deBinding binding) {
     case DE_EXPR_SUBTRUNC_EQUALS:
     case DE_EXPR_MULTRUNC:
     case DE_EXPR_MULTRUNC_EQUALS:
-      bindBinaryArithmeticExpression(scopeSig, binding);
-      if (deDatatypeIsFloat(deBindingGetDatatype(binding))) {
+      bindBinaryArithmeticExpression(scopeBlock, expression);
+      if (deDatatypeIsFloat(deExpressionGetDatatype(expression))) {
         deError(deExpressionGetLine(expression),
                 "Invalid binary operation on floating point types.");
       }
       break;
     case DE_EXPR_MOD:
     case DE_EXPR_MOD_EQUALS:
-      bindModExpression(scopeSig, binding);
+      bindModExpression(scopeBlock, expression);
       break;
     case DE_EXPR_AND:
     case DE_EXPR_AND_EQUALS:
@@ -1383,11 +1348,11 @@ bool deBindExpression2(deSignature scopeSig, deBinding binding) {
     case DE_EXPR_OR_EQUALS :
     case DE_EXPR_XOR:
     case DE_EXPR_XOR_EQUALS:
-      bindBinaryBool(scopeSig, binding);
+      bindBinaryBool(scopeBlock, expression);
       break;
     case DE_EXPR_EXP:
     case DE_EXPR_EXP_EQUALS:
-      bindExponentiationExpression(scopeSig, binding);
+      bindExponentiationExpression(scopeBlock, expression);
       break;
     case DE_EXPR_SHL:
     case DE_EXPR_SHL_EQUALS:
@@ -1397,124 +1362,123 @@ bool deBindExpression2(deSignature scopeSig, deBinding binding) {
     case DE_EXPR_ROTL_EQUALS:
     case DE_EXPR_ROTR:
     case DE_EXPR_ROTR_EQUALS:
-      bindShiftExpression(scopeSig, binding);
+      bindShiftExpression(scopeBlock, expression);
       break;
     case DE_EXPR_LT:
     case DE_EXPR_LE:
     case DE_EXPR_GT:
     case DE_EXPR_GE:
-      bindRelationalExpression(scopeSig, binding);
+      bindRelationalExpression(scopeBlock, expression);
       break;
     case DE_EXPR_EQUAL:
     case DE_EXPR_NOTEQUAL:
-      bindEqualityExpression(scopeSig, binding);
+      bindEqualityExpression(scopeBlock, expression);
       break;
     case DE_EXPR_NEGATE:
     case DE_EXPR_NEGATETRUNC:
     case DE_EXPR_BITNOT:
-      bindUnaryArithmeticExpression(scopeSig, binding);
+      bindUnaryArithmeticExpression(scopeBlock, expression);
       break;
     case DE_EXPR_NOT:
-      bindNotExpression(scopeSig, binding);
+      bindNotExpression(scopeBlock, expression);
       break;
     case DE_EXPR_CAST:
     case DE_EXPR_CASTTRUNC:
-      bindCastExpression(binding);
+      bindCastExpression(expression);
       break;
     case DE_EXPR_SELECT:
-      bindSelectExpression(scopeSig, binding);
+      bindSelectExpression(scopeBlock, expression);
       break;
     case DE_EXPR_CALL:
-      if (!bindCallExpression(scopeSig, binding)) {
-        return false;
+      if (!bindCallExpression(scopeBlock, expression)) {
+        return DE_BINDRES_BLOCKED;
       }
       break;
     case DE_EXPR_INDEX:
-      bindIndexExpression(scopeSig, binding);
+      bindIndexExpression(scopeBlock, expression);
       break;
     case DE_EXPR_SLICE:
-      bindSliceExpression(scopeSig, binding);
+      bindSliceExpression(scopeBlock, expression);
       break;
     case DE_EXPR_SECRET:
     case DE_EXPR_REVEAL:
-      bindMarkSecretOrPublic(scopeSig, binding);
-      deBindingSetIsType(binding, deBindingIsType(deBindingGetFirstBinding(binding)));
+      bindMarkSecretOrPublic(scopeBlock, expression);
+      deExpressionSetIsType(expression, deExpressionIsType(deExpressionGetFirstExpression(expression)));
       break;
     case DE_EXPR_EQUALS:
-      bindAssignmentExpression(scopeSig, binding);
-      break;
+      return bindAssignmentExpression(scopeBlock, expression);
     case DE_EXPR_DOT:
-      if (!bindDotExpression(scopeSig, binding)) {
-        return false;
+      if (!bindDotExpression(scopeBlock, expression)) {
+        return DE_BINDRES_BLOCKED;
       }
       break;
     case DE_EXPR_DOTDOTDOT:
-      bindDotDotDotExpression(scopeSig, binding);
+      bindDotDotDotExpression(scopeBlock, expression);
       break;
     case DE_EXPR_LIST:
       // Happens in print statements.
-      deBindingSetDatatype(binding, deNoneDatatypeCreate());
+      deExpressionSetDatatype(expression, deNoneDatatypeCreate());
       break;
     case DE_EXPR_TUPLE:
-      bindTupleExpression(scopeSig, binding);
+      bindTupleExpression(scopeBlock, expression);
       break;
     case DE_EXPR_NULL:
-      bindNullExpression(scopeSig, binding);
+      bindNullExpression(scopeBlock, expression);
       break;
     case DE_EXPR_NOTNULL:
       utExit("Write me");
       break;
     case DE_EXPR_FUNCADDR:
-      bindFunctionPointerExpression(binding);
+      bindFunctionPointerExpression(expression);
       break;
     case DE_EXPR_ARRAYOF:
-      bindArrayofExpression(scopeSig, binding);
+      bindArrayofExpression(scopeBlock, expression);
       break;
       break;
     case DE_EXPR_TYPEOF:
-      bindTypeofExpression(scopeSig, binding);
+      bindTypeofExpression(scopeBlock, expression);
       break;
     case DE_EXPR_UNSIGNED:
     case DE_EXPR_SIGNED:
-      bindSignConversionExpression(scopeSig, binding);
+      bindSignConversionExpression(scopeBlock, expression);
       break;
     case DE_EXPR_WIDTHOF:
-      bindWidthofExpression(scopeSig, binding);
+      bindWidthofExpression(scopeBlock, expression);
       break;
     case DE_EXPR_ISNULL:
-      bindIsnullExpression(scopeSig, binding);
+      bindIsnullExpression(scopeBlock, expression);
       break;
     case DE_EXPR_UINTTYPE:
-      deBindingSetIsType(binding, true);
-      deBindingSetDatatype(binding, deUintDatatypeCreate(deExpressionGetWidth(expression)));
+      deExpressionSetIsType(expression, true);
+      deExpressionSetDatatype(expression, deUintDatatypeCreate(deExpressionGetWidth(expression)));
       break;
     case DE_EXPR_INTTYPE:
-      deBindingSetIsType(binding, true);
-      deBindingSetDatatype(binding, deIntDatatypeCreate(deExpressionGetWidth(expression)));
+      deExpressionSetIsType(expression, true);
+      deExpressionSetDatatype(expression, deIntDatatypeCreate(deExpressionGetWidth(expression)));
       break;
     case DE_EXPR_FLOATTYPE:
-      deBindingSetIsType(binding, true);
-      deBindingSetDatatype(binding, deFloatDatatypeCreate(deExpressionGetWidth(expression)));
+      deExpressionSetIsType(expression, true);
+      deExpressionSetDatatype(expression, deFloatDatatypeCreate(deExpressionGetWidth(expression)));
       break;
     case DE_EXPR_STRINGTYPE:
-      deBindingSetIsType(binding, true);
-      deBindingSetDatatype(binding, deStringDatatypeCreate());
+      deExpressionSetIsType(expression, true);
+      deExpressionSetDatatype(expression, deStringDatatypeCreate());
       break;
     case DE_EXPR_BOOLTYPE:
-      deBindingSetIsType(binding, true);
-      deBindingSetDatatype(binding, deBoolDatatypeCreate());
+      deExpressionSetIsType(expression, true);
+      deExpressionSetDatatype(expression, deBoolDatatypeCreate());
       break;
     case DE_EXPR_AS:
       utExit("Unexpected expression type");
       break;
     case DE_EXPR_IN:
-      bindInExpression(scopeSig, binding);
+      bindInExpression(scopeBlock, expression);
       break;
     case DE_EXPR_NAMEDPARAM:
-      bindNamedParameter(scopeSig, binding);
+      bindNamedParameter(scopeBlock, expression);
       break;
   }
-  return true;  // Success.
+  return DE_BINDRES_OK;  // Success.
 }
 
 // Update the signature's return type.  If this sets the return type for the
@@ -1538,52 +1502,69 @@ static void updateSignatureReturnType(deSignature signature, deDatatype datatype
   if ((oldDatatype == deDatatypeNull || deDatatypeGetType(oldDatatype) == DE_TYPE_NULL) &&
       deDatatypeGetType(newDatatype) != DE_TYPE_NULL) {
     deSignatureSetBound(signature, true);
-    deQueueEventBlockedStateBindings(deSignatureGetReturnEvent(signature));
+    deQueueEventBlockedBindings(deSignatureGetReturnEvent(signature));
   }
 }
 
 // Depending on the statement type, we may have some tasks to do once the statement is bound.
-static void postProcessBoundStatement(deStateBinding statebinding) {
-  switch (deStatementGetType(deStateBindingGetStatement(statebinding))) {
-  case DE_STATEMENT_RETURN: {
+static void postProcessBoundStatement(deBinding binding) {
+  deStatement statement = deBindingGetStatement(binding);
+  deStatementSetInstantiated(statement, deBindingInstantiated(binding));
+  deStatementType type = deStatementGetType(statement);
+  if (type == DE_STATEMENT_RETURN || type == DE_STATEMENT_YIELD) {
     deDatatype datatype = deNoneDatatypeCreate();
-    if (deStateBindingGetRootBinding(statebinding) != deBindingNull) {
-      datatype = deBindingGetDatatype(deStateBindingGetRootBinding(statebinding));
+    if (deStatementGetExpression(statement) != deExpressionNull) {
+      datatype = deExpressionGetDatatype(deStatementGetExpression(statement));
     }
-    updateSignatureReturnType(deStateBindingGetSignature(statebinding), datatype);
-    break;
-  }
-  default:
-    break;
+    updateSignatureReturnType(deBindingGetSignature(binding), datatype);
   }
 }
 
 // Set the datatype of variable to that if its default value.
-static void setDefaultVariableType(deSignature scopeSig, deStateBinding statebinding) {
-  deVariable var = deStateBindingGetInitializerVariable(statebinding);
-  updateVariable(scopeSig, var, deStateBindingGetRootBinding(statebinding));
+static void setDefaultVariableType(deBlock scopeBlock, deBinding binding) {
+  deVariable var = deBindingGetInitializerVariable(binding);
+  updateVariable(scopeBlock, var, deVariableGetInitializerExpression(var));
 }
 
-// Bind or continue binding the statement.
-void deBindStatement2(deStateBinding statebinding) {
-  deBinding binding = deStateBindingGetFirstBinding(statebinding);
-  deSignature scopeSig = deStateBindingGetSignature(statebinding);
-  while (binding != deBindingNull) {
-    if (!deBindExpression2(scopeSig, binding)) {
+// Rebuild the queue of expressions for the binding.  Only works for statement
+// bindings.
+static void rebuildBinding(deBinding binding) {
+  utAssert(deBindingGetType(binding) == DE_BIND_STATEMENT);
+  deExpression expression;
+  deSafeForeachBindingExpression(binding, expression) {
+    deBindingRemoveExpression(binding, expression);
+  } deEndSafeBindingExpression;
+  deStatement statement = deBindingGetStatement(binding);
+  expression = deStatementGetExpression(statement);
+  bool instantiating = deExpressionInstantiating(expression);
+  deQueueExpression(binding, expression, instantiating);
+}
+
+// Bind or continue expression the statement.
+void deBindStatement2(deBinding binding) {
+  deExpression expression = deBindingGetFirstExpression(binding);
+  deBlock scopeBlock = deSignatureGetUniquifiedBlock(deBindingGetSignature(binding));
+  while (expression != deExpressionNull) {
+    deBindRes result = bindExpression(scopeBlock, expression);
+    if (result == DE_BINDRES_BLOCKED) {
       return;
+    } else if (result == DE_BINDRES_REBIND) {
+      rebuildBinding(binding);
+    } else {
+      deBindingRemoveExpression(binding, expression);
     }
-    deStateBindingRemoveBinding(statebinding, binding);
-    binding = deStateBindingGetFirstBinding(statebinding);
+    expression = deBindingGetFirstExpression(binding);
   }
-  switch (deStateBindingGetType(statebinding)) {
-    case  DE_STATEBIND_STATEMENT:
-      postProcessBoundStatement(statebinding);
+  switch (deBindingGetType(binding)) {
+    case  DE_BIND_STATEMENT:
+      postProcessBoundStatement(binding);
       break;
-    case DE_STATEBIND_DEFAULT_VALUE:
-      setDefaultVariableType(scopeSig, statebinding);
+    case DE_BIND_DEFAULT_VALUE:
+      setDefaultVariableType(scopeBlock, binding);
       break;
-    case DE_STATEBIND_VAR_CONSTRAINT:
-    case DE_STATEBIND_FUNC_CONSTRAINT:
+    case DE_BIND_VAR_CONSTRAINT:
+    case DE_BIND_FUNC_CONSTRAINT:
+      // TODO: Check type constraints here.
       break;
 
   }

@@ -100,13 +100,28 @@ deFunction deFunctionCreate(deFilepath filepath, deBlock block, deFunctionType t
 deFunction deCopyFunction(deFunction function, deBlock destBlock) {
   deBlock subBlock = deFunctionGetSubBlock(function);
   deFunctionType type = deFunctionGetType(function);
-  deFunction newFunction = deFunctionCreate(deBlockGetFilepath(destBlock), destBlock, type,
+  deFunction newFunction = deFunctionCreate(deBlockGetFilepath(subBlock), destBlock, type,
       deFunctionGetSym(function), deFunctionGetLinkage(function), deFunctionGetLine(function));
   deBlock newBlock = deCopyBlock(subBlock);
   deFunctionInsertSubBlock(newFunction, newBlock);
   if (type == DE_FUNC_CONSTRUCTOR) {
     deCopyTclass(deFunctionGetTclass(function), newFunction);
   }
+  deRelation relation = deFunctionGetGeneratedRelation(function);
+  if (relation != deRelationNull) {
+    deRelationAppendGeneratedFunction(relation, newFunction);
+  }
+  return newFunction;
+}
+
+// Make a copy of the function in |destBlock|, without sub-blocks.
+deFunction deShallowCopyFunction(deFunction function, deBlock destBlock) {
+  deBlock subBlock = deFunctionGetSubBlock(function);
+  deFunctionType type = deFunctionGetType(function);
+  deFunction newFunction = deFunctionCreate(deBlockGetFilepath(subBlock), destBlock, type,
+      deFunctionGetSym(function), deFunctionGetLinkage(function), deFunctionGetLine(function));
+  deBlock newBlock = deShallowCopyBlock(subBlock);
+  deFunctionInsertSubBlock(newFunction, newBlock);
   return newFunction;
 }
 

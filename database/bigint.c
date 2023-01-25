@@ -326,6 +326,7 @@ int64 deBigintGetInt64(deBigint bigint, deLine line) {
 deBigint deCopyBigint(deBigint bigint) {
   deBigint newBigint = bigintCreate(deBigintSigned(bigint), deBigintGetWidth(bigint));
   deBigintSetData(newBigint, deBigintGetData(bigint), deBigintGetNumData(bigint));
+  deBigintSetWidthUnspecified(newBigint, deBigintWidthUnspecified(bigint));
   return newBigint;
 }
 

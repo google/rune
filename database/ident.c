@@ -65,7 +65,7 @@ deIdent deIdentCreate(deBlock block, deIdentType type, utSym name, deLine line) 
       // a function or variable, update it.
       if (deIdentGetType(oldIdent) == DE_IDENT_UNDEFINED) {
         if (type != DE_IDENT_UNDEFINED) {
-          deQueueEventBlockedStateBindings(deIdentGetUndefinedEvent(oldIdent));
+          deQueueEventBlockedBindings(deIdentGetUndefinedEvent(oldIdent));
         }
         deIdentSetType(oldIdent, type);
         return oldIdent;

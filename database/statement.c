@@ -111,33 +111,36 @@ static void copyExpressionAndSubBlockToNewStatement(deStatement statement,
 }
 
 // Append a deep copy of the statement to destBlock.
-void deAppendStatementCopy(deStatement statement, deBlock destBlock) {
+deStatement deAppendStatementCopy(deStatement statement, deBlock destBlock) {
   deStatement newStatement = deStatementCreate(destBlock, deStatementGetType(statement),
       deStatementGetLine(statement));
   copyExpressionAndSubBlockToNewStatement(statement, newStatement);
   deStatementSetGenerated(newStatement, deStatementGenerated(newStatement) ||
       deStatementGenerated(statement));
+  deRelation relation = deStatementGetGeneratedRelation(statement);
+  if (relation != deRelationNull) {
+    deRelationAppendGeneratedStatement(relation, newStatement);
+  }
+  return newStatement;
 }
 
 // Prepend a deep copy of the statement to destBlock.
-void dePrependStatementCopy(deStatement statement, deBlock destBlock) {
-  deStatement newStatement = deStatementCreate(destBlock, deStatementGetType(statement),
-      deStatementGetLine(statement));
+deStatement dePrependStatementCopy(deStatement statement, deBlock destBlock) {
+  deStatement newStatement = deAppendStatementCopy(statement, destBlock);
   // Move the statement to the start of the block.
   deBlockRemoveStatement(destBlock, newStatement);
   deBlockInsertStatement(destBlock, newStatement);
-  copyExpressionAndSubBlockToNewStatement(statement, newStatement);
+  return newStatement;
 }
 
 // Append a deep copy of the statement to destStatement's block, right after
 // |destStatement|.
-void deAppendStatementCopyAfterStatement(deStatement statement, deStatement destStatement) {
+deStatement deAppendStatementCopyAfterStatement(deStatement statement, deStatement destStatement) {
   deBlock destBlock = deStatementGetBlock(destStatement);
-  deStatement newStatement = deStatementCreate(destBlock, deStatementGetType(statement),
-      deStatementGetLine(statement));
+  deStatement newStatement = deAppendStatementCopy(statement, destBlock);
   deBlockRemoveStatement(destBlock, newStatement);
   deBlockInsertAfterStatement(destBlock, destStatement, newStatement);
-  copyExpressionAndSubBlockToNewStatement(statement, newStatement);
+  return newStatement;
 }
 
 // Return true if the statement is an import of any flavor.

@@ -1181,6 +1181,16 @@ static void restoreParameterDatatypes(deBlock block) {
   } deEndBlockVariable;
 }
 
+// Modify parameter datatypes to pass a tuple of remaining parameters to the
+// varargs parameter.
+static void bindVarargs(deVariable variable, deDatatypeArray paramTypes, uint32 xDatatype) {
+  deDatatypeArray tupleTypes = deDatatypeArrayAlloc();
+  for (; xDatatype < deDatatypeArrayGetUsedDatatype(paramTypes); xDatatype++) {
+    deDatatypeArrayAppendDatatype(tupleTypes, deDatatypeArrayGetiDatatype(xDatatype));
+  }
+  deDatatype tupleType = deTupleDatatypeCreate(tupleTypes);
+}
+
 // Fill out the parameter types passed to the function using default parameter values.
 static void fillOutDefaultParamters(deBlock block, deDatatype selfType, deDatatypeArray paramTypes,
     deExpression firstNamedParameter, deLine line) {
@@ -1188,7 +1198,8 @@ static void fillOutDefaultParamters(deBlock block, deDatatype selfType, deDataty
   deVariable variable = deBlockGetFirstVariable(block);
   uint32 xDatatype = 0;  // Index into signature datatypes.
   deFunctionType funcType = deFunctionGetType(deBlockGetOwningFunction(block));
-  while (variable != deVariableNull && deVariableGetType(variable) == DE_VAR_PARAMETER) {
+  while (variable != deVariableNull && deVariableGetType(variable) == DE_VAR_PARAMETER &&
+         !deVariableIsVarargs(variable)) {
     deVariableSetSavedDatatype(variable, deVariableGetDatatype(variable));
     if (xDatatype == deDatatypeArrayGetUsedDatatype(paramTypes)) {
       // We've past the positional parameters.  Only named parameters remain.
@@ -1238,7 +1249,9 @@ static void fillOutDefaultParamters(deBlock block, deDatatype selfType, deDataty
     xDatatype++;
     variable = deVariableGetNextBlockVariable(variable);
   }
-  if (xDatatype < deDatatypeArrayGetUsedDatatype(paramTypes)) {
+  if (deVariableIsVarargs(variable)) {
+    bindVarargs(variable, paramTypes, xDatatype);
+  } else if (xDatatype < deDatatypeArrayGetUsedDatatype(paramTypes)) {
     deError(line, "Too many parameters");
   }
   checkParameterTypeConstraints(block, line);
@@ -3011,36 +3024,28 @@ static void bindBlock(deBlock scopeBlock, deBlock block, deSignature signature) 
   deStatement statement;
   deForeachBlockStatement(block, statement) {
     deLine line = deStatementGetLine(statement);
-    if (deStatementGetType(statement) == DE_STATEMENT_RELATION ||
-        deStatementGetType(statement) == DE_STATEMENT_GENERATE) {
-      deStatementSetInstantiated(statement, false);
-      if (deBlockGetModuleFilepath(scopeBlock) == deFilepathNull) {
-        deError(line, "Relation statements must be in the global scope");
-      }
-    } else {
-      if (!canContinue) {
-        deError(line, "Cannot reach statement");
-      }
-      if (deStatementGetType(statement) == DE_STATEMENT_FOREACH) {
-        addValuesIteratorIfNeeded(scopeBlock, statement);
-        if (deInlining) {
-          utAssert(deInstantiating);
-          // This sets the signature on the call expression, so the iterator
-          // function can be bound in deInlineIterator.
-          deStatement savedStatement = deCurrentStatement;
-          deCurrentStatement = statement;
-          // Bind the whole statement to create variables assigned in the body.
-          bindStatement(scopeBlock, statement);
-          deCurrentStatement = savedStatement;
-          deInlining = false;
-          statement = deInlineIterator(scopeBlock, statement);
-          deInlining = true;
-        }
-      }
-      deStatementSetInstantiated(statement, deInstantiating);
-      bindStatement(scopeBlock, statement);
-      updateReachability(statement, &canContinue, &canReturn);
+    if (!canContinue) {
+      deError(line, "Cannot reach statement");
     }
+    if (deStatementGetType(statement) == DE_STATEMENT_FOREACH) {
+      addValuesIteratorIfNeeded(scopeBlock, statement);
+      if (deInlining) {
+        utAssert(deInstantiating);
+        // This sets the signature on the call expression, so the iterator
+        // function can be bound in deInlineIterator.
+        deStatement savedStatement = deCurrentStatement;
+        deCurrentStatement = statement;
+        // Bind the whole statement to create variables assigned in the body.
+        bindStatement(scopeBlock, statement);
+        deCurrentStatement = savedStatement;
+        deInlining = false;
+        statement = deInlineIterator(scopeBlock, statement);
+        deInlining = true;
+      }
+    }
+    deStatementSetInstantiated(statement, deInstantiating);
+    bindStatement(scopeBlock, statement);
+    updateReachability(statement, &canContinue, &canReturn);
   } deEndBlockStatement;
   if (block == scopeBlock) {
     checkForInstantiatingTypeVariables(block);
@@ -3181,7 +3186,6 @@ void deBindStart(void) {
 // Bind a block.  Binding a block is idempotent: it can be called multiple times.
 void deBindBlock(deBlock block, deSignature signature, bool inlineIterators) {
   if (deUseNewBinder) {
-    deApplySignatureBindings(signature);
     return;
   }
   deInstantiating = true;

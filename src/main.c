@@ -122,6 +122,7 @@ int main(int argc, char** argv) {
     deParseModule(fileName, rootBlock, true);
     if (deUseNewBinder) {
       deBind2();
+      deInlineIterators();
     } else {
       deBind();
     }

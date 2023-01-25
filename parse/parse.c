@@ -358,12 +358,13 @@ static void parseFile(char *fileName, char *fullName) {
 // Execute module relations.
 static void executeModuleRelations(deBlock moduleBlock) {
   deStatement statement;
-  deForeachBlockStatement(moduleBlock, statement) {
+  deSafeForeachBlockStatement(moduleBlock, statement) {
     deStatementType type = deStatementGetType(statement);
     if (type == DE_STATEMENT_RELATION || type == DE_STATEMENT_GENERATE) {
       deInstantiateRelation(statement);
+      deStatementDestroy(statement);
     }
-  } deEndBlockStatement;
+  } deEndSafeBlockStatement;
 }
 
 // Parse the Rune file into a module.  |currentBlock| should be the package

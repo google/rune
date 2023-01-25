@@ -243,11 +243,16 @@ enum SecretType
   DE_SECTYPE_ALL_SECRET
   DE_SECTYPE_MIXED
 
-enum StateBindingType
-  DE_STATEBIND_STATEMENT  // For binding statement expressions.
-  DE_STATEBIND_DEFAULT_VALUE  // For binding parameter default vaules.
-  DE_STATEBIND_VAR_CONSTRAINT  // For binding variable type constraints.
-  DE_STATEBIND_FUNC_CONSTRAINT  // For binding function type constraints.
+enum BindingType
+  DE_BIND_STATEMENT  // For binding statement expressions.
+  DE_BIND_DEFAULT_VALUE  // For binding parameter default vaules.
+  DE_BIND_VAR_CONSTRAINT  // For binding variable type constraints.
+  DE_BIND_FUNC_CONSTRAINT  // For binding function type constraints.
+
+enum EventType
+  DE_EVENT_SIGNATURE
+  DE_EVENT_UNDEFINED
+  DE_EVENT_VARIABLE
 
 class Root create_only
   Statement lastInitializerStatement
@@ -299,7 +304,6 @@ class Function
   Linkage linkage
   bool bound
   bool returnsValue  // Used to improve reporting of recursion errors.
-  bool needsUniquification  // Set when the function calls iterators.
   BuiltinFuncType builtinType
   uint32 numSignatures
   bool Extern  // Provided by an external library or RPC.
@@ -325,6 +329,9 @@ class Variable
   bool generated  // We don't reference count via generated variables.
   uint32 entryValue  // Set for variables representing enum entries.
   Datatype savedDatatype  // Used in matching overloaded operators.
+  // If true, this variable will be assigned a tuple of all remaining
+  // parameters passed to the function.
+  bool isVarargs
 
 // Used during generation to compute expression values.  May also get used for constant propagation.
 class Value
@@ -398,6 +405,7 @@ class Expression array
   Signature signature  // Only set on function call expressions.
   String altString  // Don't destroy immutable strings.
   bool autocast  // Set on integer constants without a type suffix.
+  bool instantiating
 
 // A hash bin of signatures.
 class SignatureBin create_only
@@ -413,6 +421,7 @@ class Signature
   Line line
   bool instantiated  // Some signatures occur in typeof(...) expressions.
   bool bound
+  bool queued
 
 // Specifies the type of a parameter in a signature, along with some additional data required in
 // function binding.
@@ -424,30 +433,18 @@ class Paramspec
 
 // This class tracks statement binding.  See the header comment in src/bind2.c
 // for details.
-class StateBinding
-  StateBindingType type
+class Binding
+  BindingType type
   bool instantiated
 
-// This class tracks binding of an expression in a signature.  The same
-// expression can be bound multiple times for different signatures.  We bind
-// them breadth-first to resolve issues such as recursive calls and calling
-// methods of a class that has not yet been bound.
-class Binding
-  bool isType
-  bool autocast
-  bool const
-  bool instantiating
-  String altString
-  Datatype datatype
-  Signature callSignature  // Only set on function call expressions.
-
-// When an identifier is fully bound, this event can unblock StateBinding objects
+// When an identifier is fully bound, this event can unblock Binding objects
 // that are blocked on this event.  These events take certain forms:  A
 // signature has been bound, a module's global variable has been assigned a
 // non-null type, or a local variable in a class or function as been bound to
 // non-null type.  Sometimes a code generator runs and creates an identifier
 // that was previously undefined.
 class Event
+  EventType type
 
 // Strings.  The main difference vs utSym is that Rune strings can contain 0's.
 class String
@@ -478,26 +475,19 @@ class MemberRel
 
 relationship Root Block cascade
 // We bind signatures breadth-first.
-relationship Root:Binding StateBinding:Binding doubly_linked
+relationship Root Binding doubly_linked
 relationship Root Event doubly_linked
-relationship Event StateBinding doubly_linked
-relationship Signature StateBinding doubly_linked mandatory
+relationship Event Binding doubly_linked
+relationship Signature Binding doubly_linked
 relationship Signature:Return Event:Return cascade
-relationship Binding:Variable Event:Variable cascade
 relationship Ident:Undefined Event:Undefined cascade
-relationship Signature Binding doubly_linked mandatory
-relationship Signature:Binding StateBinding:Binding doubly_linked
-// This is the queue of unbound bindings on the statebinding.
-relationship StateBinding Binding doubly_linked
-relationship StateBinding:Root Binding:Root cascade
-relationship Statement StateBinding doubly_linked cascade
-relationship Variable:Initializer StateBinding:Initializer doubly_linked cascade
-relationship Variable:Type StateBinding:Type doubly_linked cascade
-relationship Function:Type StateBinding:Type doubly_linked cascade
-relationship Expression Binding doubly_linked cascade
-relationship Binding Binding doubly_linked cascade
-relationship Ident Binding doubly_linked cascade
-relationship Variable Binding doubly_linked cascade
+relationship Statement Binding cascade
+relationship Variable Event cascade
+relationship Variable:Initializer Binding:Initializer cascade
+relationship Variable:Type Binding:Type cascade
+relationship Function:Type Binding:Type cascade
+// This is the queue of expressions waiting to be bound on the binding.
+relationship Binding Expression doubly_linked cascade
 relationship Root Tclass doubly_linked mandatory
 relationship Signature:Call Signature:Call doubly_linked
 relationship Statement:Call Signature:Call doubly_linked
@@ -510,6 +500,7 @@ relationship Root Signature doubly_linked
 relationship Root Class doubly_linked
 relationship Class Signature doubly_linked cascade
 relationship Function Signature doubly_linked cascade
+relationship Signature:Uniquified Function:Uniquified cascade
 relationship Function:Default Signature:Default
 relationship Function Tclass cascade
 relationship Class:Lazy Signature:Lazy doubly_linked cascade

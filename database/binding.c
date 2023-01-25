@@ -14,120 +14,76 @@
 
 #include "de.h"
 
-// Create a StateBinding object representing the state of binding of a statement
+// Create a Binding object representing the state of binding of a statement
 // for a given function signature.
-static deStateBinding stateBindingCreate(deSignature signature,
-    deStateBindingType type, bool instantiating) {
-  deStateBinding statebinding = deStateBindingAlloc();
-  deStateBindingSetType(statebinding, type);
-  deStateBindingSetInstantiated(statebinding, true);
-  deSignatureAppendStateBinding(signature, statebinding);
-  deSignatureAppendBindingStateBinding(signature, statebinding);
-  return statebinding;
+static deBinding bindingCreate(deSignature signature, deBindingType type, bool instantiating) {
+  deBinding binding = deBindingAlloc();
+  deBindingSetType(binding, type);
+  deBindingSetInstantiated(binding, instantiating);
+  deSignatureAppendBinding(signature, binding);
+  deRootAppendBinding(deTheRoot, binding);
+  return binding;
 }
 
-// Create a StateBinding object representing the state of binding of a statement
-// for a given function signature.
-deStateBinding deStateBindingCreate(deSignature signature,
-    deStatement statement, bool instantiating) {
-  deStateBinding statebinding = stateBindingCreate(signature,
-      DE_STATEBIND_STATEMENT, instantiating);
-  deStatementAppendStateBinding(statement, statebinding);
-  return statebinding;
+// Create a Binding object representing the state of binding of a statement.
+deBinding deBindingCreate(deSignature signature, deStatement statement, bool instantiating) {
+  deBinding binding = bindingCreate(signature, DE_BIND_STATEMENT, instantiating);
+  deStatementInsertBinding(statement, binding);
+  return binding;
 }
 
-// Create a StateBinding object to help bind a default value initializer.
-deStateBinding deVariableInitializerStateBindingCreate(deSignature signature,
+// Create a Binding object to help bind a default value initializer.
+deBinding deVariableInitializerBindingCreate(deSignature signature,
     deVariable variable, bool instantiating) {
-  deStateBinding statebinding = stateBindingCreate(signature,
-      DE_STATEBIND_DEFAULT_VALUE, instantiating);
-  deVariableAppendInitializerStateBinding(variable, statebinding);
-  return statebinding;
+  deBinding binding = bindingCreate(signature, DE_BIND_DEFAULT_VALUE, instantiating);
+  deVariableInsertInitializerBinding(variable, binding);
+  return binding;
 }
 
-// Create a StateBinding object to help bind a variable type constraint.
-deStateBinding deVariableConstraintStateBindingCreate(deSignature signature,
+// Create a Binding object to help bind a variable type constraint.
+deBinding deVariableConstraintBindingCreate(deSignature signature,
     deVariable variable, bool instantiating) {
-  deStateBinding statebinding = stateBindingCreate(signature,
-      DE_STATEBIND_VAR_CONSTRAINT, instantiating);
-  deVariableAppendTypeStateBinding(variable, statebinding);
-  return statebinding;
+  deBinding binding = bindingCreate(signature, DE_BIND_VAR_CONSTRAINT, instantiating);
+  deVariableInsertTypeBinding(variable, binding);
+  return binding;
 }
 
-// Create a StateBinding object to help bind a function type constraint.
-deStateBinding deFunctionConstraintStateBindingCreate(deSignature signature,
+// Create a Binding object to help bind a function type constraint.
+deBinding deFunctionConstraintBindingCreate(deSignature signature,
     deFunction function, bool instantiating) {
-  deStateBinding statebinding = stateBindingCreate(signature,
-      DE_STATEBIND_FUNC_CONSTRAINT, instantiating);
-  deFunctionAppendTypeStateBinding(function, statebinding);
-  return statebinding;
-}
-
-// Create a binding object representing an expression that is in-flight binding
-// for a specific function signature.
-deBinding deExpressionBindingCreate(deSignature signature, deBinding owningBinding,
-    deExpression expression, bool instantiating) {
-  deBinding binding = deBindingAlloc();
-  deBindingSetInstantiating(binding, instantiating);
-  if (owningBinding != deBindingNull) {
-    deBindingAppendBinding(owningBinding, binding);
-  }
-  deExpressionAppendBinding(expression, binding);
-  if (signature != deSignatureNull) {
-    deSignatureAppendBinding(signature, binding);
-  }
-  return binding;
-}
-
-// Create a binding object representing an expression that is in-flight binding
-// for a specific function signature.  Signature can be null, such as when the
-// variable is part of a structure, enumerated type, or is a global.
-deBinding deVariableBindingCreate(deSignature signature, deVariable variable) {
-  deBinding binding = deBindingAlloc();
-  deVariableAppendBinding(variable, binding);
-  if (signature != deSignatureNull) {
-    deSignatureAppendBinding(signature, binding);
-  }
-  return binding;
-}
-
-// Create a binding object representing a variable that is in-flight binding
-// for a specific function signature.
-deBinding deParameterBindingCreate(deSignature signature, deVariable variable,
-    deParamspec paramspec) {
-  deBinding binding = deVariableBindingCreate(signature, variable);
-  deBindingSetDatatype(binding, deParamspecGetDatatype(paramspec));
-  deBindingSetInstantiating(binding, deParamspecInstantiated(paramspec));
+  deBinding binding = bindingCreate(signature, DE_BIND_FUNC_CONSTRAINT, instantiating);
+  deFunctionInsertTypeBinding(function, binding);
   return binding;
 }
 
 // Create a new event and add it to Root.
-static deEvent createEvent(void) {
+static deEvent createEvent(deEventType type) {
   deEvent event = deEventAlloc();
-  deRootAppendEvent(deTheRoot, event);
+  deEventSetType(event, type);
+  deRootInsertEvent(deTheRoot, event);
   return event;
 }
 
-// Create a Event that will keep track of all StateBindings blocked on binding
-// of signature.  If it already exists, just return it.
+// Create a Event that will keep track of all Bindings blocked on binding of
+// signature.  If it already exists, just return it.
 deEvent deSignatureEventCreate(deSignature signature) {
   deEvent event = deSignatureGetReturnEvent(signature);
   if (event != deEventNull) {
     return event;
   }
-  event = createEvent();
+  event = createEvent(DE_EVENT_SIGNATURE);
   deSignatureInsertReturnEvent(signature, event);
   return event;
 }
 
 // Create a variable event that tracks variable assignments.
-deEvent deVariableEventCreate(deBinding varBinding) {
-  deEvent event = deBindingGetVariableEvent(varBinding);
+deEvent deVariableEventCreate(deVariable variable) {
+  deEvent event = deVariableGetEvent(variable);
   if (event != deEventNull) {
     return event;
   }
-  event = createEvent();
-  deBindingInsertVariableEvent(varBinding, event);
+  event = createEvent(DE_EVENT_VARIABLE);
+  deVariableInsertEvent(variable, event);
   return event;
 }
 
@@ -137,53 +93,7 @@ deEvent deUndefinedIdentEventCreate(deIdent ident) {
   if (event != deEventNull) {
     return event;
   }
-  event = createEvent();
+  event = createEvent(DE_EVENT_UNDEFINED);
   deIdentInsertUndefinedEvent(ident, event);
   return event;
 }
-
-// Find the binding for the variable on the signature.
-deBinding deFindVariableBinding(deSignature signature, deVariable variable) {
-  deBinding binding;
-  deForeachVariableBinding(variable, binding) {
-    if (deBindingGetSignature(binding) == signature) {
-      return binding;
-    }
-  } deEndVariableBinding;
-  return deBindingNull;
-}
-
-// Find the binding for the expression on the signature.
-deBinding deFindExpressionBinding(deSignature signature, deExpression expression) {
-  deBinding binding;
-  deForeachExpressionBinding(expression, binding) {
-    if (deBindingGetSignature(binding) == signature) {
-      return binding;
-    }
-  } deEndExpressionBinding;
-  return deBindingNull;
-}
-
-// Find the binding for the identifier on the signature.
-deBinding deFindIdentBinding(deSignature signature, deIdent ident) {
-  deBinding binding;
-  deForeachIdentBinding(ident, binding) {
-    if (deBindingGetSignature(binding) == signature) {
-      return binding;
-    }
-  } deEndIdentBinding;
-  return deBindingNull;
-}
-
-// Find the statebinding owning this binding.  Bindings are in a tree, so recurse
-// up until we find the root.
-deStateBinding deFindBindingStateBinding(deBinding binding) {
-  while (binding != deBindingNull && deBindingGetRootStateBinding(binding) == deStateBindingNull) {
-    binding = deBindingGetBinding(binding);
-  }
-  if (binding == deBindingNull) {
-    return deStateBindingNull;
-  }
-  return deBindingGetRootStateBinding(binding);
-}
-

@@ -108,7 +108,13 @@ static void generateRootBlockArrays(deClass theClass) {
 static void bindNewStatements(deBlock scopeBlock, deStatement originalFirstStatement) {
   deStatement statement = deBlockGetFirstStatement(scopeBlock);
   while (statement != originalFirstStatement) {
-    deBindNewStatement(scopeBlock, statement);
+    if (deUseNewBinder) {
+      deFunction function = deBlockGetOwningFunction(scopeBlock);
+      deSignature signature = deFunctionGetUniquifiedSignature(function);
+      deQueueStatement(signature, statement, true);
+    } else {
+      deBindNewStatement(scopeBlock, statement);
+    }
     statement = deStatementGetNextBlockStatement(statement);
   }
 }
@@ -128,6 +134,17 @@ static void setGlobalArrayVariables(deClass theClass) {
   } deEndBlockVariable;
 }
 
+// Bind the new signature.
+static void bindNewSignature(deSignature signature) {
+  if (deUseNewBinder) {
+    deQueueSignature(signature);
+    deBindAllSignatures();
+  } else {
+    deBlock block = deSignatureGetBlock(signature);
+    deBindBlock(block, signature, false);
+  }
+}
+
 // Add statements to the constructor and to the root block for managing memory.
 static void allocateSelfInConstructor(deClass theClass) {
   generateRootBlockArrays(theClass);
@@ -145,7 +162,7 @@ static void allocateSelfInConstructor(deClass theClass) {
   deSignature signature = deSignatureCreate(allocateFunc, parameterTypes, line);
   deSignatureSetInstantiated(signature, true);
   deSignatureSetReturnType(signature, deClassGetDatatype(theClass));
-  deBindBlock(deFunctionGetSubBlock(allocateFunc), signature, false);
+  bindNewSignature(signature);
   setGlobalArrayVariables(theClass);
 }
 
@@ -163,6 +180,7 @@ static void freeSelfInDestructor(deClass theClass) {
   deSignature signature = deSignatureCreate(freeFunc, parameterTypes, 0);
   deSignatureSetInstantiated(signature, true);
   deSignatureSetReturnType(signature, deNoneDatatypeCreate());
+  bindNewSignature(signature);
 }
 
 // Generate code for referencing and defreferencing the class.
@@ -203,12 +221,12 @@ static void addRefAndDeref(deClass theClass) {
   deSignature signature = deSignatureCreate(unrefFunc, parameterTypes, 0);
   deSignatureSetInstantiated(signature, true);
   deSignatureSetReturnType(signature, deNoneDatatypeCreate());
-  // deBindBlock(deFunctionGetSubBlock(unrefFunc), signature, false);
+  bindNewSignature(signature);
   deFunction refFunc = deFunctionGetPrevBlockFunction(unrefFunc);
   signature = deSignatureCreate(refFunc, parameterTypes, 0);
   deSignatureSetInstantiated(signature, true);
   deSignatureSetReturnType(signature, deNoneDatatypeCreate());
-  // deBindBlock(deFunctionGetSubBlock(refFunc), signature, false);
+  bindNewSignature(signature);
 }
 
 // Find the tclass' destructor.

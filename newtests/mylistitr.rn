@@ -1,0 +1,22 @@
+appendcode Array {
+  iterator myValues(self) {
+      for i = 0, i < self.length(), i += 1 {
+          yield self[i]
+      }
+  }
+}
+
+l = [1, 2, 3]
+for i in l.myValues() {
+  println i
+}
+for j in ["Hello", "World!"].myValues() {
+  println j
+}
+l2 = [[1, 2], [3, 4]]
+for i in l2[0].myValues() {
+  println i
+}
+for i in l2[1].myValues() {
+  println i
+}

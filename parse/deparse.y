@@ -107,7 +107,7 @@ static void setFunctionExtern(deFunction function, deString langName) {
 }
 
 // Check that deCurrentBlock is a module or package block.
-static void checkTopBlock(void) {
+static void checkTopBlock(char *statementType) {
   if (deSkippedCodeNestedDepth != 0) {
     return;
   }
@@ -118,7 +118,7 @@ static void checkTopBlock(void) {
       return;
     }
   }
-  deerror("Import statements must be at the top level");
+  deerror("i%s statements must be at the top level", statementType);
 }
 
 // Move import and use statements in a unit test to |destBlock|.
@@ -379,25 +379,25 @@ statement: appendCode
 import: KWIMPORT pathExpressionWithAlias newlines
 {
   // Could also be importing a package.  This gets resolved when we find a file vs a directory.
-  checkTopBlock();
+  checkTopBlock("Import");
   deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_IMPORT, $1);
   deStatementSetExpression(statement, $2);
 }
 | KWIMPORTLIB pathExpressionWithAlias newlines
 {
-  checkTopBlock();
+  checkTopBlock("Importlib");
   deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_IMPORTLIB, $1);
   deStatementSetExpression(statement, $2);
 }
 | KWIMPORTRPC pathExpressionWithAlias newlines
 {
-  checkTopBlock();
+  checkTopBlock("Importrpc");
   deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_IMPORTRPC, $1);
   deStatementSetExpression(statement, $2);
 }
 | KWUSE IDENT newlines
 {
-  checkTopBlock();
+  checkTopBlock("Use");
   deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_USE, $1);
   deStatementSetExpression(statement, deIdentExpressionCreate($2, $1));
 }
@@ -823,11 +823,27 @@ exportFunctionHeader: KWEXPORT KWFUNC IDENT
 ;
 
 parameters:
+| varargParameter
 | oneOrMoreParameters
 ;
 
-oneOrMoreParameters: parameter
-| oneOrMoreParameters ',' optNewlines parameter
+oneOrMoreParameters: fixedOneOrMoreParameters
+| fixedOneOrMoreParameters ',' varargParameter
+;
+
+fixedOneOrMoreParameters: parameter
+| fixedOneOrMoreParameters ',' optNewlines parameter
+;
+
+varargParameter: KWDOTDOTDOT IDENT optTypeExpression
+{
+  deVariable parameter = deVariableCreate(deCurrentBlock, DE_VAR_PARAMETER, false, $2,
+      deExpressionNull, deGenerating || deInIterator, $1);
+  deVariableSetIsVarargs(parameter, true);
+  if ($3 != deExpressionNull) {
+    deVariableInsertTypeExpression(parameter, $3);
+  }
+}
 ;
 
 parameter: optVar IDENT optTypeExpression
@@ -1442,6 +1458,7 @@ generatorHeader: KWGENERATOR IDENT
   if (deInGenerator) {
     deError($1, "Cannot embed a generator inside another generator");
   }
+  checkTopBlock("Generator");
   deGenerator generator = deGeneratorCreate(deCurrentBlock, $2, $1);
   deCurrentBlock = deGeneratorGetSubBlock(generator);
   deInGenerator = true;
@@ -1450,6 +1467,7 @@ generatorHeader: KWGENERATOR IDENT
 
 generateStatement: KWGENERATE pathExpression '(' expressionList ')' newlines
 {
+  checkTopBlock("Generate");
   deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_GENERATE, $1);
   deExpression callExpr = deBinaryExpressionCreate(DE_EXPR_CALL, $2, $4, $1);
   deStatementInsertExpression(statement, callExpr);

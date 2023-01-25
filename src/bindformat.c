@@ -18,9 +18,9 @@
 
 // Verify the expression can be printed.  Return false if we modify the
 // expression to make it printable.
-static void checkExpressionIsPrintable(deBinding binding) {
-  deLine line = deBindingGetLine(binding);
-  deDatatype datatype = deBindingGetDatatype(binding);
+static void checkExpressionIsPrintable(deExpression expression) {
+  deLine line = deExpressionGetLine(expression);
+  deDatatype datatype = deExpressionGetDatatype(expression);
   switch (deDatatypeGetType(datatype)) {
   case DE_TYPE_NONE:
     deError(line, "Printed argument has no type");
@@ -40,7 +40,7 @@ static void checkExpressionIsPrintable(deBinding binding) {
   case DE_TYPE_CLASS:
     break;
   case DE_TYPE_MODINT:
-    utExit("Modint type at top level binding");
+    utExit("Modint type at top level expression");
     break;
   case DE_TYPE_FUNCTION:
   case DE_TYPE_FUNCPTR:
@@ -169,22 +169,22 @@ static char* verifyFormatSpecifier(char* p, char *end, deDatatype datatype, deLi
 // Generate a new format specifier that includes widths, since widths are
 // optional.
 // TODO: Add support for format modifiers, e.g. %12s, %-12s, %$1d, %8d, %08u...
-void deVerifyPrintfParameters(deBinding binding) {
+void deVerifyPrintfParameters(deExpression expression) {
   uint32 len = 42;
   uint32 pos = 0;
   char *buf = utMakeString(len);
-  deLine line = deBindingGetLine(binding);
-  deBinding format = deBindingGetFirstBinding(binding);
-  deBinding argument = deBindingGetNextBinding(format);
+  deLine line = deExpressionGetLine(expression);
+  deExpression format = deExpressionGetFirstExpression(expression);
+  deExpression argument = deExpressionGetNextExpression(format);
   bool isTuple = false;
-  if (deDatatypeGetType(deBindingGetDatatype(argument)) == DE_TYPE_TUPLE) {
+  if (deDatatypeGetType(deExpressionGetDatatype(argument)) == DE_TYPE_TUPLE) {
     isTuple = true;
-    argument = deBindingGetFirstBinding(argument);
+    argument = deExpressionGetFirstExpression(argument);
   }
-  if (deDatatypeGetType(deBindingGetDatatype(format)) != DE_TYPE_STRING) {
+  if (deDatatypeGetType(deExpressionGetDatatype(format)) != DE_TYPE_STRING) {
     deError(line, "Format specifier must be a constant string.\n");
   }
-  deString string = deExpressionGetString(deBindingGetExpression(format));
+  deString string = deExpressionGetString(format);
   char *p = deStringGetText(string);
   char *end = p + deStringGetNumText(string);
   while (p < end) {
@@ -212,21 +212,21 @@ void deVerifyPrintfParameters(deBinding binding) {
         deError(line, "Invalid escape sequence '\\%c'", c);
       }
     } else if (c == '%') {
-      if (argument == deBindingNull) {
+      if (argument == deExpressionNull) {
         deError(line, "Too few arguments for format");
       }
       checkExpressionIsPrintable(argument);
-      deDatatype datatype = deBindingGetDatatype(argument);
+      deDatatype datatype = deExpressionGetDatatype(argument);
       p = verifyFormatSpecifier(p, end, datatype, line, &buf, &len, &pos);
       if (isTuple) {
-        argument = deBindingGetNextBinding(argument);
+        argument = deExpressionGetNextExpression(argument);
       } else {
-        argument = deBindingNull;
+        argument = deExpressionNull;
       }
     }
   }
-  if (argument != deBindingNull) {
+  if (argument != deExpressionNull) {
     deError(line, "Too many arguments for format");
   }
-  deBindingSetAltString(format, deMutableCStringCreate(buf));
+  deExpressionSetAltString(format, deMutableCStringCreate(buf));
 }

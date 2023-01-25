@@ -22,9 +22,9 @@ static deStatement assignVariable(deStatement statement, deVariable variable, de
   deStatement assignmentState = deStatementCreate(block, DE_STATEMENT_ASSIGN, line);
   deBlockRemoveStatement(block, assignmentState);
   deBlockInsertAfterStatement(block, statement, assignmentState);
-  deExpression ident = deIdentExpressionCreate(deVariableGetSym(variable), line);
+  deExpression identExpr = deIdentExpressionCreate(deVariableGetSym(variable), line);
   deExpression assignmentExpr =
-      deBinaryExpressionCreate(DE_EXPR_EQUALS, ident, valueCopy, line);
+      deBinaryExpressionCreate(DE_EXPR_EQUALS, identExpr, valueCopy, line);
   deStatementInsertExpression(assignmentState, assignmentExpr);
   return assignmentState;
 }
@@ -154,6 +154,15 @@ static deStatement flattenSwitchTypeStatements(deStatement firstStatement,
   return firstStatement;
 }
 
+// Queue statements from firstStatement to lastStatement for binding.
+static void queueStatements(deStatement firstStatement, deStatement lastStatement) {
+  utDo {
+    deQueueStatement(deCurrentSignature, firstStatement, true);
+  } utWhile (firstStatement != lastStatement) {
+    firstStatement = deStatementGetNextBlockStatement(firstStatement);
+  } utRepeat;
+}
+
 // Inline the iterator.  The statement should already be bound.  Return the
 // statement replacing the one passed in.
 deStatement deInlineIterator(deBlock scopeBlock, deStatement statement) {
@@ -166,22 +175,26 @@ deStatement deInlineIterator(deBlock scopeBlock, deStatement statement) {
   if (deExpressionGetType(call) != DE_EXPR_CALL) {
     deError(line, "Expecting call to iterator here");
   }
-  deDatatype callType = deExpressionGetDatatype(deExpressionGetFirstExpression(call));
-  if (deDatatypeGetType(callType) != DE_TYPE_FUNCTION) {
-    deError(line, "Expecting call to iterator here");
+  deSignature signature = deExpressionGetSignature(call);
+  utAssert(signature != deSignatureNull);
+  deFunction iterator;
+  if (deUseNewBinder) {
+    iterator = deSignatureGetUniquifiedFunction(signature);
+  } else {
+    iterator = deSignatureGetFunction(signature);
   }
-  deFunction iterator = deDatatypeGetFunction(callType);
   if (deFunctionGetType(iterator) != DE_FUNC_ITERATOR) {
     deError(line, "Expecting call to iterator here");
   }
   deBlock block = deStatementGetBlock(statement);
   deStatement prevStatement = deStatementGetPrevBlockStatement(statement);
   deBlock iteratorBlock = deFunctionGetSubBlock(iterator);
-  deSignature signature = deExpressionGetSignature(call);
-  utAssert(signature != deSignatureNull);
-  // This is required so we can find the instantiated yield statement when there
-  // are switch statements on types.  See builtin/range.rn for an example.
-  deBindBlock(iteratorBlock, signature, false);
+  if (!deUseNewBinder) {
+    // This is required so we can find the instantiated yield statement when
+    // there are switch statements on types.  See builtin/range.rn for an
+    // example.
+    deBindBlock(iteratorBlock, signature, false);
+  }
   deExpression iteratorAccess = deExpressionGetFirstExpression(call);
   deExpression parameters = deExpressionGetNextExpression(iteratorAccess);
   deStatement lastStatement = deStatementGetNextBlockStatement(statement);
@@ -205,10 +218,42 @@ deStatement deInlineIterator(deBlock scopeBlock, deStatement statement) {
   deMoveBlockStatementsAfterStatement(body, yieldStatement);
   deBlockDestroy(body);
   flattenSwitchTypeStatements(firstStatement, lastStatement);
+  if (deUseNewBinder) {
+    queueStatements(firstStatement, lastStatement);
+    deBindAllSignatures();
+  }
   deRestoreBlockVariableNames(iteratorBlock);
   if (prevStatement == deStatementNull) {
     return deBlockGetFirstStatement(block);
   }
   deInIterator = savedInIterator;
   return deStatementGetNextBlockStatement(prevStatement);
+}
+
+// Inline iterators in the block.
+static void inlineBlockIterators(deBlock scopeBlock, deBlock block) {
+  deStatement statement;
+  deSafeForeachBlockStatement(block, statement) {
+    if (deStatementGetType(statement) == DE_STATEMENT_FOREACH &&
+        deStatementInstantiated(statement)) {
+      deInlineIterator(scopeBlock, statement);
+    }
+    deBlock subBlock = deStatementGetSubBlock(statement);
+    if (subBlock != deBlockNull) {
+      inlineBlockIterators(scopeBlock, subBlock);
+    }
+  } deEndSafeBlockStatement;
+}
+
+// Inline iterators.
+void deInlineIterators(void) {
+  deSignature signature;
+  deForeachRootSignature(deTheRoot, signature) {
+    if (deSignatureInstantiated(signature)) {
+      deBlock block = deSignatureGetUniquifiedBlock(signature);
+      // TODO: Pass signature as an  argument when we removed the old binder.
+      deCurrentSignature = signature;
+      inlineBlockIterators(block, block);
+    }
+  } deEndRootSignature;
 }

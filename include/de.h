@@ -31,7 +31,6 @@ extern deRoot deTheRoot;
 // Main functions.
 void deStart(char *fileName);
 void deStop(void);
-void deRunGenerators(void);
 deValue deEvaluateExpression(deBlock scopeBlock, deExpression expression, deBigint modulus);
 void deAddMemoryManagement(void);
 void deParseBuiltinFunctions(void);
@@ -61,15 +60,16 @@ void deBindExpression(deBlock scopeBlock, deExpression expression);
 
 // New event-driven binding functions.
 void deBind2(void);
-bool deBindExpression2(deSignature scopeSig, deBinding binding);
-void deBindStatement2(deStateBinding statebinding);
-void deQueueEventBlockedStateBindings(deEvent event);
+void deInlineIterators(void);
+void deBindAllSignatures(void);
+void deBindStatement2(deBinding binding);
 void deQueueSignature(deSignature signature);
-void deVerifyPrintfParameters(deBinding binding);
-deBinding deQueueExpression(deSignature scopeSig, deStateBinding statebinding,
-    deBinding owningBinding, deExpression expression, bool instantiating);
-void deApplySignatureBindings(deSignature signature);
-void deApplyDefaultValueBindings(deSignature signature);
+void deQueueStatement(deSignature signature, deStatement statement,
+                      bool instantiating);
+void deQueueExpression(deBinding binding, deExpression expression,
+                       bool instantiating);
+void deQueueEventBlockedBindings(deEvent event);
+void deVerifyPrintfParameters(deExpression expression);
 
 // Block methods.
 deBlock deBlockCreate(deFilepath filepath, deBlockType type, deLine line);
@@ -81,6 +81,7 @@ void deAppendBlockToBlock(deBlock sourceBlock, deBlock destBlock);
 void dePrependBlockToBlock(deBlock sourceBlock, deBlock destBlock);
 void deCopyFunctionIdentsToBlock(deBlock sourceBlock, deBlock destBlock);
 deBlock deCopyBlock(deBlock block);
+deBlock deShallowCopyBlock(deBlock block);
 deBlock deSaveBlockSnapshot(deBlock block);
 void deRestoreBlockSnapshot(deBlock block, deBlock snapshot);
 void deCopyBlockStatementsAfterStatement(deBlock block, deStatement destStatement);
@@ -136,6 +137,7 @@ char *deGetFunctionTypeName(deFunctionType type);
 void deDumpFunction(deFunction function);
 void deDumpFunctionStr(deString string, deFunction function);
 deFunction deCopyFunction(deFunction function, deBlock destBlock);
+deFunction deShallowCopyFunction(deFunction function, deBlock destBlock);
 void deInsertModuleInitializationCall(deFunction moduleFunc);
 void deFunctionPrependFunctionCall(deFunction function, deFunction childFunction);
 void deFunctionAppendFunctionCall(deFunction function, deFunction childFunction);
@@ -211,9 +213,10 @@ void deDumpStatement(deStatement statement);
 void deDumpStatementStr(deString string, deStatement statement);
 void deDumpStatementNoSubBlock(deString string, deStatement statement);
 char *deStatementTypeGetKeyword(deStatementType type);
-void deAppendStatementCopy(deStatement statement, deBlock destBlock);
-void dePrependStatementCopy(deStatement statement, deBlock destBlock);
-void deAppendStatementCopyAfterStatement(deStatement statement, deStatement destStatement);
+deStatement deAppendStatementCopy(deStatement statement, deBlock destBlock);
+deStatement dePrependStatementCopy(deStatement statement, deBlock destBlock);
+deStatement deAppendStatementCopyAfterStatement(deStatement statement,
+                                                deStatement destStatement);
 bool deStatementIsImport(deStatement statement);
 
 // Expression methods.
@@ -372,6 +375,7 @@ static inline bool deDatatypeIsNumber(deDatatype datatype) {
 deSignature deLookupSignature(deFunction function, deDatatypeArray parameterTypes);
 deSignature deSignatureCreate(deFunction function,
     deDatatypeArray parameterTypes, deLine line);
+void deUniquifySignatureFunction(deSignature signature);
 deSignature deResolveConstructorSignature(deSignature signature);
 bool deSignatureIsConstructor(deSignature signature);
 bool deSignatureIsMethod(deSignature signature);
@@ -383,6 +387,9 @@ void deDumpParamspec(deParamspec paramspec);
 void deDumpParamspecStr(deString string, deParamspec paramspec);
 static inline deBlock deSignatureGetBlock(deSignature signature) {
   return deFunctionGetSubBlock(deSignatureGetFunction(signature));
+}
+static inline deBlock deSignatureGetUniquifiedBlock(deSignature signature) {
+  return deFunctionGetSubBlock(deSignatureGetUniquifiedFunction(signature));
 }
 static inline deDatatype deSignatureGetiType(deSignature signature, uint32 xParam) {
   return deParamspecGetDatatype(deSignatureGetiParamspec(signature, xParam));
@@ -457,32 +464,20 @@ void deAssignEnumEntryConstants(deBlock block);
 deDatatype deFindEnumIntType(deBlock block);
 
 // StateBinding and Binding methods.
-deStateBinding deStateBindingCreate(deSignature signature,
-    deStatement statement, bool instantiating);
-deStateBinding deVariableInitializerStateBindingCreate(deSignature signature,
-    deVariable variable, bool instantiating);
-deStateBinding deVariableConstraintStateBindingCreate(deSignature signature,
-    deVariable variable, bool instantiating);
-deStateBinding deFunctionConstraintStateBindingCreate(deSignature signature,
-    deFunction function, bool instantiating);
-deBinding deExpressionBindingCreate(deSignature signature, deBinding owningBinding,
-    deExpression expression, bool instantiating);
-deBinding deParameterBindingCreate(deSignature signature, deVariable variable,
-    deParamspec paramspec);
-deBinding deVariableBindingCreate(deSignature signature, deVariable variable);
-deBinding deFindVariableBinding(deSignature signature, deVariable variable);
-deBinding deFindIdentBinding(deSignature signature, deIdent ident);
-deBinding deFindExpressionBinding(deSignature signature, deExpression expression);
+deBinding deBindingCreate(deSignature signature, deStatement statement,
+                          bool instantiating);
+deBinding deVariableInitializerBindingCreate(deSignature signature,
+                                             deVariable variable,
+                                             bool instantiating);
+deBinding deVariableConstraintBindingCreate(deSignature signature,
+                                            deVariable variable,
+                                            bool instantiating);
+deBinding deFunctionConstraintBindingCreate(deSignature signature,
+                                            deFunction function,
+                                            bool instantiating);
 deEvent deSignatureEventCreate(deSignature signature);
 deEvent deUndefinedIdentEventCreate(deIdent ident);
-deEvent deVariableEventCreate(deBinding varBinding);
-deStateBinding deFindBindingStateBinding(deBinding binding);
-static inline deExpressionType deBindingGetType(deBinding binding) {
-  return deExpressionGetType(deBindingGetExpression(binding));
-}
-static inline deLine deBindingGetLine(deBinding binding) {
-  return deExpressionGetLine(deBindingGetExpression(binding));
-}
+deEvent deVariableEventCreate(deVariable variable);
 
 // Utilities.
 void deUtilStart(void);
