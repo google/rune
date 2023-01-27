@@ -231,7 +231,7 @@ void deQueueExpression(deBinding binding, deExpression expression, bool instanti
 }
 
 // Forward reference for recursion.
-static void queueBlockStatements(deSignature signature, deBlock block, bool instantiating);
+void deQueueBlockStatements(deSignature signature, deBlock block, bool instantiating);
 
 // Queue the statement and its sub-block's statements.
 void deQueueStatement(deSignature signature, deStatement statement, bool instantiating) {
@@ -249,13 +249,15 @@ void deQueueStatement(deSignature signature, deStatement statement, bool instant
     }
   }
   deBlock subBlock = deStatementGetSubBlock(statement);
-  if (subBlock != deBlockNull) {
-    queueBlockStatements(signature, subBlock, instantiating);
+  if (subBlock != deBlockNull && deStatementGetType(statement) != DE_STATEMENT_TYPESWITCH) {
+    // We only bind the first typeswitch sub-block that matches.  It is queued
+    // as a post-process to binding the typeswitch statement.
+    deQueueBlockStatements(signature, subBlock, instantiating);
   }
 }
 
 // Throw all the expressions in the block into the queue to be bound.
-static void queueBlockStatements(deSignature signature, deBlock block, bool instantiating) {
+void deQueueBlockStatements(deSignature signature, deBlock block, bool instantiating) {
   deStatement statement;
   deForeachBlockStatement(block, statement) {
     deQueueStatement(signature, statement, instantiating);
@@ -275,6 +277,32 @@ static void createDefaultValueBinding(deSignature signature, deVariable var) {
   deQueueExpression(binding, expr, true);
 }
 
+// Create a Binding for a variable's type constraint.
+static void createVariableConstraintBinding(deSignature signature, deVariable var) {
+  deBinding binding = deVariableGetTypeBinding(var);
+  if (binding != deBindingNull) {
+    // Rebind the type constraint expression in case we've made changes.
+    deBindingDestroy(binding);
+  }
+  binding = deVariableConstraintBindingCreate(signature, var, true);
+  deExpression expr = deVariableGetTypeExpression(var);
+  utAssert(expr != deExpressionNull);
+  deQueueExpression(binding, expr, true);
+}
+
+// Create a Binding for a function's type constraint.
+static void createFunctionConstraintBinding(deSignature signature, deFunction func) {
+  deBinding binding = deFunctionGetTypeBinding(func);
+  if (binding != deBindingNull) {
+    // Rebind the type constraint expression in case we've made changes.
+    deBindingDestroy(binding);
+  }
+  binding = deFunctionConstraintBindingCreate(signature, func, true);
+  deExpression expr = deFunctionGetTypeExpression(func);
+  utAssert(expr != deExpressionNull);
+  deQueueExpression(binding, expr, true);
+}
+
 // Bind parameter variables from the signature.  For parameters with
 // deNullDatatype, there must be a default value.  Create Binding objects for
 // such variables.  Also create Binding objects for parameter type constraints.
@@ -287,6 +315,9 @@ static void bindSignatureParameters(deSignature signature) {
       createDefaultValueBinding(signature, variable);
     } else {
       deVariableSetDatatype(variable, deParamspecGetDatatype(paramspec));
+    }
+    if (deVariableGetTypeExpression(variable) != deExpressionNull) {
+      createVariableConstraintBinding(signature, variable);
     }
     variable = deVariableGetNextBlockVariable(variable);
   } deEndSignatureParamspec;
@@ -326,6 +357,41 @@ static deDatatype findStructDatatype(deSignature signature) {
   return deStructDatatypeCreate(function, types, deSignatureGetLine(signature));
 }
 
+// Update an external signature.  Check that the return type and all variable
+// parameters are concrete.  Mark all parameters as instantiated.
+static void updateExternSignature(deSignature signature) {
+  deFunction function = deSignatureGetUniquifiedFunction(signature);
+  deExpression typeExpr = deFunctionGetTypeExpression(function);
+  if (typeExpr == deExpressionNull) {
+    deSignatureSetReturnType(signature, deNoneDatatypeCreate());
+  } else {
+    deDatatype datatype = deExpressionGetDatatype(typeExpr);
+    if (datatype == deDatatypeNull || !deDatatypeConcrete(datatype)) {
+      printf("Extern function return type: %s\n", deDatatypeGetTypeString(datatype));
+      deError(deSignatureGetLine(signature), "Extern function return types must be concrete");
+    }
+    deSignatureSetReturnType(signature, datatype);
+  }
+  deBlock block = deSignatureGetUniquifiedBlock(signature);
+  deVariable var = deBlockGetFirstVariable(block);
+  deParamspec param;
+  deForeachSignatureParamspec(signature, param) {
+    deDatatype datatype = deVariableGetDatatype(var);
+    utAssert(datatype != deDatatypeNull);
+    if (!deDatatypeConcrete(datatype)) {
+      printf("%s type: %s\n", deVariableGetName(var), deDatatypeGetTypeString(datatype));
+      deError(deSignatureGetLine(signature), "Extern function parameter types must be concrete");
+    }
+    deVariableSetInstantiated(var, true);
+    deParamspecSetInstantiated(param, true);
+    var = deVariableGetNextBlockVariable(var);
+  } deEndSignatureParamspec;
+  if (!deSignatureBound(signature)) {
+    deSignatureSetBound(signature, true);
+    deQueueEventBlockedBindings(deSignatureGetReturnEvent(signature));
+  }
+}
+
 // Once we finish expression a signature, update its paramspecs.
 static void updateSignature(deSignature signature) {
   deBlock block = deSignatureGetUniquifiedBlock(signature);
@@ -334,11 +400,16 @@ static void updateSignature(deSignature signature) {
   deForeachSignatureParamspec(signature, param) {
     utAssert(var != deVariableNull && deVariableGetType(var) == DE_VAR_PARAMETER);
     deParamspecSetIsType(param, deVariableIsType(var));
+    if (!deVariableConst(var)) {
+      // Mark all var parameters as instantiated.
+      deVariableSetInstantiated(var, true);
+    }
     deParamspecSetInstantiated(param, deVariableInstantiated(var));
     var = deVariableGetNextBlockVariable(var);
   } deEndSignatureParamspec;
   utAssert(var == deVariableNull || deVariableGetType(var) != DE_VAR_PARAMETER);
-  deFunctionType type = deFunctionGetType(deSignatureGetFunction(signature));
+  deFunction function = deSignatureGetUniquifiedFunction(signature);
+  deFunctionType type = deFunctionGetType(function);
   if (type == DE_FUNC_DESTRUCTOR) {
     // The self variable of destructors needs to be marked as instantiated.
     deParamspecSetInstantiated(deSignatureGetiParamspec(signature, 0), true);
@@ -346,6 +417,8 @@ static void updateSignature(deSignature signature) {
     deSignatureSetReturnType(signature, findStructDatatype(signature));
     deQueueEventBlockedBindings(deSignatureGetReturnEvent(signature));
     deSignatureSetBound(signature, true);
+  } else if (deFunctionExtern(function)) {
+    updateExternSignature(signature);
   }
 }
 
@@ -356,13 +429,17 @@ void deQueueSignature(deSignature signature) {
   }
   deSignatureSetQueued(signature, true);
   deBlock block = deSignatureGetUniquifiedBlock(signature);
-  deFunction func = deSignatureGetFunction(signature);
+  deFunction func = deSignatureGetUniquifiedFunction(signature);
   deFunctionType type = deFunctionGetType(func);
-  if (!deFunctionBuiltin(func) && type != DE_FUNC_ITERATOR && type != DE_FUNC_STRUCT) {
+  if (!deFunctionBuiltin(func) && type != DE_FUNC_ITERATOR && type != DE_FUNC_STRUCT &&
+      !deFunctionExtern(func)) {
     addReturnIfMissing(block);
   }
   bindSignatureParameters(signature);
-  queueBlockStatements(signature, block, true);
+  if (deFunctionGetTypeExpression(func) != deExpressionNull) {
+    createFunctionConstraintBinding(signature, func);
+  }
+  deQueueBlockStatements(signature, block, true);
   if (deSignatureGetFirstBinding(signature) == deBindingNull) {
     // This signature has nothing to bind.
     updateSignature(signature);

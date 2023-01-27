@@ -806,6 +806,9 @@ static char *getEnumClassTypeString(deDatatype datatype) {
 // Return a Rune formatted type string corresponding to this datatype.  The
 // datatype must be instantiatable, meaning Class, not Tclass.
 char *deDatatypeGetTypeString(deDatatype datatype) {
+  if (datatype == deDatatypeNull) {
+    return "<null datatype>";
+  }
   if (deDatatypeSecret(datatype)) {
     return utSprintf("secret(%s)", deDatatypeGetTypeString(deSetDatatypeSecret(datatype, false)));
   }

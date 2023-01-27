@@ -102,16 +102,29 @@ deFunction deFunctionCreate(deFilepath filepath, deBlock block, deFunctionType t
   return function;
 }
 
-// Make a copy of the function in |destBlock|.
-deFunction deCopyFunction(deFunction function, deBlock destBlock) {
+// Make a copy of the function in |destBlock|, either with or without sub-blocks.
+static deFunction copyFunction(deFunction function, deBlock destBlock, bool shallow) {
   deBlock subBlock = deFunctionGetSubBlock(function);
   deFunctionType type = deFunctionGetType(function);
   deFunction newFunction = deFunctionCreate(deBlockGetFilepath(subBlock), destBlock, type,
       deFunctionGetSym(function), deFunctionGetLinkage(function), deFunctionGetLine(function));
-  deBlock newBlock = deCopyBlock(subBlock);
+  deBlock newBlock;
+  if (shallow) {
+    newBlock = deShallowCopyBlock(subBlock);
+  } else {
+    newBlock = deCopyBlock(subBlock);
+  }
   deFunctionInsertSubBlock(newFunction, newBlock);
-  if (type == DE_FUNC_CONSTRUCTOR) {
-    deCopyTclass(deFunctionGetTclass(function), newFunction);
+  deExpression typeConstraint = deFunctionGetTypeExpression(function);
+  if (typeConstraint != deExpressionNull) {
+    deExpression newTypeConstraint = deCopyExpression(typeConstraint);
+    deFunctionInsertTypeExpression(newFunction, newTypeConstraint);
+  }
+  if (!shallow) {
+    deFunctionType type = deFunctionGetType(function);
+    if (type == DE_FUNC_CONSTRUCTOR) {
+      deCopyTclass(deFunctionGetTclass(function), newFunction);
+    }
   }
   deRelation relation = deFunctionGetGeneratedRelation(function);
   if (relation != deRelationNull) {
@@ -120,15 +133,14 @@ deFunction deCopyFunction(deFunction function, deBlock destBlock) {
   return newFunction;
 }
 
-// Make a copy of the function in |destBlock|, without sub-blocks.
+// Make a copy of the function in |destBlock|.
+deFunction deCopyFunction(deFunction function, deBlock destBlock) {
+  return copyFunction(function, destBlock, false);
+}
+
+// Make a shallow copy of the function in |destBlock|.
 deFunction deShallowCopyFunction(deFunction function, deBlock destBlock) {
-  deBlock subBlock = deFunctionGetSubBlock(function);
-  deFunctionType type = deFunctionGetType(function);
-  deFunction newFunction = deFunctionCreate(deBlockGetFilepath(subBlock), destBlock, type,
-      deFunctionGetSym(function), deFunctionGetLinkage(function), deFunctionGetLine(function));
-  deBlock newBlock = deShallowCopyBlock(subBlock);
-  deFunctionInsertSubBlock(newFunction, newBlock);
-  return newFunction;
+  return copyFunction(function, destBlock, true);
 }
 
 // Append a call statement to the module initialization function in the root block.

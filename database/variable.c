@@ -59,6 +59,11 @@ deVariable deCopyVariable(deVariable variable, deBlock destBlock) {
   }
   deVariable newVariable = deVariableCreate(destBlock, deVariableGetType(variable), deVariableConst(variable),
       deVariableGetSym(variable), initializer, deVariableGenerated(variable), deVariableGetLine(variable));
+  deExpression typeConstraint = deVariableGetTypeExpression(variable);
+  if (typeConstraint != deExpressionNull) {
+    deExpression newTypeConstraint = deCopyExpression(typeConstraint);
+    deVariableInsertTypeExpression(variable, newTypeConstraint);
+  }
   return newVariable;
 }
 

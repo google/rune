@@ -367,6 +367,13 @@ static void bindNullExpression(deBlock scopeBlock, deExpression expression) {
   deExpressionSetDatatype(expression, datatype);
 }
 
+// Bind a notnull expression.
+static void bindNotNullExpression(deBlock scopeBlock, deExpression expression) {
+  deDatatype datatype = deSetDatatypeNullable(bindUnaryExpression(scopeBlock, expression), false,
+      deExpressionGetLine(expression));
+  deExpressionSetDatatype(expression, datatype);
+}
+
 // Set all the variables passed as instantiated.  Any function that can be
 // called through a pointer must accept all parameters on the stack, even if
 // they are unused, or only used for their types.
@@ -1426,7 +1433,7 @@ static deBindRes bindExpression(deBlock scopeBlock, deExpression expression) {
       bindNullExpression(scopeBlock, expression);
       break;
     case DE_EXPR_NOTNULL:
-      utExit("Write me");
+      bindNotNullExpression(scopeBlock, expression);
       break;
     case DE_EXPR_FUNCADDR:
       bindFunctionPointerExpression(expression);
@@ -1506,8 +1513,44 @@ static void updateSignatureReturnType(deSignature signature, deDatatype datatype
   }
 }
 
+// Select the matching case of a typeswitch statement.
+static void selectMatchingCase(deBlock scopeBlock, deBinding binding) {
+  deStatement typeSwitchStatement = deBindingGetStatement(binding);
+  deDatatype datatype = deExpressionGetDatatype(deStatementGetExpression(typeSwitchStatement));
+  bool instantiating = deBindingInstantiated(binding);
+  utAssert(datatype != deDatatypeNull);
+  deBlock subBlock = deStatementGetSubBlock(typeSwitchStatement);
+  bool foundMatchingCase = false;
+  deStatement caseStatement;
+  deForeachBlockStatement(subBlock, caseStatement) {
+    deStatementSetInstantiated(caseStatement, false);
+    if (!foundMatchingCase) {
+      if (deStatementGetType(caseStatement) == DE_STATEMENT_CASE) {
+        deExpression typeExpressionList = deStatementGetExpression(caseStatement);
+        deExpression typeExpression;
+        deForeachExpressionExpression(typeExpressionList, typeExpression) {
+          if (deDatatypeMatchesTypeExpression(scopeBlock, datatype, typeExpression)) {
+            foundMatchingCase = true;
+          }
+        } deEndExpressionExpression;
+      } else {
+        utAssert(deStatementGetType(caseStatement) == DE_STATEMENT_DEFAULT);
+        foundMatchingCase = true;
+      }
+      if (foundMatchingCase && instantiating) {
+        deStatementSetInstantiated(caseStatement, true);
+        deBlock caseBlock = deStatementGetSubBlock(caseStatement);
+        deQueueBlockStatements(deBindingGetSignature(binding), caseBlock, instantiating);
+      }
+    }
+  } deEndBlockStatement;
+  if (!foundMatchingCase) {
+    deError(deStatementGetLine(typeSwitchStatement), "No matching case found");
+  }
+}
+
 // Depending on the statement type, we may have some tasks to do once the statement is bound.
-static void postProcessBoundStatement(deBinding binding) {
+static void postProcessBoundStatement(deBlock scopeBlock, deBinding binding) {
   deStatement statement = deBindingGetStatement(binding);
   deStatementSetInstantiated(statement, deBindingInstantiated(binding));
   deStatementType type = deStatementGetType(statement);
@@ -1517,6 +1560,8 @@ static void postProcessBoundStatement(deBinding binding) {
       datatype = deExpressionGetDatatype(deStatementGetExpression(statement));
     }
     updateSignatureReturnType(deBindingGetSignature(binding), datatype);
+  } else if (type == DE_STATEMENT_TYPESWITCH) {
+    selectMatchingCase(scopeBlock, binding);
   }
 }
 
@@ -1557,7 +1602,7 @@ void deBindStatement2(deBinding binding) {
   }
   switch (deBindingGetType(binding)) {
     case  DE_BIND_STATEMENT:
-      postProcessBoundStatement(binding);
+      postProcessBoundStatement(scopeBlock, binding);
       break;
     case DE_BIND_DEFAULT_VALUE:
       setDefaultVariableType(scopeBlock, binding);

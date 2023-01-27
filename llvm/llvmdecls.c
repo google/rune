@@ -653,6 +653,18 @@ char *llStringGetName(deString string) {
   return utSprintf("@.str%u", llStringGetNum(string));
 }
 
+// For default params, we get the datatype from the default initializer expression.
+static deDatatype getParamspecGetDatatype(deParamspec paramspec) {
+  deDatatype datatype = deParamspecGetDatatype(paramspec);
+  if (datatype != deDatatypeNull) {
+    return datatype;
+  }
+  utAssert(deUseNewBinder);
+  deBlock block = deSignatureGetUniquifiedBlock(deParamspecGetSignature(paramspec));
+  deVariable param = deBlockIndexVariable(block, deParamspecGetSignatureIndex(paramspec));
+  return deVariableGetDatatype(param);
+}
+
 // Declare an extern "C" function.
 static void declareExternCFunction(deSignature signature) {
   deFunction function = deSignatureGetFunction(signature);
@@ -676,7 +688,7 @@ static void declareExternCFunction(deSignature signature) {
       llPuts(", ");
     }
     first = false;
-    deDatatype datatype = deParamspecGetDatatype(paramspec);
+    deDatatype datatype = getParamspecGetDatatype(paramspec);
     llPrintf("%s", llGetTypeString(datatype, false));
   } deEndSignatureParamspec;
   llPuts(")\n");
