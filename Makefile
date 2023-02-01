@@ -28,6 +28,10 @@ runtime/io.c \
 runtime/random.c
 
 SRC= \
+bind/bind.c \
+bind/bind2.c \
+bind/bindexpr.c \
+bind/bindformat.c \
 database/bigint.c \
 database/binding.c \
 database/block.c \
@@ -49,6 +53,10 @@ database/string.c \
 database/util.c \
 database/value.c \
 database/variable.c \
+generator/constprop.c \
+generator/generator.c \
+generator/iterator.c \
+generator/memmanage.c \
 llvm/debug.c \
 llvm/genllvm.c \
 llvm/lldatabase.c \
@@ -56,15 +64,7 @@ llvm/llvmdecls.c \
 parse/deparse.c \
 parse/descan.c \
 parse/parse.c \
-src/bind.c \
-src/bind2.c \
-src/bindexpr.c \
-src/bindformat.c \
-src/constprop.c \
-src/generator.c \
-src/iterator.c \
 src/main.c \
-src/memmanage.c \
 src/rune.c
 
 DEPS=Makefile
@@ -141,7 +141,7 @@ clean:
 	cd bootstrap/database ; make clean
 
 obj: include/dedatabase.h llvm/lldatabase.h
-	mkdir -p obj/database obj/llvm obj/parse obj/runtime obj/src obj/util obj/rpc
+	mkdir -p obj/database obj/llvm obj/parse obj/runtime obj/src obj/util obj/rpc obj/bind obj/generator
 
 obj/%.o: %.c $(DEPS)
 	$(CC) $(CFLAGS) -c -o $@ $<

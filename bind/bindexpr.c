@@ -58,6 +58,109 @@ static void bindRandUintExpression(deExpression expression) {
   deExpressionSetDatatype(expression, datatype);
 }
 
+// Verify the datatype can be cast to a modular integer.  This just means it is INT or UINT.
+static void verifyExpressionCanCastToModint(deExpression expression) {
+  deDatatype datatype = deExpressionGetDatatype(expression);
+  if (!deDatatypeIsInteger(datatype)) {
+    error(expression, "Expression cannot be cast to a modular integer");
+  }
+}
+
+// Verify that the expression's child expressions can be cast to the modular
+// type, except for the right side of an exponentiation expression which must be
+// UINT.
+static void postProcessModintExpression(deExpression expression) {
+  deExpressionType type = deExpressionGetType(expression);
+  if (type == DE_EXPR_EXP || type == DE_EXPR_EXP_EQUALS) {
+    deDatatype rightType = deExpressionGetDatatype(deExpressionGetLastExpression(expression));
+    if (deDatatypeGetType(rightType) != DE_TYPE_UINT) {
+      error(expression, "Modular exponent must be an unsigned integer.");
+    }
+    verifyExpressionCanCastToModint(deExpressionGetFirstExpression(expression));
+    return;
+  }
+  deExpression child;
+  deForeachExpressionExpression(expression, child) {
+    verifyExpressionCanCastToModint(child);
+  } deEndExpressionExpression;
+}
+
+// Bind a modular expression, which is built from modular arithmetic friendly operators.  Only
+// modular operators such as add/sub/exp expressions are set to |modularType|.
+static void bindModularExpression(deBlock scopeBlock, deExpression expression,
+    deDatatype modularType) {
+  switch (deExpressionGetType(expression)) {
+    case DE_EXPR_INTEGER:
+    case DE_EXPR_IDENT:
+    case DE_EXPR_RANDUINT:
+    case DE_EXPR_CAST:
+    case DE_EXPR_CALL:
+    case DE_EXPR_INDEX:
+    case DE_EXPR_DOT:
+    case DE_EXPR_WIDTHOF:
+      // These are non-modular operators that are legal in modular expressions.
+      break;
+    case DE_EXPR_ADD:
+    case DE_EXPR_SUB:
+    case DE_EXPR_MUL:
+    case DE_EXPR_DIV: {
+      deExpression left = deExpressionGetFirstExpression(expression);
+      deExpression right = deExpressionGetNextExpression(left);
+      bindModularExpression(scopeBlock, left, modularType);
+      bindModularExpression(scopeBlock, right, modularType);
+      deExpressionSetDatatype(expression, modularType);
+      break;
+    }
+    case DE_EXPR_EXP: {
+      deExpression left = deExpressionGetFirstExpression(expression);
+      bindModularExpression(scopeBlock, left, modularType);
+      // We must still check that the right is a UINT after it is bound.
+      deExpressionSetDatatype(expression, modularType);
+      break;
+    }
+    case DE_EXPR_REVEAL:
+    case DE_EXPR_SECRET:
+    case DE_EXPR_NEGATE: {
+      deExpression left = deExpressionGetFirstExpression(expression);
+      bindModularExpression(scopeBlock, left, modularType);
+      deExpressionSetDatatype(expression, modularType);
+      break;
+    }
+    case DE_EXPR_EQUAL:
+    case DE_EXPR_NOTEQUAL: {
+      deExpression left = deExpressionGetFirstExpression(expression);
+      deExpression right = deExpressionGetNextExpression(left);
+      bindModularExpression(scopeBlock, left, modularType);
+      bindModularExpression(scopeBlock, right, modularType);
+      deExpressionSetDatatype(expression, deBoolDatatypeCreate());
+      return;
+    }
+    default:
+      error(expression, "Invalid modular arithmetic expression");
+  }
+}
+
+// Bind a modular integer expression.  Adding "mod p" after an expression forces
+// all of the expressions to the left to be computed mod p.
+static void bindModintExpression(deBlock scopeBlock, deExpression expression) {
+  deExpression left = deExpressionGetFirstExpression(expression);
+  deExpression modulus = deExpressionGetNextExpression(left);
+  deDatatype modulusType = deExpressionGetDatatype(modulus);
+  if (deDatatypeGetType(modulusType) != DE_TYPE_UINT) {
+    error(modulus, "Modulus must be an unsigned integer");
+  }
+  if (deDatatypeSecret(modulusType)) {
+    error(modulus, "Modulus cannot be secret");
+  }
+  deDatatype datatype = deModintDatatypeCreate(modulus);
+  bindModularExpression(scopeBlock, left, datatype);
+  deDatatype resultType = deExpressionGetDatatype(left);
+  if (deDatatypeGetType(resultType) == DE_TYPE_MODINT) {
+    resultType = modulusType;
+  }
+  deExpressionSetDatatype(expression, resultType);
+}
+
 // Modify the datatype in the constant integer expression tree to match the
 // datatype.
 static void autocastExpression(deExpression expression, deDatatype datatype) {
@@ -1286,6 +1389,11 @@ static void bindNamedParameter(deBlock scopeBlock, deExpression expression) {
 
 // Bind the expression's expression.
 static deBindRes bindExpression(deBlock scopeBlock, deExpression expression) {
+  deDatatype oldDatatype = deExpressionGetDatatype(expression);
+  if (oldDatatype != deDatatypeNull && deDatatypeGetType(oldDatatype) == DE_TYPE_MODINT) {
+    postProcessModintExpression(expression);
+    return DE_BINDRES_OK;  // Success.
+  }
   switch (deExpressionGetType(expression)) {
     case DE_EXPR_INTEGER:
       bindIntegerExpression(expression);
@@ -1311,9 +1419,7 @@ static deBindRes bindExpression(deBlock scopeBlock, deExpression expression) {
       bindRandUintExpression(expression);
       break;
     case DE_EXPR_MODINT:
-      // TODO: Write this.
-      // bindModintExpression(scopeBlock, expression);
-      utExit("Write me");
+      bindModintExpression(scopeBlock, expression);
       break;
     case DE_EXPR_BITOR :
     case DE_EXPR_BITOR_EQUALS:

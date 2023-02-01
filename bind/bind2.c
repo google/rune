@@ -23,7 +23,7 @@ The problem
 Binding in Rune is challenging.  The usual one-pass per function fails because:
 
 * Recursive binding: While binding a function signature that calls itself, we
-  are blocked on the undefined return type of the function.
+  are blocked on the recursive call since the return type is still unknown.
 * Code generation: While binding a function signature, there is an undefined
   identifier.  This may be real, or maybe it hasn't been generated yet.
 * Undefined class data members: While binding class A, we refer to a method in
@@ -52,7 +52,7 @@ Binding in Rune is challenging.  The usual one-pass per function fails because:
   tests in A.rn may not refer to B at all, but the auto-generated destructor
   for A will try to either cascade-destroy B objects, or remove B objects from
   the linked list.  This auto-generated code will contain null types that
-  cannot be resoled.  In this case, we destroy the contents of B, all relations
+  cannot be resolved.  In this case, we destroy the contents of B, all relations
   of B, and all generated code from those relations, including statements in
   A's destructor.
 
@@ -76,7 +76,7 @@ In A.rn:
 
     unittest {
       use B
-      a A("test)
+      a A("test")
       if false {
         // This is a type hint.
         a = A("test")
@@ -207,6 +207,20 @@ static void  postProcessNamedParameterExpression(deExpression expression) {
   deBindingRemoveExpression(deExpressionGetBinding(expression), identExpression);
 }
 
+// Post process a modular expressions of the form <expresion> mod <modulus>.
+// The modulus should be bound first, and in the handler for binding modint
+// expressions, we should recursively bind through modular arithmetic operators.
+static void postProcessModint(deExpression expression) {
+  deBinding binding = deExpressionGetBinding(expression);
+  // Move the modint expression to the front of the binding list.
+  deBindingRemoveExpression(binding, expression);
+  deBindingInsertExpression(binding, expression);
+  // Move the modulus expression to the front of the binding list.
+  deExpression modulusExpr = deExpressionGetLastExpression(expression);
+  deBindingRemoveExpression(binding, modulusExpr);
+  deBindingInsertExpression(binding, modulusExpr);
+}
+
 // Queue the expression for expression.
 void deQueueExpression(deBinding binding, deExpression expression, bool instantiating) {
   deExpressionSetInstantiating(expression, instantiating);
@@ -227,6 +241,8 @@ void deQueueExpression(deBinding binding, deExpression expression, bool instanti
     postProcessDotExpression(expression);
   } else if (type == DE_EXPR_NAMEDPARAM) {
     postProcessNamedParameterExpression(expression);
+  } else if (type == DE_EXPR_MODINT) {
+    postProcessModint(expression);
   }
 }
 
