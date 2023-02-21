@@ -950,7 +950,7 @@ uint64_t runtime_smallnumModularAdd(uint64_t a, uint64_t b, uint64_t modulus, bo
     }
     return result - (modulus & (int64_t)-cttk_bool_to_int(ctl));
   }
-  if (result < a || result > modulus) {
+  if (result < a || result >= modulus) {
     result -= modulus;
   }
   return result;

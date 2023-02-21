@@ -281,7 +281,6 @@ static inline void runtime_copyBigint(runtime_array *dest, runtime_array *source
 uint64_t runtime_smallnumMul(uint64_t a, uint64_t b, bool isSigned, bool secret);
 uint64_t runtime_smallnumDiv(uint64_t a, uint64_t b, bool isSigned, bool secret);
 uint64_t runtime_smallnumMod(uint64_t a, uint64_t b, bool isSigned, bool secret);
-uint64_t runtime_smallnumMod(uint64_t a, uint64_t b, bool isSigned, bool secret);
 uint64_t runtime_smallnumModReduce(uint64_t value, uint64_t modulus, bool isSigned, bool secret);
 uint64_t runtime_smallnumExp(uint64_t base, uint32_t exponent, bool isSigned, bool secret);
 
