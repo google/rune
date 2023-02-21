@@ -239,7 +239,7 @@ static inline uint8_t toHex(uint8_t value) {
 
 // Read a uint32 from the string.  Update the string pointer to point to first
 // non-digit.  Given an error if the value does not fit in a uint32.
-static uint32_t readUint32(const uint8_t **p) {
+static uint32_t readUint32(const uint8_t **p, const uint8_t *end) {
   const uint8_t *q = *p;
   uint64_t value = 0;
   uint8_t c = *q;
@@ -251,8 +251,11 @@ static uint32_t readUint32(const uint8_t **p) {
     if (value > UINT32_MAX) {
       runtime_panicCstr("Integer width cannot exceed 2^16 - 1");
     }
-    c = *++q;
-  } while (isdigit(c));
+    q++;
+    if (q != end) {
+      c = *q;
+    }
+  } while (q != end && isdigit(c));
   *p = q;
   return value;
 }
@@ -388,13 +391,14 @@ static void doubleToString(runtime_array *array, double val) {
 
 // Forward declaration for recursion.
 static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel,
-    const uint8_t *p, va_list ap);
+    const uint8_t *p, const uint8_t *end, va_list ap);
 
 // Varargs wrapper for appendFormattedElement.
-static const uint8_t *appendFormattedArg(runtime_array *array, bool topLevel, const uint8_t *p, ...) {
+static const uint8_t *appendFormattedArg(runtime_array *array, bool topLevel,
+    const uint8_t *p, const uint8_t *end, ...) {
   va_list ap;
-  va_start(ap, p);
-  const uint8_t *result = appendFormattedElement(array, topLevel, p, ap);
+  va_start(ap, end);
+  const uint8_t *result = appendFormattedElement(array, topLevel, p, end, ap);
   va_end(ap);
   return result;
 }
@@ -416,8 +420,8 @@ static const uint8_t *skipArrayElementSpec(const uint8_t *p) {
 }
 
 // Forward declaration for recursion.
-static const uint8_t *findEndOfSpec(const uint8_t *p, uint32_t *elementSize, uint32_t *width,
-    bool *deref);
+static const uint8_t *findEndOfSpec(const uint8_t *p, const uint8_t *end,
+    uint32_t *elementSize, uint32_t *width, bool *deref);
 
 // Update the tuple size to take into account the new element.
 static uint32_t alignToElement(uint32_t elementPos, uint32_t subElementSize) {
@@ -441,13 +445,14 @@ static uint32_t alignToElement(uint32_t elementPos, uint32_t subElementSize) {
 // return pointer to " %d".  The opening [ has already been skipped.  Compute
 // the element size as we go.  Tuples are packed such that each element is
 // aligned to the nearest power of 2, up to sizeof(uint64_t).
-static const uint8_t *skipTupleElementSpec(const uint8_t *p, uint32_t *tupleSize) {
+static const uint8_t *skipTupleElementSpec(const uint8_t *p, const uint8_t *end,
+    uint32_t *tupleSize) {
   uint32_t elementPos = 0;
   uint8_t c;
   do {
     uint32_t elementSize, width;
     bool deref;
-    p = findEndOfSpec(p, &elementSize, &width, &deref);
+    p = findEndOfSpec(p, end, &elementSize, &width, &deref);
     elementPos = alignToElement(elementPos, elementSize) + elementSize;
     c = *p++;
     if (c != ',' && c != ')') {
@@ -460,15 +465,15 @@ static const uint8_t *skipTupleElementSpec(const uint8_t *p, uint32_t *tupleSize
 
 // Find the end of the format element spec, and set |elementSize| to the element
 // size in memory.
-static const uint8_t *findEndOfSpec(const uint8_t *p, uint32_t *elementSize, uint32_t *width,
-    bool *deref) {
+static const uint8_t *findEndOfSpec(const uint8_t *p, const uint8_t *end,
+    uint32_t *elementSize, uint32_t *width, bool *deref) {
   uint8_t c = *p++;
   *deref = false;
   *width = 0;
   if (c == 's') {
     *elementSize = sizeof(runtime_array);
   } else if (c == 'i' || c == 'u' || c == 'x') {
-    *width = readUint32(&p);
+    *width = readUint32(&p, end);
     if (*width > sizeof(uint64_t) * 8) {
       *elementSize = sizeof(runtime_array);
       return p;
@@ -486,7 +491,7 @@ static const uint8_t *findEndOfSpec(const uint8_t *p, uint32_t *elementSize, uin
       *elementSize = 8;
     }
   } else if (c == 'f') {
-    uint32_t width = readUint32(&p);
+    uint32_t width = readUint32(&p, end);
     if (width != 32 && width != 64) {
       runtime_panicCstr("Illegal floating point width %u", width);
     }
@@ -499,7 +504,7 @@ static const uint8_t *findEndOfSpec(const uint8_t *p, uint32_t *elementSize, uin
     *elementSize = sizeof(runtime_array);
     p = skipArrayElementSpec(p);
   } else if (c == '(') {
-    p = skipTupleElementSpec(p, elementSize);
+    p = skipTupleElementSpec(p, end, elementSize);
   } else if (c == ')') {
     // This is an empty tuple.
     *elementSize = 0;
@@ -513,27 +518,27 @@ static const uint8_t *findEndOfSpec(const uint8_t *p, uint32_t *elementSize, uin
 // Dereference a pointer to the element, and append it to |dest|, formatted
 // according to the spec pointed to by |p|.
 static void derefAndAppendFormattedArg(runtime_array *dest, bool topLevel, const uint8_t *p,
-    const uint8_t *elementPtr, uint32_t elementSize, uint32_t width) {
+    const uint8_t *end, const uint8_t *elementPtr, uint32_t elementSize, uint32_t width) {
   // Assumes compiler aligns stack elements on 32-bit boundaries or courser.
   switch (elementSize) {
     case 1: {
       uint8_t value = *(uint8_t *)elementPtr;
-      appendFormattedArg(dest, topLevel, p, value);
+      appendFormattedArg(dest, topLevel, p, end, value);
       break;
     }
     case 2: {
       uint16_t value = *(uint16_t *)elementPtr;
-      appendFormattedArg(dest, topLevel, p, value);
+      appendFormattedArg(dest, topLevel, p, end, value);
       break;
     }
     case 4: {
       uint32_t value = *(uint32_t *)elementPtr;
-      appendFormattedArg(dest, topLevel, p, value);
+      appendFormattedArg(dest, topLevel, p, end, value);
       break;
     }
     case 8: {
       uint64_t value = *(uint64_t *)elementPtr;
-      appendFormattedArg(dest, topLevel, p, value);
+      appendFormattedArg(dest, topLevel, p, end, value);
       break;
     }
     default:
@@ -543,11 +548,12 @@ static void derefAndAppendFormattedArg(runtime_array *dest, bool topLevel, const
 
 // Print an array to a string.  |p| points the element type specifier.  Return
 // a pointer to the character just past the end of the array format specifier.
-static const uint8_t *printArray(runtime_array *dest, const uint8_t *p, const runtime_array *source) {
+static const uint8_t *printArray(runtime_array *dest, const uint8_t *p, const uint8_t *end,
+    const runtime_array *source) {
   appendArrayCstr(dest, "[");
   uint32_t elementSize, width;
   bool deref;
-  const uint8_t *elementSpecEnd = findEndOfSpec(p, &elementSize, &width, &deref);
+  const uint8_t *elementSpecEnd = findEndOfSpec(p, end, &elementSize, &width, &deref);
   if (*elementSpecEnd != ']') {
     runtime_panicCstr("Expected ] at end of array format specifier");
   }
@@ -563,9 +569,9 @@ static const uint8_t *printArray(runtime_array *dest, const uint8_t *p, const ru
     firstTime = false;
     const uint8_t *elementPtr = (const uint8_t*)(source->data) + elementIndex;
     if (!deref) {
-      appendFormattedArg(dest, false, p, elementPtr);
+      appendFormattedArg(dest, false, p, end, elementPtr);
     } else {
-      derefAndAppendFormattedArg(dest, false, p, elementPtr, elementSize, width);
+      derefAndAppendFormattedArg(dest, false, p, end, elementPtr, elementSize, width);
     }
     elementIndex += elementSize;
   }
@@ -575,7 +581,8 @@ static const uint8_t *printArray(runtime_array *dest, const uint8_t *p, const ru
 
 // Print a tuple to a string.  |p| points the element type specifier.  Return a
 // pointer to the character just past the end of the tuple format specifier.
-static const uint8_t *printTuple(runtime_array *dest, const uint8_t *p, const uint8_t *tuple) {
+static const uint8_t *printTuple(runtime_array *dest, const uint8_t *p,
+    const uint8_t *end, const uint8_t *tuple) {
   appendArrayCstr(dest, "(");
   uint32_t elementPos = 0;
   uint8_t c = *p;
@@ -587,12 +594,12 @@ static const uint8_t *printTuple(runtime_array *dest, const uint8_t *p, const ui
     firstTime = false;
     uint32_t elementSize, width;
     bool deref;
-    const uint8_t *specEnd = findEndOfSpec(p, &elementSize, &width, &deref);
+    const uint8_t *specEnd = findEndOfSpec(p, end, &elementSize, &width, &deref);
     elementPos = alignToElement(elementPos, elementSize);
     if (!deref) {
-      appendFormattedArg(dest, false, p, tuple + elementPos);
+      appendFormattedArg(dest, false, p, end, tuple + elementPos);
     } else {
-      derefAndAppendFormattedArg(dest, false, p, tuple + elementPos, elementSize, width);
+      derefAndAppendFormattedArg(dest, false, p, end, tuple + elementPos, elementSize, width);
     }
     elementPos += elementSize;
     c = *specEnd;
@@ -624,7 +631,7 @@ static uint64_t extendToUpperBits(uint64_t value, bool isSigned, uint32_t width)
 // format specifier, e.g. s for string.  Consume the entire format specifier and
 // return a pointer to the character after the specifier.
 static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel,
-    const uint8_t *p, va_list ap) {
+    const uint8_t *p, const uint8_t *end, va_list ap) {
   uint8_t c = *p++;
   if (c == 's') {
     uint8_t quote = '"';
@@ -638,7 +645,7 @@ static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel
     }
   } else if (c == 'i' || c == 'u' || c == 'x') {
     uint8_t *typeStart = (uint8_t*)(p - 1);
-    uint32_t width = readUint32(&p);
+    uint32_t width = readUint32(&p, end);
     // We can't print secrets, so this is a bigint based on size.
     if (width > sizeof(uint64_t) * 8) {
       runtime_array buf = runtime_makeEmptyArray();
@@ -672,7 +679,7 @@ static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel
     }
   } else if (c == 'f') {
     uint8_t *typeStart = (uint8_t*)(p - 1);
-    uint32_t width = readUint32(&p);
+    uint32_t width = readUint32(&p, end);
     double value = 0.0;
     if (width == 32) {
       if (topLevel) {
@@ -716,13 +723,13 @@ static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel
   } else if (c == '[') {
     runtime_array buf = runtime_makeEmptyArray();
     runtime_array *arrayArg = va_arg(ap, runtime_array *);
-    p = printArray(&buf, p, arrayArg);
+    p = printArray(&buf, p, end, arrayArg);
     runtime_concatArrays(array, &buf, sizeof(uint8_t), false);
     runtime_freeArray(&buf);
   } else if (c == '(') {
     runtime_array buf = runtime_makeEmptyArray();
     uint8_t *tuplePtr = va_arg(ap, uint8_t *);
-    p = printTuple(&buf, p, tuplePtr);
+    p = printTuple(&buf, p, end, tuplePtr);
     runtime_concatArrays(array, &buf, sizeof(uint8_t), false);
     runtime_freeArray(&buf);
   } else {
@@ -782,7 +789,7 @@ void runtime_vsprintf(runtime_array *array, const runtime_array *format, va_list
       }
       runtime_appendArrayElement(array, &c, sizeof(uint8_t), false, false);
     } else if (c == '%') {
-      p = appendFormattedElement(array, true, p, ap);
+      p = appendFormattedElement(array, true, p, end, ap);
     } else {
       runtime_appendArrayElement(array, &c, sizeof(uint8_t), false, false);
     }
