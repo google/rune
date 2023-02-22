@@ -115,173 +115,173 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   export func cast(self, newWidth: u32, isSigned: bool, isSecret: bool, truncate: bool) {
     return Bigint(runtime.bigintCast(self.bigint, newWidth, isSigned, isSecret, truncate))
   }
-}
 
-// Overload the + operator.
-operator + (a: Bigint, b: Bigint) -> Bigint {
-  if a.width != b.width || a.isSigned != b.isSigned {
-    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  // Overload the + operator.
+  operator + (a: Bigint, b: Bigint) -> Bigint {
+    if a.width != b.width || a.isSigned != b.isSigned {
+      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+    }
+    return Bigint(runtime.bigintAdd(a.bigint, b.bigint))
   }
-  return Bigint(runtime.bigintAdd(a.bigint, b.bigint))
-}
 
-// Overload the !+ operator.
-operator !+ (a: Bigint, b: Bigint) -> Bigint {
-  if a.width != b.width || a.isSigned != b.isSigned {
-    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  // Overload the !+ operator.
+  operator !+ (a: Bigint, b: Bigint) -> Bigint {
+    if a.width != b.width || a.isSigned != b.isSigned {
+      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+    }
+    return Bigint(runtime.bigintAddTrunc(a.bigint, b.bigint))
   }
-  return Bigint(runtime.bigintAddTrunc(a.bigint, b.bigint))
-}
 
-// Overload the - operator.
-operator - (a: Bigint, b: Bigint) -> Bigint {
-  if a.width != b.width || a.isSigned != b.isSigned {
-    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  // Overload the - operator.
+  operator - (a: Bigint, b: Bigint) -> Bigint {
+    if a.width != b.width || a.isSigned != b.isSigned {
+      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+    }
+    return Bigint(runtime.bigintSub(a.bigint, b.bigint))
   }
-  return Bigint(runtime.bigintSub(a.bigint, b.bigint))
-}
 
-// Overload the !- operator.
-operator !- (a: Bigint, b: Bigint) -> Bigint {
-  if a.width != b.width || a.isSigned != b.isSigned {
-    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  // Overload the !- operator.
+  operator !- (a: Bigint, b: Bigint) -> Bigint {
+    if a.width != b.width || a.isSigned != b.isSigned {
+      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+    }
+    return Bigint(runtime.bigintSubTrunc(a.bigint, b.bigint))
   }
-  return Bigint(runtime.bigintSubTrunc(a.bigint, b.bigint))
-}
 
-// Overload the * operator.
-operator * (a: Bigint, b: Bigint) -> Bigint {
-  if a.width != b.width || a.isSigned != b.isSigned {
-    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  // Overload the * operator.
+  operator * (a: Bigint, b: Bigint) -> Bigint {
+    if a.width != b.width || a.isSigned != b.isSigned {
+      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+    }
+    return Bigint(runtime.bigintMul(a.bigint, b.bigint))
   }
-  return Bigint(runtime.bigintMul(a.bigint, b.bigint))
-}
 
-// Overload the !* operator.
-operator !* (a: Bigint, b: Bigint) -> Bigint {
-  if a.width != b.width || a.isSigned != b.isSigned {
-    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  // Overload the !* operator.
+  operator !* (a: Bigint, b: Bigint) -> Bigint {
+    if a.width != b.width || a.isSigned != b.isSigned {
+      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+    }
+    return Bigint(runtime.bigintMulTrunc(a.bigint, b.bigint))
   }
-  return Bigint(runtime.bigintMulTrunc(a.bigint, b.bigint))
-}
 
-// Overload the / operator.
-operator / (a: Bigint, b: Bigint) -> Bigint {
-  if a.width != b.width || a.isSigned != b.isSigned {
-    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  // Overload the / operator.
+  operator / (a: Bigint, b: Bigint) -> Bigint {
+    if a.width != b.width || a.isSigned != b.isSigned {
+      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+    }
+    return Bigint(runtime.bigintDiv(a.bigint, b.bigint))
   }
-  return Bigint(runtime.bigintDiv(a.bigint, b.bigint))
-}
 
-// Overload the % operator.
-operator % (a: Bigint, b: Bigint) -> Bigint {
-  if a.width != b.width || a.isSigned != b.isSigned {
-    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  // Overload the % operator.
+  operator % (a: Bigint, b: Bigint) -> Bigint {
+    if a.width != b.width || a.isSigned != b.isSigned {
+      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+    }
+    return Bigint(runtime.bigintMod(a.bigint, b.bigint))
   }
-  return Bigint(runtime.bigintMod(a.bigint, b.bigint))
-}
 
-// Overload the == operator.
-operator == (a: Bigint, b: Bigint) -> bool {
-  if a.width != b.width || a.isSigned != b.isSigned {
-    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  // Overload the == operator.
+  operator == (a: Bigint, b: Bigint) -> bool {
+    if a.width != b.width || a.isSigned != b.isSigned {
+      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+    }
+    return runtime.compareBigints(runtime.ComparisonType.Equal, a.bigint, b.bigint)
   }
-  return runtime.compareBigints(runtime.ComparisonType.Equal, a.bigint, b.bigint)
-}
 
-// Overload the != operator.
-operator != (a: Bigint, b: Bigint) -> bool {
-  if a.width != b.width || a.isSigned != b.isSigned {
-    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  // Overload the != operator.
+  operator != (a: Bigint, b: Bigint) -> bool {
+    if a.width != b.width || a.isSigned != b.isSigned {
+      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+    }
+    return runtime.compareBigints(runtime.ComparisonType.NotEqual, a.bigint, b.bigint)
   }
-  return runtime.compareBigints(runtime.ComparisonType.NotEqual, a.bigint, b.bigint)
-}
 
-// Overload the < operator.
-operator < (a: Bigint, b: Bigint) -> bool {
-  if a.width != b.width || a.isSigned != b.isSigned {
-    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  // Overload the < operator.
+  operator < (a: Bigint, b: Bigint) -> bool {
+    if a.width != b.width || a.isSigned != b.isSigned {
+      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+    }
+    return runtime.compareBigints(runtime.ComparisonType.Lt, a.bigint, b.bigint)
   }
-  return runtime.compareBigints(runtime.ComparisonType.Lt, a.bigint, b.bigint)
-}
 
-// Overload the <= operator.
-operator <= (a: Bigint, b: Bigint) -> bool {
-  if a.width != b.width || a.isSigned != b.isSigned {
-    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  // Overload the <= operator.
+  operator <= (a: Bigint, b: Bigint) -> bool {
+    if a.width != b.width || a.isSigned != b.isSigned {
+      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+    }
+    return runtime.compareBigints(runtime.ComparisonType.Le, a.bigint, b.bigint)
   }
-  return runtime.compareBigints(runtime.ComparisonType.Le, a.bigint, b.bigint)
-}
 
-// Overload the > operator.
-operator > (a: Bigint, b: Bigint) -> bool {
-  if a.width != b.width || a.isSigned != b.isSigned {
-    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  // Overload the > operator.
+  operator > (a: Bigint, b: Bigint) -> bool {
+    if a.width != b.width || a.isSigned != b.isSigned {
+      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+    }
+    return runtime.compareBigints(runtime.ComparisonType.Gt, a.bigint, b.bigint)
   }
-  return runtime.compareBigints(runtime.ComparisonType.Gt, a.bigint, b.bigint)
-}
 
-// Overload the >= operator.
-operator >= (a: Bigint, b: Bigint) -> bool {
-  if a.width != b.width || a.isSigned != b.isSigned {
-    throw "Integers have different types: ", a.toString(), " and ", b.toString()
+  // Overload the >= operator.
+  operator >= (a: Bigint, b: Bigint) -> bool {
+    if a.width != b.width || a.isSigned != b.isSigned {
+      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+    }
+    return runtime.compareBigints(runtime.ComparisonType.Ge, a.bigint, b.bigint)
   }
-  return runtime.compareBigints(runtime.ComparisonType.Ge, a.bigint, b.bigint)
-}
 
-// Overload the exponentiation ** operator.
-operator ** (base: Bigint, exponent: u32) -> Bigint {
-  return Bigint(runtime.bigintExp(base.bigint, exponent))
-}
+  // Overload the exponentiation ** operator.
+  operator ** (base: Bigint, exponent: u32) -> Bigint {
+    return Bigint(runtime.bigintExp(base.bigint, exponent))
+  }
 
-// Overload the negate - operator.
-operator - (a: Bigint) -> Bigint {
-  return Bigint(runtime.bigintNegate(a.bigint))
-}
+  // Overload the negate - operator.
+  operator - (a: Bigint) -> Bigint {
+    return Bigint(runtime.bigintNegate(a.bigint))
+  }
 
-// Overload the negate-trunc !- operator
-operator !- (a: Bigint) -> Bigint {
-  return Bigint(runtime.bigintNegateTrunc(a.bigint))
-}
+  // Overload the negate-trunc !- operator
+  operator !- (a: Bigint) -> Bigint {
+    return Bigint(runtime.bigintNegateTrunc(a.bigint))
+  }
 
-// Overload the complement ~ operator.
-operator ~ (a: Bigint) -> Bigint {
-  return Bigint(runtime.bigintComplement(a.bigint))
-}
+  // Overload the complement ~ operator.
+  operator ~ (a: Bigint) -> Bigint {
+    return Bigint(runtime.bigintComplement(a.bigint))
+  }
 
-// Overload the << operator.
-operator << (a: Bigint, dist: u32) -> Bigint {
-  return Bigint(runtime.bigintShl(a.bigint, dist))
-}
+  // Overload the << operator.
+  operator << (a: Bigint, dist: u32) -> Bigint {
+    return Bigint(runtime.bigintShl(a.bigint, dist))
+  }
 
-// Overload the >> operator.
-operator >> (a: Bigint, dist: u32) -> Bigint {
-  return Bigint(runtime.bigintShr(a.bigint, dist))
-}
+  // Overload the >> operator.
+  operator >> (a: Bigint, dist: u32) -> Bigint {
+    return Bigint(runtime.bigintShr(a.bigint, dist))
+  }
 
-// Overload the <<< rotate-left operator.
-operator <<< (a: Bigint, dist: u32) -> Bigint {
-  return Bigint(runtime.bigintRotl(a.bigint, dist))
-}
+  // Overload the <<< rotate-left operator.
+  operator <<< (a: Bigint, dist: u32) -> Bigint {
+    return Bigint(runtime.bigintRotl(a.bigint, dist))
+  }
 
-// Overload the >>> rotate-right operator.
-operator >>> (a: Bigint, dist: u32) -> Bigint {
-  return Bigint(runtime.bigintRotr(a.bigint, dist))
-}
+  // Overload the >>> rotate-right operator.
+  operator >>> (a: Bigint, dist: u32) -> Bigint {
+    return Bigint(runtime.bigintRotr(a.bigint, dist))
+  }
 
-// Overload the bitwise-AND & operator.
-operator & (a: Bigint, b: Bigint) -> Bigint {
-  return Bigint(runtime.bigintBitwiseAnd(a.bigint, b.bigint))
-}
+  // Overload the bitwise-AND & operator.
+  operator & (a: Bigint, b: Bigint) -> Bigint {
+    return Bigint(runtime.bigintBitwiseAnd(a.bigint, b.bigint))
+  }
 
-// Overload the bitwise-OR | operator.
-operator | (a: Bigint, b: Bigint) -> Bigint {
-  return Bigint(runtime.bigintBitwiseOr(a.bigint, b.bigint))
-}
+  // Overload the bitwise-OR | operator.
+  operator | (a: Bigint, b: Bigint) -> Bigint {
+    return Bigint(runtime.bigintBitwiseOr(a.bigint, b.bigint))
+  }
 
-// Overload the bitwise-XOR ^ operator.
-operator ^ (a: Bigint, b: Bigint) -> Bigint {
-  return Bigint(runtime.bigintBitwiseXor(a.bigint, b.bigint))
+  // Overload the bitwise-XOR ^ operator.
+  operator ^ (a: Bigint, b: Bigint) -> Bigint {
+    return Bigint(runtime.bigintBitwiseXor(a.bigint, b.bigint))
+  }
 }
 
 // Test printing and addition.

@@ -121,6 +121,18 @@ static void checkTopBlock(char *statementType) {
   deerror("i%s statements must be at the top level", statementType);
 }
 
+// Check that the operator has 1 or 2 parameters, and set its name.  We have to
+// wait until after parsing parameters to set the name, since we prepend
+// "binary" or "unary".
+void checkOperatorFunction(deFunction function) {
+  uint32 numParams = deBlockCountParameterVariables(deFunctionGetSubBlock(function));
+  if (numParams == 0 || numParams > 2) {
+    deError(deFunctionGetLine(function), "Operators must have 1 or 2 parameters");
+  }
+  utSym name = deGetOperatorSym(deFunctionGetOpType(function), numParams == 1);
+  deSetOperatorFunctionName(function, name);
+}
+
 // Move import and use statements in a unit test to |destBlock|.
 static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
   deStatement statement;
@@ -636,6 +648,9 @@ function: functionHeader '(' parameters ')' optFuncTypeExpression block
   deFunction function = deBlockGetOwningFunction(deCurrentBlock);
   if ($5 != deExpressionNull) {
     deFunctionInsertTypeExpression(function, $5);
+  }
+  if (deFunctionGetType(function) == DE_FUNC_OPERATOR) {
+    checkOperatorFunction(function);
   }
   deCurrentBlock = deFunctionGetBlock(function);
   deInIterator = false;

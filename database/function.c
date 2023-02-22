@@ -90,7 +90,11 @@ deFunction deFunctionCreate(deFilepath filepath, deBlock block, deFunctionType t
   deFunctionSetLine(function, line);
   if (block != deBlockNull) {
     deBlockAppendFunction(block, function);
-    deFunctionIdentCreate(block, function, name);
+    if (name != utSymNull) {
+      // Operator functions are created without a name, which is set once we
+      // know how many parameters there are.
+      deFunctionIdentCreate(block, function, name);
+    }
   }
   deFunctionSetExtern(function, linkage == DE_LINK_EXTERN_C || linkage == DE_LINK_EXTERN_RPC);
   deBlock subBlock = deBlockCreate(filepath, DE_BLOCK_FUNCTION, line);
@@ -207,17 +211,17 @@ deFunction deIteratorFunctionCreate(deBlock block, utSym name, utSym selfName,
 }
 
 // Create an overloaded operator.
-deFunction deOperatorFunctionCreate(deBlock block, deExpressionType opType, deLine line) {
+deFunction deOperatorFunctionCreate(deBlock block, deExpressionType opType,
+    deLine line) {
   deFilepath filepath = deBlockGetFilepath(block);
-  utSym name = deBlockCreateUniqueName(block, utSymCreate(deExpressionTypeGetName(opType)));
   deFunction function = deFunctionCreate(filepath, block, DE_FUNC_OPERATOR,
-      name, DE_LINK_PACKAGE, line);
-  deOperator operator = deRootFindOperator(deTheRoot, opType);
-  if (operator == deOperatorNull) {
-    operator = deOperatorAlloc();
-    deOperatorSetType(operator, opType);
-    deRootAppendOperator(deTheRoot, operator);
-  }
-  deOperatorAppendFunction(operator, function);
+      utSymNull, DE_LINK_PACKAGE, line);
+  deFunctionSetOpType(function, opType);
   return function;
+}
+
+// Set the operator function's name.
+void deSetOperatorFunctionName(deFunction function, utSym name) {
+  deBlock block = deFunctionGetBlock(function);
+  deFunctionIdentCreate(block, function, name);
 }

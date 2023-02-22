@@ -106,6 +106,14 @@ char *deExpressionTypeGetName(deExpressionType type) {
   return "";  // Dummy return.
 }
 
+// Return the name of a left operator, of e.g. left_+.
+utSym deGetOperatorSym(deExpressionType opType, bool unary) {
+  if (unary) {
+    return utSymCreateFormatted("unary_%s", deExpressionTypeGetName(opType));
+  }
+  return utSymCreateFormatted("binary_%s", deExpressionTypeGetName(opType));
+}
+
 // Dump an expression list, separated by commas.
 static void dumpExpressionList(deString string, deExpression expression) {
   deExpression child;

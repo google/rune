@@ -83,41 +83,13 @@ char *deDatatypeTypeGetName(deDatatypeType type) {
 // class, etc.  For classes, the type is itself, which is also true for class
 // versions.
 deTclass deFindDatatypeTclass(deDatatype datatype) {
-  switch (deDatatypeGetType(datatype)) {
-    case DE_TYPE_ARRAY:
-      return deArrayTclass;
-    case DE_TYPE_FUNCPTR:
-      return deFuncptrTclass;
-    case DE_TYPE_TCLASS:
-    case DE_TYPE_NULL:
-      return deDatatypeGetTclass(datatype);
-    case DE_TYPE_CLASS:
-      return deClassGetTclass(deDatatypeGetClass(datatype));
-    case DE_TYPE_FUNCTION:
-      return deFunctionTclass;
-    case DE_TYPE_BOOL:
-      return deBoolTclass;
-    case DE_TYPE_STRING:
-      return deStringTclass;
-    case DE_TYPE_UINT:
-      return deUintTclass;
-    case DE_TYPE_INT:
-      return deIntTclass;
-    case DE_TYPE_MODINT:
-      return deModintTclass;
-    case DE_TYPE_FLOAT:
-      return deFloatTclass;
-    case DE_TYPE_TUPLE:
-      return deTupleTclass;
-    case DE_TYPE_STRUCT:
-      return deStructTclass;
-    case DE_TYPE_ENUM:
-    case DE_TYPE_ENUMCLASS:
-      return deEnumTclass;
-    case DE_TYPE_NONE:
-      break;
+  deDatatypeType type = deDatatypeGetType(datatype);
+  if (type == DE_TYPE_NULL || type == DE_TYPE_TCLASS) {
+    return deDatatypeGetTclass(datatype);
+  } else if (type == DE_TYPE_CLASS) {
+    return deClassGetTclass(deDatatypeGetClass(datatype));
   }
-  return deTclassNull;
+  return deFindTypeTclass(type);
 }
 
 // Create a datatype of type DE_TYPE_NONE.  Making it unique comes later.

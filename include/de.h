@@ -135,6 +135,7 @@ deFunction deIteratorFunctionCreate(deBlock block, utSym name, utSym selfName,
     deLinkage linkage, deLine line);
 deFunction deOperatorFunctionCreate(deBlock block, deExpressionType opType,
     deLine line);
+void deSetOperatorFunctionName(deFunction function, utSym name);
 char *deGetFunctionTypeName(deFunctionType type);
 void deDumpFunction(deFunction function);
 void deDumpFunctionStr(deString string, deFunction function);
@@ -241,6 +242,7 @@ uint32 deExpressionCountExpressions(deExpression expression);
 bool deExpressionIsMethodCall(deExpression accessExpression);
 deExpression deCopyExpression(deExpression expression);
 char *deExpressionTypeGetName(deExpressionType type);
+utSym deGetOperatorSym(deExpressionType opType, bool unary);
 deExpression deFindNamedParameter(deExpression firstParameter, utSym name);
 deString deExpressionToString(deExpression expression);
 void deSetExpressionToValue(deExpression expression, deValue value);
@@ -443,11 +445,6 @@ char *deFilepathGetRelativePath(deFilepath filepath);
 // Line methods.
 deLine deLineCreate(deFilepath filepath, char *buf, uint32 len, uint32 lineNum);
 void deDumpLine(deLine line);
-
-// Operator methods.
-static inline char *deOperatorGetName(deOperator theOperator) {
-  return deExpressionTypeGetName(deOperatorGetType(theOperator));
-}
 
 // Relation methods.
 deRelation deRelationCreate(deGenerator generator, deTclass parent, deString parentLabel,

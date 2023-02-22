@@ -196,6 +196,7 @@ enum BuiltinTclassType
   DE_BUILTINTCLASS_TUPLE
   DE_BUILTINTCLASS_STRUCT
   DE_BUILTINTCLASS_ENUM
+  DE_BUILTINTCLASS_NONE
 
 enum BuiltinFuncType
   DE_BUILTINFUNC_ARRAYLENGTH
@@ -307,6 +308,7 @@ class Function
   BuiltinFuncType builtinType
   uint32 numSignatures
   bool Extern  // Provided by an external library or RPC.
+  ExpressionType opType  // For functions that overload operators.
 
 // A code generator definition.
 class Generator
@@ -448,10 +450,6 @@ class String
   array char text
   uint32 used
 
-// Operatored operator.
-class Operator
-  ExpressionType type
-
 // This is a directed edge between Tclasses which are built from relation statements.  Reference
 // counted "value" classes are those that have no cascade-delete parents.  These may not be in
 // relationship loops, but can form DAGs.  Tclasses in cascade-delete relationships with parent
@@ -522,8 +520,6 @@ relationship Variable:Type Expression:Type cascade
 // If we delete the statement that created a variable, also delete the variable
 relationship Statement Variable cascade
 relationship Root String hashed text cascade
-relationship Root Operator hashed type mandatory
-relationship Operator Function doubly_linked cascade
 relationship Tclass:Parent Relation:Child doubly_linked mandatory
 relationship Tclass:Child Relation:Parent doubly_linked mandatory
 relationship Relation:Generated Statement:Generated doubly_linked cascade

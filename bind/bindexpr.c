@@ -16,10 +16,9 @@
 
 #include "de.h"
 
-// TODO: Re-implement overloaded operators.
-
 typedef enum {
   DE_BINDRES_OK,
+  DE_BINDRES_FAILED,
   DE_BINDRES_BLOCKED,
   DE_BINDRES_REBIND,
 } deBindRes;
@@ -201,6 +200,124 @@ static void checkBinaryExpression(deBlock scopeBlock, deExpression expression,
   if (compareTypes && deExpressionAutocast(left) && deExpressionAutocast(right)) {
     deExpressionSetAutocast(expression, true);
   }
+}
+
+// Find a matching operator overload.
+static deFunction findMatchingOperatorOverload(deBlock scopeBlock, deExpression expression,
+    deDatatypeArray paramTypes) {
+  deExpressionType opType = deExpressionGetType(expression);
+  uint32 numParams = deDatatypeArrayGetUsedDatatype(paramTypes);
+  if (numParams == 0 || numParams > 2) {
+    return deFunctionNull;
+  }
+  // Try using the first parameter as self.
+  deDatatype selfType = deDatatypeArrayGetiDatatype(paramTypes, 0);
+  deBlock block;
+  utSym sym = deGetOperatorSym(opType, numParams == 1);
+  if (deDatatypeGetType(selfType) == DE_TYPE_CLASS) {
+    block = deClassGetSubBlock(deDatatypeGetClass(selfType));
+    deIdent ident = deBlockFindIdent(block, sym);
+    if (ident != deIdentNull) {
+      return deIdentGetFunction(ident);
+    }
+  }
+  if (numParams == 2) {
+    selfType = deDatatypeArrayGetiDatatype(paramTypes, 1);
+    if (deDatatypeGetType(selfType) == DE_TYPE_CLASS) {
+      block = deClassGetSubBlock(deDatatypeGetClass(selfType));
+      deIdent ident = deBlockFindIdent(block, sym);
+      if (ident != deIdentNull) {
+        return deIdentGetFunction(ident);
+      }
+    }
+  }
+  return deFunctionNull;
+}
+
+// Bind an overload operator function call.  Return false if we are blocked on
+// binding the signature.
+static deBindRes bindOverloadedFunctionCall(deBlock scopeBlock, deFunction function,
+    deExpression expression, deDatatypeArray paramTypes) {
+  deLine line = deExpressionGetLine(expression);
+  deSignature signature = deLookupSignature(function, paramTypes);
+  if (signature == deSignatureNull) {
+    setStackTraceGlobals(expression);
+    signature = deSignatureCreate(function, paramTypes, line);
+    deQueueSignature(signature);
+  } else {
+    deDatatypeArrayFree(paramTypes);
+  }
+  deExpressionSetSignature(expression, signature);
+  deSignatureSetInstantiated(signature,
+      deSignatureInstantiated(signature) || deExpressionInstantiating(expression));
+  deExpressionSetSignature(expression, signature);
+  if (!deSignatureBound(signature)) {
+    deEvent event = deSignatureEventCreate(signature);
+    deBinding binding = deExpressionGetBinding(expression);
+    deEventAppendBinding(event, binding);
+    return DE_BINDRES_BLOCKED;
+  }
+  deExpressionSetDatatype(expression, deSignatureGetReturnType(signature));
+  return DE_BINDRES_OK;  // Success.
+}
+
+// Determine if the expression type can be overloaded.
+static bool expressionTypeCanBeOverloaded(deExpressionType type) {
+  switch (type) {
+    case DE_EXPR_BITOR :
+    case DE_EXPR_ADD:
+    case DE_EXPR_SUB:
+    case DE_EXPR_MUL:
+    case DE_EXPR_DIV:
+    case DE_EXPR_BITAND:
+    case DE_EXPR_BITXOR:
+    case DE_EXPR_ADDTRUNC:
+    case DE_EXPR_SUBTRUNC:
+    case DE_EXPR_MULTRUNC:
+    case DE_EXPR_MOD:
+    case DE_EXPR_AND:
+    case DE_EXPR_OR :
+    case DE_EXPR_XOR:
+    case DE_EXPR_EXP:
+    case DE_EXPR_SHL:
+    case DE_EXPR_SHR:
+    case DE_EXPR_ROTL:
+    case DE_EXPR_ROTR:
+    case DE_EXPR_LT:
+    case DE_EXPR_LE:
+    case DE_EXPR_GT:
+    case DE_EXPR_GE:
+    case DE_EXPR_EQUAL:
+    case DE_EXPR_NOTEQUAL:
+    case DE_EXPR_NEGATE:
+    case DE_EXPR_NEGATETRUNC:
+    case DE_EXPR_BITNOT:
+    case DE_EXPR_NOT:
+    case DE_EXPR_INDEX:
+    case DE_EXPR_IN:
+      return true;
+    default:
+      return false;
+  }
+}
+
+// Look for an overloaded operator matching this expression's signature, and if
+// one is found, bind to it.  Create a signature for the call to the operator
+// overload.
+static deBindRes bindOverloadedOperator(deBlock scopeBlock, deExpression expression) {
+  // Parameters are already bound.
+  deDatatypeArray paramTypes = deDatatypeArrayAlloc();
+  deExpression parameter;
+  deForeachExpressionExpression(expression, parameter) {
+    deDatatype datatype = deExpressionGetDatatype(parameter);
+    deDatatypeArrayAppendDatatype(paramTypes, datatype);
+  } deEndExpressionExpression;
+  deFunction operatorFunc = findMatchingOperatorOverload(scopeBlock, expression, paramTypes);
+  if (operatorFunc == deFunctionNull) {
+    deDatatypeArrayFree(paramTypes);
+    return DE_BINDRES_FAILED;
+  }
+  return bindOverloadedFunctionCall(scopeBlock, operatorFunc, expression, paramTypes);
 }
 
 // Bind a binary arithmetic expression.  The left and right types should have
@@ -1391,8 +1508,15 @@ static void bindNamedParameter(deBlock scopeBlock, deExpression expression) {
 static deBindRes bindExpression(deBlock scopeBlock, deExpression expression) {
   deDatatype oldDatatype = deExpressionGetDatatype(expression);
   if (oldDatatype != deDatatypeNull && deDatatypeGetType(oldDatatype) == DE_TYPE_MODINT) {
+    // TODO: Add support for operator overloading in modular expressions.
     postProcessModintExpression(expression);
     return DE_BINDRES_OK;  // Success.
+  }
+  if (expressionTypeCanBeOverloaded(deExpressionGetType(expression))) {
+    deBindRes result = bindOverloadedOperator(scopeBlock, expression);
+    if (result != DE_BINDRES_FAILED) {
+      return result;
+    }
   }
   switch (deExpressionGetType(expression)) {
     case DE_EXPR_INTEGER:

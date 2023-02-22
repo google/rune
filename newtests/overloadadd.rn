@@ -12,10 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-operator -(a: string) -> string {
-  result = a
-  result.reverse()
-  return result
-}
+a = Complex(3, 4)
+b = Complex(5, 6)
+c = a + b
+a.dump()
+b.dump()
+c.dump()
 
-println -"abc"
+class Complex(self, <x>, <y>) {
+  self.x = x
+  self.y = y
+
+  func dump(self) {
+    println "(", self.x, ", ", self.y, ")"
+  }
+
+
+  operator + (a: Complex, b: Complex) {
+    return Complex(a.x + b.x, a.y + b.y)
+  }
+}

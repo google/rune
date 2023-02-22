@@ -18,7 +18,7 @@
 // The global array class.
 deTclass deArrayTclass, deFuncptrTclass, deFunctionTclass, deBoolTclass, deStringTclass,
     deUintTclass, deIntTclass, deModintTclass, deFloatTclass, deTupleTclass,
-    deStructTclass, deEnumTclass, deClassTclass;
+    deStructTclass, deEnumTclass, deClassTclass, deNoneTclass;
 
 // Builtin methods.
 static deFunction deArrayLengthFunc, deArrayResizeFunc, deArrayAppendFunc,
@@ -55,14 +55,14 @@ deTclass deFindTypeTclass(deDatatypeType type) {
     case DE_TYPE_STRUCT:
       return deStructTclass;
     case DE_TYPE_ENUM:
+    case DE_TYPE_ENUMCLASS:
       return deEnumTclass;
     case DE_TYPE_CLASS:
       return deClassTclass;
     case DE_TYPE_TCLASS:
     case DE_TYPE_NULL:
     case DE_TYPE_NONE:
-    case DE_TYPE_ENUMCLASS:
-      utExit("Not expecting to get tclass for tclass, class, TBD, enumclass, or none");
+      utExit("Not expecting to get tclass for tclass, null, enumclass, or none");
   }
   return deTclassNull;  // Dummy return.
 }
@@ -172,6 +172,7 @@ void deBuiltinStart(void) {
   deEnumTclass = createBuiltinTclass("Enum", DE_BUILTINTCLASS_ENUM, 1, "value");
   deEnumToStringFunc = addMethod(deEnumTclass, DE_BUILTINFUNC_ENUMTOSTRING, "toString", 0);
   deClassTclass = createBuiltinTclass("Class", DE_BUILTINTCLASS_STRUCT, 0);
+  deNoneTclass = createBuiltinTclass("None", DE_BUILTINTCLASS_NONE, 0);
 }
 
 // Cleanup after the builtin classes module.

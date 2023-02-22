@@ -378,94 +378,41 @@ static void bindModintExpression(deBlock scopeBlock, deExpression expression) {
   deExpressionSetDatatype(expression, resultType);
 }
 
-// Set parameter datatypes to those in the datatype array.  Save existing
-// parameter types.
-static void setParameterDatatypes(deBlock block, deDatatypeArray parameterTypes) {
-  deVariable variable;
-  uint32 numParams = deDatatypeArrayGetUsedDatatype(parameterTypes);
-  uint32 xParam = 0;
-  deForeachBlockVariable(block, variable) {
-    if (deVariableGetType(variable) != DE_VAR_PARAMETER || xParam >= numParams) {
-      return;
-    }
-    deVariableSetSavedDatatype(variable, deVariableGetDatatype(variable));
-    deVariableSetDatatype(variable, deDatatypeArrayGetiDatatype(parameterTypes, xParam));
-    xParam++;
-  } deEndBlockVariable;
-}
-
-// Restore parameter datatypes to what they were before.
-static void unsetParameterDatatypes(deBlock block, deDatatypeArray parameterTypes) {
-  deVariable variable;
-  uint32 numParams = deDatatypeArrayGetUsedDatatype(parameterTypes);
-  uint32 xParam = 0;
-  deForeachBlockVariable(block, variable) {
-    if (deVariableGetType(variable) != DE_VAR_PARAMETER || xParam >= numParams) {
-      return;
-    }
-    deVariableSetDatatype(variable, deVariableGetSavedDatatype(variable));
-    xParam++;
-  } deEndBlockVariable;
-}
-
-// Determine if the expression matches the overloaded operator.
-static bool parameterTypesMatchesOverload(deDatatypeArray parameterTypes, deFunction function) {
-  uint32 xParam = 0;
-  deBlock block = deFunctionGetSubBlock(function);
-  setParameterDatatypes(block, parameterTypes);
-  uint32 numParams = deDatatypeArrayGetUsedDatatype(parameterTypes);
-  deVariable parameter;
-  deForeachBlockVariable(block, parameter) {
-    if (deVariableGetType(parameter) != DE_VAR_PARAMETER || xParam == numParams) {
-      return deVariableGetType(parameter) != DE_VAR_PARAMETER && xParam == numParams;
-    }
-    deDatatype datatype = deDatatypeArrayGetiDatatype(parameterTypes, xParam);
-    // Set the parameter's datatype in case it is used in a type constraint.
-    deVariableSetDatatype(parameter, datatype);
-    deExpression typeExpression = deVariableGetTypeExpression(parameter);
-    if (typeExpression != deExpressionNull &&
-        !deDatatypeMatchesTypeExpression(block, datatype, typeExpression)) {
-      unsetParameterDatatypes(block, parameterTypes);
-      return false;
-    }
-    xParam++;
-  } deEndBlockVariable;
-  unsetParameterDatatypes(block, parameterTypes);
-  return xParam == numParams;
-}
-
-// Forward declaration for recursion.
-static deDatatype bindFunctionCall(deBlock scopeBlock, deFunction function,
-          deExpression expression, deExpression parameters, deDatatype selfType,
-          deDatatypeArray parameterTypes, bool fromFuncPtrExpr);
-
 // Find a matching operator overload.
 static deFunction findMatchingOperatorOverload(deBlock scopeBlock, deExpression expression,
-      deDatatypeArray parameterTypes) {
-  deLine line = deExpressionGetLine(expression);
+      deDatatypeArray paramTypes) {
   deExpressionType opType = deExpressionGetType(expression);
-  if (opType == DE_EXPR_NEGATE) {
-    opType = DE_EXPR_SUB;
-  }
-  if (opType == DE_EXPR_NEGATETRUNC) {
-    opType = DE_EXPR_SUBTRUNC;
-  }
-  deOperator operator = deRootFindOperator(deTheRoot, opType);
-  if (operator == deOperatorNull) {
+  uint32 numParams = deDatatypeArrayGetUsedDatatype(paramTypes);
+  if (numParams == 0 || numParams > 2) {
     return deFunctionNull;
   }
-  deFunction function;
-  deFunction operatorFunc = deFunctionNull;
-  deForeachOperatorFunction(operator, function) {
-    if (parameterTypesMatchesOverload(parameterTypes, function)) {
-      if (operatorFunc != deFunctionNull) {
-        deError(line, "Ambiguous overload of operator '%s'", deOperatorGetName(operator));
-      }
-      operatorFunc = function;
+  // Try using the first parameter as self.
+  deDatatype selfType = deDatatypeArrayGetiDatatype(paramTypes, 0);
+  deBlock block;
+  utSym sym = deGetOperatorSym(opType, numParams == 1);
+  if (deDatatypeGetType(selfType) == DE_TYPE_CLASS) {
+    block = deClassGetSubBlock(deDatatypeGetClass(selfType));
+    deIdent ident = deBlockFindIdent(block, sym);
+    if (ident != deIdentNull) {
+      return deIdentGetFunction(ident);
     }
-  } deEndOperatorFunction;
-  return operatorFunc;
+  }
+  if (numParams == 2) {
+    selfType = deDatatypeArrayGetiDatatype(paramTypes, 1);
+    if (deDatatypeGetType(selfType) == DE_TYPE_CLASS) {
+      block = deClassGetSubBlock(deDatatypeGetClass(selfType));
+      deIdent ident = deBlockFindIdent(block, sym);
+      if (ident != deIdentNull) {
+        return deIdentGetFunction(ident);
+      }
+    }
+  }
+  return deFunctionNull;
 }
+
+static deDatatype bindFunctionCall(deBlock scopeBlock, deFunction function,
+    deExpression expression, deExpression parameters, deDatatype selfType,
+    deDatatypeArray parameterTypes, bool fromFuncPtrExpr);
 
 // Look for an overloaded operator matching this expression's signature, and if
 // one is found, bind to it.  Create a signature for the call to the operator
@@ -1417,8 +1364,8 @@ static deDatatype bindConstructorCall(deFunction constructor, deExpression expre
 // Bind a function call, other than a built-in.  Default parameters should
 // already have been added.
 static deDatatype bindFunctionCall(deBlock scopeBlock, deFunction function,
-          deExpression expression, deExpression parameters, deDatatype selfType,
-          deDatatypeArray parameterTypes, bool fromFuncPtrExpr) {
+    deExpression expression, deExpression parameters, deDatatype selfType,
+    deDatatypeArray parameterTypes, bool fromFuncPtrExpr) {
   deLine line = deExpressionGetLine(expression);
   deSignature signature = deLookupSignature(function, parameterTypes);
   if (signature == deSignatureNull) {

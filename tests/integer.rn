@@ -35,34 +35,34 @@ class Integer(self, value: Int | Uint, width = widthof(value)) {
     data.reverse()
     return "0x" + (<string>data).toHex()
   }
-}
 
-operator +(a: Integer, b: Integer) -> Integer {
-  if a.width != b.width || a.isSigned != b.isSigned {
-    throw "Integers have different types: ", a.toHex(), " and ", b.toHex()
-  }
-  result = Integer(0u8, a.width)
-  len = a.data.length()
-  result.data.resize(len)
-  carry = 0u9
-  for i in range(len) {
-    sum = <u9>a.data[i] !+ <u9>b.data[i] !+ carry
-    result.data[i] = !<u8>sum
-    carry = sum >> 8
-  }
-  // Check for overflow.
-  if a.isSigned {
-    // Overflow occurs if sign(a) ==  sign(b) && sign(a) != sign(result)
-    aSign = a.data[len - 1] >> 7
-    bSign = b.data[len - 1] >> 7
-    if aSign == bSign && aSign != result.data[len - 1] >> 7 {
-      throw "Signed integer overflow"
+  operator +(a: Integer, b: Integer) -> Integer {
+    if a.width != b.width || a.isSigned != b.isSigned {
+      throw "Integers have different types: ", a.toHex(), " and ", b.toHex()
     }
-  } else if carry != 0u9 {
-    // Overflow is just the carry out.
-    throw "Unsigned integer overflow"
+    result = Integer(0u8, a.width)
+    len = a.data.length()
+    result.data.resize(len)
+    carry = 0u9
+    for i in range(len) {
+      sum = <u9>a.data[i] !+ <u9>b.data[i] !+ carry
+      result.data[i] = !<u8>sum
+      carry = sum >> 8
+    }
+    // Check for overflow.
+    if a.isSigned {
+      // Overflow occurs if sign(a) ==  sign(b) && sign(a) != sign(result)
+      aSign = a.data[len - 1] >> 7
+      bSign = b.data[len - 1] >> 7
+      if aSign == bSign && aSign != result.data[len - 1] >> 7 {
+        throw "Signed integer overflow"
+      }
+    } else if carry != 0u9 {
+      // Overflow is just the carry out.
+      throw "Unsigned integer overflow"
+    }
+    return result
   }
-  return result
 }
 
 unittest integerTest {
