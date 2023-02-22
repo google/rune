@@ -1,0 +1,204 @@
+//  Copyright 2023 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Polynomial composition modulo another polynomial, with constants
+// computed modulo a prime, form a group.
+
+class Poly(self, coeffs: [Uint], m: Uint) {
+  length = coeffs.length()
+  while length > 1 && coeffs[length - 1] == 0 {
+    length -= 1
+  }
+  if length != coeffs.length() {
+    coeffs.resize(length)
+  }
+  self.coeffs = coeffs
+  self.m = m
+
+  func eval(self, x) {
+    y = 0
+    xPow = <self.m>1
+    for c in self.coeffs {
+      y += c * xPow mod self.m
+      xPow *= x mod self.m
+    }
+    return y
+  }
+
+  func compose(self, other) {
+    selfLength = self.coeffs.length()
+    otherLength = other.coeffs.length()
+    newCoeffs = arrayof(typeof(self.coeffs[0]))
+    newCoeffs.resize(selfLength + otherLength - 1)
+    m = self.m
+    for pos in range(selfLength) {
+      c = self.coeffs[pos]
+      for otherPos in range(otherLength) {
+        newPos = pos + otherPos
+        newCoeff = c * other.coeffs[otherPos] mod m
+        newCoeffs[newPos] += newCoeff
+      }
+    }
+    return Poly(newCoeffs, self.m)
+  }
+
+  func reduce(self, modPoly: Poly) {
+    assert self.m == modPoly.m
+    m = self.m
+    modPolyLen = modPoly.coeffs.length()
+    assert modPoly.coeffs[modPolyLen - 1] == 1
+    len = self.coeffs.length()
+    while modPolyLen <= len {
+      c = self.coeffs[len - 1]
+      for i in range(modPolyLen) {
+        self.coeffs[len - modPolyLen + i] = (self.coeffs[len - modPolyLen + i] -
+            c * modPoly.coeffs[i] mod m)
+      }
+      len -= 1
+    }
+    self.coeffs.resize(len)
+  }
+
+  operator * (self: Poly, other: Poly) {
+    m = self.m
+    assert m == other.m
+    coeffs = arrayof(self.m)
+    coeffs.resize(self.coeffs.length() + other.coeffs.length() - 1)
+    for i in range(self.coeffs.length()) {
+      for j in range(other.coeffs.length()) {
+        coeffs[i + j] = coeffs[i + j] + self.coeffs[i] * other.coeffs[j] mod m
+      }
+    }
+    return Poly(coeffs, m)
+  }
+
+  operator + (self: Poly, other: Poly) {
+    m = self.m
+    assert m == other.m
+    coeffs = arrayof(self.m)
+    len = max(self.coeffs.length(), other.coeffs.length())
+    coeffs.resize(len)
+    for i in range(len) {
+      if i < self.coeffs.length() && i < other.coeffs.length() {
+        c1 = self.coeffs[i]
+        c2 = other.coeffs[i]
+        coeffs[i] = self.coeffs[i] + other.coeffs[i] mod m
+      } else if i < self.coeffs.length() {
+        coeffs[i] = self.coeffs[i]
+      } else {
+        coeffs[i] = other.coeffs[i]
+      }
+    }
+    return Poly(coeffs, m)
+  }
+
+  operator % (self: Poly, other: Poly) {
+    coeffs = self.coeffs
+    p = Poly(coeffs, self.m)
+    p.reduce(other)
+    return p
+  }
+
+  operator - (self: Poly, other: Poly) {
+    m = self.m
+    assert m == other.m
+    coeffs = arrayof(self.m)
+    coeffs.resize(max(self.coeffs.length(), other.coeffs.length() - 1))
+    for i in range(self.coeffs.length()) {
+      coeffs[i] = self.coeffs[i] - other.coeffs[i] mod m
+    }
+    return Poly(coeffs, m)
+  }
+
+  operator == (self: Poly, other: Poly) {
+    if self.m != other.m || self.coeffs.length() != other.coeffs.length() {
+      return false
+    }
+    for i in range(self.coeffs.length()) {
+      if self.coeffs[i] != other.coeffs[i] {
+        return false
+      }
+    }
+    return true
+  }
+
+  operator != (self: Poly, other: Poly) {
+    return !(self == other)
+  }
+
+  func toString(self) {
+    s = ""
+    firstTime = true
+    for pos in range(self.coeffs.length()) {
+      c = self.coeffs[pos]
+      if c != 0 {
+        if !firstTime {
+          s =  " + " + s
+        }
+        firstTime = false
+        if pos == 0 {
+          s = "%u" % c
+        } else if pos == 1 {
+          if c == 1 {
+            s = "x%s" % s
+          } else {
+            s = "%ux%s" % (c, s)
+          }
+        } else {
+          if c == 1 {
+            s = "x^%u%s" % (pos, s)
+          } else {
+            s = "%ux^%u%s" % (c, pos, s)
+          }
+        }
+      }
+    }
+    if s.length() == 0 {
+      return "0"
+    }
+    return s
+  }
+}
+
+func computePubkeyPoly(P: Poly, n: Uint) {
+  R = P
+  for i in range(n) {
+    R = G.compose(R) % M
+  }
+  return R
+}
+
+func printGroup() {
+  P = G
+  do {
+    println P
+    P = G.compose(P) % M
+  } while P != G
+}
+
+m = 13
+M = Poly([1, 0, 0, 1], m)
+G = Poly([3, 4, 5], m)
+One = Poly([1], m)
+printGroup()
+alicesSecret = 11
+bobsSecret = 5
+alicesPubkeyPoly = computePubkeyPoly(One, alicesSecret)
+bobsPubkeyPoly = computePubkeyPoly(One, bobsSecret)
+println "Alices pubkey poly = ", alicesPubkeyPoly
+println "Bobs pubkey poly = ", bobsPubkeyPoly
+aliceSharedPoly = computePubkeyPoly(bobsPubkeyPoly, alicesSecret)
+bobSharedPoly = computePubkeyPoly(alicesPubkeyPoly, bobsSecret)
+println "alicsSharedPoly = ", aliceSharedPoly
+println "bobSharedPoly = ", bobSharedPoly

@@ -1,0 +1,16 @@
+5x^2 + 4x + 3
+7x^2 + 12x + 8
+5x^2 + 7x + 1
+9x^2
+x^2 + 7x + 3
+7x^2 + 2x + 9
+9x^2 + 7x + 2
+10x
+x^2 + 4x + 2
+3x^2 + 2x + 8
+5x^2 + 10x + 2
+1
+Alices pubkey poly = 5x^2 + 10x + 2
+Bobs pubkey poly = x^2 + 7x + 3
+alicsSharedPoly = 9x^2
+bobSharedPoly = 9x^2
