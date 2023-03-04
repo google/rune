@@ -1,4 +1,7 @@
 ## Short term
+Use concrete type constraints on variable assignments rather than "if false" type hints.
+In the bootstrap version of Rune, add support for autocasting return expresions
+    to the type of other return expressions
 Add an option for generating SoA vs AoS memory layout so folks can do their own benchmarking.
 Write a C or C++ backend code generator for improved debugging of Rune, and so folks can benchmark with
     full front-end optimization of different C compilers for benchmarking.

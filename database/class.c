@@ -34,6 +34,17 @@
 
 #include "de.h"
 
+utSym deToStringSym, deShowSym;
+
+void deClassStart(void) {
+  deToStringSym = utSymCreate("toString");
+  deShowSym = utSymCreate("show");
+}
+
+void deClassStop(void) {
+  // Nothing for now.
+}
+
 // Dump the class to the end of |string| for debugging purposes.
 void deDumpTclassStr(deString string, deTclass tclass) {
   dePrintIndentStr(string);
@@ -255,11 +266,26 @@ static deString findObjectPrintFormat(deExpression tupleExpr) {
   return deMutableCStringCreate(format);
 }
 
+// Add an if statement checking if self is -1.  If true, print null and return.
+static void addCheckForNull(deBlock functionBlock, deLine line) {
+  deStatement ifStatement = deStatementCreate(functionBlock, DE_STATEMENT_IF, line);
+  deExpression selfExpr = deIdentExpressionCreate(utSymCreate("self"), line);
+  deExpression isNullExpr = deUnaryExpressionCreate(DE_EXPR_ISNULL, selfExpr, line);
+  deStatementSetExpression(ifStatement, isNullExpr);
+  deBlock subBlock = deBlockCreate(deBlockGetFilepath(functionBlock), DE_BLOCK_STATEMENT, line);
+  deStatementInsertSubBlock(ifStatement, subBlock);
+  deStatement printStatement = deStatementCreate(subBlock, DE_STATEMENT_PRINT, line);
+  deExpression stringExpr = deStringExpressionCreate(deMutableCStringCreate("null\n"), line);
+  deExpression listExpr = deExpressionCreate(DE_EXPR_LIST, line);
+  deExpressionAppendExpression(listExpr, stringExpr);
+  deStatementInsertExpression(printStatement, listExpr);
+  deStatementCreate(subBlock, DE_STATEMENT_RETURN, line);
+}
+
 // Generate a default toString method for the class.
-static deFunction generateDefaultMethod(deClass theClass, char *name,
+static deFunction generateDefaultMethod(deClass theClass, utSym funcName,
     bool showGenerated, bool callPrint) {
   deBlock classBlock = deClassGetSubBlock(theClass);
-  utSym funcName = utSymCreate(name);
   deTclass tclass = deClassGetTclass(theClass);
   deLinkage linkage = deFunctionGetLinkage(deTclassGetFunction(tclass));
   deFunction function = deFunctionCreate(deBlockGetFilepath(classBlock), classBlock,
@@ -269,6 +295,10 @@ static deFunction generateDefaultMethod(deClass theClass, char *name,
   deLine line = deBlockGetLine(classBlock);
   utSym paramName = utSymCreate("self");
   deVariableCreate(functionBlock, DE_VAR_PARAMETER, true, paramName, deExpressionNull, false, line);
+  if (callPrint) {
+    // For show method, check for the input being null (-1).
+    addCheckForNull(functionBlock, line);
+  }
   deExpression selfExpr = deIdentExpressionCreate(utSymCreate("self"), line);
   deExpressionSetDatatype(selfExpr, deClassDatatypeCreate(theClass));
   deExpression tupleExpr = buildClassTupleExpression(classBlock, selfExpr, showGenerated);
@@ -299,12 +329,12 @@ static deFunction generateDefaultMethod(deClass theClass, char *name,
 
 // Generate a default toString method for the class.
 deFunction deGenerateDefaultToStringMethod(deClass theClass) {
-  return generateDefaultMethod(theClass, "toString", false, false);
+  return generateDefaultMethod(theClass, deToStringSym, false, false);
 }
 
 // Generate a default print method for the class.
 deFunction deGenerateDefaultShowMethod(deClass theClass) {
-  return generateDefaultMethod(theClass, "show", true, true);
+  return generateDefaultMethod(theClass, deShowSym, true, true);
 }
 
 // Determine if the class has a toString method.  If so, we use it to print
@@ -342,4 +372,44 @@ void deDestroyTclassContents(deTclass tclass) {
   deSafeForeachTclassChildRelation(tclass, relation) {
     deRelationDestroy(relation);
   } deEndSafeTclassChildRelation;
+}
+
+// Create a signature for the default method so it becomes part of the debug
+// binary.  This is useful in gdb during debugging.
+static void createSignature(deClass theClass, deFunction method) {
+  deLine line = deTclassGetLine(deClassGetTclass(theClass));
+  deDatatypeArray parameterTypes = deDatatypeArrayAlloc();
+  deDatatype selfType = deClassDatatypeCreate(theClass);
+  deDatatypeArrayAppendDatatype(parameterTypes, selfType);
+  deSignature signature = deLookupSignature(method, parameterTypes);
+  if (signature != deSignatureNull) {
+    deSignatureSetInstantiated(signature, true);
+    return;
+  }
+  utAssert(signature == deSignatureNull);
+  signature = deSignatureCreate(method, parameterTypes, line);
+  deParamspec paramspec = deSignatureGetiParamspec(signature, 0);
+  deParamspecSetInstantiated(paramspec, true);
+  deSignatureSetInstantiated(signature, true);
+  deQueueSignature(signature);
+}
+
+// Generate default methods for a class if they do not exist.  This is the
+// toPrint method, and if in debug mode, a show method.
+void deGenerateDefaultMethods(deClass theClass) {
+  deBlock classBlock = deClassGetSubBlock(theClass);
+  deIdent ident = deBlockFindIdent(classBlock, deToStringSym);
+  if (ident == deIdentNull || deIdentGetType(ident) == DE_IDENT_UNDEFINED) {
+    deFunction toStringMethod = deGenerateDefaultToStringMethod(theClass);
+    if (deDebugMode) {
+      createSignature(theClass, toStringMethod);
+    }
+  }
+  ident = deBlockFindIdent(classBlock, deShowSym);
+  if (ident == deIdentNull || deIdentGetType(ident) == DE_IDENT_UNDEFINED) {
+    deFunction showMethod = deGenerateDefaultShowMethod(theClass);
+    if (deDebugMode) {
+      createSignature(theClass, showMethod);
+    }
+  }
 }

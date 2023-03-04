@@ -1064,6 +1064,15 @@ typeswitchCaseHeaders: typeExpression
 ;
 
 optDefaultCase: // Empty
+{
+  // If default is missing, add one with a throw statement.
+  createBlockStatement(DE_STATEMENT_DEFAULT);
+  deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_THROW, deCurrentLine);
+  deExpression message = deStringExpressionCreate(
+      deMutableCStringCreate("No case matched switch expression"), deCurrentLine);
+  deStatementInsertExpression(statement, message);
+  finishBlockStatement(deExpressionNull);
+}
 | defaultCaseHeader block
 {
   finishBlockStatement(deExpressionNull);

@@ -598,13 +598,11 @@ static void writeArray(llArray array) {
   deExpression element = deExpressionGetFirstExpression(expression);
   deExpressionType type = deExpressionGetType(element);
   uint32 width = 0;
-  if (type == DE_EXPR_INTEGER) {
+  if (type == DE_EXPR_INTEGER || type == DE_EXPR_NULL) {
     // Get width from datatype in case bigint was auto-cast.
     width = deDatatypeGetWidth(deExpressionGetDatatype(element));
   } else if (type == DE_EXPR_BOOL) {
     width = 1;
-  } else if (type == DE_EXPR_NULL) {
-    width = 32;
   } else {
     utExit("Unexpected constant array expression type");
   }
@@ -626,7 +624,7 @@ static void writeArray(llArray array) {
     } else if (type == DE_EXPR_BOOL) {
       fprintf(llAsmFile, "i1 %u", deExpressionBoolVal(element)? 1 : 0);
     } else if (type == DE_EXPR_NULL) {
-      fprintf(llAsmFile, "i32 0");
+      fprintf(llAsmFile, "i%u -1", width);
     } else {
       utExit("Unexpected constant array expression type");
     }

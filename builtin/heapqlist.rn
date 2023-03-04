@@ -43,6 +43,7 @@ generator HeapqList(A: Class, B: Class, cascadeDelete:bool = false,
     }
 
     func _heapqDown$labelB$B(self, startX: u32) {
+      length = 0u32  // Type hint
       length = <u32>self.$labelB$pluralB.length()
       x = startX
       do {
@@ -119,6 +120,9 @@ generator HeapqList(A: Class, B: Class, cascadeDelete:bool = false,
     }
 
     func push$labelB$B(self, child: B) {
+      if false {
+        self.$labelB$pluralB[0] = child  // Type hint
+      }
       pos = <u32>self.$labelB$pluralB.length()
       self.$labelB$pluralB.append(child)
       child.$labelA$A_Index = pos

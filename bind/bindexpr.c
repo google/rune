@@ -154,7 +154,7 @@ static void bindModintExpression(deBlock scopeBlock, deExpression expression) {
   deDatatype datatype = deModintDatatypeCreate(modulus);
   bindModularExpression(scopeBlock, left, datatype);
   deDatatype resultType = deExpressionGetDatatype(left);
-  if (deDatatypeGetType(resultType) == DE_TYPE_MODINT) {
+  if (resultType == deDatatypeNull || deDatatypeGetType(resultType) == DE_TYPE_MODINT) {
     resultType = modulusType;
   }
   deExpressionSetDatatype(expression, resultType);
@@ -202,10 +202,19 @@ static void checkBinaryExpression(deBlock scopeBlock, deExpression expression,
   }
 }
 
+// Convert an operator-equals expression type into the corresponding operator
+// type.
+static deExpressionType opEqualsToOp(deExpressionType op) {
+  if (op < DE_EXPR_ADD_EQUALS || op > DE_EXPR_MULTRUNC_EQUALS) {
+    return op;
+  }
+  return op - DE_EXPR_ADD_EQUALS + DE_EXPR_ADD;
+}
+
 // Find a matching operator overload.
 static deFunction findMatchingOperatorOverload(deBlock scopeBlock, deExpression expression,
     deDatatypeArray paramTypes) {
-  deExpressionType opType = deExpressionGetType(expression);
+  deExpressionType opType = opEqualsToOp(deExpressionGetType(expression));
   uint32 numParams = deDatatypeArrayGetUsedDatatype(paramTypes);
   if (numParams == 0 || numParams > 2) {
     return deFunctionNull;
@@ -336,9 +345,12 @@ static void bindBinaryArithmeticExpression(deBlock scopeBlock, deExpression expr
   // Allow addition on strings and arrays.
   deDatatypeType type = deDatatypeGetType(leftType);
   deExpressionType exprType = deExpressionGetType(expression);
-  if ((type != DE_TYPE_ARRAY || exprType != DE_EXPR_ADD) &&
-      (type != DE_TYPE_STRING || (exprType != DE_EXPR_ADD && exprType != DE_EXPR_BITXOR)) &&
-      !deDatatypeIsInteger(leftType) && type != DE_TYPE_FLOAT) {
+  if (type == DE_TYPE_ARRAY || type == DE_TYPE_STRING) {
+    if (exprType != DE_EXPR_ADD && exprType != DE_EXPR_ADD_EQUALS &&
+        exprType != DE_EXPR_BITXOR && exprType != DE_EXPR_BITXOR_EQUALS) {
+      error(expression, "Invalid types for binary arithmetic operator");
+    }
+  } else if (!deDatatypeIsInteger(leftType) && type != DE_TYPE_FLOAT) {
     error(expression, "Invalid types for binary arithmetic operator");
   }
   deExpressionSetDatatype(expression, leftType);
@@ -738,9 +750,11 @@ static bool bindIdentExpression(deBlock scopeBlock, deExpression expression, boo
     case DE_IDENT_VARIABLE: {
       deVariable variable = deIdentGetVariable(ident);
       deDatatype datatype = deVariableGetDatatype(variable);
-      if (datatype == deDatatypeNull || deDatatypeGetType(datatype) == DE_TYPE_NULL) {
+      if (datatype == deDatatypeNull || (!deExpressionLhs(expression) &&
+          !deDatatypeConcrete(datatype) && !deVariableIsType(variable))) {
         deEvent event = deVariableEventCreate(variable);
-        deEventAppendBinding(event, deExpressionGetBinding(expression));
+        deStatement statement = deFindExpressionStatement(expression);
+        deEventAppendBinding(event, deStatementGetBinding(statement));
         return false;
       }
       deExpressionSetDatatype(expression, datatype);
@@ -1242,6 +1256,7 @@ static deBlock findExpressionSubScope(deExpression expression) {
 // Also bind the ident expression expression to its identifier.
 static deVariable findOrCreateVariable(deBlock scopeBlock, deExpression access) {
   deExpression identExpr;
+  bool inScopeBlock = false;
   if (deExpressionGetType(access) == DE_EXPR_IDENT) {
     identExpr = access;
   } else {
@@ -1249,6 +1264,7 @@ static deVariable findOrCreateVariable(deBlock scopeBlock, deExpression access) 
     deExpression dotAccess = deExpressionGetFirstExpression(access);
     identExpr = deExpressionGetNextExpression(dotAccess);
     scopeBlock = findExpressionSubScope(dotAccess);
+    inScopeBlock = true;
   }
   utAssert(deExpressionGetType(identExpr) == DE_EXPR_IDENT);
   deIdent ident = deExpressionGetIdent(identExpr);
@@ -1256,12 +1272,23 @@ static deVariable findOrCreateVariable(deBlock scopeBlock, deExpression access) 
     deIdentRemoveExpression(ident, identExpr);
   }
   utSym sym = deExpressionGetName(identExpr);
-  ident = deFindIdent(scopeBlock, sym);
+  if (inScopeBlock) {
+    ident = deBlockFindIdent(scopeBlock, sym);
+  } else {
+    ident = deFindIdent(scopeBlock, sym);
+  }
   if (ident == deIdentNull || deIdentGetType(ident) == DE_IDENT_UNDEFINED) {
     bool generated = deStatementGenerated(deFindExpressionStatement(access));
     deLine line = deExpressionGetLine(identExpr);
     deVariable var = deVariableCreate(scopeBlock, DE_VAR_LOCAL, false, sym,
         deExpressionNull, generated, line);
+    deExpression typeExpr = deExpressionGetNextExpression(deExpressionGetNextExpression(access));
+    if (typeExpr != deExpressionNull) {
+      deVariableInsertTypeExpression(var, typeExpr);
+      deExpression assignment = deExpressionGetExpression(access);
+      deSignature signature = deBindingGetSignature(deExpressionGetBinding(assignment));
+      deCreateVariableConstraintBinding(signature, var);
+    }
     deVariableSetInstantiated(var, true);
     ident = deVariableGetIdent(var);
   }
@@ -1273,8 +1300,8 @@ static deVariable findOrCreateVariable(deBlock scopeBlock, deExpression access) 
 }
 
 // Update a variable from an assignment expression.
-static void updateVariable(deBlock scopeBlock, deVariable variable, deExpression targetExpression) {
-  deDatatype newDatatype = deExpressionGetDatatype(targetExpression);
+static void updateVariable(deBlock scopeBlock, deVariable variable,
+    deDatatype newDatatype, deLine line) {
   utAssert(newDatatype != deDatatypeNull);
   deDatatype oldDatatype = deVariableGetDatatype(variable);
   deDatatype datatype = newDatatype;
@@ -1282,13 +1309,12 @@ static void updateVariable(deBlock scopeBlock, deVariable variable, deExpression
     datatype = deUnifyDatatypes(oldDatatype, newDatatype);
   }
   if (datatype == deDatatypeNull) {
-    error(targetExpression, "Assigning different type to %s than assigned before:%s",
+    deError(line, "Assigning different type to %s than assigned before:%s",
       deVariableGetName(variable), deGetOldVsNewDatatypeStrings(oldDatatype, newDatatype));
   }
   deVariableSetDatatype(variable, datatype);
-  if ((oldDatatype == deDatatypeNull || deDatatypeGetType(oldDatatype) == DE_TYPE_NULL) &&
-     deDatatypeGetType(datatype) != DE_TYPE_NULL) {
-    // TODO: Block on sub-elements being null, not just variables.
+  if ((oldDatatype == deDatatypeNull || !deDatatypeConcrete(oldDatatype)) &&
+      deDatatypeConcrete(datatype)) {
     deQueueEventBlockedBindings(deVariableGetEvent(variable));
   }
 }
@@ -1329,13 +1355,79 @@ static bool addValuesIteratorIfNeeded(deBlock scopeBlock, deStatement statement)
   return true;
 }
 
+// Refine NULL types on variables to class types, now that we have a specific class.
+static void refineAccessExpressionDatatype(deBlock scopeBlock, deExpression target,
+    deDatatype valueType) {
+   deLine line = deExpressionGetLine(target);
+  if (!deDatatypeConcrete(valueType) || deDatatypeConcrete(deExpressionGetDatatype(target))) {
+    // Don't unrefine to a NULL class if we have already refined.
+    return;
+  }
+  deDatatype datatype = deExpressionGetDatatype(target);
+  if (datatype == deDatatypeNull) {
+    datatype = valueType;
+  } else {
+    datatype = deUnifyDatatypes(valueType, datatype);
+  }
+  deExpressionSetDatatype(target, datatype);
+  switch (deExpressionGetType(target)) {
+    case DE_EXPR_IDENT: {
+      deIdent ident = deFindIdent(scopeBlock, deExpressionGetName(target));
+      utAssert(deIdentGetType(ident) == DE_IDENT_VARIABLE);
+      deVariable variable = deIdentGetVariable(ident);
+      updateVariable(scopeBlock, variable, valueType, line);
+      break;
+    }
+    case DE_EXPR_INDEX: {
+      deLine line = deExpressionGetLine(target);
+      deExpression nextTarget = deExpressionGetFirstExpression(target);
+      deExpression indexExpr = deExpressionGetNextExpression(nextTarget);
+      deDatatype nextTargetType = deExpressionGetDatatype(nextTarget);
+      deDatatype nextValueType;
+      if (deDatatypeGetType(nextTargetType) == DE_TYPE_TUPLE) {
+        deDatatypeArray types = deListDatatypes(target);
+        uint32 index = deBigintGetUint32(deExpressionGetBigint(indexExpr), line);
+        deDatatypeArraySetiDatatype(types, index, valueType);
+        nextValueType = deTupleDatatypeCreate(types);
+      } else {
+        utAssert(deDatatypeGetType(nextTargetType) == DE_TYPE_ARRAY);
+        nextValueType = deArrayDatatypeCreate(valueType);
+      }
+      refineAccessExpressionDatatype(scopeBlock, nextTarget, nextValueType);
+      break;
+    }
+    case DE_EXPR_DOT: {
+      deExpression left = deExpressionGetFirstExpression(target);
+      deExpression right = deExpressionGetNextExpression(left);
+      deDatatype leftType = deExpressionGetDatatype(left);
+      deBlock subBlock;
+      if (deDatatypeGetType(leftType) == DE_TYPE_CLASS) {
+        deClass theClass = deDatatypeGetClass(leftType);
+        subBlock = deClassGetSubBlock(theClass);
+      } else {
+        utAssert(deDatatypeGetType(leftType) == DE_TYPE_FUNCTION);
+        deFunction function = deDatatypeGetFunction(leftType);
+        subBlock = deFunctionGetSubBlock(function);
+      }
+      utAssert(deExpressionGetType(right) == DE_EXPR_IDENT);
+      deIdent ident = deFindIdent(subBlock, deExpressionGetName(right));
+      utAssert(deIdentGetType(ident) == DE_IDENT_VARIABLE);
+      deVariable variable = deIdentGetVariable(ident);
+      updateVariable(scopeBlock, variable, valueType, line);
+      break;
+    }
+    default:
+      utExit("Unexpected access expression type");
+  }
+}
+
 // Bind an assignment expression.
 static deBindRes bindAssignmentExpression(deBlock scopeBlock, deExpression expression) {
   deExpression access = deExpressionGetFirstExpression(expression);
-  deExpression target = deExpressionGetNextExpression(access);
+  deExpression value = deExpressionGetNextExpression(access);
   deExpressionType type  = deExpressionGetType(access);
-  deDatatype targetDatatype = deExpressionGetDatatype(target);
-  if (deDatatypeGetType(targetDatatype) == DE_TYPE_NONE) {
+  deDatatype valueDatatype = deExpressionGetDatatype(value);
+  if (deDatatypeGetType(valueDatatype) == DE_TYPE_NONE) {
     error(expression, "Right side of assignment does not return a value.");
   }
   deStatement statement = deExpressionGetStatement(expression);
@@ -1346,10 +1438,12 @@ static deBindRes bindAssignmentExpression(deBlock scopeBlock, deExpression expre
   }
   if (type == DE_EXPR_IDENT || type == DE_EXPR_DOT) {
     deVariable variable = findOrCreateVariable(scopeBlock, access);
-    updateVariable(scopeBlock, variable, target);
-    deExpressionSetDatatype(access, targetDatatype);
+    updateVariable(scopeBlock, variable, valueDatatype, deExpressionGetLine(expression));
+    deExpressionSetDatatype(access, valueDatatype);
+  } else {
+    refineAccessExpressionDatatype(scopeBlock, access, valueDatatype);
   }
-  deExpressionSetDatatype(expression, targetDatatype);
+  deExpressionSetDatatype(expression, valueDatatype);
   return DE_BINDRES_OK;
 }
 
@@ -1512,7 +1606,7 @@ static deBindRes bindExpression(deBlock scopeBlock, deExpression expression) {
     postProcessModintExpression(expression);
     return DE_BINDRES_OK;  // Success.
   }
-  if (expressionTypeCanBeOverloaded(deExpressionGetType(expression))) {
+  if (expressionTypeCanBeOverloaded(opEqualsToOp(deExpressionGetType(expression)))) {
     deBindRes result = bindOverloadedOperator(scopeBlock, expression);
     if (result != DE_BINDRES_FAILED) {
       return result;
@@ -1736,8 +1830,8 @@ static void updateSignatureReturnType(deSignature signature, deDatatype datatype
         deGetOldVsNewDatatypeStrings(oldDatatype, datatype));
   }
   deSignatureSetReturnType(signature, datatype);
-  if ((oldDatatype == deDatatypeNull || deDatatypeGetType(oldDatatype) == DE_TYPE_NULL) &&
-      deDatatypeGetType(newDatatype) != DE_TYPE_NULL) {
+  if ((oldDatatype == deDatatypeNull || !deDatatypeConcrete(oldDatatype)) &&
+      deDatatypeConcrete(newDatatype)) {
     deSignatureSetBound(signature, true);
     deQueueEventBlockedBindings(deSignatureGetReturnEvent(signature));
   }
@@ -1792,13 +1886,16 @@ static void postProcessBoundStatement(deBlock scopeBlock, deBinding binding) {
     updateSignatureReturnType(deBindingGetSignature(binding), datatype);
   } else if (type == DE_STATEMENT_TYPESWITCH) {
     selectMatchingCase(scopeBlock, binding);
+  } else if (type == DE_STATEMENT_PRINT) {
+    dePostProcessPrintStatement(statement);
   }
 }
 
 // Set the datatype of variable to that if its default value.
 static void setDefaultVariableType(deBlock scopeBlock, deBinding binding) {
   deVariable var = deBindingGetInitializerVariable(binding);
-  updateVariable(scopeBlock, var, deVariableGetInitializerExpression(var));
+  deExpression initExpr = deVariableGetInitializerExpression(var);
+  updateVariable(scopeBlock, var, deExpressionGetDatatype(initExpr), deExpressionGetLine(initExpr));
 }
 
 // Rebuild the queue of expressions for the binding.  Only works for statement
@@ -1812,7 +1909,7 @@ static void rebuildBinding(deBinding binding) {
   deStatement statement = deBindingGetStatement(binding);
   expression = deStatementGetExpression(statement);
   bool instantiating = deExpressionInstantiating(expression);
-  deQueueExpression(binding, expression, instantiating);
+  deQueueExpression(binding, expression, instantiating, false);
 }
 
 // Bind or continue expression the statement.
@@ -1837,10 +1934,29 @@ void deBindStatement2(deBinding binding) {
     case DE_BIND_DEFAULT_VALUE:
       setDefaultVariableType(scopeBlock, binding);
       break;
-    case DE_BIND_VAR_CONSTRAINT:
-    case DE_BIND_FUNC_CONSTRAINT:
-      // TODO: Check type constraints here.
+    case DE_BIND_VAR_CONSTRAINT: {
+      deVariable variable = deBindingGetTypeVariable(binding);
+      deExpression typeExpr = deVariableGetTypeExpression(variable);
+      deDatatype datatype = deExpressionGetDatatype(typeExpr);
+      if (deDatatypeConcrete(datatype)) {
+        updateVariable(scopeBlock, variable, datatype, deExpressionGetLine(typeExpr));
+      }
       break;
-
+    }
+    case DE_BIND_FUNC_CONSTRAINT: {
+      deFunction function = deBindingGetTypeFunction(binding);
+      deExpression typeExpr = deFunctionGetTypeExpression(function);
+      deDatatype datatype = deExpressionGetDatatype(typeExpr);
+      if (deDatatypeConcrete(datatype)) {
+        deSignature signature = deFunctionGetUniquifiedSignature(function);
+        utAssert(signature != deSignatureNull);
+        updateSignatureReturnType(deBindingGetSignature(binding), datatype);
+      }
+      break;
+    }
+  }
+  if (deBindingGetFirstExpression(binding) != deExpressionNull) {
+    // We must have queued more expressions during post-processing.
+    deBindStatement2(binding);
   }
 }

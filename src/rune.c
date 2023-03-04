@@ -85,6 +85,7 @@ void deStart(char *fileName) {
   deFilepathInsertModuleBlock(rootFilepath, rootBlock);
   deDatatypeStart();
   deBuiltinStart();
+  deClassStart();
   deUtilStart();
   deBindStart();
   buildArgvArray();
@@ -97,6 +98,7 @@ void deStop(void) {
   utFree(deExeName);
   utFree(deLibDir);
   deUtilStop();
+  deClassStop();
   deBuiltinStop();
   deDatatypeStop();
   deDatabaseStop();

@@ -207,31 +207,37 @@ static void  postProcessNamedParameterExpression(deExpression expression) {
   deBindingRemoveExpression(deExpressionGetBinding(expression), identExpression);
 }
 
-// Post process a modular expressions of the form <expresion> mod <modulus>.
-// The modulus should be bound first, and in the handler for binding modint
+// Queue a modular expression of the form <expresion> mod <modulus>.  The
+// modulus should be bound first, and in the handler for binding modint
 // expressions, we should recursively bind through modular arithmetic operators.
-static void postProcessModint(deExpression expression) {
-  deBinding binding = deExpressionGetBinding(expression);
-  // Move the modint expression to the front of the binding list.
-  deBindingRemoveExpression(binding, expression);
-  deBindingInsertExpression(binding, expression);
-  // Move the modulus expression to the front of the binding list.
-  deExpression modulusExpr = deExpressionGetLastExpression(expression);
-  deBindingRemoveExpression(binding, modulusExpr);
-  deBindingInsertExpression(binding, modulusExpr);
+static void queueModintExpression(deBinding binding, deExpression modExpr, bool instantiating) {
+  deExpression child  = deExpressionGetFirstExpression(modExpr);
+  deExpression modulus = deExpressionGetNextExpression(child);
+  // Bind the modulus first so we know its type.
+  deQueueExpression(binding, modulus, instantiating, false);
+  // The modint handler expects the modint expression next, from which it will
+  // recurse down to set the modint type.
+  deBindingAppendExpression(binding, modExpr);
+  deQueueExpression(binding, child, instantiating, false);
 }
 
 // Queue the expression for expression.
-void deQueueExpression(deBinding binding, deExpression expression, bool instantiating) {
+void deQueueExpression(deBinding binding, deExpression expression, bool instantiating, bool lhs) {
   deExpressionSetInstantiating(expression, instantiating);
+  deExpressionSetLhs(expression, lhs);
   deExpressionType type = deExpressionGetType(expression);
+  if (type == DE_EXPR_MODINT) {
+    return queueModintExpression(binding, expression, instantiating);
+    return;
+  }
   bool firstTime = true;
   deExpression child;
   deForeachExpressionExpression(expression, child) {
     // Only the first sub-expression is ever not instantiated.
     bool instantiateSubExpr = instantiating && (!firstTime || instantiateSubExpressions(type));
+    bool childLhs = (type == DE_EXPR_EQUALS && firstTime) || lhs;
     firstTime = false;
-    deQueueExpression(binding, child, instantiateSubExpr);
+    deQueueExpression(binding, child, instantiateSubExpr, childLhs);
   } deEndExpressionExpression;
   // All child expressions are queued before this one.
   deBindingAppendExpression(binding, expression);
@@ -241,8 +247,6 @@ void deQueueExpression(deBinding binding, deExpression expression, bool instanti
     postProcessDotExpression(expression);
   } else if (type == DE_EXPR_NAMEDPARAM) {
     postProcessNamedParameterExpression(expression);
-  } else if (type == DE_EXPR_MODINT) {
-    postProcessModint(expression);
   }
 }
 
@@ -261,7 +265,7 @@ void deQueueStatement(deSignature signature, deStatement statement, bool instant
     // Bind return statements even if they have no expression.
     binding = deBindingCreate(signature, statement, instantiating);
     if (expression != deExpressionNull) {
-      deQueueExpression(binding, expression, instantiating);
+      deQueueExpression(binding, expression, instantiating, false);
     }
   }
   deBlock subBlock = deStatementGetSubBlock(statement);
@@ -290,11 +294,11 @@ static void createDefaultValueBinding(deSignature signature, deVariable var) {
   binding = deVariableInitializerBindingCreate(signature, var, true);
   deExpression expr = deVariableGetInitializerExpression(var);
   utAssert(expr != deExpressionNull);
-  deQueueExpression(binding, expr, true);
+  deQueueExpression(binding, expr, true, false);
 }
 
 // Create a Binding for a variable's type constraint.
-static void createVariableConstraintBinding(deSignature signature, deVariable var) {
+void deCreateVariableConstraintBinding(deSignature signature, deVariable var) {
   deBinding binding = deVariableGetTypeBinding(var);
   if (binding != deBindingNull) {
     // Rebind the type constraint expression in case we've made changes.
@@ -303,7 +307,7 @@ static void createVariableConstraintBinding(deSignature signature, deVariable va
   binding = deVariableConstraintBindingCreate(signature, var, true);
   deExpression expr = deVariableGetTypeExpression(var);
   utAssert(expr != deExpressionNull);
-  deQueueExpression(binding, expr, true);
+  deQueueExpression(binding, expr, true, false);
 }
 
 // Create a Binding for a function's type constraint.
@@ -316,7 +320,7 @@ static void createFunctionConstraintBinding(deSignature signature, deFunction fu
   binding = deFunctionConstraintBindingCreate(signature, func, true);
   deExpression expr = deFunctionGetTypeExpression(func);
   utAssert(expr != deExpressionNull);
-  deQueueExpression(binding, expr, true);
+  deQueueExpression(binding, expr, true, false);
 }
 
 // Bind parameter variables from the signature.  For parameters with
@@ -333,7 +337,7 @@ static void bindSignatureParameters(deSignature signature) {
       deVariableSetDatatype(variable, deParamspecGetDatatype(paramspec));
     }
     if (deVariableGetTypeExpression(variable) != deExpressionNull) {
-      createVariableConstraintBinding(signature, variable);
+      deCreateVariableConstraintBinding(signature, variable);
     }
     variable = deVariableGetNextBlockVariable(variable);
   } deEndSignatureParamspec;
@@ -436,6 +440,13 @@ static void updateSignature(deSignature signature) {
   } else if (deFunctionExtern(function)) {
     updateExternSignature(signature);
   }
+  // If a function ends in throw, it may not have a return statement to
+  // determine the return type.
+  if (deSignatureGetReturnType(signature) == deDatatypeNull) {
+    deSignatureSetReturnType(signature, deNoneDatatypeCreate());
+    deSignatureSetBound(signature, true);
+    deQueueEventBlockedBindings(deSignatureGetReturnEvent(signature));
+  }
 }
 
 // Add a signature to the expression queue.
@@ -445,10 +456,11 @@ void deQueueSignature(deSignature signature) {
   }
   deSignatureSetQueued(signature, true);
   deBlock block = deSignatureGetUniquifiedBlock(signature);
+  deBlockComputeReachability(block);
   deFunction func = deSignatureGetUniquifiedFunction(signature);
   deFunctionType type = deFunctionGetType(func);
-  if (!deFunctionBuiltin(func) && type != DE_FUNC_ITERATOR && type != DE_FUNC_STRUCT &&
-      !deFunctionExtern(func)) {
+  if (deBlockCanContinue(block) && !deFunctionBuiltin(func) &&
+      type != DE_FUNC_ITERATOR && type != DE_FUNC_STRUCT && !deFunctionExtern(func)) {
     addReturnIfMissing(block);
   }
   bindSignatureParameters(signature);
@@ -476,6 +488,9 @@ void deBindAllSignatures(void) {
       if (deSignatureGetFirstBinding(signature) == deBindingNull) {
         // The signature is now fully bound.
         updateSignature(signature);
+        if (deBlockIsConstructor(deSignatureGetUniquifiedBlock(signature))) {
+          deGenerateDefaultMethods(deDatatypeGetClass(deSignatureGetReturnType(signature)));
+        }
       }
     }
     binding = deRootGetFirstBinding(deTheRoot);
@@ -508,37 +523,27 @@ static void reportEvent(deEvent event) {
   if (signature != deSignatureNull) {
     deDumpSignature(signature);
     putchar('\n');
-    deError(deSignatureGetLine(signature), "Unable to determine return type");
+    deReportError(deSignatureGetLine(signature), "Unable to determine return type");
+    return;
   }
   deVariable variable = deEventGetVariable(event);
   if (variable != deVariableNull) {
-     deError(deVariableGetLine(variable), "Could not determine type of variable %s",
+     deReportError(deVariableGetLine(variable), "Could not determine type of variable %s",
          deVariableGetName(variable));
+     return;
   }
   deIdent undefinedIdent = deEventGetUndefinedIdent(event);
   utAssert(undefinedIdent != deIdentNull);
-  deError(deExpressionGetLine(deIdentGetFirstExpression(undefinedIdent)),
+  deReportError(deExpressionGetLine(deIdentGetFirstExpression(undefinedIdent)),
      "Undefined identifier %s", deIdentGetName(undefinedIdent));
 }
 
 // Report errors for any undefined or unbound identifiers that remain, and
 // exit if any exist.
-static void reportUnboundBindings(void) {
+static void reportEvents(void) {
   deEvent event;
   deForeachRootEvent(deTheRoot, event) {
-    if (deEventGetType(event) == DE_EVENT_UNDEFINED) {
-      reportEvent(event);
-    }
-  } deEndRootEvent;
-  deForeachRootEvent(deTheRoot, event) {
-    if (deEventGetType(event) == DE_EVENT_VARIABLE) {
-      reportEvent(event);
-    }
-  } deEndRootEvent;
-  deForeachRootEvent(deTheRoot, event) {
-    if (deEventGetType(event) == DE_EVENT_SIGNATURE) {
-      reportEvent(event);
-    }
+    reportEvent(event);
   } deEndRootEvent;
 }
 
@@ -551,5 +556,8 @@ void deBind2(void) {
   deQueueSignature(mainSignature);
   deBindAllSignatures();
   destroyUnusedTclassesContents();
-  reportUnboundBindings();
+  reportEvents();
+  if (deRootGetFirstEvent(deTheRoot) != deEventNull) {
+    utExit("Exiting due to errors...");
+  }
 }

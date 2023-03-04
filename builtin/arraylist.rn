@@ -46,6 +46,9 @@ generator ArrayList(A: Class, B: Class, cascadeDelete:bool = false,
         }
       }
       child.$labelA$A_Index = <u32>self.$labelB$pluralB.length()
+      if false {
+        self.$labelB$pluralB[0] = child  // Type hint
+      }
       self.$labelB$pluralB.append(child)
       child.$labelA$A = self
       ref child

@@ -75,8 +75,14 @@ deBlock deBlockCreate(deFilepath filepath, deBlockType type, deLine line) {
 // Return the owning block of a block.
 deBlock deBlockGetOwningBlock(deBlock block) {
   switch (deBlockGetType(block)) {
-    case DE_BLOCK_FUNCTION:
-      return deFunctionGetBlock(deBlockGetOwningFunction(block));
+    case DE_BLOCK_FUNCTION: {
+      deFunction function = deBlockGetOwningFunction(block);
+      deSignature signature = deFunctionGetUniquifiedSignature(function);
+      if (signature != deSignatureNull) {
+        return deFunctionGetBlock(deSignatureGetFunction(signature));
+      }
+      return deFunctionGetBlock(function);
+    }
     case DE_BLOCK_STATEMENT:
       return deStatementGetBlock(deBlockGetOwningStatement(block));
     case DE_BLOCK_CLASS:
@@ -206,15 +212,123 @@ void deCopyFunctionIdentsToBlock(deBlock sourceBlock, deBlock destBlock) {
   } deEndBlockIdent;
 }
 
-// Save a snapshot of the block which can be restored later.
-deBlock deSaveBlockSnapshot(deBlock block) {
-  return deShallowCopyBlock(block);
+// This special case is for an if-elseif-else chain of statements that has an
+// else clause, and where every sub-block cannot continue.
+static bool allIfClausesReturn(deStatement statement) {
+  do {
+    deStatementType type = deStatementGetType(statement);
+    if (type != DE_STATEMENT_IF && type != DE_STATEMENT_ELSEIF &&
+        type != DE_STATEMENT_ELSE) {
+      return true;
+    }
+    deBlock subBlock = deStatementGetSubBlock(statement);
+    if (deBlockCanContinue(subBlock)) {
+      return false;
+    }
+    statement = deStatementGetPrevBlockStatement(statement);
+  } while (statement != deStatementNull);
+  return true;
 }
 
-// Restore the snapshot of the block;
-void deRestoreBlockSnapshot(deBlock block, deBlock snapshot) {
-  shallowEmptyBlock(block);
-  deAppendBlockToBlock(snapshot, block);
+// Update reachability for a switch or typeswitch statement.
+static void updateSwitchReachability(deStatement statement, bool* retCanContinue, bool* retCanReturn) {
+  bool canContinue = false;
+  bool canReturn = false;
+  deBlock subBlock = deStatementGetSubBlock(statement);
+  deStatement caseStatement;
+  bool hasDefault = false;
+  deForeachBlockStatement(subBlock, caseStatement) {
+    deBlock caseBlock = deStatementGetSubBlock(caseStatement);
+    deBlockComputeReachability(caseBlock);
+    canReturn |= deBlockCanReturn(caseBlock);
+    canContinue |= deBlockCanContinue(caseBlock);
+    if (deStatementGetType(caseStatement) == DE_STATEMENT_DEFAULT) {
+      hasDefault = true;
+    }
+  } deEndBlockStatement;
+  *retCanContinue &= canContinue || !hasDefault;
+  *retCanReturn |= canReturn;
+}
+
+// Update the canContinue and canReturn parameters.
+static void updateReachability(deStatement statement, bool* canContinue, bool* canReturn) {
+  deBlock subBlock = deStatementGetSubBlock(statement);
+  bool subBlockCanReturn = false;
+  bool subBlockCanContinue = true;
+  if (subBlock != deBlockNull) {
+    deBlockComputeReachability(subBlock);
+    subBlockCanReturn = deBlockCanReturn(subBlock);
+    subBlockCanContinue = deBlockCanContinue(subBlock);
+    *canReturn |= subBlockCanReturn;
+  }
+  switch (deStatementGetType(statement)) {
+    case DE_STATEMENT_IF:
+    case DE_STATEMENT_ELSEIF:
+      break;
+    case DE_STATEMENT_ELSE:
+      if (allIfClausesReturn(statement)) {
+        *canContinue = false;
+      }
+      break;
+    case DE_STATEMENT_DO:
+      *canContinue &= subBlockCanContinue;
+      break;
+    case DE_STATEMENT_THROW:
+      *canContinue = false;
+      break;
+    case DE_STATEMENT_RETURN:
+      *canContinue = false;
+      *canReturn = true;
+      break;
+    case DE_STATEMENT_YIELD:
+      *canReturn = true;
+      break;
+    case DE_STATEMENT_CALL:
+    case DE_STATEMENT_ASSIGN:
+    case DE_STATEMENT_WHILE:
+    case DE_STATEMENT_FOR:
+    case DE_STATEMENT_FOREACH:
+    case DE_STATEMENT_PRINT:
+    case DE_STATEMENT_USE:
+    case DE_STATEMENT_IMPORT:
+    case DE_STATEMENT_IMPORTLIB:
+    case DE_STATEMENT_IMPORTRPC:
+    case DE_STATEMENT_REF:
+    case DE_STATEMENT_UNREF:
+      // Always can continue through these.
+      break;
+    case DE_STATEMENT_SWITCH:
+    case DE_STATEMENT_TYPESWITCH:
+    case DE_STATEMENT_CASE:
+    case DE_STATEMENT_DEFAULT:
+    case DE_STATEMENT_APPENDCODE:
+    case DE_STATEMENT_PREPENDCODE:
+    case DE_STATEMENT_RELATION:
+    case DE_STATEMENT_GENERATE:
+      utExit("Unexpected statement type");
+      break;
+  }
+}
+
+// Compute the reachability parameters canReturn and canContinue for this block
+// and its subblocks.
+void deBlockComputeReachability(deBlock block) {
+  bool canContinue = true;
+  bool canReturn = false;
+  deStatement statement;
+  deForeachBlockStatement(block, statement) {
+    if (!canContinue) {
+      deError(deStatementGetLine(statement), "Cannot reach statement");
+    }
+    deStatementType type = deStatementGetType(statement);
+    if (type == DE_STATEMENT_SWITCH || type == DE_STATEMENT_TYPESWITCH) {
+      updateSwitchReachability(statement, &canContinue, &canReturn);
+    } else {
+      updateReachability(statement, &canContinue, &canReturn);
+    }
+  } deEndBlockStatement;
+  deBlockSetCanContinue(block, canContinue);
+  deBlockSetCanReturn(block, canReturn);
 }
 
 // Change variable names in |newBlock| to avoid conflicting with |oldBlock|.

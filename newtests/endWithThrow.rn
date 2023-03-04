@@ -1,4 +1,4 @@
-//  Copyright 2021 Google LLC.
+//  Copyright 2023 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,16 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-a = 123u16
-a += 1
-println a
-
-func foo(a) {
-  if a == 1 {
-    return a
-  }
-  return 2
+func test() {
+  throw "bye"
 }
 
-println foo(1u256), foo(2i32)
-println "%x" % (0xdeadbeef ^ (123 * (456 + 589)))
+if false {
+  test()
+}

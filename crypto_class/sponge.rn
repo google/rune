@@ -35,7 +35,7 @@ class Sponge(self) {
   // Call the PRP from session 1.
   func permute(self) {
     block = (<u512>self.C << 256) | <u512>self.R
-    prp.permute(block)
+    permute(block)
     self.C = <u256>(block >> 256)
     self.R = !<u256>block  // !<u256> means it is OK to throw away the upper bits.
   }

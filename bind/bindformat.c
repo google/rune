@@ -230,3 +230,30 @@ void deVerifyPrintfParameters(deExpression expression) {
   }
   deExpressionSetAltString(format, deMutableCStringCreate(buf));
 }
+
+// Add a .toString() method call to the parameter.  Queue the new expression.
+static void addToStringCall(deBinding binding, deExpression selfExpr) {
+  deLine line = deExpressionGetLine(selfExpr);
+  deExpression callExpr = deExpressionCreate(DE_EXPR_CALL, line);
+  deExpression listExpr = deExpressionGetExpression(selfExpr);
+  deExpressionInsertAfterExpression(listExpr, selfExpr, callExpr);
+  deExpressionRemoveExpression(listExpr, selfExpr);
+  deExpression identExpr = deIdentExpressionCreate(deToStringSym, line);
+  deExpression dotExpr = deBinaryExpressionCreate(DE_EXPR_DOT, selfExpr, identExpr, line);
+  deExpressionAppendExpression(callExpr, dotExpr);
+  deExpression paramsExpr = deExpressionCreate(DE_EXPR_LIST, line);
+  deExpressionAppendExpression(callExpr, paramsExpr);
+  deQueueExpression(binding, callExpr, deBindingInstantiated(binding), false);
+}
+
+// Convert any class expression we've printed to a toString method call.
+// Otherwise, it would just print the integer object reference.
+void dePostProcessPrintStatement(deStatement statement) {
+  deExpression param;
+  deSafeForeachExpressionExpression(deStatementGetExpression(statement), param) {
+    checkExpressionIsPrintable(param);
+    if (deDatatypeGetType(deExpressionGetDatatype(param)) == DE_TYPE_CLASS) {
+      addToStringCall(deStatementGetBinding(statement), param);
+    }
+  } deEndSafeExpressionExpression;
+}

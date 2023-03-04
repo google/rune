@@ -68,6 +68,7 @@ func hashValue(value) -> u64 {
     default {
       error = 0  // This will cause a ccompile-time error.
       error = "hashValue: I don't know how to hash this type"
+      return error
     }
   }
 }
@@ -124,6 +125,9 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
         }
       }
 
+      if false {
+        self.$labelB$B_Table[0] = entry  // Type hint
+      }
       if self.num$labelB$pluralB == self.$labelB$B_Table.length() {
         if self.$labelB$B_Table.length() == 0 {
           self.$labelB$B_Table.resize(1)

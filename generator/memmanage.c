@@ -234,29 +234,38 @@ static deFunction findTclassDestructor(deTclass tclass) {
   deBlock block = deFunctionGetSubBlock(deTclassGetFunction(tclass));
   utSym name = utSymCreate("destroy");
   deIdent ident = deBlockFindIdent(block, name);
+  if (ident == deIdentNull) {
+    return deFunctionNull;
+  }
   utAssert(ident != deIdentNull && deIdentGetType(ident) == DE_IDENT_FUNCTION);
   return deIdentGetFunction(ident);
 }
 
+// Call final in the destructor.
+static void callFinalInDestructor(deFunction destructor) {
+  deBlock block = deFunctionGetSubBlock(destructor);
+  deLine line = deFunctionGetLine(destructor);
+  deStatement callStatement = deStatementCreate(block, DE_STATEMENT_CALL, line);
+  deExpression finalExpr = deIdentExpressionCreate(utSymCreate("final"), line);
+  deExpression selfExpr = deIdentExpressionCreate(utSymCreate("self"), line);
+  deExpression dotExpr = deBinaryExpressionCreate(DE_EXPR_DOT, selfExpr, finalExpr, line);
+  deExpression paramList = deExpressionCreate(DE_EXPR_LIST, line);
+  deExpression callExpr = deBinaryExpressionCreate(DE_EXPR_CALL, dotExpr, paramList, line);
+  deStatementInsertExpression(callStatement, callExpr);
+  // Move the statement to the start of the block.
+  deBlockRemoveStatement(block, callStatement);
+  deBlockInsertStatement(block, callStatement);
+}
+
 // Call final method if it exists in class destructors.
-static void callFinalInDestructors(void) {
+void deCallFinalInDestructors(void) {
   deTclass tclass;
   deForeachRootTclass(deTheRoot, tclass) {
     if (deTclassHasFinalMethod(tclass)) {
       deFunction destructor = findTclassDestructor(tclass);
-      deBlock block = deFunctionGetSubBlock(destructor);
-      deLine line = deFunctionGetLine(destructor);
-      deStatement callStatement = deStatementCreate(block, DE_STATEMENT_CALL, line);
-
-      deExpression finalExpr = deIdentExpressionCreate(utSymCreate("final"), line);
-      deExpression selfExpr = deIdentExpressionCreate(utSymCreate("self"), line);
-      deExpression dotExpr = deBinaryExpressionCreate(DE_EXPR_DOT, selfExpr, finalExpr, line);
-      deExpression paramList = deExpressionCreate(DE_EXPR_LIST, line);
-      deExpression callExpr = deBinaryExpressionCreate(DE_EXPR_CALL, dotExpr, paramList, line);
-      deStatementInsertExpression(callStatement, callExpr);
-      // Move the statement to the start of the block.
-      deBlockRemoveStatement(block, callStatement);
-      deBlockInsertStatement(block, callStatement);
+      if (destructor != deFunctionNull) {
+        callFinalInDestructor(destructor);
+      }
     }
   } deEndRootTclass;
 }
@@ -265,7 +274,6 @@ static void callFinalInDestructors(void) {
 // root block needed to manage object memory.  We use structure-of-array memory
 // layout, so there is a global array per data member of the class.
 void deAddMemoryManagement(void) {
-  callFinalInDestructors();
   deClass theClass;
   deForeachRootClass(deTheRoot, theClass) {
     if (deClassBound(theClass)) {

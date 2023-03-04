@@ -41,13 +41,13 @@ relation DoublyLinked Graph Node cascade
 relation DoublyLinked Node:"From" Edge:"Out" cascade
 relation DoublyLinked Node:"To" Edge:"In" cascade
 
-graph = Graph()
-a = Node(graph, "A")
-b = Node(graph, "B")
-c = Node(graph, "C")
-d = Node(graph, "D")
-e = Node(graph, "E")
-f = Node(graph, "F")
+graphg = Graph()
+a = Node(graphg, "A")
+b = Node(graphg, "B")
+c = Node(graphg, "C")
+d = Node(graphg, "D")
+e = Node(graphg, "E")
+f = Node(graphg, "F")
 Edge(a, b)
 Edge(b, c)
 Edge(c, a)
@@ -63,7 +63,7 @@ reachedNodes = arrayof(typeof(a))
 printReachableNodes(a, reachedNodes)
 println
 clearVisitedFlags(reachedNodes)
-graph = null(graph)
+graphg = null(graphg)
 
 // Clear the visited flags on all the nodes we reached.
 func clearVisitedFlags(reachedNodes) {

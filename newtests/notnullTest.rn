@@ -12,9 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-class Foo(self) {
+class Foo(self, name: string) {
+  self.name = name
 }
 
-foo = Foo()
-foo.value = 123
-println foo.value
+foo = null(Foo)
+assert isnull(foo)
+foo = Foo("test")  // Nullable variables can hold non-null values.
+typeswitch foo {
+  case Foo {
+    println "Should not match Foo"
+  }
+  case Foo? {
+    typeswitch foo! {
+      case Foo {
+        println "Passed"
+      }
+      case Foo? {
+        println "Should not match Foo?"
+      }
+    }
+  }
+}

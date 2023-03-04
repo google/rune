@@ -275,7 +275,7 @@ static deDatatype bindStringBuiltinMethod(deFunction function,
     if (deDatatypeSecret(selfType) || deDatatypeSecret(paramType)) {
       deError(line, "Cannot search for substrings in secret strings");
     }
-    if (deDatatypeSecret(param2Type)) {
+    if (param2Type != deDatatypeNull && deDatatypeSecret(param2Type)) {
       deError(line, "Cannot use secret offset in find or rfind");
     }
     return deUintDatatypeCreate(64);
@@ -298,7 +298,7 @@ static deDatatype bindUintBuiltinMethod(deFunction function,
       deError(line, "Uint.toString() cannot convert secrets to strings.  Try Uint.toStringLE()");
     }
     deDatatype paramType = deDatatypeArrayGetiDatatype(parameterTypes, 1);
-    if (deDatatypeGetType(paramType) != DE_TYPE_UINT) {
+    if (paramType != deDatatypeNull && deDatatypeGetType(paramType) != DE_TYPE_UINT) {
       deError(line, "Int.toString(base) requires a Uint base parameter");
     }
     return deStringDatatypeCreate();
@@ -317,7 +317,7 @@ static deDatatype bindIntBuiltinMethod(deFunction function,
       deError(line, "Int.toString() cannot convert secrets to strings.  Try Uint.toStringLE()");
     }
     deDatatype paramType = deDatatypeArrayGetiDatatype(parameterTypes, 1);
-    if (deDatatypeGetType(paramType) != DE_TYPE_UINT) {
+    if (paramType != deDatatypeNull && deDatatypeGetType(paramType) != DE_TYPE_UINT) {
       deError(line, "Int.toString(base) requires a Uint base parameter");
     }
     return deStringDatatypeCreate();

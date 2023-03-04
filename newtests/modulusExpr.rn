@@ -1,4 +1,4 @@
-//  Copyright 2021 Google LLC.
+//  Copyright 2023 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,25 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-class Foo(self, name: string) {
-  self.name = name
-}
-
-foo = null(Foo)
-assert isnull(foo)
-typeswitch foo {
-  case Foo {
-    println "Should not match Foo"
-  }
-  case Foo? {
-    foo = Foo("test")  // Nullable variables can hold non-null values.
-    typeswitch foo! {
-      case Foo {
-        println "Passed"
-      }
-      case Foo? {
-        println "Should not match Foo?"
-      }
-    }
-  }
-}
+println 5 * 5 mod 10 + 3

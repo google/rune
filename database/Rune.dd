@@ -405,6 +405,7 @@ class Expression array
   String altString  // Don't destroy immutable strings.
   bool autocast  // Set on integer constants without a type suffix.
   bool instantiating
+  bool lhs  // True for expressions left of =
 
 // A hash bin of signatures.
 class SignatureBin create_only

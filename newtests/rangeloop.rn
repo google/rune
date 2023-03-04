@@ -12,19 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-for i in range(10) {
-  print i, " "
-}
-println
-for i in range(1, 11) {
-  print i, " "
-}
-println
-for j in range(5i32, -6i32, -2i32) {
-  print j, " "
-}
-println
-
 iterator range(first, second = false, third = false) {
   typeswitch second {
     case bool {
@@ -40,14 +27,29 @@ iterator range(first, second = false, third = false) {
           for i = first, i < second, i += <first>1 {
             yield i
           }
-	}
-	default {
+        }
+        default {
           // This is a three-parameter range, eg range(10i32, -1i32, -1i32)
           for i = first, third >= <third>0? i < second : i > second , i += third {
             yield i
           }
-	}
+        }
       }
     }
   }
+}
+
+unittest test {
+  for i in range(10) {
+    print i, " "
+  }
+  println
+  for i in range(1, 11) {
+    print i, " "
+  }
+  println
+  for j in range(5i32, -6i32, -2i32) {
+    print j, " "
+  }
+  println
 }

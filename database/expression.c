@@ -745,6 +745,7 @@ deExpression deCopyExpression(deExpression expression) {
     case DE_EXPR_RANDUINT:
     case DE_EXPR_UINTTYPE:
     case DE_EXPR_INTTYPE:
+    case DE_EXPR_FLOATTYPE:
       deExpressionSetWidth(newExpression, deExpressionGetWidth(expression));
       break;
     case DE_EXPR_FLOAT:

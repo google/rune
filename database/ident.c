@@ -97,7 +97,9 @@ deIdent deFunctionIdentCreate(deBlock block, deFunction function, utSym name) {
 }
 
 // Find the identifier in the scope block, or in the module block.  If not found
-// in the module block, look in the global scope.
+// in the module block, look in the global scope.  Only return a module
+// identifier if scopeBlock is the root block, which allows main to call module
+// functions.
 deIdent deFindIdent(deBlock scopeBlock, utSym name) {
   deIdent ident = deBlockFindIdent(scopeBlock, name);
   if (ident != deIdentNull) {
@@ -114,8 +116,9 @@ deIdent deFindIdent(deBlock scopeBlock, utSym name) {
     return ident;
   }
   // Some identifiers, like idents for built-in classes, are in the global scope.
-  ident = deBlockFindIdent(deRootGetBlock(deTheRoot), name);
-  if (ident != deIdentNull) {
+  deBlock rootBlock = deRootGetBlock(deTheRoot);
+  ident = deBlockFindIdent(rootBlock, name);
+  if (ident != deIdentNull && (!deIdentIsModuleOrPackage(ident) || scopeBlock == rootBlock)) {
     return ident;
   }
   return deIdentNull;

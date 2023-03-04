@@ -156,11 +156,10 @@ static deStatement flattenSwitchTypeStatements(deStatement firstStatement,
 
 // Queue statements from firstStatement to lastStatement for binding.
 static void queueStatements(deStatement firstStatement, deStatement lastStatement) {
-  utDo {
+  do {
     deQueueStatement(deCurrentSignature, firstStatement, true);
-  } utWhile (firstStatement != lastStatement) {
     firstStatement = deStatementGetNextBlockStatement(firstStatement);
-  } utRepeat;
+  } while (firstStatement != lastStatement);
 }
 
 // Inline the iterator.  The statement should already be bound.  Return the
@@ -218,7 +217,7 @@ deStatement deInlineIterator(deBlock scopeBlock, deStatement statement) {
   deMoveBlockStatementsAfterStatement(body, yieldStatement);
   deBlockDestroy(body);
   flattenSwitchTypeStatements(firstStatement, lastStatement);
-  if (deUseNewBinder) {
+  if (deUseNewBinder && firstStatement != deStatementNull) {
     queueStatements(firstStatement, lastStatement);
     deBindAllSignatures();
   }
@@ -230,14 +229,21 @@ deStatement deInlineIterator(deBlock scopeBlock, deStatement statement) {
   return deStatementGetNextBlockStatement(prevStatement);
 }
 
-// Inline iterators in the block.
+// Inline iterators in the block.  Return true if any iterators were inlined.
 static void inlineBlockIterators(deBlock scopeBlock, deBlock block) {
+  bool inlinedIterator;
   deStatement statement;
+  do {
+    inlinedIterator = false;
+    deSafeForeachBlockStatement(block, statement) {
+      if (deStatementGetType(statement) == DE_STATEMENT_FOREACH &&
+          deStatementInstantiated(statement)) {
+        deInlineIterator(scopeBlock, statement);
+        inlinedIterator = true;
+      }
+    } deEndSafeBlockStatement;
+  } while (inlinedIterator);
   deSafeForeachBlockStatement(block, statement) {
-    if (deStatementGetType(statement) == DE_STATEMENT_FOREACH &&
-        deStatementInstantiated(statement)) {
-      deInlineIterator(scopeBlock, statement);
-    }
     deBlock subBlock = deStatementGetSubBlock(statement);
     if (subBlock != deBlockNull) {
       inlineBlockIterators(scopeBlock, subBlock);

@@ -111,7 +111,6 @@ class Function(self, owningBlock: Block?, type: FuncType, sym: Sym,
   subBlock.canReturn = true
   self.insertSubBlock(subBlock)
   getRoot().appendFunction(self)
-  return function
 
   // Return the name of the function.
   func name(self) -> string {

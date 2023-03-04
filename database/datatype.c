@@ -271,7 +271,7 @@ static deDatatype addToHashTable(deDatatype datatype) {
 
 // Initialize common data types to speed things up a bit.
 void deDatatypeStart(void) {
-  deNoneDatatype = addToHashTable(datatypeCreate(DE_TYPE_NONE, 0, false));
+  deNoneDatatype = addToHashTable(datatypeCreate(DE_TYPE_NONE, 0, true));
   deBoolDatatype = addToHashTable(datatypeCreate(DE_TYPE_BOOL, 0, true));
   deUint8Datatype = addToHashTable(datatypeCreate(DE_TYPE_UINT, 8, true));
   deUint16Datatype = addToHashTable(datatypeCreate(DE_TYPE_UINT, 16, true));

@@ -1,0 +1,57 @@
+//  Copyright 2023 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+func atoi(var result: Uint | Int, val: string, base: u8 = 10u8) -> bool {
+  if base > 26 + 10 {
+    return false
+  }
+  negate = false
+  if val[0] == '-' {
+    negate = true
+  }
+  result = <result>0
+  for i in range(val.length()) {
+    if !negate || i != 0 {
+      c = val[i]
+      if c >= '0' && c <= '9' {
+        digit = c - '0'
+      } else if c >= 'A' && c <= 'Z' {
+        digit = c + 10u8 - 'A'
+      } else if c >= 'a' && c <= 'z' {
+        digit = c + 10u8 - 'a'
+      } else {
+        return false
+      }
+      if digit >= base {
+        return false;
+      }
+      result = result * <result>base + <result>digit
+    }
+  }
+  if negate {
+    result = -result
+  }
+  return true
+}
+
+unittest {
+  valU64 = 0u64
+  valI32 = 0i32
+  assert atoi(valU64, "1234")
+  println valU64
+  assert atoi(valI32, "-1234")
+  println valI32
+  assert atoi(valU64, "deadbeef", 16u8)
+  println "0x%x" % valU64
+}

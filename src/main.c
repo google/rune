@@ -120,14 +120,17 @@ int main(int argc, char** argv) {
     }
     deBlock rootBlock = deRootGetBlock(deTheRoot);
     deParseModule(fileName, rootBlock, true);
+    deCallFinalInDestructors();
     if (deUseNewBinder) {
       deBind2();
-      deInlineIterators();
     } else {
       deBind();
     }
     deVerifyRelationshipGraph();
     deAddMemoryManagement();
+    if (deUseNewBinder) {
+      deInlineIterators();
+    }
     if (deLLVMFileName == NULL) {
       deLLVMFileName = utAllocString(utReplaceSuffix(fileName, ".ll"));
     } else {

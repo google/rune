@@ -369,6 +369,7 @@ void deUniquifySignatureFunction(deSignature signature) {
   deFunction newFunc = oldFunc;
   if (!functionIsUnique(oldFunc)) {
     newFunc = deShallowCopyFunction(oldFunc, deBlockNull);
+    deCopyFunctionIdentsToBlock(deFunctionGetSubBlock(oldFunc), deFunctionGetSubBlock(newFunc));
   }
   deSignatureInsertUniquifiedFunction(signature, newFunc);
 }

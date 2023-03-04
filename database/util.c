@@ -40,12 +40,9 @@ void dePrintIndentStr(deString string) {
   }
 }
 
-void deError(deLine line, char* format, ...) {
-  char *buff;
-  va_list ap;
-  va_start(ap, format);
-  buff = utVsprintf(format, ap);
-  va_end(ap);
+// Report an error, but do not exit.
+static void reportError(deLine line, char *buf) {
+  printf("**********");
   if (line != deLineNull) {
     deFilepath filepath = deLineGetFilepath(line);
     utAssert(filepath != deFilepathNull);
@@ -54,7 +51,7 @@ void deError(deLine line, char* format, ...) {
       printf("%s:%u: ", path, deLineGetLineNum(line));
     }
   }
-  printf("Error: %s\n", buff);
+  printf("Error: %s\n", buf);
   if (line != deLineNull) {
     fputs(deLineGetText(line), stdout);
   }
@@ -63,6 +60,26 @@ void deError(deLine line, char* format, ...) {
     deDumpStatement(deCurrentStatement);
   }
   dePrintStack();
+}
+
+// Report an error, but do not exit.
+void deReportError(deLine line, char* format, ...) {
+  char *buf;
+  va_list ap;
+  va_start(ap, format);
+  buf = utVsprintf(format, ap);
+  va_end(ap);
+  reportError(line, buf);
+}
+
+// Report an error and exit.
+void deError(deLine line, char* format, ...) {
+  char *buf;
+  va_list ap;
+  va_start(ap, format);
+  buf = utVsprintf(format, ap);
+  va_end(ap);
+  reportError(line, buf);
   if (!deInvertReturnCode) {
     utExit("Exiting due to error...");
   }

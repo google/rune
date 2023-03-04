@@ -33,6 +33,7 @@ void deStart(char *fileName);
 void deStop(void);
 deValue deEvaluateExpression(deBlock scopeBlock, deExpression expression, deBigint modulus);
 void deAddMemoryManagement(void);
+void deCallFinalInDestructors(void);
 void deParseBuiltinFunctions(void);
 deBlock deParseModule(char *fileName, deBlock destPackageBlock, bool isMainModule);
 void deParseString(char *string, deBlock currentBlock);
@@ -69,9 +70,11 @@ void deQueueBlockStatements(deSignature signature, deBlock block,
 void deQueueStatement(deSignature signature, deStatement statement,
                       bool instantiating);
 void deQueueExpression(deBinding binding, deExpression expression,
-                       bool instantiating);
+                       bool instantiating, bool lhs);
 void deQueueEventBlockedBindings(deEvent event);
 void deVerifyPrintfParameters(deExpression expression);
+void dePostProcessPrintStatement(deStatement statement);
+void deCreateVariableConstraintBinding(deSignature signature, deVariable var);
 
 // Block methods.
 deBlock deBlockCreate(deFilepath filepath, deBlockType type, deLine line);
@@ -84,7 +87,7 @@ void dePrependBlockToBlock(deBlock sourceBlock, deBlock destBlock);
 void deCopyFunctionIdentsToBlock(deBlock sourceBlock, deBlock destBlock);
 deBlock deCopyBlock(deBlock block);
 deBlock deShallowCopyBlock(deBlock block);
-deBlock deSaveBlockSnapshot(deBlock block);
+void deBlockComputeReachability(deBlock block);
 void deRestoreBlockSnapshot(deBlock block, deBlock snapshot);
 void deCopyBlockStatementsAfterStatement(deBlock block, deStatement destStatement);
 void deMoveBlockStatementsAfterStatement(deBlock block, deStatement destStatement);
@@ -161,12 +164,15 @@ static inline bool deFunctionIsRpc(deFunction function) {
 }
 
 // Tclass and Class methods.
+void deClassStart(void);
+void deClassStop(void);
 deTclass deTclassCreate(deFunction constructor, uint32 refWidth, deLine line);
 void deDumpTclass(deTclass tclass);
 void deDumpTclassStr(deString string, deTclass tclass);
 deClass deClassCreate(deTclass tclass, deSignature signature);
 deClass deTclassGetDefaultClass(deTclass tclass);
 deTclass deCopyTclass(deTclass tclass, deFunction destConstructor);
+void deGenerateDefaultMethods(deClass theClass);
 deFunction deGenerateDefaultToStringMethod(deClass theClass);
 deFunction deGenerateDefaultShowMethod(deClass theClass);
 deFunction deClassFindMethod(deClass theClass, utSym methodSym);
@@ -485,6 +491,7 @@ char *deGetBlockPath(deBlock block, bool as_label);
 char *deGetSignaturePath(deSignature signature);
 char *deGetPathExpressionPath(deExpression pathExpression);
 void deError(deLine line, char *format, ...);
+void deReportError(deLine line, char *format, ...);
 void dePrintStack(void);
 // These use the deStringVal global string.
 void deAddString(char *string);
@@ -542,6 +549,7 @@ extern deStatement deCurrentStatement;
 extern deSignature deCurrentSignature;
 extern char *deCurrentFileName;
 extern bool deUseNewBinder;
+extern utSym deToStringSym, deShowSym;
 
 #ifdef __cplusplus
 }  // extern "C"
