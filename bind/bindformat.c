@@ -251,6 +251,9 @@ static void addToStringCall(deBinding binding, deExpression selfExpr) {
 void dePostProcessPrintStatement(deStatement statement) {
   deExpression param;
   deSafeForeachExpressionExpression(deStatementGetExpression(statement), param) {
+    if (deDatatypeSecret(deExpressionGetDatatype(param))) {
+      deError(deExpressionGetLine(param), "Printing a secret is not allowed");
+    }
     checkExpressionIsPrintable(param);
     if (deDatatypeGetType(deExpressionGetDatatype(param)) == DE_TYPE_CLASS) {
       addToStringCall(deStatementGetBinding(statement), param);

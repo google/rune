@@ -25,7 +25,7 @@ static void generateConstructorString(deClass theClass) {
   deSprintToString(
       "appendcode {\n"
       "  func %1$s_allocate() {\n"
-      "    if %1$s_firstFree != ~0u%3$u {\n"
+      "    if %1$s_firstFree != 0u%3$u {\n"
       "      object = <%2$s>%1$s_firstFree\n"
       "      %1$s_firstFree = %1$s_nextFree[<u%3$u>object]\n"
       "    } else {\n"
@@ -90,12 +90,12 @@ static void generateRootBlockArrays(deClass theClass) {
   deSprintToString(
       "prependcode {\n"
       "  %1$s_allocated = 1u%2$u\n"
-      "  %1$s_used = 0u%2$u\n"
-      "  %1$s_firstFree = ~0u%2$u\n",
+      "  %1$s_used = 1u%2$u\n"
+      "  %1$s_firstFree = 0u%2$u\n",
       path, deClassGetRefWidth(theClass));
   deVariable variable;
   deForeachBlockVariable(block, variable) {
-    utAssert(deVariableInstantiated(variable) && !deVariableIsType(variable));
+    utAssert(!deVariableIsType(variable));
     char *defaultValue = deDatatypeGetDefaultValueString(deVariableGetDatatype(variable));
     deSprintToString("  %1$s_%2$s = [%3$s]\n",
         path, deVariableGetName(variable), defaultValue);
@@ -108,13 +108,9 @@ static void generateRootBlockArrays(deClass theClass) {
 static void bindNewStatements(deBlock scopeBlock, deStatement originalFirstStatement) {
   deStatement statement = deBlockGetFirstStatement(scopeBlock);
   while (statement != originalFirstStatement) {
-    if (deUseNewBinder) {
-      deFunction function = deBlockGetOwningFunction(scopeBlock);
-      deSignature signature = deFunctionGetUniquifiedSignature(function);
-      deQueueStatement(signature, statement, true);
-    } else {
-      deBindNewStatement(scopeBlock, statement);
-    }
+    deFunction function = deBlockGetOwningFunction(scopeBlock);
+    deSignature signature = deFunctionGetUniquifiedSignature(function);
+    deQueueStatement(signature, statement, true);
     statement = deStatementGetNextBlockStatement(statement);
   }
 }
@@ -136,13 +132,8 @@ static void setGlobalArrayVariables(deClass theClass) {
 
 // Bind the new signature.
 static void bindNewSignature(deSignature signature) {
-  if (deUseNewBinder) {
-    deQueueSignature(signature);
-    deBindAllSignatures();
-  } else {
-    deBlock block = deSignatureGetBlock(signature);
-    deBindBlock(block, signature, false);
-  }
+  deQueueSignature(signature);
+  deBindAllSignatures();
 }
 
 // Add statements to the constructor and to the root block for managing memory.
@@ -184,19 +175,19 @@ static void freeSelfInDestructor(deClass theClass) {
 }
 
 // Generate code for referencing and defreferencing the class.
-static void generateRefAndDerefString(deClass theClass) {
+static void generateRefAndUnrefString(deClass theClass) {
   deStringPos = 0;
   char* theClassPath = deGetBlockPath(deClassGetSubBlock(theClass), true);
   deSprintToString(
       "appendcode {\n"
       "  func %1$s_ref(object) {\n"
-      "    if !isnull(object) && %1$s_nextFree[<u%2$u>object] != ~0u%2$u {\n"
+      "    if !isnull(object) && %1$s_nextFree[<u%2$u>object] != 0u%2$u {\n"
       "      %1$s_nextFree[<u%2$u>object] += 1u%2$u\n"
       "    }\n"
       "  }\n"
       "\n"
       "  func %1$s_unref(object) {\n"
-      "    if !isnull(object) && %1$s_nextFree[<u%2$u>object] != ~0u%2$u {\n"
+      "    if !isnull(object) && %1$s_nextFree[<u%2$u>object] != 0u%2$u {\n"
       "      %1$s_nextFree[<u%2$u>object] !-= 1u%2$u\n"
       "      if %1$s_nextFree[<u%2$u>object] == 0u%2$u {\n"
       "        object.destroy()\n"
@@ -208,9 +199,9 @@ static void generateRefAndDerefString(deClass theClass) {
 }
 
 // Add ref() and deref() methods to the class.  Return the unref function.
-static void addRefAndDeref(deClass theClass) {
+static void addRefAndUnref(deClass theClass) {
   deBlock rootBlock = deRootGetBlock(deTheRoot);
-  generateRefAndDerefString(theClass);
+  generateRefAndUnrefString(theClass);
   deGenerating = true;
   deParseString(deStringVal, rootBlock);
   deGenerating = false;
@@ -280,7 +271,7 @@ void deAddMemoryManagement(void) {
       allocateSelfInConstructor(theClass);
       freeSelfInDestructor(theClass);
       if (deTclassRefCounted(deClassGetTclass(theClass))) {
-        addRefAndDeref(theClass);
+        addRefAndUnref(theClass);
       }
     }
   } deEndRootClass;

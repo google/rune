@@ -406,6 +406,7 @@ class Expression array
   bool autocast  // Set on integer constants without a type suffix.
   bool instantiating
   bool lhs  // True for expressions left of =
+  uint32 signaturePos  // Set for parameters in a call expression.
 
 // A hash bin of signatures.
 class SignatureBin create_only
@@ -483,7 +484,7 @@ relationship Variable:Initializer Binding:Initializer cascade
 relationship Variable:Type Binding:Type cascade
 relationship Function:Type Binding:Type cascade
 // This is the queue of expressions waiting to be bound on the binding.
-relationship Binding Expression doubly_linked cascade
+relationship Binding Expression doubly_linked
 relationship Root Tclass doubly_linked mandatory
 relationship Signature:Call Signature:Call doubly_linked
 relationship Statement:Call Signature:Call doubly_linked
@@ -496,7 +497,7 @@ relationship Root Signature doubly_linked
 relationship Root Class doubly_linked
 relationship Class Signature doubly_linked cascade
 relationship Function Signature doubly_linked cascade
-relationship Signature:Uniquified Function:Uniquified cascade
+relationship Signature:Uniquified Function:Uniquified
 relationship Function:Default Signature:Default
 relationship Function Tclass cascade
 relationship Class:Lazy Signature:Lazy doubly_linked cascade

@@ -27,7 +27,7 @@ generator TailLinked(A: Class, B: Class, cascadeDelete:bool = false,
           throw "insert$labelB$B: Object is already in a relation"
         }
       }
-      first = <child>self.first$labelB$B
+      first = self.first$labelB$B
       if isnull(first) {
         self.last$labelB$B = child
       } else {
@@ -47,7 +47,7 @@ generator TailLinked(A: Class, B: Class, cascadeDelete:bool = false,
       if isnull(prevChild) {
         self.insert$labelB$B(child)
       } else {
-        nextChild = <child>prevChild.next$A$labelB$B
+        nextChild = prevChild.next$A$labelB$B
         if isnull(nextChild) {
           self.append$labelB$B(child)
         } else {
@@ -65,7 +65,7 @@ generator TailLinked(A: Class, B: Class, cascadeDelete:bool = false,
           throw "append$labelB$B: Object is already in a relation"
         }
       }
-      last = <child>self.last$labelB$B
+      last = self.last$labelB$B
       if isnull(last) {
         self.first$labelB$B = child
       } else {

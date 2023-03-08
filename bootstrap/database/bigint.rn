@@ -361,7 +361,7 @@ unittest testUnaryOperators {
   assert -Bigint(123i256) == Bigint(-123i256)
   println -Bigint(12345i32)
   // Test truncating negation's one exceptional input.
-  assert !-Bigint(-128i8) == Bigint(-128i8)
+  assert !-Bigint(!-128i8) == Bigint(!-128i8)
   assert !-Bigint(-127i8) == Bigint(127i8)
   println (~Bigint(0x55aaau20)).toStringInBase(16u32)
   assert ~Bigint(0x55aaau20) == Bigint(0xaa555u20);

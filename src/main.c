@@ -49,8 +49,7 @@ static void usage(void) {
          "    -t        - Execute unit tests for all modules.\n"
          "    -U        - Unsafe mode.  Don't generate bounds checking, overflow\n"
          "                detection, and destroyed object access detection.\n"
-         "    -x        - Invert the return code: 0 if we fail, and 1 if we pass.\n"
-         "    -X        - Use the new event driven binder.\n");
+         "    -x        - Invert the return code: 0 if we fail, and 1 if we pass.\n");
   exit(1);
 }
 
@@ -66,7 +65,6 @@ int main(int argc, char** argv) {
   bool noClang = false;
   bool optimized = false;
   deLLVMFileName = NULL;
-  deUseNewBinder = false;
   bool parseBuiltinFunctions = true;
   uint32 xArg = 1;
   while (xArg < argc && argv[xArg][0] == '-') {
@@ -102,8 +100,6 @@ int main(int argc, char** argv) {
       deClangPath = argv[xArg];
     } else if (!strcmp(argv[xArg], "-x")) {
       deInvertReturnCode = true;
-    } else if (!strcmp(argv[xArg], "-X")) {
-      deUseNewBinder = true;
     }  else {
       usage();
     }
@@ -121,16 +117,13 @@ int main(int argc, char** argv) {
     deBlock rootBlock = deRootGetBlock(deTheRoot);
     deParseModule(fileName, rootBlock, true);
     deCallFinalInDestructors();
-    if (deUseNewBinder) {
-      deBind2();
-    } else {
-      deBind();
-    }
+    deBind2();
     deVerifyRelationshipGraph();
     deAddMemoryManagement();
-    if (deUseNewBinder) {
-      deInlineIterators();
-    }
+    deInlineIterators();
+    // We generate new code in memory management and such, so check binding
+    // succeeded.
+    deReportEvents();
     if (deLLVMFileName == NULL) {
       deLLVMFileName = utAllocString(utReplaceSuffix(fileName, ".ll"));
     } else {

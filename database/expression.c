@@ -604,21 +604,6 @@ uint32 deExpressionCountExpressions(deExpression expression) {
   return numChildren;
 }
 
-// Determine if the expression type makes a type.
-static bool exressionTypeMakesType(deExpressionType type) {
-  switch (type) {
-    case DE_EXPR_TYPEOF:
-    case DE_EXPR_UINTTYPE:
-    case DE_EXPR_INTTYPE:
-    case DE_EXPR_STRINGTYPE:
-    case DE_EXPR_BOOLTYPE:
-      return true;
-    default:
-      return false;
-  }
-  return false;  // Dummy return.
-}
-
 // Create a new expression object.
 deExpression deExpressionCreate(deExpressionType type, deLine line) {
   deExpression expr = deExpressionAlloc();
@@ -837,4 +822,27 @@ void deSetExpressionToValue(deExpression expression, deValue value) {
     deStringDestroy(deExpressionGetString(expression));
   }
   setExpressionToValue(expression, value);
+}
+
+// Create an array of datatypes for the expression's children.
+deDatatypeArray deListDatatypes(deExpression expressionList) {
+  deDatatypeArray types = deDatatypeArrayAlloc();
+  deExpression child;
+  deForeachExpressionExpression(expressionList, child) {
+    deDatatypeArrayAppendDatatype(types, deExpressionGetDatatype(child));
+  } deEndExpressionExpression;
+  return types;
+}
+
+// Find the binding associated with the expression, which may mean going up the
+// tree to find it.
+deBinding deFindExpressionBinding(deExpression expression) {
+  while (expression != deExpressionNull) {
+    deBinding binding = deExpressionGetBinding(expression);
+    if (binding != deBindingNull) {
+      return binding;
+    }
+    expression = deExpressionGetExpression(expression);
+  }
+  return deBindingNull;
 }

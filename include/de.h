@@ -52,15 +52,9 @@ deString deDecodeResponse(char *protoFileName, char *method, uint8 *publicData,
     uint32 publicLen, uint8 *secretData, uint32 secretLen);
 void deBindRPCs(void);
 
-// Binding functions.
-void deBindStart(void);
-void deBind(void);
-void deBindNewStatement(deBlock scopeBlock, deStatement statement);
-void deBindBlock(deBlock block, deSignature signature, bool inlineIterators);
-void deBindExpression(deBlock scopeBlock, deExpression expression);
-
 // New event-driven binding functions.
 void deBind2(void);
+void deReportEvents(void);
 void deInlineIterators(void);
 void deBindAllSignatures(void);
 void deBindStatement2(deBinding binding);
@@ -96,6 +90,7 @@ void deResolveBlockVariableNameConfligts(deBlock newBlock, deBlock oldBlock);
 void deRestoreBlockVariableNames(deBlock block);
 utSym deBlockCreateUniqueName(deBlock scopeBlock, utSym name);
 bool deBlockIsUserGenerated(deBlock scopeBlock);
+deBlock deFindBlockModule(deBlock block);
 static inline bool deBlockIsConstructor(deBlock block) {
   return deBlockGetType(block) == DE_BLOCK_FUNCTION &&
       deFunctionGetType(deBlockGetOwningFunction(block)) == DE_FUNC_CONSTRUCTOR;
@@ -252,6 +247,7 @@ utSym deGetOperatorSym(deExpressionType opType, bool unary);
 deExpression deFindNamedParameter(deExpression firstParameter, utSym name);
 deString deExpressionToString(deExpression expression);
 void deSetExpressionToValue(deExpression expression, deValue value);
+deBinding deFindExpressionBinding(deExpression expression);
 static inline deExpression deExpresssionIndexExpression(deExpression expression, uint32 index) {
   deExpression subExpression;
   uint32 i = 0;
@@ -385,27 +381,30 @@ static inline bool deDatatypeIsNumber(deDatatype datatype) {
 deSignature deLookupSignature(deFunction function, deDatatypeArray parameterTypes);
 deSignature deSignatureCreate(deFunction function,
     deDatatypeArray parameterTypes, deLine line);
-void deUniquifySignatureFunction(deSignature signature);
 deSignature deResolveConstructorSignature(deSignature signature);
 bool deSignatureIsConstructor(deSignature signature);
 bool deSignatureIsMethod(deSignature signature);
 deSignature deCreateFullySpecifiedSignature(deFunction function);
 deDatatypeArray deFindFullySpecifiedParameters(deBlock block);
+deDatatypeArray deSignatureGetParameterTypes(deSignature signature);
 void deDumpSignature(deSignature signature);
 void deDumpSignatureStr(deString string, deSignature signature);
 void deDumpParamspec(deParamspec paramspec);
 void deDumpParamspecStr(deString string, deParamspec paramspec);
-static inline deBlock deSignatureGetBlock(deSignature signature) {
-  return deFunctionGetSubBlock(deSignatureGetFunction(signature));
-}
-static inline deBlock deSignatureGetUniquifiedBlock(deSignature signature) {
-  return deFunctionGetSubBlock(deSignatureGetUniquifiedFunction(signature));
+deBlock deSignatureGetBlock(deSignature signature);
+static inline deFunction deGetSignatureFunction(deSignature signature) {
+  deFunction function = deSignatureGetUniquifiedFunction(signature);
+  return function != deFunctionNull ? function
+                                    : deSignatureGetFunction(signature);
 }
 static inline deDatatype deSignatureGetiType(deSignature signature, uint32 xParam) {
   return deParamspecGetDatatype(deSignatureGetiParamspec(signature, xParam));
 }
 static inline bool deSignatureParamInstantiated(deSignature signature, uint32 xParam) {
   return deParamspecInstantiated(deSignatureGetiParamspec(signature, xParam));
+}
+static inline bool deSignatureIsStruct(deSignature signature) {
+  return deFunctionGetType(deSignatureGetFunction(signature)) == DE_FUNC_STRUCT;
 }
 
 // Value methods.
@@ -475,14 +474,13 @@ deBinding deVariableInitializerBindingCreate(deSignature signature,
                                              deVariable variable,
                                              bool instantiating);
 deBinding deVariableConstraintBindingCreate(deSignature signature,
-                                            deVariable variable,
-                                            bool instantiating);
+                                            deVariable variable);
 deBinding deFunctionConstraintBindingCreate(deSignature signature,
-                                            deFunction function,
-                                            bool instantiating);
+                                            deFunction function);
 deEvent deSignatureEventCreate(deSignature signature);
 deEvent deUndefinedIdentEventCreate(deIdent ident);
 deEvent deVariableEventCreate(deVariable variable);
+deBlock deGetBindingBlock(deBinding binding);
 
 // Utilities.
 void deUtilStart(void);
@@ -548,7 +546,6 @@ extern bool deInIterator;
 extern deStatement deCurrentStatement;
 extern deSignature deCurrentSignature;
 extern char *deCurrentFileName;
-extern bool deUseNewBinder;
 extern utSym deToStringSym, deShowSym;
 
 #ifdef __cplusplus

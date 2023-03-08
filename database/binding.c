@@ -20,7 +20,9 @@ static deBinding bindingCreate(deSignature signature, deBindingType type, bool i
   deBinding binding = deBindingAlloc();
   deBindingSetType(binding, type);
   deBindingSetInstantiated(binding, instantiating);
-  deSignatureAppendBinding(signature, binding);
+  if (signature != deSignatureNull) {
+    deSignatureAppendBinding(signature, binding);
+  }
   deRootAppendBinding(deTheRoot, binding);
   return binding;
 }
@@ -42,16 +44,16 @@ deBinding deVariableInitializerBindingCreate(deSignature signature,
 
 // Create a Binding object to help bind a variable type constraint.
 deBinding deVariableConstraintBindingCreate(deSignature signature,
-    deVariable variable, bool instantiating) {
-  deBinding binding = bindingCreate(signature, DE_BIND_VAR_CONSTRAINT, instantiating);
+    deVariable variable) {
+  deBinding binding = bindingCreate(signature, DE_BIND_VAR_CONSTRAINT, false);
   deVariableInsertTypeBinding(variable, binding);
   return binding;
 }
 
 // Create a Binding object to help bind a function type constraint.
 deBinding deFunctionConstraintBindingCreate(deSignature signature,
-    deFunction function, bool instantiating) {
-  deBinding binding = bindingCreate(signature, DE_BIND_FUNC_CONSTRAINT, instantiating);
+    deFunction function) {
+  deBinding binding = bindingCreate(signature, DE_BIND_FUNC_CONSTRAINT, false);
   deFunctionInsertTypeBinding(function, binding);
   return binding;
 }
@@ -96,4 +98,23 @@ deEvent deUndefinedIdentEventCreate(deIdent ident) {
   event = createEvent(DE_EVENT_UNDEFINED);
   deIdentInsertUndefinedEvent(ident, event);
   return event;
+}
+
+// Return the scope block containing the binding.
+deBlock deGetBindingBlock(deBinding binding) {
+  deSignature signature = deBindingGetSignature(binding);
+  if (signature != deSignatureNull) {
+    return deSignatureGetBlock(signature);
+  }
+  switch (deBindingGetType(binding)) {
+    case DE_BIND_STATEMENT:
+      return deBlockGetScopeBlock(deStatementGetBlock(deBindingGetStatement(binding)));
+    case DE_BIND_DEFAULT_VALUE:
+      return deVariableGetBlock(deBindingGetInitializerVariable(binding));
+    case DE_BIND_VAR_CONSTRAINT:
+      return deVariableGetBlock(deBindingGetTypeVariable(binding));
+    case DE_BIND_FUNC_CONSTRAINT:
+      return deFunctionGetSubBlock(deBindingGetTypeFunction(binding));
+  }
+  return deBlockNull;  // Dummy return
 }

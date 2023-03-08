@@ -186,18 +186,6 @@ deBlock deCopyBlock(deBlock block) {
   return newBlock;
 }
 
-// Empty the block of contents, but leave sub-blocks in place.
-static void shallowEmptyBlock(deBlock block) {
-  deStatement statement;
-  deSafeForeachBlockStatement(block, statement) {
-    deStatementDestroy(statement);
-  } deEndSafeBlockStatement;
-  deVariable variable;
-  deSafeForeachBlockVariable(block, variable) {
-    deVariableDestroy(variable);
-  } deEndSafeBlockVariable;
-}
-
 // Copy identifiers for sub-tclasses, iterators, and functions from
 // |sourceBlock| to |destBlock|.
 void deCopyFunctionIdentsToBlock(deBlock sourceBlock, deBlock destBlock) {
@@ -395,4 +383,18 @@ bool deBlockIsUserGenerated(deBlock scopeBlock) {
   deFunction scopeFn = deBlockGetOwningFunction(scopeBlock);
   deBlock rootScope = deRootGetBlock(deFunctionGetRoot(scopeFn));
   return isUserGenerated(scopeBlock, rootScope);
+}
+
+// Find the owning module of a block.
+deBlock deFindBlockModule(deBlock block) {
+  while (block != deBlockNull) {
+    if (deBlockGetType(block) == DE_BLOCK_FUNCTION) {
+      deFunctionType type = deFunctionGetType(deBlockGetOwningFunction(block));
+      if (type == DE_FUNC_MODULE || type == DE_FUNC_PACKAGE) {
+        return block;
+      }
+    }
+    block = deBlockGetOwningBlock(block);
+  }
+  return deBlockNull;
 }

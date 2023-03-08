@@ -29,4 +29,4 @@ func incrementAndNegate(a, returnType) {
 }
 
 returnType = typeof(incrementAndNegate(i32, i64))
-println incrementAndNegate(123i32, returnType)
+println incrementAndNegate(123i32, typeof(returnType))

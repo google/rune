@@ -19,7 +19,7 @@ BigintElement = u32
 
 // The runtime uses rnArray datatypes for bigints.  This declaration must match
 // what the runtime does.
-BigintArray = [BigintElement]
+BigintArray = [typeof(BigintElement)]
 
 // This must match the definition in runtime/rune.h
 enum ComparisonType {

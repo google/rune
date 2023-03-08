@@ -177,23 +177,13 @@ deStatement deInlineIterator(deBlock scopeBlock, deStatement statement) {
   deSignature signature = deExpressionGetSignature(call);
   utAssert(signature != deSignatureNull);
   deFunction iterator;
-  if (deUseNewBinder) {
-    iterator = deSignatureGetUniquifiedFunction(signature);
-  } else {
-    iterator = deSignatureGetFunction(signature);
-  }
+  iterator = deSignatureGetUniquifiedFunction(signature);
   if (deFunctionGetType(iterator) != DE_FUNC_ITERATOR) {
     deError(line, "Expecting call to iterator here");
   }
   deBlock block = deStatementGetBlock(statement);
   deStatement prevStatement = deStatementGetPrevBlockStatement(statement);
   deBlock iteratorBlock = deFunctionGetSubBlock(iterator);
-  if (!deUseNewBinder) {
-    // This is required so we can find the instantiated yield statement when
-    // there are switch statements on types.  See builtin/range.rn for an
-    // example.
-    deBindBlock(iteratorBlock, signature, false);
-  }
   deExpression iteratorAccess = deExpressionGetFirstExpression(call);
   deExpression parameters = deExpressionGetNextExpression(iteratorAccess);
   deStatement lastStatement = deStatementGetNextBlockStatement(statement);
@@ -217,7 +207,7 @@ deStatement deInlineIterator(deBlock scopeBlock, deStatement statement) {
   deMoveBlockStatementsAfterStatement(body, yieldStatement);
   deBlockDestroy(body);
   flattenSwitchTypeStatements(firstStatement, lastStatement);
-  if (deUseNewBinder && firstStatement != deStatementNull) {
+  if (firstStatement != deStatementNull) {
     queueStatements(firstStatement, lastStatement);
     deBindAllSignatures();
   }
@@ -256,7 +246,7 @@ void deInlineIterators(void) {
   deSignature signature;
   deForeachRootSignature(deTheRoot, signature) {
     if (deSignatureInstantiated(signature)) {
-      deBlock block = deSignatureGetUniquifiedBlock(signature);
+      deBlock block = deSignatureGetBlock(signature);
       // TODO: Pass signature as an  argument when we removed the old binder.
       deCurrentSignature = signature;
       inlineBlockIterators(block, block);

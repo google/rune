@@ -17,12 +17,22 @@
 #include <ctype.h>
 #include <stdlib.h>
 
+// Type variables may never be directly instantiated.  As a post-process to type
+// binding of a scope-level block, all variables need to be checked.  If they
+// are assigned to a type expression, either as a parameter in a function call,
+// or in a variable assignment within the block, and instantiated, then they
+// cannot be type variables.  Most expressions instantiate their sub-expressions,
+// so use this global to indicate that the current expression is instantiating.
+// For expressions such as type-cast, before recursing into the type, clear this
+// flag, and restore it when done binding it.
+bool deInstantiating;
+// The current statement being bound.
+deStatement deCurrentStatement;
 char* deStringVal;
 uint32 deStringAllocated;
 uint32 deStringPos;
 bool deGenerating;
 bool deInIterator;
-bool deUseNewBinder;
 deSignature deCurrentSignature;
 
 // Print indents by 2 spaces to the current level of dump-indent.

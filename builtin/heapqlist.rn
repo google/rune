@@ -128,6 +128,7 @@ generator HeapqList(A: Class, B: Class, cascadeDelete:bool = false,
       child.$labelA$A_Index = pos
       child.$labelA$A = self
       self._heapqUp$labelB$B(pos)
+      ref child
     }
 
     func remove$labelB$B(self, child: B) {

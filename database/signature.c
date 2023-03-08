@@ -68,6 +68,15 @@ void deDumpSignature(deSignature signature) {
   deStringDestroy(string);
 }
 
+// Get the sub-block of the signature's uniquified function.
+deBlock deSignatureGetBlock(deSignature signature) {
+  deFunction function =  deSignatureGetUniquifiedFunction(signature);
+  if (function != deFunctionNull) {
+    return deFunctionGetSubBlock(function);
+  }
+  return deFunctionGetSubBlock(deSignatureGetFunction(signature));
+}
+
 // Compute a 32-bit hash of the signature.
 static uint32 hashSignature(deFunction function, deDatatypeArray parameterTypes) {
   uint32 hash = deFunction2Index(function);
@@ -152,6 +161,39 @@ static void assignParamspecVariables(deSignature signature) {
   utAssert(xParam == deSignatureGetUsedParamspec(signature));
 }
 
+// Determine if a functionn is already unique, such as a module or package.
+static bool functionIsUnique(deFunction function) {
+  switch (deFunctionGetType(function)) {
+    case DE_FUNC_PLAIN:
+    case DE_FUNC_OPERATOR:
+    case DE_FUNC_CONSTRUCTOR:
+    case DE_FUNC_ITERATOR:
+    case DE_FUNC_STRUCT:
+    case DE_FUNC_DESTRUCTOR:
+    case DE_FUNC_FINAL:
+      return false;
+    case DE_FUNC_PACKAGE:
+    case DE_FUNC_MODULE:
+    case DE_FUNC_ENUM:
+    case DE_FUNC_GENERATOR:
+    case DE_FUNC_UNITTEST:
+      break;
+  }
+  return true;
+}
+
+// Make a copy of the function which is owned by this signature, except for
+// functions that are always unique, such as packages and modules.
+void deUniquifySignatureFunction(deSignature signature) {
+  deFunction oldFunc = deSignatureGetFunction(signature);
+  deFunction newFunc = oldFunc;
+  if (!functionIsUnique(oldFunc)) {
+    newFunc = deShallowCopyFunction(oldFunc, deBlockNull);
+    deCopyFunctionIdentsToBlock(deFunctionGetSubBlock(oldFunc), deFunctionGetSubBlock(newFunc));
+    deSignatureInsertUniquifiedFunction(signature, newFunc);
+  }
+}
+
 // Create either a class or function signature.
 deSignature deSignatureCreate(deFunction function,
     deDatatypeArray parameterTypes, deLine line) {
@@ -176,9 +218,7 @@ deSignature deSignatureCreate(deFunction function,
     deStatementAppendCallSignature(deCurrentStatement, signature);
   }
   deRootAppendSignature(deTheRoot, signature);
-  if (deUseNewBinder) {
-    deUniquifySignatureFunction(signature);
-  }
+  deUniquifySignatureFunction(signature);
   return signature;
 }
 
@@ -264,7 +304,6 @@ deSignature deResolveConstructorSignature(deSignature signature) {
 // Bind a type expression and return its concrete type.  If it does not fully
 // specify a type, report an error.
 static deDatatype findTypeExprDatatype(deBlock scopeBlock, deExpression typeExpr) {
-  deBindExpression(scopeBlock, typeExpr);
   deDatatype datatype = deExpressionGetDatatype(typeExpr);
   deLine line = deExpressionGetLine(typeExpr);
   if (datatype == deDatatypeNull) {
@@ -289,11 +328,42 @@ static deDatatype findConcreteDatatype(deDatatype datatype, deLine line) {
     return datatype;
 }
 
+// Bind parameters to the function owning this block.  This is only used in
+// binding exported RPCs or functions that may never be called within the Rune
+// shared library being compiled.  All parameters must have concrete type
+// constraints, or alternatively have default values.
+static void bindParameters(deBlock block) {
+  deFunction function = deBlockGetOwningFunction(block);
+  deExpression funcType = deFunctionGetTypeExpression(function);
+  deBinding binding;
+  if (funcType != deExpressionNull) {
+    binding = deFunctionConstraintBindingCreate(deSignatureNull, function);
+    deQueueExpression(binding, funcType, false, false);
+  }
+  deVariable var;
+  deForeachBlockVariable(block, var) {
+    if (deVariableGetType(var) != DE_VAR_PARAMETER) {
+      return;
+    }
+    deExpression initializer = deVariableGetInitializerExpression(var);
+    deExpression typeExpr = deVariableGetTypeExpression(var);
+    if (initializer != deExpressionNull && !deFunctionExtern(function)) {
+      binding = deVariableInitializerBindingCreate(deSignatureNull, var, false);
+      deQueueExpression(binding, initializer, false, false);
+    } else if (typeExpr != deExpressionNull) {
+      binding = deVariableConstraintBindingCreate(deSignatureNull, var);
+      deQueueExpression(binding, typeExpr, false, false);
+    }
+  } deEndBlockVariable;
+  deBindAllSignatures();
+}
+
 // Return fully specified parameter types, which must be concrete type
 // constraints.  The caller must free the returned datatype array.
 deDatatypeArray deFindFullySpecifiedParameters(deBlock block) {
   deFunction function = deBlockGetOwningFunction(block);
   deDatatypeArray datatypes = deDatatypeArrayAlloc();
+  bindParameters(block);
   deVariable var;
   deForeachBlockVariable(block, var) {
     if (deVariableGetType(var) != DE_VAR_PARAMETER) {
@@ -303,8 +373,6 @@ deDatatypeArray deFindFullySpecifiedParameters(deBlock block) {
     deExpression initializer = deVariableGetInitializerExpression(var);
     deExpression typeExpr = deVariableGetTypeExpression(var);
     if (initializer != deExpressionNull && !deFunctionExtern(function)) {
-      // External functions must have concrete type constraints.
-      deBindExpression(block, initializer);
       datatype = deExpressionGetDatatype(initializer);
     } else if (typeExpr != deExpressionNull) {
       datatype = findTypeExprDatatype(block, typeExpr);
@@ -341,35 +409,12 @@ deSignature deCreateFullySpecifiedSignature(deFunction function) {
   return signature;
 }
 
-// Determine if a functionn is already unique, such as a module or package.
-static bool functionIsUnique(deFunction function) {
-  switch (deFunctionGetType(function)) {
-    case DE_FUNC_PLAIN:
-    case DE_FUNC_OPERATOR:
-    case DE_FUNC_CONSTRUCTOR:
-    case DE_FUNC_ITERATOR:
-    case DE_FUNC_STRUCT:
-    case DE_FUNC_DESTRUCTOR:
-    case DE_FUNC_FINAL:
-      return false;
-    case DE_FUNC_PACKAGE:
-    case DE_FUNC_MODULE:
-    case DE_FUNC_ENUM:
-    case DE_FUNC_GENERATOR:
-    case DE_FUNC_UNITTEST:
-      break;
-  }
-  return true;
-}
-
-// Make a copy of the function which is owned by this signature, except for
-// functions that are always unique, such as packages and modules.
-void deUniquifySignatureFunction(deSignature signature) {
-  deFunction oldFunc = deSignatureGetFunction(signature);
-  deFunction newFunc = oldFunc;
-  if (!functionIsUnique(oldFunc)) {
-    newFunc = deShallowCopyFunction(oldFunc, deBlockNull);
-    deCopyFunctionIdentsToBlock(deFunctionGetSubBlock(oldFunc), deFunctionGetSubBlock(newFunc));
-  }
-  deSignatureInsertUniquifiedFunction(signature, newFunc);
+// Return an array of the signature's parameter datatypes.
+deDatatypeArray deSignatureGetParameterTypes(deSignature signature) {
+  deDatatypeArray paramTypes = deDatatypeArrayAlloc();
+  deParamspec paramspec;
+  deForeachSignatureParamspec(signature, paramspec) {
+    deDatatypeArrayAppendDatatype(paramTypes, deParamspecGetDatatype(paramspec));
+  } deEndSignatureParamspec;
+  return paramTypes;
 }

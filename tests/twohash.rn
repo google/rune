@@ -46,19 +46,21 @@ relation Hashed Graph Edge cascade
 relation Hashed Node:"from" Edge:"out" cascade
 relation Hashed Node:"to" Edge:"in" cascade
 
-graph = Graph()
-n1 = Node(graph, 1)
-n2 = Node(graph, 2)
-n3 = Node(graph, 3)
-e1 = Edge(n1, n2)
-e2 = Edge(n2, n3)
-e3 = Edge(n2, n1)
-graph.dump()
-// Test that we can find the edge from its two node ids.
-assert graph.findEdge(hashValues(2, 3)) == e2
-// Test the safe hashed iterator, where the child can be destroyed in the loop.
-for edge in n2.safeOutEdges() {
-  edge.destroy()
+unittest testGraph {
+  graph = Graph()
+  n1 = Node(graph, 1)
+  n2 = Node(graph, 2)
+  n3 = Node(graph, 3)
+  e1 = Edge(n1, n2)
+  e2 = Edge(n2, n3)
+  e3 = Edge(n2, n1)
+  graph.dump()
+  // Test that we can find the edge from its two node ids.
+  assert graph.findEdge(hashValues(2, 3)) == e2
+  // Test the safe hashed iterator, where the child can be destroyed in the loop.
+  for edge in n2.safeOutEdges() {
+    edge.destroy()
+  }
+  println "After destroying n2's out edges:"
+  graph.dump()
 }
-println "After destroying n2's out edges:"
-graph.dump()

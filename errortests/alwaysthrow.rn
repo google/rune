@@ -12,10 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-func alwaysThrow() {
-  throw
-}
-
 func numToString(num) {
   switch (num) {
     case 1 {
@@ -25,7 +21,7 @@ func numToString(num) {
       return "two"
     }
     default {
-      alwaysThrow()
+      throw
     }
   }
   return "We should never get here"

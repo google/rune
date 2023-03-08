@@ -46,14 +46,6 @@ void deDumpIdent(deIdent ident) {
   deStringDestroy(string);
 }
 
-// Copy the identifier to all classes of the tclass.
-static void copyIdentToClasses(deTclass tclass, deIdent ident) {
-  deClass theClass;
-  deForeachTclassClass(tclass, theClass) {
-    deCopyIdent(ident, deClassGetSubBlock(theClass));
-  } deEndTclassClass;
-}
-
 // Create a new identifier object that lies in the block's hash table of
 // identifiers.
 deIdent deIdentCreate(deBlock block, deIdentType type, utSym name, deLine line) {
@@ -105,15 +97,12 @@ deIdent deFindIdent(deBlock scopeBlock, utSym name) {
   if (ident != deIdentNull) {
     return ident;
   }
-  deFilepath filepath = deBlockGetFilepath(scopeBlock);
-  if (filepath == deFilepathNull) {
-    // Builtin classes have no filepath.
-    return deIdentNull;
-  }
-  deBlock moduleBlock = deFilepathGetModuleBlock(filepath);
-  ident = deBlockFindIdent(moduleBlock, name);
-  if (ident != deIdentNull) {
-    return ident;
+  deBlock moduleBlock = deFindBlockModule(scopeBlock);
+  if (moduleBlock != deBlockNull) {
+    ident = deBlockFindIdent(moduleBlock, name);
+    if (ident != deIdentNull) {
+      return ident;
+    }
   }
   // Some identifiers, like idents for built-in classes, are in the global scope.
   deBlock rootBlock = deRootGetBlock(deTheRoot);

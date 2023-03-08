@@ -624,7 +624,7 @@ static void writeArray(llArray array) {
     } else if (type == DE_EXPR_BOOL) {
       fprintf(llAsmFile, "i1 %u", deExpressionBoolVal(element)? 1 : 0);
     } else if (type == DE_EXPR_NULL) {
-      fprintf(llAsmFile, "i%u -1", width);
+      fprintf(llAsmFile, "i%u 0", width);
     } else {
       utExit("Unexpected constant array expression type");
     }
@@ -657,23 +657,21 @@ static deDatatype getParamspecGetDatatype(deParamspec paramspec) {
   if (datatype != deDatatypeNull) {
     return datatype;
   }
-  utAssert(deUseNewBinder);
-  deBlock block = deSignatureGetUniquifiedBlock(deParamspecGetSignature(paramspec));
+  deBlock block = deSignatureGetBlock(deParamspecGetSignature(paramspec));
   deVariable param = deBlockIndexVariable(block, deParamspecGetSignatureIndex(paramspec));
   return deVariableGetDatatype(param);
 }
 
 // Declare an extern "C" function.
 static void declareExternCFunction(deSignature signature) {
-  deFunction function = deSignatureGetFunction(signature);
-  llFuncDecl decl = llRootFindFuncDecl(deTheRoot, deFunctionGetSym(function));
+  char *funcName = llEscapeIdentifier(deGetSignaturePath(signature));
+  llFuncDecl decl = llRootFindFuncDecl(deTheRoot, utSymCreate(funcName));
   if (decl != llFuncDeclNull) {
-    llDeclareRuntimeFunction(deFunctionGetName(function));
+    llDeclareRuntimeFunction(funcName);
     return;
   }
   bool first = true;
   deDatatype returnType = deSignatureGetReturnType(signature);
-  char *funcName = llEscapeIdentifier(deGetSignaturePath(signature));
   if (llDatatypePassedByReference(returnType)) {
     llPrintf("declare dso_local void @%s(%s", funcName, llGetTypeString(returnType, false));
     first = false;
@@ -720,8 +718,6 @@ static void declareGlobalVariable(deVariable variable) {
   if (llDatatypeIsArray(datatype) || type == DE_TYPE_TUPLE || type == DE_TYPE_STRUCT ||
       type == DE_TYPE_FLOAT) {
     initializer = "zeroinitializer";
-  } else if (type == DE_TYPE_CLASS) {
-    initializer = "-1";
   } else {
     initializer = "0";
   }

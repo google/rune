@@ -87,7 +87,6 @@ void deStart(char *fileName) {
   deBuiltinStart();
   deClassStart();
   deUtilStart();
-  deBindStart();
   buildArgvArray();
 }
 

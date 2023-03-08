@@ -624,7 +624,7 @@ static char *getDefaultValue(deDatatype datatype) {
       return "0";
     case DE_TYPE_CLASS:
     case DE_TYPE_NULL:
-      return "-1";
+      return "0";
     case DE_TYPE_STRING:
     case DE_TYPE_ARRAY:
     case DE_TYPE_TUPLE:
@@ -1193,15 +1193,6 @@ static uint32 countBlockParamVars(deBlock block) {
   return numParamVars;
 }
 
-// For the new binder, return the uniquified sub-function's block.  For the old
-// binder, return the sub-block of the signature's function.
-static deBlock getSignatureBlock(deSignature signature) {
-  if (deUseNewBinder) {
-    return deFunctionGetSubBlock(deSignatureGetUniquifiedFunction(signature));
-  }
-  return deSignatureGetBlock(signature);
-}
-
 // Evaluate parameters in reverse order.
 static void evaluateParameters(deSignature signature, deDatatype datatype,
     deExpression parameters, bool isMethodCall) {
@@ -1213,7 +1204,7 @@ static void evaluateParameters(deSignature signature, deDatatype datatype,
     // We're creating a structure.
     block = deFunctionGetSubBlock(deDatatypeGetFunction(datatype));
   } else {
-    block = getSignatureBlock(signature);
+    block = deSignatureGetBlock(signature);
   }
   uint32 numParamVars = countBlockParamVars(block);
   uint32 numParams = countPositionalParams(parameters, &firstNamedParameter);
@@ -2438,6 +2429,34 @@ static void limitCheck(llElement index, llElement limit) {
   llPrevLabel = passedLabel;
 }
 
+// Check that the index is not null, when in debug mode.
+static void nullCheck(llElement index) {
+  if (deUnsafeMode || (!llDebugMode && deStatementGenerated(llCurrentStatement))) {
+    return;
+  }
+  llElement string = generateString(deCStringCreate("Null indirection"));
+  llElement nullElement = createElement(llElementGetDatatype(index), "0", false);
+  generateComparison(index, nullElement, "icmp ne");
+  llElement condition = popElement(true);
+  utSym passedLabel = newLabel("nullCheckPassed");
+  bool generatedFailBlock = llBoundsCheckFailedLabel != utSymNull;
+  if (!generatedFailBlock) {
+    llBoundsCheckFailedLabel = newLabel("boundsCheckFailed");
+  }
+  llPrintf("  br i1 %s, label %%%s, label %%%s%s\n",
+      llElementGetName(condition), utSymGetName(passedLabel),
+      utSymGetName(llBoundsCheckFailedLabel), locationInfo());
+  if (!generatedFailBlock) {
+    llPrintf("%s:\n", utSymGetName(llBoundsCheckFailedLabel));
+    llDeclareRuntimeFunction("runtime_throwException");
+    llPrintf("  call void (%%struct.runtime_array*, ...) @runtime_throwException(%%struct.runtime_array* %s)%s\n",
+        llElementGetName(string), locationInfo());
+    llPrintf("  unreachable\n");
+  }
+  llPrintf("%s:\n", utSymGetName(passedLabel));
+  llPrevLabel = passedLabel;
+}
+
 // Perform a bounds check before indexing into an array.
 static void boundsCheck(llElement array, llElement index, char *message) {
   if (deUnsafeMode || (!llDebugMode && deStatementGenerated(llCurrentStatement))) {
@@ -2479,8 +2498,8 @@ static void indexArray(llElement array, llElement index, bool needsBoundsCheck) 
     uint32 refWidth = deClassGetRefWidth(deDatatypeGetClass(indexDatatype));
     index = createElement(deUintDatatypeCreate(refWidth),
         llElementGetName(index), llElementIsRef(index));
-  }
-  if (needsBoundsCheck) {
+    nullCheck(index);
+  } else if (needsBoundsCheck) {
     boundsCheck(array, index, "Index out of bounds");
   }
   deDatatype arrayDatatype = llElementGetDatatype(array);
@@ -3837,7 +3856,7 @@ static void generateExpression(deExpression expression) {
       deDatatype datatype = llElementGetDatatype(element);
       uint32 refWidth = findClassRefWidth(datatype);
       uint32 value = printNewValue();
-      llPrintf("icmp eq i%u %s, -1%s\n", refWidth, llElementGetName(element), locationInfo());
+      llPrintf("icmp eq i%u %s, 0%s\n", refWidth, llElementGetName(element), locationInfo());
       pushValue(deBoolDatatypeCreate(), value, false);
       break;
     }
@@ -4080,7 +4099,6 @@ static void callPuts(llElement string) {
 
 // Generate a print or throw statement.
 static void generatePrintOrThrowStatement(deStatement statement, bool isPrint) {
-  deExpression argument = deStatementGetExpression(statement);
   deExpression expression = deStatementGetExpression(statement);
   deString formatString = deFindPrintFormat(expression);
   llElement format = generateString(formatString);
@@ -4089,7 +4107,7 @@ static void generatePrintOrThrowStatement(deStatement statement, bool isPrint) {
   if (isPrint) {
     array = allocateTempValue(deStringDatatypeCreate());
   }
-  callSprintfOrThrow(array, format, argument, isPrint, true);
+  callSprintfOrThrow(array, format, expression, isPrint, true);
   if (isPrint) {
     llElement string = popElement(false);
     callPuts(string);
@@ -4355,8 +4373,6 @@ void llGenerateLLVMAssemblyCode(char* fileName, bool debugMode) {
   llDeclareExternCFunctions();
   flushStringBuffer();
   deBlock rootBlock = deRootGetBlock(deTheRoot);
-  deFunction mainFunc = deBlockGetOwningFunction(rootBlock);
-  deBindBlock(rootBlock, deFunctionGetFirstSignature(mainFunc), true);
   if (llDebugMode) {
     llTag tag = llGenerateMainTags();
     llBlockSetTag(rootBlock, tag);
@@ -4367,12 +4383,11 @@ void llGenerateLLVMAssemblyCode(char* fileName, bool debugMode) {
   deSignature signature;
   deForeachRootSignature(deTheRoot, signature) {
     if (deSignatureInstantiated(signature)) {
-      deBlock block = getSignatureBlock(signature);
+      deBlock block = deSignatureGetBlock(signature);
       deFunction function = deBlockGetOwningFunction(block);
       deFunctionType type = deFunctionGetType(function);
       if (block != rootBlock && type != DE_FUNC_ITERATOR && type != DE_FUNC_STRUCT &&
           deFunctionGetLinkage(function) != DE_LINK_EXTERN_C) {
-        deBindBlock(block, signature, true);
         deResetString();
         llDeclareBlockGlobals(block);
         generateBlockAssemblyCode(block, signature);

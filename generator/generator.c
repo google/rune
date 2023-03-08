@@ -465,6 +465,15 @@ static void expandBlockIdentifiers(deBlock scopeBlock, deBlock block) {
       expandBlockIdentifiers(scopeBlock, subBlock);
     }
   } deEndBlockStatement;
+  deVariable var;
+  deForeachBlockVariable(block, var) {
+    if (deVariableGetTypeExpression(var) != deExpressionNull) {
+      expandExpressionIdentifiers(scopeBlock, deVariableGetTypeExpression(var));
+    }
+    if (deVariableGetInitializerExpression(var) != deExpressionNull) {
+      expandExpressionIdentifiers(scopeBlock, deVariableGetInitializerExpression(var));
+    }
+  } deEndBlockVariable;
   deCurrentStatement = savedStatement;
 }
 
@@ -659,7 +668,6 @@ void deExecuteRelationStatement(deStatement statement) {
   deExpression parameters = deExpressionGetNextExpression(path);
   utAssert(deInstantiating);
   deInstantiating = false;
-  deBindExpression(moduleBlock, parameters);
   deGenerator generator = findGenerator(moduleBlock, path);
   deLine line = deStatementGetLine(statement);
   if (generator == deGeneratorNull) {
@@ -675,4 +683,17 @@ void deExecuteRelationStatement(deStatement statement) {
   deCurrentRelation = deRelationNull;
   deStatementSetExecuted(statement, true);
   deInstantiating = true;
+}
+
+// Instantiate a relation.
+void deInstantiateRelation(deStatement statement) {
+  deSignature savedSignature = deCurrentSignature;
+  deStatement savedStatement = deCurrentStatement;
+  deCurrentStatement = statement;
+  bool savedInstantiating = deInstantiating;
+  deInstantiating = true;
+  deExecuteRelationStatement(statement);
+  deInstantiating = savedInstantiating;
+  deCurrentStatement = savedStatement;
+  deCurrentSignature = savedSignature;
 }

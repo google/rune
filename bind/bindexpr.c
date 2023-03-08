@@ -26,7 +26,7 @@ typedef enum {
 // These globals currently have to be set so we can report a proper stack trace.
 static void setStackTraceGlobals(deExpression expression) {
   deCurrentStatement = deFindExpressionStatement(expression);
-  deBinding binding = deStatementGetBinding(deCurrentStatement);
+  deBinding binding = deFindExpressionBinding(expression);
   deCurrentSignature = deBindingGetSignature(binding);
 }
 
@@ -38,7 +38,7 @@ static void error(deExpression expression, char* format, ...) {
   buff = utVsprintf(format, ap);
   va_end(ap);
   setStackTraceGlobals(expression);
-  deError(deStatementGetLine(deCurrentStatement), "%s", buff);
+  deError(deExpressionGetLine(expression), "%s", buff);
 }
 
 // Set the float expression's datatype.
@@ -252,13 +252,13 @@ static deBindRes bindOverloadedFunctionCall(deBlock scopeBlock, deFunction funct
   if (signature == deSignatureNull) {
     setStackTraceGlobals(expression);
     signature = deSignatureCreate(function, paramTypes, line);
-    deQueueSignature(signature);
   } else {
     deDatatypeArrayFree(paramTypes);
   }
   deExpressionSetSignature(expression, signature);
   deSignatureSetInstantiated(signature,
       deSignatureInstantiated(signature) || deExpressionInstantiating(expression));
+  deQueueSignature(signature);
   deExpressionSetSignature(expression, signature);
   if (!deSignatureBound(signature)) {
     deEvent event = deSignatureEventCreate(signature);
@@ -319,6 +319,9 @@ static deBindRes bindOverloadedOperator(deBlock scopeBlock, deExpression express
   deExpression parameter;
   deForeachExpressionExpression(expression, parameter) {
     deDatatype datatype = deExpressionGetDatatype(parameter);
+    if (datatype == deDatatypeNull) {
+      return DE_BINDRES_FAILED;
+    }
     deDatatypeArrayAppendDatatype(paramTypes, datatype);
   } deEndExpressionExpression;
   deFunction operatorFunc = findMatchingOperatorOverload(scopeBlock, expression, paramTypes);
@@ -361,6 +364,10 @@ static void bindBinaryArithmeticExpression(deBlock scopeBlock, deExpression expr
 static void bindBitwiseOrExpression(deBlock scopeBlock, deExpression expression) {
   deExpression left = deExpressionGetFirstExpression(expression);
   deExpression right = deExpressionGetNextExpression(left);
+  if (deExpressionIsType(left) && deExpressionIsType(right)) {
+    deExpressionSetIsType(expression, true);
+    return;
+  }
   deDatatype leftType, rightType;
   checkBinaryExpression(scopeBlock, expression, &leftType, &rightType, false);
   if (deExpressionIsType(left)) {
@@ -372,6 +379,21 @@ static void bindBitwiseOrExpression(deBlock scopeBlock, deExpression expression)
     deExpressionSetDatatype(expression, deNoneDatatypeCreate());
   } else {
     bindBinaryArithmeticExpression(scopeBlock, expression);
+  }
+}
+
+// Check that the left-hand side is not const.
+static void checkOpEqualsAssignment(deBlock scopeBlock, deExpression expression) {
+  deExpression left = deExpressionGetFirstExpression(expression);
+  deExpressionType type = deExpressionGetType(left);
+  if (type == DE_EXPR_IDENT) {
+    deIdent ident = deFindIdent(scopeBlock, deExpressionGetName(left));
+    if (deIdentGetType(ident) == DE_IDENT_VARIABLE) {
+      deVariable var = deIdentGetVariable(ident);
+      if (deVariableConst(var)) {
+        error(expression, "Assigning to const variable %s ", deVariableGetName(var));
+      }
+    }
   }
 }
 
@@ -616,37 +638,17 @@ static void setAllSignatureVariablesToInstantiated(deSignature signature) {
   } deEndSignatureParamspec;
 }
 
-// Bind a function pointer expression.  We have to mark all the parameter
-// variables as not types during expression, even though we typically specify only
-// the parameter types in the function address expression.  When we call through
-// the function pointer, all parameters will be instantiated, which may lead to
-// some unused parameters being instantiated.  Any function signature that has
-// its address taken is called by passing all parameters, since that's how we
-// call it through the function pointer.  In case we pass a type to the function
-// when called directly, we push default values for the type parameters.
+// Bind a function pointer expression.
 static void bindFunctionPointerExpression(deExpression expression) {
-  deExpression functionCallExpression = deExpressionGetFirstExpression(expression);
-  deDatatype returnType = deExpressionGetDatatype(functionCallExpression);
-  deExpression functionExpression = deExpressionGetFirstExpression(functionCallExpression);
-  deExpression parameters = deExpressionGetNextExpression(functionExpression);
-  deDatatypeArray paramTypes = deDatatypeArrayAlloc();
-  deExpression parameter;
-  deForeachExpressionExpression(parameters, parameter) {
-    deDatatype datatype = deExpressionGetDatatype(parameter);
-    deDatatypeArrayAppendDatatype(paramTypes, datatype);
-  } deEndExpressionExpression;
-  deDatatype funcptrType = deFuncptrDatatypeCreate(returnType, paramTypes);
-  deDatatype functionDatatype = deExpressionGetDatatype(functionExpression);
-  utAssert(deDatatypeGetType(functionDatatype) == DE_TYPE_FUNCTION);
-  deFunction function = deDatatypeGetFunction(functionDatatype);
-  deSignature signature = deLookupSignature(function, paramTypes);
-  deLine line = deExpressionGetLine(expression);
-  if (signature == deSignatureNull) {
-    signature = deSignatureCreate(function, paramTypes, line);
-  }
+  deExpression callExpr = deExpressionGetFirstExpression(expression);
+  deSignature signature = deExpressionGetSignature(callExpr);
+  deDatatype returnType = deExpressionGetDatatype(callExpr);
   deSignatureSetIsCalledByFuncptr(signature, true);
+  deSignatureSetInstantiated(signature, true);
   setAllSignatureVariablesToInstantiated(signature);
   deExpressionSetSignature(expression, signature);
+  deDatatypeArray paramTypes = deSignatureGetParameterTypes(signature);
+  deDatatype funcptrType = deFuncptrDatatypeCreate(returnType, paramTypes);
   deExpressionSetDatatype(expression, funcptrType);
 }
 
@@ -731,7 +733,8 @@ static void bindIntegerExpression(deExpression expression) {
 // false.  If we succeed in expression the identifier, queue bindings blocked on
 // this event.  scopeBlock, if present, is from a dot operation, and we must
 // look only for identifiers in that block.
-static bool bindIdentExpression(deBlock scopeBlock, deExpression expression, bool inScopeBlock) {
+static bool bindIdentExpression(deBlock scopeBlock, deBinding binding,
+    deExpression expression, bool inScopeBlock) {
   utSym sym = deExpressionGetName(expression);
   deIdent ident = deExpressionGetIdent(expression);
   if (ident == deIdentNull) {
@@ -753,8 +756,7 @@ static bool bindIdentExpression(deBlock scopeBlock, deExpression expression, boo
       if (datatype == deDatatypeNull || (!deExpressionLhs(expression) &&
           !deDatatypeConcrete(datatype) && !deVariableIsType(variable))) {
         deEvent event = deVariableEventCreate(variable);
-        deStatement statement = deFindExpressionStatement(expression);
-        deEventAppendBinding(event, deStatementGetBinding(statement));
+        deEventAppendBinding(event, binding);
         return false;
       }
       deExpressionSetDatatype(expression, datatype);
@@ -763,13 +765,15 @@ static bool bindIdentExpression(deBlock scopeBlock, deExpression expression, boo
           deExpressionInstantiating(expression));
       return true;
     }
-    case DE_IDENT_FUNCTION:
-      deExpressionSetDatatype(expression, deFunctionDatatypeCreate(deIdentGetFunction(ident)));
+    case DE_IDENT_FUNCTION: {
+      deDatatype datatype = deFunctionDatatypeCreate(deIdentGetFunction(ident));
+      deExpressionSetDatatype(expression, datatype);
+      deExpressionSetIsType(expression, deDatatypeGetType(datatype) == DE_TYPE_TCLASS);
       return true;
+    }
     case DE_IDENT_UNDEFINED: {
       deEvent event = deUndefinedIdentEventCreate(ident);
-      deStatement statement = deFindExpressionStatement(expression);
-      deEventAppendBinding(event, deStatementGetBinding(statement));
+      deEventAppendBinding(event, binding);
       return false;
     }
   }
@@ -1080,6 +1084,7 @@ static deDatatypeArray findCallDatatypes(deBlock scopeBlock,
         error(params, "Too many arguments passed to function %s", deFunctionGetName(function));
       }
       deDatatypeArraySetiDatatype(paramTypes, xParam, deExpressionGetDatatype(param));
+      deExpressionSetSignaturePos(param, xParam);
       xParam++;
       var = deVariableGetNextBlockVariable(var);
     } else {
@@ -1089,6 +1094,7 @@ static deDatatypeArray findCallDatatypes(deBlock scopeBlock,
         error(param, "Named parameter assigned twice");
       }
       deDatatypeArraySetiDatatype(paramTypes, index, deExpressionGetDatatype(param));
+      deExpressionSetSignaturePos(param, index);
     }
     param = deExpressionGetNextExpression(param);
   }
@@ -1146,9 +1152,42 @@ static deSignature resolveConstructorSignature(deSignature signature) {
   return signature;
 }
 
+// Compare the parameter types to the function pointer parameter types from the
+// call type.  Report an error on mismatch.
+static void compareFuncptrParameters(deDatatype callType,
+                                     deExpression params) {
+  uint32 numParameters = deDatatypeGetNumTypeList(callType);
+  uint32 numPassed = deExpressionCountExpressions(params);
+  if (numPassed != numParameters) {
+    error(params, "Wrong number of parameters to function call: Expected %u, have %u",
+            numParameters, numPassed);
+  }
+  deExpression param = deExpressionGetFirstExpression(params);
+  for (uint32 i = 0; i < numParameters; i++) {
+    if (deDatatypeGetiTypeList(callType, i) != deExpressionGetDatatype(param)) {
+      error(param, "Incorrect type passed in argument %u", i);
+    }
+    param = deExpressionGetNextExpression(param);
+  }
+}
+
+// Bind a function pointer call.
+static void bindFunctionPointerCall(deBlock scopeBlock, deExpression expression) {
+  deExpression access = deExpressionGetFirstExpression(expression);
+  deExpression params = deExpressionGetNextExpression(access);
+  deDatatype callType = deExpressionGetDatatype(access);
+  compareFuncptrParameters(callType, params);
+  deDatatype returnType = deDatatypeGetReturnType(callType);
+  deExpressionSetDatatype(expression, returnType);
+}
+
 // Bind a call expression.
 static bool bindCallExpression(deBlock scopeBlock, deExpression expression) {
   deExpression access = deExpressionGetFirstExpression(expression);
+  if (deDatatypeGetType(deExpressionGetDatatype(access)) == DE_TYPE_FUNCPTR) {
+    bindFunctionPointerCall(scopeBlock, expression);
+    return true;
+  }
   deExpression params = deExpressionGetNextExpression(access);
   deFunction function = findCalledFunction(access);
   verifyFunctionIsCallable(scopeBlock, function);
@@ -1168,13 +1207,13 @@ static bool bindCallExpression(deBlock scopeBlock, deExpression expression) {
       // TODO: also resolve methods so factory functions can take null types.
       signature = resolveConstructorSignature(signature);
     }
-    deQueueSignature(signature);
   } else {
     deDatatypeArrayFree(paramTypes);
   }
   deExpressionSetSignature(expression, signature);
   deSignatureSetInstantiated(signature,
       deSignatureInstantiated(signature) || deExpressionInstantiating(expression));
+  deQueueSignature(signature);
   if (!deSignatureBound(signature)) {
     deEvent event = deSignatureEventCreate(signature);
     deBinding binding = deExpressionGetBinding(expression);
@@ -1183,6 +1222,42 @@ static bool bindCallExpression(deBlock scopeBlock, deExpression expression) {
   }
   deExpressionSetDatatype(expression, deSignatureGetReturnType(signature));
   return true;  // Success.
+}
+
+// Determine if the expression is an identifier bound to a non-const variable.
+static bool expressionIsNonConstVariable(deExpression expression) {
+  if (deExpressionGetType(expression) != DE_EXPR_IDENT) {
+    return false;
+  }
+  deIdent ident = deExpressionGetIdent(expression);
+  if (deIdentGetType(ident) != DE_IDENT_VARIABLE) {
+    return false;
+  }
+  deVariable variable = deIdentGetVariable(ident);
+  return !deVariableConst(variable);
+}
+
+// Check that type parameters are not instantiated in the signature and that
+// only non-constant variables are passed to var parameters.
+static void checkPassedParameters(deExpression expression) {
+  deSignature signature = deExpressionGetSignature(expression);
+  if (signature == deSignatureNull || deSignatureIsStruct(signature)) {
+    return;
+  }
+  deExpression params = deExpressionGetLastExpression(expression);
+  deExpression param;
+  deForeachExpressionExpression(params, param) {
+    deParamspec paramspec = deSignatureGetiParamspec(signature, deExpressionGetSignaturePos(param));
+    deVariable var = deParamspecGetVariable(paramspec);
+    if (deExpressionInstantiating(param) && deExpressionIsType(param) && deParamspecInstantiated(paramspec)) {
+        error(param, "Parameter %s cannot be a type since its value is used",
+            deVariableGetName(var));
+    }
+    if (!deVariableConst(var) && !expressionIsNonConstVariable(param)) {
+      deError(deExpressionGetLine(param),
+          "Parameter %s must be passed a non-const variable", deVariableGetName(var));
+    }
+  } deEndExpressionExpression;
 }
 
 // Bind the index expression.
@@ -1289,7 +1364,6 @@ static deVariable findOrCreateVariable(deBlock scopeBlock, deExpression access) 
       deSignature signature = deBindingGetSignature(deExpressionGetBinding(assignment));
       deCreateVariableConstraintBinding(signature, var);
     }
-    deVariableSetInstantiated(var, true);
     ident = deVariableGetIdent(var);
   }
   if (deIdentGetType(ident) == DE_IDENT_FUNCTION) {
@@ -1438,7 +1512,13 @@ static deBindRes bindAssignmentExpression(deBlock scopeBlock, deExpression expre
   }
   if (type == DE_EXPR_IDENT || type == DE_EXPR_DOT) {
     deVariable variable = findOrCreateVariable(scopeBlock, access);
+    if (deVariableConst(variable)) {
+      error(expression, "Assigning to const variable %s ", deVariableGetName(variable));
+    }
     updateVariable(scopeBlock, variable, valueDatatype, deExpressionGetLine(expression));
+    if (deExpressionIsType(value)) {
+      deVariableSetIsType(variable, true);
+    }
     deExpressionSetDatatype(access, valueDatatype);
   } else {
     refineAccessExpressionDatatype(scopeBlock, access, valueDatatype);
@@ -1547,19 +1627,19 @@ static bool bindDotExpression(deBlock scopeBlock, deExpression expression) {
   }
   utAssert(deExpressionGetType(identExpr) == DE_EXPR_IDENT);
   // Make the right-hand expression, if we haven't already.
-  deExpression identExpression = deExpressionGetNextExpression(accessExpr);
-  utAssert(identExpression != deExpressionNull);
+  deBinding binding = deExpressionGetBinding(expression);
   if (classBlock != deBlockNull) {
-    if (!bindIdentExpression(classBlock, identExpression, true)) {
+    if (!bindIdentExpression(classBlock, binding, identExpr, true)) {
       return false;
     }
   } else {
-    if (!bindIdentExpression(scopeBlock, identExpression, false)) {
+    if (!bindIdentExpression(scopeBlock, binding, identExpr, false)) {
       return false;
     }
   }
-  deExpressionSetDatatype(expression, deExpressionGetDatatype(identExpression));
-  deExpressionSetConst(expression, deExpressionConst(identExpression));
+  deExpressionSetDatatype(expression, deExpressionGetDatatype(identExpr));
+  deExpressionSetConst(expression, deExpressionConst(identExpr));
+  deExpressionSetIsType(expression, deExpressionIsType(identExpr));
   return true;
 }
 
@@ -1626,7 +1706,7 @@ static deBindRes bindExpression(deBlock scopeBlock, deExpression expression) {
       deExpressionSetDatatype(expression, deStringDatatypeCreate());
       break;
     case DE_EXPR_IDENT:
-      if (!bindIdentExpression(scopeBlock, expression, false)) {
+      if (!bindIdentExpression(scopeBlock, deExpressionGetBinding(expression), expression, false)) {
         return DE_BINDRES_BLOCKED;
       }
       break;
@@ -1644,14 +1724,17 @@ static deBindRes bindExpression(deBlock scopeBlock, deExpression expression) {
       bindBitwiseOrExpression(scopeBlock, expression);
       break;
     case DE_EXPR_ADD:
-    case DE_EXPR_ADD_EQUALS:
     case DE_EXPR_SUB:
-    case DE_EXPR_SUB_EQUALS:
     case DE_EXPR_MUL:
-    case DE_EXPR_MUL_EQUALS:
     case DE_EXPR_DIV:
+      bindBinaryArithmeticExpression(scopeBlock, expression);
+      break;
+    case DE_EXPR_ADD_EQUALS:
+    case DE_EXPR_SUB_EQUALS:
+    case DE_EXPR_MUL_EQUALS:
     case DE_EXPR_DIV_EQUALS:
       bindBinaryArithmeticExpression(scopeBlock, expression);
+      checkOpEqualsAssignment(scopeBlock, expression);
       break;
     case DE_EXPR_BITAND:
     case DE_EXPR_BITAND_EQUALS:
@@ -1724,6 +1807,7 @@ static deBindRes bindExpression(deBlock scopeBlock, deExpression expression) {
       if (!bindCallExpression(scopeBlock, expression)) {
         return DE_BINDRES_BLOCKED;
       }
+      checkPassedParameters(expression);
       break;
     case DE_EXPR_INDEX:
       bindIndexExpression(scopeBlock, expression);
@@ -1886,7 +1970,7 @@ static void postProcessBoundStatement(deBlock scopeBlock, deBinding binding) {
     updateSignatureReturnType(deBindingGetSignature(binding), datatype);
   } else if (type == DE_STATEMENT_TYPESWITCH) {
     selectMatchingCase(scopeBlock, binding);
-  } else if (type == DE_STATEMENT_PRINT) {
+  } else if (type == DE_STATEMENT_PRINT || type == DE_STATEMENT_THROW) {
     dePostProcessPrintStatement(statement);
   }
 }
@@ -1915,7 +1999,7 @@ static void rebuildBinding(deBinding binding) {
 // Bind or continue expression the statement.
 void deBindStatement2(deBinding binding) {
   deExpression expression = deBindingGetFirstExpression(binding);
-  deBlock scopeBlock = deSignatureGetUniquifiedBlock(deBindingGetSignature(binding));
+  deBlock scopeBlock = deGetBindingBlock(binding);
   while (expression != deExpressionNull) {
     deBindRes result = bindExpression(scopeBlock, expression);
     if (result == DE_BINDRES_BLOCKED) {
@@ -1938,7 +2022,7 @@ void deBindStatement2(deBinding binding) {
       deVariable variable = deBindingGetTypeVariable(binding);
       deExpression typeExpr = deVariableGetTypeExpression(variable);
       deDatatype datatype = deExpressionGetDatatype(typeExpr);
-      if (deDatatypeConcrete(datatype)) {
+      if (datatype != deDatatypeNull && deDatatypeConcrete(datatype)) {
         updateVariable(scopeBlock, variable, datatype, deExpressionGetLine(typeExpr));
       }
       break;
@@ -1948,9 +2032,10 @@ void deBindStatement2(deBinding binding) {
       deExpression typeExpr = deFunctionGetTypeExpression(function);
       deDatatype datatype = deExpressionGetDatatype(typeExpr);
       if (deDatatypeConcrete(datatype)) {
-        deSignature signature = deFunctionGetUniquifiedSignature(function);
-        utAssert(signature != deSignatureNull);
-        updateSignatureReturnType(deBindingGetSignature(binding), datatype);
+        deSignature signature = deBindingGetSignature(binding);
+        if (signature != deSignatureNull) {
+          updateSignatureReturnType(deBindingGetSignature(binding), datatype);
+        }
       }
       break;
     }

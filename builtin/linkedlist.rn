@@ -26,7 +26,7 @@ generator LinkedList(A: Class, B: Class, cascadeDelete:bool = false,
           throw "insert$labelB$B: Object is already in a relation"
         }
       }
-      child.next$A$labelB$B = <child>self.first$labelB$B
+      child.next$A$labelB$B = self.first$labelB$B
       self.first$labelB$B = child
       child.$labelA$A = self
       ref child

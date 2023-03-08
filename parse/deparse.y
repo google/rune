@@ -1068,9 +1068,11 @@ optDefaultCase: // Empty
   // If default is missing, add one with a throw statement.
   createBlockStatement(DE_STATEMENT_DEFAULT);
   deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_THROW, deCurrentLine);
+  deExpression expression = deExpressionCreate(DE_EXPR_LIST, deCurrentLine);
   deExpression message = deStringExpressionCreate(
       deMutableCStringCreate("No case matched switch expression"), deCurrentLine);
-  deStatementInsertExpression(statement, message);
+  deExpressionAppendExpression(expression, message);
+  deStatementInsertExpression(statement, expression);
   finishBlockStatement(deExpressionNull);
 }
 | defaultCaseHeader block

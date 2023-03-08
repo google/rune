@@ -1,4 +1,4 @@
-//  Copyright 2021 Google LLC.
+//  Copyright 2023 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-class Foo(self) {
+func twoParams(p1, p2) {
 }
 
-l = arrayof([Foo])
-a = [Foo()]
-l.append(a)
+funcPtr = &twoParams(u64, u64)
+funcPtr(0)

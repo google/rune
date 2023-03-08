@@ -226,9 +226,12 @@ static deDatatype parseDatatype(char *dataType) {
   char *full_text = utAllocString(utCatStrings("type = ", dataType));
   deParseString(full_text, block);
   utFree(full_text);
+  deSignature signature = deSignatureCreate(function, deDatatypeArrayAlloc(), deLineNull);
+  deQueueSignature(signature);
+  deBindAllSignatures();
+  block = deSignatureGetBlock(signature);
   deStatement statement = deBlockGetFirstStatement(block);
   deExpression assignExpr = deStatementGetExpression(statement);
-  deBindExpression(block, assignExpr);
   deConstantPropagation(block, block);
   deExpression datatypeExpr = deExpressionGetLastExpression(assignExpr);
   deDatatype datatype = deExpressionGetDatatype(datatypeExpr);
@@ -247,9 +250,12 @@ static bool encodeMessage(deDatatype datatype, char *message, deString *publicDa
   char *full_text = utAllocString(utCatStrings("val = ", message));
   deParseString(full_text, block);
   utFree(full_text);
+  deSignature signature = deSignatureCreate(function, deDatatypeArrayAlloc(), deLineNull);
+  deQueueSignature(signature);
+  deBindAllSignatures();
+  block = deSignatureGetBlock(signature);
   deStatement statement = deBlockGetFirstStatement(block);
   deExpression assignExpr = deStatementGetExpression(statement);
-  deBindExpression(block, assignExpr);
   deExpression constValExpr = deExpressionGetLastExpression(assignExpr);
   if (deExpressionGetDatatype(constValExpr) != datatype) {
     deError(0, "Type of text proto does not match type expression.");
@@ -574,7 +580,7 @@ static deFunction findMethod(deBlock module, char *method) {
 // method's function.
 static deFunction findMethodFunction(char *protoFileName, char *method) {
   deBlock module = deParseModule(protoFileName, deRootGetBlock(deTheRoot), true);
-  deBind();
+  deBind2();
   deBindRPCs();
   deFunction function = findMethod(module, method);
   if (function == deFunctionNull) {

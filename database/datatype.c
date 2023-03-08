@@ -584,16 +584,18 @@ static deString getClassDatatypeParametersTypeString(deDatatype datatype) {
     deDatatype paramDatatype = deParamspecGetDatatype(paramspec);
     if (!skipOne) {
       char *childString;
-      utAssert(deDatatypeGetType(paramDatatype) != DE_TYPE_TCLASS);
-      if (paramDatatype == datatype) {
-        childString = deGetBlockPath(deClassGetSubBlock(theClass), false);
-      } else {
-        childString = deDatatypeGetTypeString(paramDatatype);
+      if (paramDatatype != deDatatypeNull) {
+        utAssert(deDatatypeGetType(paramDatatype) != DE_TYPE_TCLASS);
+        if (paramDatatype == datatype) {
+          childString = deGetBlockPath(deClassGetSubBlock(theClass), false);
+        } else {
+          childString = deDatatypeGetTypeString(paramDatatype);
+        }
+        if (!firstTime) {
+          deStringPuts(parameters, ", ");
+        }
+        deStringPuts(parameters, childString);
       }
-      if (!firstTime) {
-        deStringPuts(parameters, ", ");
-      }
-      deStringPuts(parameters, childString);
       firstTime = false;
     }
     skipOne = false;
@@ -747,6 +749,9 @@ static char *getClassTypeString(deDatatype datatype) {
   char *name = deGetBlockPath(deClassGetSubBlock(theClass), false);
   char *result = utSprintf("%s(%s)", name, deStringGetCstr(parameters));
   deStringFree(parameters);
+  if (deDatatypeNullable(datatype)) {
+    result = utSprintf("%s?", result);
+  }
   return result;
 }
 
@@ -957,8 +962,6 @@ bool deDatatypeMatchesTypeExpression(deBlock scopeBlock, deDatatype datatype,
     }
     case DE_EXPR_DOT:
     case DE_EXPR_TYPEOF: {
-      // We need to bind he typeof() expression.
-      deBindExpression(scopeBlock, typeExpression);
       deDatatype constraintType = deExpressionGetDatatype(typeExpression);
       if (datatype == constraintType) {
         return true;
