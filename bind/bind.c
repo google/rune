@@ -579,6 +579,41 @@ static void destroyUnusedTclassesContents(void) {
   }
 }
 
+// Resolve a null type, e.g. null(Foo), rather than null(Foo(u32)).  For
+// tclasses that have only one class instantiated, we can resolve the null type
+// to null for that class.
+static bool resolveNullType(deVariable var) {
+  deDatatype datatype = deVariableGetDatatype(var);
+  utAssert(deDatatypeGetType(datatype) == DE_TYPE_NULL);
+  deTclass tclass = deDatatypeGetTclass(datatype);
+  if (deTclassGetNumClasses(tclass) != 1) {
+    return false;
+  }
+  deClass theClass = deTclassGetFirstClass(tclass);
+  deDatatype newDatatype = deSetDatatypeNullable(deClassDatatypeCreate(theClass),
+      true, deVariableGetLine(var));
+  deVariableSetDatatype(var, newDatatype);
+  return true;
+}
+
+// Assign default null values for classes that have a constructor call but no
+// template parameters.
+void deAssignDefaultNullValues(void) {
+  deEvent event;
+  deSafeForeachRootEvent(deTheRoot, event) {
+    if (deEventGetType(event) == DE_EVENT_VARIABLE) {
+      deVariable var = deEventGetVariable(event);
+      deDatatype datatype = deVariableGetDatatype(var);
+      if (deDatatypeGetType(datatype) == DE_TYPE_NULL) {
+        if (resolveNullType(var)) {
+          deQueueEventBlockedBindings(event);
+        }
+      }
+    }
+  } deEndSafeRootEvent;
+  deBindAllSignatures();
+}
+
 // Report the event and exit.
 static void reportEvent(deEvent event) {
   deBinding binding = deEventGetFirstBinding(event);
@@ -615,7 +650,7 @@ void deReportEvents(void) {
 }
 
 // Bind expressions everywhere.
-void deBind2(void) {
+void deBind(void) {
   deBlock rootBlock = deRootGetBlock(deTheRoot);
   deFunction mainFunc = deBlockGetOwningFunction(rootBlock);
   deSignature mainSignature = deSignatureCreate(mainFunc,
@@ -624,6 +659,7 @@ void deBind2(void) {
   deQueueSignature(mainSignature);
   deBindAllSignatures();
   destroyUnusedTclassesContents();
+  deAssignDefaultNullValues();
   deReportEvents();
 }
 

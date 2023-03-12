@@ -53,7 +53,7 @@ deString deDecodeResponse(char *protoFileName, char *method, uint8 *publicData,
 void deBindRPCs(void);
 
 // New event-driven binding functions.
-void deBind2(void);
+void deBind(void);
 void deReportEvents(void);
 void deInlineIterators(void);
 void deBindAllSignatures(void);
@@ -69,6 +69,7 @@ void deQueueEventBlockedBindings(deEvent event);
 void deVerifyPrintfParameters(deExpression expression);
 void dePostProcessPrintStatement(deStatement statement);
 void deCreateVariableConstraintBinding(deSignature signature, deVariable var);
+void deAssignDefaultNullValues(void);
 
 // Block methods.
 deBlock deBlockCreate(deFilepath filepath, deBlockType type, deLine line);

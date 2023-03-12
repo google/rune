@@ -27,7 +27,7 @@ generator ArrayList(A: Class, B: Class, cascadeDelete:bool = false,
         for i in range(num$labelB$pluralB, length) {
           child = self.$labelB$pluralB[i]
           if !isnull(child) {
-            self.remove$labelB$B(child)
+            self.remove$labelB$B(child!)
           }
         }
       } else {
@@ -73,7 +73,7 @@ generator ArrayList(A: Class, B: Class, cascadeDelete:bool = false,
       for i in range(self.$labelB$pluralB.length()) {
         child$labelB$B = self.$labelB$pluralB[i]
         if !isnull(child$labelB$B) {
-          child$labelB$B.destroy()
+          child$labelB$B!.destroy()
         }
       }
     }
@@ -83,7 +83,7 @@ generator ArrayList(A: Class, B: Class, cascadeDelete:bool = false,
       for i in range(self.$labelB$pluralB.length()) {
         child$labelB$B = self.$labelB$pluralB[i]
         if !isnull(child$labelB$B) {
-          self.remove$labelB$B(child$labelB$B)
+          self.remove$labelB$B(child$labelB$B!)
         }
       }
     }
@@ -97,7 +97,7 @@ generator ArrayList(A: Class, B: Class, cascadeDelete:bool = false,
   // Remove self from A on destruction.
   prependcode B.destroy {
     if !isnull(self.$labelA$A) {
-      self.$labelA$A.remove$labelB$B(self)
+      self.$labelA$A!.remove$labelB$B(self)
     }
   }
 }

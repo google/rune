@@ -32,7 +32,7 @@ generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
         self.last$labelB$B = child
       } else {
         first.prev$A$labelB$B = child
-        child.next$A$labelB$B = first
+        child.next$A$labelB$B = first!
       }
       self.first$labelB$B = child
       child.$labelA$A = self
@@ -52,8 +52,8 @@ generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
         if isnull(nextChild) {
           self.append$labelB$B(child)
         } else {
-          child.next$A$labelB$B = prevChild.next$A$labelB$B
-          child.prev$A$labelB$B = nextChild.prev$A$labelB$B
+          child.next$A$labelB$B = prevChild!.next$A$labelB$B
+          child.prev$A$labelB$B = nextChild!.prev$A$labelB$B
           prevChild.next$A$labelB$B = child
           nextChild.prev$A$labelB$B = child
           child.$labelA$A = self
@@ -73,7 +73,7 @@ generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
         self.first$labelB$B = child
       } else {
         last.next$A$labelB$B = child
-        child.prev$A$labelB$B = last
+        child.prev$A$labelB$B = last!
       }
       self.last$labelB$B = child
       child.$labelA$A = self
@@ -89,12 +89,12 @@ generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
       next = child.next$A$labelB$B
       prev = child.prev$A$labelB$B
       if !isnull(prev) {
-        prev.next$A$labelB$B = next
+        prev!.next$A$labelB$B = next
       } else if self.first$labelB$B == child {
         self.first$labelB$B = next
       }
       if !isnull(next) {
-        next.prev$A$labelB$B = prev
+        next!.prev$A$labelB$B = prev
       } else if self.last$labelB$B == child {
         self.last$labelB$B = prev
       }
@@ -160,7 +160,7 @@ generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
       do {
         child$labelB$B = self.first$labelB$B
       } while !isnull(child$labelB$B) {
-        child$labelB$B.destroy()
+        child$labelB$B!.destroy()
       }
     }
   } else {
@@ -169,7 +169,7 @@ generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
       do {
         child$labelB$B = self.first$labelB$B
       } while !isnull(child$labelB$B) {
-        self.remove$labelB$B(child$labelB$B)
+        self.remove$labelB$B(child$labelB$B!)
       }
     }
   }
@@ -183,7 +183,7 @@ generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
   // Remove self from A on destruction.
   prependcode B.destroy {
     if !isnull(self.$labelA$A) {
-      self.$labelA$A.remove$labelB$B(self)
+      self.$labelA$A!.remove$labelB$B(self)
     }
   }
 }
