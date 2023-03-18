@@ -193,7 +193,6 @@ unittest {
   }
 }
 
-/*
 unittest dumpBlockTest {
   block = createPrintlnBlock("Hello, World!")
   block.dump()
@@ -282,4 +281,3 @@ unittest createUniqueSymTest {
   createPrintlnFunction(topBlock, newSym.name, "func3")
   topBlock.dump()
 }
-*/

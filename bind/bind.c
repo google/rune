@@ -604,7 +604,7 @@ void deAssignDefaultNullValues(void) {
     if (deEventGetType(event) == DE_EVENT_VARIABLE) {
       deVariable var = deEventGetVariable(event);
       deDatatype datatype = deVariableGetDatatype(var);
-      if (deDatatypeGetType(datatype) == DE_TYPE_NULL) {
+      if (datatype != deDatatypeNull && deDatatypeGetType(datatype) == DE_TYPE_NULL) {
         if (resolveNullType(var)) {
           deQueueEventBlockedBindings(event);
         }
