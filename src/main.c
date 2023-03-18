@@ -117,6 +117,7 @@ int main(int argc, char** argv) {
     deBlock rootBlock = deRootGetBlock(deTheRoot);
     deParseModule(fileName, rootBlock, true);
     deCallFinalInDestructors();
+    deCreateLocalAndGlobalVariables();
     deBind();
     deVerifyRelationshipGraph();
     deAddMemoryManagement();

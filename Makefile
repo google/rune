@@ -31,6 +31,7 @@ SRC= \
 bind/bind.c \
 bind/bindexpr.c \
 bind/bindformat.c \
+bind/create_vars.c \
 bind/refine.c \
 database/bigint.c \
 database/binding.c \
