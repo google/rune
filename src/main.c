@@ -117,10 +117,11 @@ int main(int argc, char** argv) {
     deBlock rootBlock = deRootGetBlock(deTheRoot);
     deParseModule(fileName, rootBlock, true);
     deCallFinalInDestructors();
-    deBind2();
+    deBind();
     deVerifyRelationshipGraph();
     deAddMemoryManagement();
     deInlineIterators();
+    deAssignDefaultNullValues();
     // We generate new code in memory management and such, so check binding
     // succeeded.
     deReportEvents();

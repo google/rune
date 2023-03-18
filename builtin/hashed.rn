@@ -89,10 +89,10 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
       hash = hashValue(key) & <u64>(self.$labelB$B_Table.length() - 1)
       entry = self.$labelB$B_Table[hash]
       while !isnull(entry) {
-        if key == entry.$keyField {
-          return entry
+        if key == entry!.$keyField {
+          return entry!
         }
-        entry = entry.nextHashed$A$labelB$B
+        entry = entry!.nextHashed$A$labelB$B
       }
       return null(entry)
     }
@@ -106,20 +106,20 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
           newLength = self.$labelB$B_Table.length()
           mask = <u64>(newLength - 1)
           while !isnull(entry) {
-            hash = hashValue(entry.$keyField) & mask
+            hash = hashValue(entry!.$keyField) & mask
             if hash >> (newLength - 2) != 0 {
-              nextEntry = entry.nextHashed$A$labelB$B
+              nextEntry = entry!.nextHashed$A$labelB$B
               // Remove entry.
               if isnull(prevEntry) {
                 self.$labelB$B_Table[i] = nextEntry
               } else {
-                prevEntry.nextHashed$A$labelB$B = nextEntry
+                prevEntry!.nextHashed$A$labelB$B = nextEntry
               }
               // Insert entry.
-              entry.nextHashed$A$labelB$B = self.$labelB$B_Table[hash]
-              self.$labelB$B_Table[hash] = entry
+              entry!.nextHashed$A$labelB$B = self.$labelB$B_Table[hash]
+              self.$labelB$B_Table[hash] = entry!
             }
-            prevEntry = entry
+            prevEntry = entry!
             entry = nextEntry
           }
         }
@@ -154,19 +154,19 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
       entry = self.$labelB$B_Table[hash]
       prev = null(entry)
       while !isnull(entry) {
-        if entry == child {
+        if entry! == child {
           if isnull(prev) {
             self.$labelB$B_Table[hash] = child.nextHashed$A$labelB$B
           } else {
-            prev.nextHashed$A$labelB$B = child.nextHashed$A$labelB$B
+            prev!.nextHashed$A$labelB$B = child.nextHashed$A$labelB$B
           }
           child.nextHashed$A$labelB$B = null(child)
           child.$labelA$A = null(self)
           unref child
           return
         }
-        prev = entry
-        entry = entry.nextHashed$A$labelB$B
+        prev = entry!
+        entry = entry!.nextHashed$A$labelB$B
       }
       throw "Entry not found in map"
     }
@@ -176,7 +176,7 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
         entry = self.$labelB$B_Table[i]
         while !isnull(entry) {
           yield entry!
-          entry = entry.nextHashed$A$labelB$B
+          entry = entry!.nextHashed$A$labelB$B
         }
       }
     }
@@ -185,7 +185,7 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
       for i in range(self.$labelB$B_Table.length()) {
         entry = self.$labelB$B_Table[i]
         while !isnull(entry) {
-          nextEntry = entry.nextHashed$A$labelB$B
+          nextEntry = entry!.nextHashed$A$labelB$B
           yield entry!
           entry = nextEntry
         }
@@ -200,10 +200,10 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
       for x$labelB$B in range(self.$labelB$B_Table.length()) {
         $labelB$B_Entry = self.$labelB$B_Table[x$labelB$B]
         while !isnull($labelB$B_Entry) {
-          next$labelB$B_Entry = $labelB$B_Entry.nextHashed$A$labelB$B
-          $labelB$B_Entry.nextHashed$A$labelB$B = null($labelB$B_Entry)
-          $labelB$B_Entry.$labelA$A = null(self)
-          $labelB$B_Entry.destroy()
+          next$labelB$B_Entry = $labelB$B_Entry!.nextHashed$A$labelB$B
+          $labelB$B_Entry!.nextHashed$A$labelB$B = null($labelB$B_Entry!)
+          $labelB$B_Entry!.$labelA$A = null(self)
+          $labelB$B_Entry!.destroy()
           $labelB$B_Entry = next$labelB$B_Entry
         }
         self.$labelB$B_Table[x$labelB$B] = null($labelB$B_Entry)
@@ -214,9 +214,9 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
       for x$labelB$B in range(self.$labelB$B_Table.length()) {
         $labelB$B_Entry = self.$labelB$B_Table[x$labelB$B]
         while !isnull($labelB$B_Entry) {
-          next$labelB$B_Entry = $labelB$B_Entry.nextHashed$A$labelB$B
-          $labelB$B_Entry.nextHashed$A$labelB$B = null($labelB$B_Entry)
-          $labelB$B_Entry.$labelA$A = null(self)
+          next$labelB$B_Entry = $labelB$B_Entry!.nextHashed$A$labelB$B
+          $labelB$B_Entry!.nextHashed$A$labelB$B = null($labelB$B_Entry)
+          $labelB$B_Entry!.$labelA$A = null(self)
           $labelB$B_Entry = next$labelB$B_Entry
         }
         self.$labelB$B_Table[x$labelB$B] = null($labelB$B_Entry)
@@ -231,7 +231,7 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
   // Remove self from A on destruction.
   appendcode B.destroy {
     if !isnull(self.$labelA$A) {
-      self.$labelA$A.remove$labelB$B(self)
+      self.$labelA$A!.remove$labelB$B(self)
     }
   }
 }
