@@ -1,0 +1,12 @@
+class Foo(self) {
+}
+
+func asdf() {
+  println bar
+}
+
+foo = null(Foo)
+bar = foo
+asdf()
+foo = Foo()
+
