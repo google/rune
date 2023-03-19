@@ -191,10 +191,6 @@ class Statement(self, block: Block, type: StateType, line: Line) {
 
   // Append a deep copy of the statement to destBlock.
   func appendCopy(self, destBlock: Block) -> Statement {
-    if false {
-      // Type hint for recursion.
-      return self
-    }
     newStatement = Statement(destBlock, self.type, self.line)
     self.copyExprAndSubBlock(newStatement)
     newStatement.instantiated = self.instantiated

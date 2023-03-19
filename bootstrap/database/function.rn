@@ -159,10 +159,6 @@ class Function(self, owningBlock: Block?, type: FuncType, sym: Sym,
 
   // Make a copy of the function in |destBlock|.
   func copy(self, destBlock: Block) -> Function {
-    if false {
-      // Type hint for recursion.
-      return self
-    }
     newFunction = Function(destBlock, self.type, self.sym, self.linkage, self.line)
     newBlock = self.subBlock.copy()
     newFunction.insertSubBlock(newBlock)
@@ -257,10 +253,6 @@ relation DoublyLinked Operator Function cascade
 func createMainFunc() {
   rootFilepath = Filepath("Root filepath", null(Filepath), true)
   rootLine = Line(rootFilepath, "Create main", 0u32)
-  if false {
-    // Type hint for Block.
-    dummyBlock = Block(rootLine)
-  }
   mainFunc = Function(null(Block(rootLine)), FuncType.Package,
         Sym.new("main"), Linkage.Package, rootLine)
   typeExpr = Expr(ExprType.IntType, rootLine)
@@ -292,9 +284,6 @@ unittest {
   rootFilepath = rootLine.filepath
   argcVar = rootBlock.firstVariable
   argvVar = argcVar.nextBlockVariable
-  // Type hint: In these tests, the compiler does not know what exact class is
-  // added in the Ident -> Expr relation.
-  expr = Expr.newIdent(argcVar.firstIdent!)
 
   func createEmptyFunction(owningBlock: Block, name: string) -> Function {
     return Function(owningBlock, FuncType.Plain, Sym.new(name), Linkage.Module, rootLine)

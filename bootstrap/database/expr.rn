@@ -779,10 +779,6 @@ class Expr(self, type: ExprType, line: Line) {
     newExpr.autocast = self.autocast
     newExpr.val = self.val
     for child in self.exprs() {
-      if (false) {
-        // Type hint for recursion.  TODO: make use of return type constraints.
-        return newExpr
-      }
       newChild = child.copy()
       newExpr.appendExpr(newChild)
     }
@@ -810,13 +806,6 @@ relation OneToOne Function:"Type" Expr:"Type" cascade
 unittest {
   filepath = Filepath.new("test_filepath", null(Filepath), false)
   line = Line(filepath, "Not a real line", 1u32)
-  if false {
-    // Type hints
-    dummyBlock = Block(line)
-    dummyFunction = Function(dummyBlock, FuncType.Package, Sym.new("test"), Linkage.Package, line)
-    dummyIdent = dummyFunction.firstIdent!
-    dummyKxpr = Expr.newIdent(dummyIdent)
-  }
 
   func createBinaryExpr() -> Expr {
     left = Expr.newConstant(Value("Hello"), line)

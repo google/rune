@@ -56,10 +56,6 @@ class Block(self, line: Line) {
   func copyStatementsAfterStatement(self, destStatement: Statement) {
     lastStatement = destStatement
     for statement in self.statements() {
-      if false {
-        // Type hint for recursion.
-        return
-      }
       lastStatement = statement.appendCopyAfterStatement(lastStatement)
     }
   }
@@ -96,10 +92,6 @@ class Block(self, line: Line) {
 
   // Make a copy of the block, without sub-blocks.
   func copy(self) -> Block {
-    if false {
-      // Type hint for recursion.
-      return self!
-    }
     newBlock = Block(self.line)
     for statement in self.statements() {
       statement.appendCopy(newBlock)

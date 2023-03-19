@@ -30,10 +30,6 @@ class Ident(self, block: Block, object: Function | Variable, sym: Sym, objLine: 
   object.appendIdent(self)
   // Operator identifiers are not in any block hash table.
   if !isnull(block) {
-    if false {
-      // Type hint for the ident symbol table.
-      block.insertIdent(self)
-    }
     oldIdent = block.findIdent(sym)
     if !isnull(oldIdent) {
       Error("Tried to create an identifier '%s' that already exists on the block" % sym.name,

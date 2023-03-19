@@ -580,7 +580,7 @@ static deFunction findMethod(deBlock module, char *method) {
 // method's function.
 static deFunction findMethodFunction(char *protoFileName, char *method) {
   deBlock module = deParseModule(protoFileName, deRootGetBlock(deTheRoot), true);
-  deBind2();
+  deBind();
   deBindRPCs();
   deFunction function = findMethod(module, method);
   if (function == deFunctionNull) {
