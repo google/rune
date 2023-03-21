@@ -126,7 +126,7 @@ generator TailLinked(A: Class, B: Class, cascadeDelete:bool = false,
     }
 
     iterator $labelB$pluralB(self) {
-      for child = self.first$labelB$B, !isnull(child), child = child.next$A$labelB$B {
+      for child = self.first$labelB$B, !isnull(child), child = child!.next$A$labelB$B {
         yield child!
       }
     }

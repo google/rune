@@ -114,9 +114,9 @@ class Block(self, line: Line) {
 
   func owningBlock(self) -> Block? {
     if !isnull(self.owningFunction) {
-      return self.owningFunction.block
+      return self.owningFunction!.block
     } else if !isnull(self.owningStatement) {
-      return self.owningStatement.block
+      return self.owningStatement!.block
     // TODO: Comment back in when we port class.
     // } else if !isnull(self.owningClass) {
     //   return self.owningClass.tclass.function.block
@@ -150,8 +150,8 @@ unittest {
   use value
   use expr
 
-  rootBlock = getRoot().block
-  rootLine = rootBlock.line
+  rootBlock = getRootBlock()
+  rootLine = rootBlock.line!
   rootFilepath = rootLine.filepath!
 
   func createEmptyBlock() -> Block {

@@ -48,7 +48,7 @@ for i in range(10u32) {
   do {
     element = root.popHeapElement()
   } while !isnull(element) {
-    totalHash = hashValues(totalHash, element.cost)
+    totalHash = hashValues(totalHash, element!.cost)
   }
   println totalHash
 }

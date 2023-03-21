@@ -34,7 +34,7 @@ class Dict(self, <keyType>, <valueType>) {
     if isnull(entry) {
       throw "Key not found in dictionary"
     }
-    self.removeEntry(entry)
+    self.removeEntry(entry!)
   }
 
   func find(self, key) {
@@ -42,7 +42,7 @@ class Dict(self, <keyType>, <valueType>) {
     if isnull(entry) {
       throw "Key not found in dictionary"
     }
-    return entry.value
+    return entry!.value
   }
 
   operator [] (dict: Dict, key) {

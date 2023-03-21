@@ -92,9 +92,9 @@ class Ident(self, block: Block, object: Function | Variable, sym: Sym, objLine: 
   // Return the line of the identifier.
   func line(self) -> Line {
     if !isnull(self.function) {
-      return self.function.line
+      return self.function!.line
     }
-    return self.variable.line
+    return self.variable!.line!
   }
 
   // Find an identifier from the path Expr.

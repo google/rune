@@ -48,7 +48,7 @@ generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
       if isnull(prevChild) {
         self.insert$labelB$B(child)
       } else {
-        nextChild = prevChild.next$A$labelB$B
+        nextChild = prevChild!.next$A$labelB$B
         if isnull(nextChild) {
           self.append$labelB$B(child)
         } else {
@@ -124,13 +124,13 @@ generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
     }
 
     iterator $labelB$pluralB(self) {
-      for child = self.first$labelB$B, !isnull(child), child = child.next$A$labelB$B {
+      for child = self.first$labelB$B, !isnull(child), child = child!.next$A$labelB$B {
         yield child!
       }
     }
 
     iterator reverse$labelB$pluralB(self) {
-      for child = self.last$labelB$B, !isnull(child), child = child.prev$A$labelB$B {
+      for child = self.last$labelB$B, !isnull(child), child = child!.prev$A$labelB$B {
         yield child!
       }
     }
@@ -138,7 +138,7 @@ generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
     iterator safe$labelB$pluralB(self) {
       child = self.first$labelB$B
       while !isnull(child) {
-        next$A$labelB$B = child.next$A$labelB$B
+        next$A$labelB$B = child!.next$A$labelB$B
         yield child!
         child = next$A$labelB$B
       }
@@ -147,7 +147,7 @@ generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
     iterator safeReverse$labelB$pluralB(self) {
       child = self.last$labelB$B
       while !isnull(child) {
-        prev$A$labelB$B = child.prev$A$labelB$B
+        prev$A$labelB$B = child!.prev$A$labelB$B
         yield child!
         child = prev$A$labelB$B
       }

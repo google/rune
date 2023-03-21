@@ -187,7 +187,7 @@ class Function(self, owningBlock: Block?, type: FuncType, sym: Sym,
   // |childFunction| will be called with no parameters.
   func appendFunctionCall(self, childFunction: Function) -> Statement {
     ident = childFunction.firstIdent
-    pathExpr = ident.createPathExpr()
+    pathExpr = ident!.createPathExpr()
     text = "%s()\n" % childFunction.name()
     block = self.subBlock!
     line = Line(block.line.filepath!, text, 0u32)
@@ -224,7 +224,7 @@ class Function(self, owningBlock: Block?, type: FuncType, sym: Sym,
 // Append a call statement to the module initialization function in the root block.
 func insertModuleInitializationCall(moduleFunc: Function) {
   ident = moduleFunc.firstIdent
-  pathExpr = ident.createPathExpr()
+  pathExpr = ident!.createPathExpr()
   block = moduleFunc.subBlock
   text = "%s()\n" % moduleFunc.name()
   line = Line(block.line.filepath!, text, 0u32)
@@ -330,5 +330,5 @@ unittest insertModuleInitializationCallTest {
   function2 = createEmptyFunction(getRoot().block!, "module2")
   insertModuleInitializationCall(function1)
   insertModuleInitializationCall(function2)
-  getRoot().block.dump()
+  getRootBlock().dump()
 }

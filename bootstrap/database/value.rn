@@ -96,7 +96,7 @@ class Value(self: Value, value: string | bool | Int | Uint | Bigint | Float | Sy
         return "%ff%u" % (self.floatVal, self.width)
       }
       case DatatypeType.Int, DatatypeType.Uint {
-        return self.intVal.toString()
+        return self.intVal!.toString()
       }
       case DatatypeType.Sym {
         return self.symVal.name
@@ -134,7 +134,7 @@ unittest valueTypesTest {
   c = Value(true)
   d = Value(3.1415927f32)
   e = Value(Sym.new("test"))
-  println a.intVal.toStringInBase(16u32)
+  println a.intVal!.toStringInBase(16u32)
   println b
   println c
   println d

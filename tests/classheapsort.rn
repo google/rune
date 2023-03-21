@@ -37,5 +37,5 @@ root.pushElement(Element("Alice", 32))
 do {
   element = root.popElement()
 } while !isnull(element) {
-  println element
+  println element!
 }

@@ -52,7 +52,7 @@ void dePrintIndentStr(deString string) {
 
 // Report an error, but do not exit.
 static void reportError(deLine line, char *buf) {
-  printf("**********");
+  printf("********** Error\n");
   if (line != deLineNull) {
     deFilepath filepath = deLineGetFilepath(line);
     utAssert(filepath != deFilepathNull);

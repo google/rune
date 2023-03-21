@@ -7,7 +7,7 @@ priority_queue: priority_queue.cc
 	$(CPP) $(CCFLAGS) -o priority_queue priority_queue.cc
 
 fh: fh.rn
-	rune -U -O fh.rn
+	../rune -U -O fh.rn
 
 binary_trees_cc: binary_trees.cc
 	clang++ -O3 binary_trees.cc -o binary_trees_cc

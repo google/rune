@@ -1605,6 +1605,9 @@ static bool bindDotExpression(deBlock scopeBlock, deExpression expression) {
   deDatatypeType type = deDatatypeGetType(datatype);
   deBlock classBlock;
   if (type == DE_TYPE_CLASS) {
+    if (deDatatypeNullable(datatype)) {
+      error(expression, "Cannot use  dot operator on nullable type.");
+    }
     classBlock = deClassGetSubBlock(deDatatypeGetClass(datatype));
   } else if (type == DE_TYPE_NULL) {
     blockOnNullResolution(scopeBlock, expression);
