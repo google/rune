@@ -1495,6 +1495,21 @@ static void refineAccessExpressionDatatype(deBlock scopeBlock, deExpression targ
   }
 }
 
+// Check the type constraint on the assignment expression.
+static void checkAssignmentTypeConstraint(deBlock scopeBlock, deExpression expression) {
+  deExpression access = deExpressionGetFirstExpression(expression);
+  deExpression value = deExpressionGetNextExpression(access);
+  deExpression constraint = deExpressionGetNextExpression(value);
+  if (constraint == deExpressionNull) {
+    return;
+  }
+  deDatatype datatype = deExpressionGetDatatype(value);
+  if (!deDatatypeMatchesTypeExpression(scopeBlock, datatype, constraint)) {
+    error(expression, "Violation of type constraint: %s",
+        deDatatypeGetDefaultValueString(datatype));
+  }
+}
+
 // Bind an assignment expression.
 static deBindRes bindAssignmentExpression(deBlock scopeBlock, deExpression expression) {
   deExpression access = deExpressionGetFirstExpression(expression);
@@ -1524,11 +1539,12 @@ static deBindRes bindAssignmentExpression(deBlock scopeBlock, deExpression expre
     refineAccessExpressionDatatype(scopeBlock, access, valueDatatype);
   }
   deExpressionSetDatatype(expression, valueDatatype);
+  checkAssignmentTypeConstraint(scopeBlock, expression);
   return DE_BINDRES_OK;
 }
 
 // Bind the array expression.
-static void bindArrayExpression(deBlock scopeBlock, deExpression expression) { 
+static void bindArrayExpression(deBlock scopeBlock, deExpression expression) {
   deLine line = deExpressionGetLine(expression);
   deExpression firstElement = deExpressionGetFirstExpression(expression);
   deDatatype datatype = deExpressionGetDatatype(firstElement);
@@ -2000,7 +2016,7 @@ static void rebuildBinding(deBinding binding) {
 }
 
 // Bind or continue expression the statement.
-void deBindStatement2(deBinding binding) {
+void deBindStatement(deBinding binding) {
   deExpression expression = deBindingGetFirstExpression(binding);
   deBlock scopeBlock = deGetBindingBlock(binding);
   while (expression != deExpressionNull) {
@@ -2045,6 +2061,6 @@ void deBindStatement2(deBinding binding) {
   }
   if (deBindingGetFirstExpression(binding) != deExpressionNull) {
     // We must have queued more expressions during post-processing.
-    deBindStatement2(binding);
+    deBindStatement(binding);
   }
 }

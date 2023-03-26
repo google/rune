@@ -52,6 +52,7 @@ Support tuple unpacking.
 Support overloading modular operations, so we can support modular polynomials, etc.
 Add multi-threading support.
 Add schema-level reuse statements
+Write a schema generator for Rune similar to the dataview program for DataDraw schemas.
 Flush out generator's Rune code interpreter.
 Finish transition to memory pools, and allocation of global arrays with mmap of the memory available on the machine so large arrays never move.
 

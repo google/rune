@@ -1,0 +1,68 @@
+module Rune
+
+class Block
+
+class Class
+
+class Datatype
+
+class Expr
+
+class Filepath
+
+class Function
+
+class Generator
+
+class Ident
+
+class Paramspec
+
+class Relation
+
+class Root
+
+class Signature
+
+class Statement
+
+class Tclass
+
+class Variable
+
+relationship Function Tclass cascade
+relationship Tclass Class doubly_linked cascade
+relationship Root Function cascade
+relationship Function:Parent Function:Child doubly_linked cascade
+relationship Class:Parent Function:Sub cascade
+relationship Signature:Uniquified Function:Uniquified cascade
+relationship Relation:Generated Function:Generated doubly_linked cascade
+relationship Root Filepath hashed cascade
+relationship Filepath:Module Function:Module
+relationship Filepath:Parent Filepath:Child doubly_linked cascade
+relationship Function Ident hashed cascade
+relationship Function:Name Ident:Name doubly_linked cascade
+relationship Variable Ident cascade
+relationship Function Variable doubly_linked cascade
+relationship Function:Owning Block:Sub cascade
+relationship Statement:Owning Block:Sub cascade
+relationship Block Statement doubly_linked cascade
+relationship Relation:Generated Statement:Generated doubly_linked cascade
+relationship Expr:Parent Expr:Child doubly_linked cascade
+relationship Ident Expr doubly_linked
+relationship Statement Expr cascade
+relationship Variable:Initializer Expr:Initializer cascade
+relationship Variable:Type Expr:Type cascade
+relationship Function:Type Expr:Type cascade
+relationship Root Datatype hashed  // Datatype is reference counted.
+relationship Root Signature hashed cascade
+relationship Signature:Call Signature:Call doubly_linked
+relationship Statement:Call Signature:Call doubly_linked
+relationship Class Signature doubly_linked cascade
+relationship Function Signature doubly_linked cascade
+relationship Signature Paramspec array cascade
+relationship Variable Paramspec cascade
+relationship Function Generator cascade
+relationship Tclass:Parent Relation:Child doubly_linked cascade
+relationship Tclass:Child Relation:Parent doubly_linked cascade
+relationship Generator Relation doubly_linked cascade

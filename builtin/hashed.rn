@@ -210,7 +210,7 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
       }
     }
   } else {
-    appendcode A.destroy {
+    prependcode A.destroy {
       for x$labelB$B in range(self.$labelB$B_Table.length()) {
         $labelB$B_Entry = self.$labelB$B_Table[x$labelB$B]
         while !isnull($labelB$B_Entry) {
@@ -229,7 +229,7 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
     self.nextHashed$A$labelB$B = null(self)
   }
   // Remove self from A on destruction.
-  appendcode B.destroy {
+  prependcode B.destroy {
     if !isnull(self.$labelA$A) {
       self.$labelA$A!.remove$labelB$B(self)
     }

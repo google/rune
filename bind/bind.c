@@ -542,7 +542,7 @@ void deBindAllSignatures(void) {
   deBinding binding = deRootGetFirstBinding(deTheRoot);
   while (binding != deBindingNull) {
     deRootRemoveBinding(deTheRoot, binding);
-    deBindStatement2(binding);
+    deBindStatement(binding);
     if (deBindingGetFirstExpression(binding) ==  deExpressionNull) {
       // The expression tree is now fully bound.
       deSignature signature = deBindingGetSignature(binding);
@@ -641,9 +641,14 @@ static void reportEvent(deEvent event) {
 // exit if any exist.
 void deReportEvents(void) {
   deEvent event;
-  deForeachRootEvent(deTheRoot, event) {
-    reportEvent(event);
-  } deEndRootEvent;
+  deSafeForeachRootEvent(deTheRoot, event) {
+    if (deEventGetFirstBinding(event) == deBindingNull) {
+      // This can happen if we destroy the statements that were blocked.
+      deEventDestroy(event);
+    } else {
+      reportEvent(event);
+    }
+  } deEndSafeRootEvent;
   if (deRootGetFirstEvent(deTheRoot) != deEventNull) {
     utExit("Exiting due to errors...");
   }

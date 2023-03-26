@@ -57,7 +57,7 @@ void deBind(void);
 void deReportEvents(void);
 void deInlineIterators(void);
 void deBindAllSignatures(void);
-void deBindStatement2(deBinding binding);
+void deBindStatement(deBinding binding);
 void deQueueSignature(deSignature signature);
 void deQueueBlockStatements(deSignature signature, deBlock block,
                             bool instantiating);
