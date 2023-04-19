@@ -26,7 +26,7 @@ static void generateConstructorString(deClass theClass) {
       "appendcode {\n"
       "  func %1$s_allocate() {\n"
       "    if %1$s_firstFree != 0u%3$u {\n"
-      "      object = <%2$s>%1$s_firstFree\n"
+      "      object = < %2$s >%1$s_firstFree\n"
       "      %1$s_firstFree = %1$s_nextFree[<u%3$u>object]\n"
       "    } else {\n"
       "      if %1$s_used == %1$s_allocated {\n"
@@ -40,7 +40,7 @@ static void generateConstructorString(deClass theClass) {
   } deEndBlockVariable;
   deSprintToString(
       "      }\n"
-      "      object = <%2$s>%1$s_used\n"
+      "      object = <%2$s >%1$s_used\n"
       "      %1$s_used += 1u%3$u\n"
       "    }\n"
       "    %1$s_nextFree[<u%3$u>object] = 1u%3$u\n",

@@ -60,9 +60,9 @@ deTclass deFindTypeTclass(deDatatypeType type) {
     case DE_TYPE_CLASS:
       return deClassTclass;
     case DE_TYPE_TCLASS:
-    case DE_TYPE_NULL:
     case DE_TYPE_NONE:
-      utExit("Not expecting to get tclass for tclass, null, enumclass, or none");
+    case DE_TYPE_EXPR:
+      utExit("Unexpected type");
   }
   return deTclassNull;  // Dummy return.
 }
@@ -77,7 +77,7 @@ static deTclass createBuiltinTclass(char* name, deBuiltinTclassType type,
   deFilepath filepath = deBlockGetFilepath(globalBlock);
   deFunction function = deFunctionCreate(filepath, globalBlock, DE_FUNC_CONSTRUCTOR,
       utSymCreate(name), DE_LINK_BUILTIN, 0);
-  deTclass tclass = deTclassCreate(function, 0, 0);
+  deTclass tclass = deTclassCreate(function, 32, deLineNull);
   deTclassSetBuiltinType(tclass, type);
   deBlock subBlock = deFunctionGetSubBlock(function);
   // Add self parameter.
@@ -181,7 +181,7 @@ void deBuiltinStop(void) {
 
 // Bind builtin methods of arrays.
 static deDatatype bindArrayBuiltinMethod(deBlock scopeBlock, deExpression expression,
-    deFunction function, deDatatypeArray parameterTypes, deLine line) {
+    deFunction function, deDatatypeArray parameterTypes) {
   deDatatype selfType = deDatatypeArrayGetiDatatype(parameterTypes, 0);
   utAssert(deDatatypeGetType(selfType) == DE_TYPE_ARRAY);
   deDatatype paramType = deDatatypeNull;
@@ -192,7 +192,7 @@ static deDatatype bindArrayBuiltinMethod(deBlock scopeBlock, deExpression expres
     return deUintDatatypeCreate(64);
   } else if (function == deArrayResizeFunc) {
     if (deDatatypeGetType(paramType) != DE_TYPE_UINT) {
-      deError(line, "Array.resize method requires a uint length parameter");
+      deExprError(expression, "Array.resize method requires a uint length parameter");
     }
     return selfType;  // Resize returns the array.
   } else if (function == deArrayAppendFunc) {
@@ -201,13 +201,15 @@ static deDatatype bindArrayBuiltinMethod(deBlock scopeBlock, deExpression expres
     deExpression arrayExpr = deExpressionGetFirstExpression(accessExpr);
     deRefineAccessExpressionDatatype(scopeBlock, arrayExpr, deArrayDatatypeCreate(paramType));
     deDatatype elementType = deDatatypeGetElementType(deExpressionGetDatatype(arrayExpr));
-    if (paramType != elementType && paramType != deSetDatatypeNullable(elementType, false, line)) {
-      deError(line, "Array.append passed incompatible element");
+    if (paramType != elementType && paramType != deSetDatatypeNullable(elementType, false)) {
+      deExprError(expression, "Array.append passed incompatible element: %s",
+        deGetOldVsNewDatatypeStrings(elementType, paramType));
     }
     return deNoneDatatypeCreate();
   } else if (function == deArrayConcatFunc) {
     if (paramType != selfType) {
-      deError(line, "Array.concat passed incompatible array");
+      deExprError(expression, "Array.append passed incompatible element: %s",
+        deGetOldVsNewDatatypeStrings(selfType, paramType));
     }
     return deNoneDatatypeCreate();
   } else if (function == deArrayReverseFunc) {
@@ -221,7 +223,7 @@ static deDatatype bindArrayBuiltinMethod(deBlock scopeBlock, deExpression expres
 
 // Bind builtin methods of strings.
 static deDatatype bindStringBuiltinMethod(deFunction function,
-    deDatatypeArray parameterTypes, deExpression expression, deLine line) {
+    deDatatypeArray parameterTypes, deExpression expression) {
   deDatatype selfType = deDatatypeArrayGetiDatatype(parameterTypes, 0);
   utAssert(deDatatypeGetType(selfType) == DE_TYPE_STRING);
   deDatatype paramType = deDatatypeNull;
@@ -238,17 +240,19 @@ static deDatatype bindStringBuiltinMethod(deFunction function,
     return deUintDatatypeCreate(64);
   } else if (function == deStringResizeFunc) {
     if (deDatatypeGetType(paramType) != DE_TYPE_UINT) {
-      deError(line, "String.resize method requires a uint length parameter");
+      deExprError(expression, "String.resize method requires a uint length parameter");
     }
     return selfType; // Returns the string.
   } else if (function == deStringAppendFunc) {
     if (paramType != deDatatypeGetElementType(selfType)) {
-      deError(line, "String.append passed incompatible element");
+      deExprError(expression, "String.append passed incompatible element: %s",
+        deGetOldVsNewDatatypeStrings(deDatatypeGetElementType(selfType), paramType));
     }
     return deNoneDatatypeCreate();
   } else if (function == deStringConcatFunc) {
     if (paramType != selfType) {
-      deError(line, "String.concat passed incompatible String");
+      deExprError(expression, "String.concat passed incompatible element: %s",
+        deGetOldVsNewDatatypeStrings(selfType, paramType));
     }
     return deNoneDatatypeCreate();
   } else if (function == deStringReverseFunc) {
@@ -257,7 +261,8 @@ static deDatatype bindStringBuiltinMethod(deFunction function,
     deExpression uintTypeExpr = deExpressionGetFirstExpression(paramsExpr);
     if (!deExpressionIsType(uintTypeExpr) ||
         deDatatypeGetType(deExpressionGetDatatype(uintTypeExpr)) != DE_TYPE_UINT) {
-      deError(line, "String.toUintLE expectes an unsigned integer type expression, eg u256");
+      deExprError(expression,
+          "String.toUintLE expectes an unsigned integer type expression, eg u256");
     }
     bool secret = deDatatypeSecret(selfType) || deDatatypeSecret(paramType);
     return deSetDatatypeSecret(paramType, secret);
@@ -265,7 +270,8 @@ static deDatatype bindStringBuiltinMethod(deFunction function,
     deExpression uintTypeExpr = deExpressionGetFirstExpression(paramsExpr);
     if (!deExpressionIsType(uintTypeExpr) ||
         deDatatypeGetType(deExpressionGetDatatype(uintTypeExpr)) != DE_TYPE_UINT) {
-      deError(line, "String.toUintBE expectes an unsigned integer type expression, eg u256");
+      deExprError(expression,
+          "String.toUintBE expectes an unsigned integer type expression, eg u256");
     }
     bool secret = deDatatypeSecret(selfType) || deDatatypeSecret(paramType);
     return deSetDatatypeSecret(paramType, secret);
@@ -273,10 +279,10 @@ static deDatatype bindStringBuiltinMethod(deFunction function,
     return selfType;
   } else if (function == deFindFunc || function == deRfindFunc) {
     if (deDatatypeSecret(selfType) || deDatatypeSecret(paramType)) {
-      deError(line, "Cannot search for substrings in secret strings");
+      deExprError(expression, "Cannot search for substrings in secret strings");
     }
     if (param2Type != deDatatypeNull && deDatatypeSecret(param2Type)) {
-      deError(line, "Cannot use secret offset in find or rfind");
+      deExprError(expression, "Cannot use secret offset in find or rfind");
     }
     return deUintDatatypeCreate(64);
   }
@@ -286,7 +292,7 @@ static deDatatype bindStringBuiltinMethod(deFunction function,
 
 // Bind builtin methods of uints.
 static deDatatype bindUintBuiltinMethod(deFunction function,
-    deDatatypeArray parameterTypes, deLine line) {
+    deDatatypeArray parameterTypes, deExpression expression) {
   deDatatype selfType = deDatatypeArrayGetiDatatype(parameterTypes, 0);
   if (function == deUintToStringLEFunc || function == deUintToStringBEFunc) {
     // This conversion is constant time.
@@ -295,11 +301,12 @@ static deDatatype bindUintBuiltinMethod(deFunction function,
   } else if (function == deUintToStringFunc) {
     // This conversion is not constant time.
     if (deDatatypeSecret(selfType)) {
-      deError(line, "Uint.toString() cannot convert secrets to strings.  Try Uint.toStringLE()");
+      deExprError(expression,
+          "Uint.toString() cannot convert secrets to strings.  Try Uint.toStringLE()");
     }
     deDatatype paramType = deDatatypeArrayGetiDatatype(parameterTypes, 1);
     if (paramType != deDatatypeNull && deDatatypeGetType(paramType) != DE_TYPE_UINT) {
-      deError(line, "Int.toString(base) requires a Uint base parameter");
+      deExprError(expression, "Int.toString(base) requires a Uint base parameter");
     }
     return deStringDatatypeCreate();
   }
@@ -309,16 +316,17 @@ static deDatatype bindUintBuiltinMethod(deFunction function,
 
 // Bind builtin methods of ints.
 static deDatatype bindIntBuiltinMethod(deFunction function,
-    deDatatypeArray parameterTypes, deLine line) {
+    deDatatypeArray parameterTypes, deExpression expression) {
   deDatatype selfType = deDatatypeArrayGetiDatatype(parameterTypes, 0);
   if (function == deIntToStringFunc) {
     // This conversion is not constant time.
     if (deDatatypeSecret(selfType)) {
-      deError(line, "Int.toString() cannot convert secrets to strings.  Try Uint.toStringLE()");
+      deExprError(expression,
+          "Int.toString() cannot convert secrets to strings.  Try Uint.toStringLE()");
     }
     deDatatype paramType = deDatatypeArrayGetiDatatype(parameterTypes, 1);
     if (paramType != deDatatypeNull && deDatatypeGetType(paramType) != DE_TYPE_UINT) {
-      deError(line, "Int.toString(base) requires a Uint base parameter");
+      deExprError(expression, "Int.toString(base) requires a Uint base parameter");
     }
     return deStringDatatypeCreate();
   }
@@ -328,12 +336,12 @@ static deDatatype bindIntBuiltinMethod(deFunction function,
 
 // Bind builtin methods of Bools.
 static deDatatype bindBoolBuiltinMethod(deFunction function,
-    deDatatypeArray parameterTypes, deLine line) {
+    deDatatypeArray parameterTypes, deExpression expression) {
   deDatatype selfType = deDatatypeArrayGetiDatatype(parameterTypes, 0);
   if (function == deBoolToStringFunc) {
     // This conversion is not constant time.
     if (deDatatypeSecret(selfType)) {
-      deError(line, "Bool.toString() cannot convert secrets to strings");
+      deExprError(expression, "Bool.toString() cannot convert secrets to strings");
     }
     return deStringDatatypeCreate();
   }
@@ -343,13 +351,13 @@ static deDatatype bindBoolBuiltinMethod(deFunction function,
 
 // Bind builtin methods of Tuple.
 static deDatatype bindJustToStringBuiltinMethod(deFunction function,
-    deDatatypeArray parameterTypes, deLine line) {
+    deDatatypeArray parameterTypes, deExpression expression) {
   deDatatype selfType = deDatatypeArrayGetiDatatype(parameterTypes, 0);
   char *typeName = deDatatypeTypeGetName(deDatatypeGetType(selfType));
   if (function == deTupleToStringFunc) {
     // Printing is not constant time.
     if (deDatatypeSecret(selfType)) {
-      deError(line, "%s.toString() cannot convert secrets to strings", typeName);
+      deExprError(expression, "%s.toString() cannot convert secrets to strings", typeName);
     }
     return deStringDatatypeCreate();
   }
@@ -363,27 +371,26 @@ deDatatype deBindBuiltinCall(deBlock scopeBlock, deFunction function,
   // For now, only arrays and strings have builtin methods.
   deDatatype selfType = deDatatypeArrayGetiDatatype(parameterTypes, 0);
   deDatatypeType type = deDatatypeGetType(selfType);
-  deLine line = deExpressionGetLine(expression);
 
   // Validate data before we return
   deExpression dotExpr = deExpressionGetFirstExpression(expression);
   utAssert(deExpressionGetType(dotExpr) == DE_EXPR_DOT);
   if (deExpressionIsType(deExpressionGetFirstExpression(dotExpr))) {
-    deError(line, "Expected an instance of a type, but got type instead");
+    deExprError(expression, "Expected an instance of a type, but got type instead");
   }
 
   if (type == DE_TYPE_ARRAY) {
-    return bindArrayBuiltinMethod(scopeBlock, expression, function, parameterTypes, line);
+    return bindArrayBuiltinMethod(scopeBlock, expression, function, parameterTypes);
   } else if (type == DE_TYPE_TUPLE || type == DE_TYPE_STRUCT || type == DE_TYPE_ENUM) {
-    return bindJustToStringBuiltinMethod(function, parameterTypes, line);
+    return bindJustToStringBuiltinMethod(function, parameterTypes, expression);
   } else if (type == DE_TYPE_STRING) {
-    return bindStringBuiltinMethod(function, parameterTypes, expression, line);
+    return bindStringBuiltinMethod(function, parameterTypes, expression);
   } else if (type == DE_TYPE_UINT) {
-    return bindUintBuiltinMethod(function, parameterTypes, line);
+    return bindUintBuiltinMethod(function, parameterTypes, expression);
   } else if (type == DE_TYPE_INT) {
-    return bindIntBuiltinMethod(function, parameterTypes, line);
+    return bindIntBuiltinMethod(function, parameterTypes, expression);
   } else if (type == DE_TYPE_BOOL) {
-    return bindBoolBuiltinMethod(function, parameterTypes, line);
+    return bindBoolBuiltinMethod(function, parameterTypes, expression);
   } else {
     utExit("Unknown builtin method call");
   }

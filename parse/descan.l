@@ -239,18 +239,22 @@ int dewrap(void) {
     return 1;
 }
 
-// Comment this in to print tokens as they are parsed.
-// #define DE_DEBUG
-
-#ifdef DE_DEBUG
-#define myDebug utDebug("%u ", deLineNum); utDebug
-#else
-#define myDebug noDebug
-#endif
 #undef YYLMAX
 #define YYLMAX 4096
 
-static void noDebug(char *foo, ...) {}
+#define retToken(token) delval.lineVal = deCurrentLine; logMsg(#token "\n"); return token
+
+static void logMsg(char *format, ...) {
+  if (!deLogTokens) {
+    return;
+  }
+  char *buf;
+  va_list ap;
+  va_start(ap, format);
+  buf = utVsprintf(format, ap);
+  va_end(ap);
+  utDebug("%s", buf);
+}
 
 %}
 
@@ -260,15 +264,15 @@ static void noDebug(char *foo, ...) {}
 
 %%
 <INITIAL>[ \t]*("//".*)?\n      { if (deParenDepth <= 0 && deBracketDepth <= 0) {
-                                    myDebug("newline\n");
+                                    logMsg("newline\n");
                                     return '\n';
                                   }
-                                  myDebug("Skipped newline\n"); }
-<INITIAL>"/*"                   { myDebug("Start block comment...\n");
+                                  logMsg("Skipped newline\n"); }
+<INITIAL>"/*"                   { logMsg("Start block comment...\n");
                                   deCommentDepth = 1;
                                   BEGIN comment; }
 <comment>"/*"                   { deCommentDepth++; }
-<comment>"*/"                   { myDebug("End block comment\n");
+<comment>"*/"                   { logMsg("End block comment\n");
                                   deCommentDepth--;
                                   if (deCommentDepth == 0) {
                                     BEGIN INITIAL;
@@ -276,154 +280,154 @@ static void noDebug(char *foo, ...) {}
 <comment>.|"\n"                 ;
 <INITIAL>"("                    { delval.lineVal = deCurrentLine;
                                   ++deParenDepth;
-                                  myDebug("Char (\n"); return '('; }
+                                  logMsg("Char (\n"); return '('; }
 <INITIAL>")"                    { delval.lineVal = deCurrentLine;
-                                  --deParenDepth; myDebug("Char )\n");
+                                  --deParenDepth; logMsg("Char )\n");
                                   return ')'; }
 <INITIAL>"["                    { delval.lineVal = deCurrentLine;
                                   ++deBracketDepth;
-                                  myDebug("Char [\n"); return '['; }
+                                  logMsg("Char [\n"); return '['; }
 <INITIAL>"]"                    { --deBracketDepth;
-                                  myDebug("Char ]\n");
+                                  logMsg("Char ]\n");
                                   return ']'; }
 
 <INITIAL>[ \t]+                 ;
-<INITIAL>"appendcode" {delval.lineVal = deCurrentLine; myDebug("KWAPPENDCODE\n"); return KWAPPENDCODE; }
-<INITIAL>"arrayof" { delval.lineVal = deCurrentLine; myDebug("KWARRAYOF\n"); return KWARRAYOF; }
-<INITIAL>"as"      { delval.lineVal = deCurrentLine; myDebug("KWAS\n"); return KWAS; }
-<INITIAL>"assert"   { delval.lineVal = deCurrentLine; myDebug("KWASSERT\n"); return KWASSERT; }
-<INITIAL>"bool"    { delval.lineVal = deCurrentLine; myDebug("KWBOOL\n"); return KWBOOL; }
-<INITIAL>"cascade" { delval.lineVal = deCurrentLine; myDebug("KWCASCADE\n"); return KWCASCADE; }
-<INITIAL>"case"    { delval.lineVal = deCurrentLine; myDebug("KWCASE\n"); return KWCASE; }
-<INITIAL>"class"   { delval.lineVal = deCurrentLine; myDebug("KWCLASS\n"); return KWCLASS; }
-<INITIAL>"debug"   { delval.lineVal = deCurrentLine; myDebug("KWDEBUG\n"); return KWDEBUG; }
-<INITIAL>"default" { delval.lineVal = deCurrentLine; myDebug("KWDEFAULT\n"); return KWDEFAULT; }
-<INITIAL>"do"      { delval.lineVal = deCurrentLine; myDebug("KWDO\n"); return KWDO; }
-<INITIAL>"else"    { delval.lineVal = deCurrentLine; myDebug("KWELSE\n"); return KWELSE; }
-<INITIAL>"enum"    { delval.lineVal = deCurrentLine; myDebug("KWENUM\n"); return KWENUM; }
-<INITIAL>"export" { delval.lineVal = deCurrentLine; myDebug("KWEXPORT\n"); return KWEXPORT; }
-<INITIAL>"exportlib" { delval.lineVal = deCurrentLine; myDebug("KWEXPORTLIB\n"); return KWEXPORTLIB; }
-<INITIAL>"rpc"     { delval.lineVal = deCurrentLine; myDebug("KWRPC\n"); return KWRPC; }
-<INITIAL>"extern"  { delval.lineVal = deCurrentLine; myDebug("KWEXTERN\n"); return KWEXTERN; }
-<INITIAL>"false"                { delval.boolVal = false; myDebug("false\n"); return BOOL; }
-<INITIAL>"final"   { delval.lineVal = deCurrentLine; myDebug("KWFINAL\n"); return KWFINAL; }
-<INITIAL>"for"     { delval.lineVal = deCurrentLine; myDebug("KWFOR\n"); return KWFOR; }
-<INITIAL>"func"    { delval.lineVal = deCurrentLine; myDebug("KWFUNC\n"); return KWFUNC; }
-<INITIAL>"generate" { delval.lineVal = deCurrentLine; myDebug("KWGENERATE\n"); return KWGENERATE; }
-<INITIAL>"generator" { delval.lineVal = deCurrentLine; myDebug("KWGENERATOR\n"); return KWGENERATOR; }
-<INITIAL>"if"      { delval.lineVal = deCurrentLine; myDebug("KWIF\n"); return KWIF; }
-<INITIAL>"import"  { delval.lineVal = deCurrentLine; myDebug("KWIMPORT\n"); return KWIMPORT; }
-<INITIAL>"importlib" { delval.lineVal = deCurrentLine; myDebug("KWIMPORTLIB\n"); return KWIMPORTLIB; }
-<INITIAL>"importrpc" { delval.lineVal = deCurrentLine; myDebug("KWIMPORTRPC\n"); return KWIMPORTRPC; }
-<INITIAL>"in"      { delval.lineVal = deCurrentLine; myDebug("KWIN\n"); return KWIN; }
-<INITIAL>"isnull"  { delval.lineVal = deCurrentLine; myDebug("KWISNULL\n"); return KWISNULL; }
-<INITIAL>"iterator" { delval.lineVal = deCurrentLine; myDebug("KWITERATOR\n"); return KWITERATOR; }
-<INITIAL>"mod"    { delval.lineVal = deCurrentLine; myDebug("KWMOD\n"); return KWMOD; }
-<INITIAL>"null"    { delval.lineVal = deCurrentLine; myDebug("KWNULL\n"); return KWNULL; }
-<INITIAL>"operator" { delval.lineVal = deCurrentLine; myDebug("KWOPERATOR\n"); return KWOPERATOR; }
-<INITIAL>"prependcode" { delval.lineVal = deCurrentLine; myDebug("KWPREPENDCODE\n"); return KWPREPENDCODE; }
-<INITIAL>"print"   { delval.lineVal = deCurrentLine; myDebug("KWPRINT\n"); return KWPRINT; }
-<INITIAL>"println" { delval.lineVal = deCurrentLine; myDebug("KWPRINTLN\n"); return KWPRINTLN; }
-<INITIAL>"ref"     { delval.lineVal = deCurrentLine; myDebug("KWREF\n"); return KWREF; }
-<INITIAL>"relation" { delval.lineVal = deCurrentLine; myDebug("KWRELATION\n"); return KWRELATION; }
-<INITIAL>"return"  { delval.lineVal = deCurrentLine; myDebug("KWRETURN\n"); return KWRETURN; }
-<INITIAL>"reveal"  { delval.lineVal = deCurrentLine; myDebug("KWREVEAL\n"); return KWREVEAL; }
-<INITIAL>"secret"  { delval.lineVal = deCurrentLine; myDebug("KWSECRET\n"); return KWSECRET; }
-<INITIAL>"signed"  { delval.lineVal = deCurrentLine; myDebug("KWSIGNED\n"); return KWSIGNED; }
-<INITIAL>"string"  { delval.lineVal = deCurrentLine; myDebug("KWSTRING\n"); return KWSTRING; }
-<INITIAL>("struct"|"message")  { delval.lineVal = deCurrentLine; myDebug("KWSTRUCT\n"); return KWSTRUCT; }
-<INITIAL>"switch"  { delval.lineVal = deCurrentLine; myDebug("KWSWITCH\n"); return KWSWITCH; }
-<INITIAL>"typeswitch"  { delval.lineVal = deCurrentLine; myDebug("KWTYPESWITCH\n"); return KWTYPESWITCH; }
-<INITIAL>"throw"   { delval.lineVal = deCurrentLine; myDebug("KWTHROW\n"); return KWTHROW; }
-<INITIAL>"true"                 { delval.boolVal = true; myDebug("true\n"); return BOOL; }
-<INITIAL>"typeof"  { delval.lineVal = deCurrentLine; myDebug("KWTYPEOF\n"); return KWTYPEOF; }
-<INITIAL>"unittest" { delval.lineVal = deCurrentLine; myDebug("KWUNITTEST\n"); return KWUNITTEST; }
-<INITIAL>"unref"   { delval.lineVal = deCurrentLine; myDebug("KWUNREF\n"); return KWUNREF; }
-<INITIAL>"unsigned" { delval.lineVal = deCurrentLine; myDebug("KWUNSIGNED\n"); return KWUNSIGNED; }
-<INITIAL>"use"     { delval.lineVal = deCurrentLine; myDebug("KWUSE\n"); return KWUSE; }
-<INITIAL>"var"     { delval.lineVal = deCurrentLine; myDebug("KWVAR\n"); return KWVAR; }
-<INITIAL>"while"   { delval.lineVal = deCurrentLine; myDebug("KWWHILE\n"); return KWWHILE; }
-<INITIAL>"widthof" { delval.lineVal = deCurrentLine; myDebug("KWWIDTHOF\n"); return KWWIDTHOF; }
-<INITIAL>"yield"   { delval.lineVal = deCurrentLine; myDebug("KWYIELD\n"); return KWYIELD; }
+<INITIAL>"appendcode"           { retToken(KWAPPENDCODE); }
+<INITIAL>"arrayof"              { retToken(KWARRAYOF); }
+<INITIAL>"as"                   { retToken(KWAS); }
+<INITIAL>"assert"               { retToken(KWASSERT); }
+<INITIAL>"bool"                 { retToken(KWBOOL); }
+<INITIAL>"cascade"              { retToken(KWCASCADE); }
+<INITIAL>"case"                 { retToken(KWCASE); }
+<INITIAL>"class"                { retToken(KWCLASS); }
+<INITIAL>"debug"                { retToken(KWDEBUG); }
+<INITIAL>"default"              { retToken(KWDEFAULT); }
+<INITIAL>"do"                   { retToken(KWDO); }
+<INITIAL>"else"                 { retToken(KWELSE); }
+<INITIAL>"enum"                 { retToken(KWENUM); }
+<INITIAL>"export"               { retToken(KWEXPORT); }
+<INITIAL>"exportlib"            { retToken(KWEXPORTLIB); }
+<INITIAL>"rpc"                  { retToken(KWRPC); }
+<INITIAL>"extern"               { retToken(KWEXTERN); }
+<INITIAL>"false"                { delval.boolVal = false; logMsg("false\n"); return BOOL; }
+<INITIAL>"final"                { retToken(KWFINAL); }
+<INITIAL>"for"                  { retToken(KWFOR); }
+<INITIAL>"func"                 { retToken(KWFUNC); }
+<INITIAL>"generate"             { retToken(KWGENERATE); }
+<INITIAL>"generator"            { retToken(KWGENERATOR); }
+<INITIAL>"if"                   { retToken(KWIF); }
+<INITIAL>"import"               { retToken(KWIMPORT); }
+<INITIAL>"importlib"            { retToken(KWIMPORTLIB); }
+<INITIAL>"importrpc"            { retToken(KWIMPORTRPC); }
+<INITIAL>"in"                   { retToken(KWIN); }
+<INITIAL>"isnull"               { retToken(KWISNULL); }
+<INITIAL>"iterator"             { retToken(KWITERATOR); }
+<INITIAL>"mod"                  { retToken(KWMOD); }
+<INITIAL>"null"                 { retToken(KWNULL); }
+<INITIAL>"operator"             { retToken(KWOPERATOR); }
+<INITIAL>"prependcode"          { retToken(KWPREPENDCODE); }
+<INITIAL>"print"                { retToken(KWPRINT); }
+<INITIAL>"println"              { retToken(KWPRINTLN); }
+<INITIAL>"ref"                  { retToken(KWREF); }
+<INITIAL>"relation"             { retToken(KWRELATION); }
+<INITIAL>"return"               { retToken(KWRETURN); }
+<INITIAL>"reveal"               { retToken(KWREVEAL); }
+<INITIAL>"secret"               { retToken(KWSECRET); }
+<INITIAL>"signed"               { retToken(KWSIGNED); }
+<INITIAL>"string"               { retToken(KWSTRING); }
+<INITIAL>("struct"|"message")   { retToken(KWSTRUCT); }
+<INITIAL>"switch"               { retToken(KWSWITCH); }
+<INITIAL>"typeswitch"           { retToken(KWTYPESWITCH); }
+<INITIAL>"throw"                { retToken(KWTHROW); }
+<INITIAL>"true"                 { delval.boolVal = true; logMsg("true\n"); return BOOL; }
+<INITIAL>"typeof"               { retToken(KWTYPEOF); }
+<INITIAL>"unittest"             { retToken(KWUNITTEST); }
+<INITIAL>"unref"                { retToken(KWUNREF); }
+<INITIAL>"unsigned"             { retToken(KWUNSIGNED); }
+<INITIAL>"use"                  { retToken(KWUSE); }
+<INITIAL>"var"                  { retToken(KWVAR); }
+<INITIAL>"while"                { retToken(KWWHILE); }
+<INITIAL>"widthof"              { retToken(KWWIDTHOF); }
+<INITIAL>"yield"                { retToken(KWYIELD); }
 
-<INITIAL>"+="     { delval.lineVal = deCurrentLine; myDebug("KWADDEQUALS\n"); return KWADDEQUALS; }
-<INITIAL>"!+="    { delval.lineVal = deCurrentLine; myDebug("KWADDTRUNCEQUALS\n"); return KWADDTRUNCEQUALS; }
-<INITIAL>"!+"     { delval.lineVal = deCurrentLine; myDebug("KWADDTRUNC\n"); return KWADDTRUNC; }
-<INITIAL>"&&="    { delval.lineVal = deCurrentLine; myDebug("KWANDEQUALS\n"); return KWANDEQUALS; }
-<INITIAL>"&="     { delval.lineVal = deCurrentLine; myDebug("KWANDEQUALS\n"); return KWBITANDEQUALS; }
-<INITIAL>"&&"     { delval.lineVal = deCurrentLine; myDebug("KWAND\n"); return KWAND; }
-<INITIAL>"->"     { delval.lineVal = deCurrentLine; myDebug("KWARROW\n"); return KWARROW; }
-<INITIAL>"!<"     { delval.lineVal = deCurrentLine; myDebug("KWCASTTRUNC\n"); return KWCASTTRUNC; }
-<INITIAL>"/="     { delval.lineVal = deCurrentLine; myDebug("KWDIVEQUALS\n"); return KWDIVEQUALS; }
-<INITIAL>"..."    { delval.lineVal = deCurrentLine; myDebug("KWDOTDOTDOT\n"); return KWDOTDOTDOT; }
-<INITIAL>"=="     { delval.lineVal = deCurrentLine; myDebug("KWEQUAL\n"); return KWEQUAL; }
-<INITIAL>"**"     { delval.lineVal = deCurrentLine; myDebug("KWEXPEQUALS\n"); return KWEXP; }
-<INITIAL>"**="    { delval.lineVal = deCurrentLine; myDebug("KWEXPEQUALS\n"); return KWEXPEQUALS; }
-<INITIAL>">="     { delval.lineVal = deCurrentLine; myDebug("KWGE\n"); return KWGE; }
-<INITIAL>"<="     { delval.lineVal = deCurrentLine; myDebug("KWLE\n"); return KWLE; }
-<INITIAL>"%="     { delval.lineVal = deCurrentLine; myDebug("KWMODEQUALS\n"); return KWMODEQUALS; }
-<INITIAL>"*="     { delval.lineVal = deCurrentLine; myDebug("KWMULEQUALS\n"); return KWMULEQUALS; }
-<INITIAL>"!*="    { delval.lineVal = deCurrentLine; myDebug("KWMULTRUNCEQUALS\n"); return KWMULTRUNCEQUALS; }
-<INITIAL>"!*"     { delval.lineVal = deCurrentLine; myDebug("KWMULTRUNC\n"); return KWMULTRUNC; }
-<INITIAL>"!="     { delval.lineVal = deCurrentLine; myDebug("KWNOTEQUAL\n"); return KWNOTEQUAL; }
-<INITIAL>"|="     { delval.lineVal = deCurrentLine; myDebug("KWOREQUALS\n"); return KWBITOREQUALS; }
-<INITIAL>"||="    { delval.lineVal = deCurrentLine; myDebug("KWOREQUALS\n"); return KWOREQUALS; }
-<INITIAL>"||"     { delval.lineVal = deCurrentLine; myDebug("KWOR\n"); return KWOR; }
-<INITIAL>"<<<="   { delval.lineVal = deCurrentLine; myDebug("KWROTLEQUALS\n"); return KWROTLEQUALS; }
-<INITIAL>"<<<"    { delval.lineVal = deCurrentLine; myDebug("KWROTL\n"); return KWROTL; }
-<INITIAL>">>>="   { delval.lineVal = deCurrentLine; myDebug("KWROTREQUALS\n"); return KWROTREQUALS; }
-<INITIAL>">>>"    { delval.lineVal = deCurrentLine; myDebug("KWROTR\n"); return KWROTR; }
-<INITIAL>"<<="    { delval.lineVal = deCurrentLine; myDebug("KWSHLEQUALS\n"); return KWSHLEQUALS; }
-<INITIAL>"<<"     { delval.lineVal = deCurrentLine; myDebug("KWSHL\n"); return KWSHL; }
-<INITIAL>">>="    { delval.lineVal = deCurrentLine; myDebug("KWSHREQUALS\n"); return KWSHREQUALS; }
-<INITIAL>">>"     { delval.lineVal = deCurrentLine; myDebug("KWSHR\n"); return KWSHR; }
-<INITIAL>"-="     { delval.lineVal = deCurrentLine; myDebug("KWSUBEQUALS\n"); return KWSUBEQUALS; }
-<INITIAL>"!-="    { delval.lineVal = deCurrentLine; myDebug("KWSUBTRUNCEQUALS\n"); return KWSUBTRUNCEQUALS; }
-<INITIAL>"!-"     { delval.lineVal = deCurrentLine; myDebug("KWSUBTRUNC\n"); return KWSUBTRUNC; }
-<INITIAL>"^="     { delval.lineVal = deCurrentLine; myDebug("KWXOREQUALS\n"); return KWBITXOREQUALS; }
-<INITIAL>"^^="    { delval.lineVal = deCurrentLine; myDebug("KWXOREQUALS\n"); return KWXOREQUALS; }
-<INITIAL>"^^"     { delval.lineVal = deCurrentLine; myDebug("KWXOR\n"); return KWXOR; }
-<INITIAL>"f32"    { delval.lineVal = deCurrentLine; myDebug("KWF32\n"); return KWF32; }
-<INITIAL>"f64"    { delval.lineVal = deCurrentLine; myDebug("KWF64\n"); return KWF64; }
+<INITIAL>"+="                   { retToken(KWADDEQUALS); }
+<INITIAL>"!+="                  { retToken(KWADDTRUNCEQUALS); }
+<INITIAL>"!+"                   { retToken(KWADDTRUNC); }
+<INITIAL>"&&="                  { retToken(KWANDEQUALS); }
+<INITIAL>"&="                   { retToken(KWBITANDEQUALS); }
+<INITIAL>"&&"                   { retToken(KWAND); }
+<INITIAL>"->"                   { retToken(KWARROW); }
+<INITIAL>"!<"                   { retToken(KWCASTTRUNC); }
+<INITIAL>"/="                   { retToken(KWDIVEQUALS); }
+<INITIAL>"..."                  { retToken(KWDOTDOTDOT); }
+<INITIAL>"=="                   { retToken(KWEQUAL); }
+<INITIAL>"**"                   { retToken(KWEXP); }
+<INITIAL>"**="                  { retToken(KWEXPEQUALS); }
+<INITIAL>">="                   { retToken(KWGE); }
+<INITIAL>"<="                   { retToken(KWLE); }
+<INITIAL>"%="                   { retToken(KWMODEQUALS); }
+<INITIAL>"*="                   { retToken(KWMULEQUALS); }
+<INITIAL>"!*="                  { retToken(KWMULTRUNCEQUALS); }
+<INITIAL>"!*"                   { retToken(KWMULTRUNC); }
+<INITIAL>"!="                   { retToken(KWNOTEQUAL); }
+<INITIAL>"|="                   { retToken(KWBITOREQUALS); }
+<INITIAL>"||="                  { retToken(KWOREQUALS); }
+<INITIAL>"||"                   { retToken(KWOR); }
+<INITIAL>"<<<="                 { retToken(KWROTLEQUALS); }
+<INITIAL>"<<<"                  { retToken(KWROTL); }
+<INITIAL>">>>="                 { retToken(KWROTREQUALS); }
+<INITIAL>">>>"                  { retToken(KWROTR); }
+<INITIAL>"<<="                  { retToken(KWSHLEQUALS); }
+<INITIAL>"<<"                   { retToken(KWSHL); }
+<INITIAL>">>="                  { retToken(KWSHREQUALS); }
+<INITIAL>">>"                   { retToken(KWSHR); }
+<INITIAL>"-="                   { retToken(KWSUBEQUALS); }
+<INITIAL>"!-="                  { retToken(KWSUBTRUNCEQUALS); }
+<INITIAL>"!-"                   { retToken(KWSUBTRUNC); }
+<INITIAL>"^="                   { retToken(KWBITXOREQUALS); }
+<INITIAL>"^^="                  { retToken(KWXOREQUALS); }
+<INITIAL>"^^"                   { retToken(KWXOR); }
+<INITIAL>"f32"                  { retToken(KWF32); }
+<INITIAL>"f64"                  { retToken(KWF64); }
 
-<INITIAL>"'\\a'"  { delval.bigintVal = deUint8BigintCreate(7); myDebug("'\\a'\n"); return INTEGER; }
-<INITIAL>"'\\b'"  { delval.bigintVal = deUint8BigintCreate(8); myDebug("'\\b'\n"); return INTEGER; }
-<INITIAL>"'\\e'"  { delval.bigintVal = deUint8BigintCreate(0x1b); myDebug("'\\e'\n"); return INTEGER; }
-<INITIAL>"'\\f'"  { delval.bigintVal = deUint8BigintCreate(0xc); myDebug("'\\f'\n"); return INTEGER; }
-<INITIAL>"'\\n'"  { delval.bigintVal = deUint8BigintCreate(0xa); myDebug("'\\n'\n"); return INTEGER; }
-<INITIAL>"'\\r'"  { delval.bigintVal = deUint8BigintCreate(0xd); myDebug("'\\r'\n"); return INTEGER; }
-<INITIAL>"'\\t'"  { delval.bigintVal = deUint8BigintCreate(0x9); myDebug("'\\t'\n"); return INTEGER; }
-<INITIAL>"'\\v'"  { delval.bigintVal = deUint8BigintCreate(0xb); myDebug("'\\v'\n"); return INTEGER; }
+<INITIAL>"'\\a'"  { delval.bigintVal = deUint8BigintCreate(7); logMsg("'\\a'\n"); return INTEGER; }
+<INITIAL>"'\\b'"  { delval.bigintVal = deUint8BigintCreate(8); logMsg("'\\b'\n"); return INTEGER; }
+<INITIAL>"'\\e'"  { delval.bigintVal = deUint8BigintCreate(0x1b); logMsg("'\\e'\n"); return INTEGER; }
+<INITIAL>"'\\f'"  { delval.bigintVal = deUint8BigintCreate(0xc); logMsg("'\\f'\n"); return INTEGER; }
+<INITIAL>"'\\n'"  { delval.bigintVal = deUint8BigintCreate(0xa); logMsg("'\\n'\n"); return INTEGER; }
+<INITIAL>"'\\r'"  { delval.bigintVal = deUint8BigintCreate(0xd); logMsg("'\\r'\n"); return INTEGER; }
+<INITIAL>"'\\t'"  { delval.bigintVal = deUint8BigintCreate(0x9); logMsg("'\\t'\n"); return INTEGER; }
+<INITIAL>"'\\v'"  { delval.bigintVal = deUint8BigintCreate(0xb); logMsg("'\\v'\n"); return INTEGER; }
 
 <INITIAL>[0-9]+"e"("-")?[0-9]+"f32" { delval.floatVal = deFloatCreate(DE_FLOAT_SINGLE, safeAtof(detext, 32));
-                                  myDebug("%s\n", detext);
+                                  logMsg("%s\n", detext);
                                   return FLOAT; }
 <INITIAL>[0-9]+"."("e"("-")?[0-9]+)?"f32" { delval.floatVal = deFloatCreate(DE_FLOAT_SINGLE, safeAtof(detext, 32));
-                                  myDebug("%s\n", detext);
+                                  logMsg("%s\n", detext);
                                   return FLOAT; }
 <INITIAL>[0-9]*"."[0-9]+("e"("-")?[0-9]+)?"f32" {
                                   delval.floatVal = deFloatCreate(DE_FLOAT_SINGLE, safeAtof(detext, 32));
-                                  myDebug("%s\n", detext);
+                                  logMsg("%s\n", detext);
                                   return FLOAT; }
 <INITIAL>[0-9]+"e"("-")?[0-9]+("f64")? { delval.floatVal = deFloatCreate(DE_FLOAT_DOUBLE, safeAtof(detext, 64));
-                                  myDebug("%s\n", detext);
+                                  logMsg("%s\n", detext);
                                   return FLOAT; }
 <INITIAL>[0-9]+"."("e"("-")?[0-9]+)?("f64")? { delval.floatVal = deFloatCreate(DE_FLOAT_DOUBLE, safeAtof(detext, 64));
-                                  myDebug("%s\n", detext);
+                                  logMsg("%s\n", detext);
                                   return FLOAT; }
 <INITIAL>[0-9]*"."[0-9]+("e"("-")?[0-9]+)?("f64")? {
                                   delval.floatVal = deFloatCreate(DE_FLOAT_DOUBLE, safeAtof(detext, 64));
-                                  myDebug("%s\n", detext);
+                                  logMsg("%s\n", detext);
                                   return FLOAT; }
 <INITIAL>"'"[ -~]"'"            { delval.bigintVal = deUint8BigintCreate(detext[1]);
-                                  myDebug("'%c'\n", detext[1]);
+                                  logMsg("'%c'\n", detext[1]);
                                   return INTEGER; }
 <INITIAL>[0-9]+(("u"|"i")[0-9]+)? { delval.bigintVal = deBigintParse(detext, deCurrentLine);
-                                  myDebug("%s\n", detext);
+                                  logMsg("%s\n", detext);
                                   return INTEGER; }
 <INITIAL>"0x"[0-9a-fA-F]+(("u"|"i")[0-9]+)? {
                                   delval.bigintVal = deBigintParse(detext, deCurrentLine);
-                                  myDebug("%s\n", detext);
+                                  logMsg("%s\n", detext);
                                   return INTEGER; }
 <INITIAL>"rand"[0-9]+           { char *end;
                                   uint32 width = strtol(detext + 4, &end, 10);
@@ -434,7 +438,7 @@ static void noDebug(char *foo, ...) {}
                                     deerror("Zero-width integers are not allowed");
                                   }
                                   delval.uint16Val = width;
-                                  myDebug("%s\n", detext);
+                                  logMsg("%s\n", detext);
                                   return RANDUINT; }
 <INITIAL>"u"[0-9]+              { char *end;
                                   uint32 width = strtol(detext + 1, &end, 10);
@@ -445,7 +449,7 @@ static void noDebug(char *foo, ...) {}
                                     deerror("Zero-width integers are not allowed");
                                   }
                                   delval.uint16Val = width;
-                                  myDebug("%s\n", detext);
+                                  logMsg("%s\n", detext);
                                   return UINTTYPE; }
 <INITIAL>"i"[0-9]+              { char *end;
                                   uint32 width = strtol(detext + 1, &end, 10);
@@ -456,19 +460,19 @@ static void noDebug(char *foo, ...) {}
                                     deerror("Zero-width integers are not allowed");
                                   }
                                   delval.uint16Val = width;
-                                  myDebug("%s\n", detext);
+                                  logMsg("%s\n", detext);
                                   return INTTYPE; }
 <INITIAL>([_a-zA-Z$]|[\xc0-\xff][\x80-\xbf]*)([a-zA-Z0-9_$]|[\xc0-\xff][\x80-\xbf]*)* {
                                   checkIdentifierChars(detext);
-                                  myDebug("IDENT %s\n", detext);
+                                  logMsg("IDENT %s\n", detext);
                                   delval.symVal = utSymCreate(detext);
                                   return IDENT; }
-<INITIAL>\\[^ \t\n]+            { myDebug("IDENT %s\n", detext);
+<INITIAL>\\[^ \t\n]+            { logMsg("IDENT %s\n", detext);
                                   delval.symVal = utSymCreate(detext);
                                   return IDENT; }
-<INITIAL>\"([^"]|\\.)*\"        { myDebug("STRING %s\n", detext);
+<INITIAL>\"([^"]|\\.)*\"        { logMsg("STRING %s\n", detext);
                                   delval.stringVal = unescape(detext);
                                   return STRING; }
 <INITIAL>.                      { delval.lineVal = deCurrentLine;
-                                  myDebug("Char '%c'\n", detext[0]);
+                                  logMsg("Char '%c'\n", detext[0]);
                                   return detext[0]; }

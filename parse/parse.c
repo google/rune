@@ -27,6 +27,7 @@ deRoot deTheRoot;
 uint32 deDumpIndentLevel;
 bool deUnsafeMode;
 bool deDebugMode;
+bool deLogTokens;
 bool deInvertReturnCode;
 char *deLLVMFileName;
 bool deTestMode;

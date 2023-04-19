@@ -19,11 +19,13 @@
 // Verify the expression can be printed.  Return false if we modify the
 // expression to make it printable.
 static void checkExpressionIsPrintable(deExpression expression) {
-  deLine line = deExpressionGetLine(expression);
   deDatatype datatype = deExpressionGetDatatype(expression);
   switch (deDatatypeGetType(datatype)) {
+  case DE_TYPE_EXPR:
+    deExprError(expression, "Cannot print generator expressions");
+    break;
   case DE_TYPE_NONE:
-    deError(line, "Printed argument has no type");
+    deExprError(expression, "Printed argument has no type");
     break;
   case DE_TYPE_BOOL:
   case DE_TYPE_STRING:
@@ -35,7 +37,6 @@ static void checkExpressionIsPrintable(deExpression expression) {
   case DE_TYPE_ENUMCLASS:
   case DE_TYPE_ENUM:
   case DE_TYPE_ARRAY:
-  case DE_TYPE_NULL:
   case DE_TYPE_TCLASS:
   case DE_TYPE_CLASS:
     break;
@@ -44,7 +45,7 @@ static void checkExpressionIsPrintable(deExpression expression) {
     break;
   case DE_TYPE_FUNCTION:
   case DE_TYPE_FUNCPTR:
-    deError(line, "Cannot print function pointers");
+    deExprError(expression, "Cannot print function pointers");
     break;
   }
 }
@@ -252,7 +253,7 @@ void dePostProcessPrintStatement(deStatement statement) {
   deExpression param;
   deSafeForeachExpressionExpression(deStatementGetExpression(statement), param) {
     if (deDatatypeSecret(deExpressionGetDatatype(param))) {
-      deError(deExpressionGetLine(param), "Printing a secret is not allowed");
+      deExprError(param, "Printing a secret is not allowed");
     }
     checkExpressionIsPrintable(param);
     if (deDatatypeGetType(deExpressionGetDatatype(param)) == DE_TYPE_CLASS) {

@@ -69,7 +69,6 @@ void deQueueEventBlockedBindings(deEvent event);
 void deVerifyPrintfParameters(deExpression expression);
 void dePostProcessPrintStatement(deStatement statement);
 void deCreateVariableConstraintBinding(deSignature signature, deVariable var);
-void deAssignDefaultNullValues(void);
 void deCreateLocalAndGlobalVariables(void);
 
 // Block methods.
@@ -173,6 +172,7 @@ void deGenerateDefaultMethods(deClass theClass);
 deFunction deGenerateDefaultToStringMethod(deClass theClass);
 deFunction deGenerateDefaultShowMethod(deClass theClass);
 deFunction deClassFindMethod(deClass theClass, utSym methodSym);
+deClass deTclassFindClassFromSpec(deTclass tclass, deDatatypeArray tclassSpec);
 void deDestroyTclassContents(deTclass tclass);
 static inline utSym deTclassGetSym(deTclass tclass) {
   return deFunctionGetSym(deTclassGetFunction(tclass));
@@ -325,6 +325,7 @@ deDatatype deUnifyDatatypes(deDatatype datatype1, deDatatype datatype2);
 void deRefineAccessExpressionDatatype(deBlock scopeBlock, deExpression target,
     deDatatype valueType);
 deDatatypeArray deListDatatypes(deExpression expressionList);
+deDatatypeArray deCopyDatatypeArray(deDatatypeArray datatypes);
 void deDumpDatatype(deDatatype datatype);
 void deDumpDatatypeStr(deString string, deDatatype datatype);
 deDatatype deNoneDatatypeCreate(void);
@@ -337,7 +338,7 @@ deDatatype deFloatDatatypeCreate(uint32 width);
 deDatatype deArrayDatatypeCreate(deDatatype elementType);
 deDatatype deTclassDatatypeCreate(deTclass tclass);
 deDatatype deClassDatatypeCreate(deClass theClass);
-deDatatype deNullDatatypeCreate(deTclass tclass);
+deDatatype deClassDatatypeCreateFromSpec(deClass theClass, deDatatypeArray tclassSpec);
 deDatatype deFunctionDatatypeCreate(deFunction function);
 deDatatype deFuncptrDatatypeCreate(deDatatype returnType, deDatatypeArray parameterTypes);
 deDatatype deTupleDatatypeCreate(deDatatypeArray types);
@@ -346,7 +347,7 @@ deDatatype deGetStructTupleDatatype(deDatatype structDatatype);
 deDatatype deEnumClassDatatypeCreate(deFunction enumFunction);
 deDatatype deEnumDatatypeCreate(deFunction enumFunction);
 deDatatype deSetDatatypeSecret(deDatatype datatype, bool secret);
-deDatatype deSetDatatypeNullable(deDatatype datatype, bool nullable, deLine line);
+deDatatype deSetDatatypeNullable(deDatatype datatype, bool nullable);
 deDatatype deDatatypeResize(deDatatype datatype, uint32 width);
 deDatatype deDatatypeSetSigned(deDatatype datatype, bool isSigned);
 deTclass deFindDatatypeTclass(deDatatype datatype);
@@ -360,6 +361,7 @@ uint32 deArrayDatatypeGetDepth(deDatatype datatype);
 deDatatype deFindUniqueConcreteDatatype(deDatatype datatype, deLine line);
 deSecretType deFindDatatypeSectype(deDatatype datatype);
 deSecretType deCombineSectypes(deSecretType a, deSecretType b);
+bool deDatatypeIsTemplate(deDatatype datatype);
 static inline bool deDatatypeTypeIsInteger(deDatatypeType type) {
   return type == DE_TYPE_UINT || type == DE_TYPE_INT || type == DE_TYPE_MODINT;
 }
@@ -383,7 +385,6 @@ static inline bool deDatatypeIsNumber(deDatatype datatype) {
 deSignature deLookupSignature(deFunction function, deDatatypeArray parameterTypes);
 deSignature deSignatureCreate(deFunction function,
     deDatatypeArray parameterTypes, deLine line);
-deSignature deResolveConstructorSignature(deSignature signature);
 bool deSignatureIsConstructor(deSignature signature);
 bool deSignatureIsMethod(deSignature signature);
 deSignature deCreateFullySpecifiedSignature(deFunction function);
@@ -393,6 +394,7 @@ void deDumpSignature(deSignature signature);
 void deDumpSignatureStr(deString string, deSignature signature);
 void deDumpParamspec(deParamspec paramspec);
 void deDumpParamspecStr(deString string, deParamspec paramspec);
+deDatatypeArray deFindSignatureTclassSpec(deSignature signature);
 deBlock deSignatureGetBlock(deSignature signature);
 static inline deFunction deGetSignatureFunction(deSignature signature) {
   deFunction function = deSignatureGetUniquifiedFunction(signature);
@@ -417,6 +419,8 @@ deValue deStringValueCreate(deString string);
 deValue deTclassValueCreate(deTclass tclass);
 deValue deClassValueCreate(deClass theClass);
 deValue deFunctionValueCreate(deFunction function);
+deValue deExpressionValueCreate(deExpression expression);
+deValue deTupleValueCreate();
 bool deValuesEqual(deValue a, deValue b);
 utSym deValueGetName(deValue value);
 void deDumpValue(deValue value);
@@ -491,6 +495,9 @@ char *deGetBlockPath(deBlock block, bool as_label);
 char *deGetSignaturePath(deSignature signature);
 char *deGetPathExpressionPath(deExpression pathExpression);
 void deError(deLine line, char *format, ...);
+void deExprError(deExpression expression, char* format, ...);
+void deSigError(deSignature signature, char* format, ...);
+void deSetStackTraceGlobals(deExpression expression);
 void deReportError(deLine line, char *format, ...);
 void dePrintStack(void);
 // These use the deStringVal global string.
@@ -535,6 +542,7 @@ extern char *deLibDir;
 extern char *dePackageDir;
 extern bool deUnsafeMode;
 extern bool deDebugMode;
+extern bool deLogTokens;
 extern bool deInvertReturnCode;
 extern char *deLLVMFileName;
 extern bool deTestMode;

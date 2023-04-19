@@ -393,7 +393,7 @@ static deDatatype findStructDatatype(deSignature signature) {
   deForeachBlockVariable(block, var) {
     deDatatypeArrayAppendDatatype(types, deVariableGetDatatype(var));
   } deEndBlockVariable;
-  return deStructDatatypeCreate(deBlockGetOwningFunction(block), types,
+  return deStructDatatypeCreate(deSignatureGetUniquifiedFunction(signature), types,
       deSignatureGetLine(signature));
 }
 
@@ -408,7 +408,7 @@ static void updateExternSignature(deSignature signature) {
     deDatatype datatype = deExpressionGetDatatype(typeExpr);
     if (datatype == deDatatypeNull || !deDatatypeConcrete(datatype)) {
       printf("Extern function return type: %s\n", deDatatypeGetTypeString(datatype));
-      deError(deSignatureGetLine(signature), "Extern function return types must be concrete");
+      deSigError(signature, "Extern function return types must be concrete");
     }
     deSignatureSetReturnType(signature, datatype);
   }
@@ -420,7 +420,7 @@ static void updateExternSignature(deSignature signature) {
     utAssert(datatype != deDatatypeNull);
     if (!deDatatypeConcrete(datatype)) {
       printf("%s type: %s\n", deVariableGetName(var), deDatatypeGetTypeString(datatype));
-      deError(deSignatureGetLine(signature), "Extern function parameter types must be concrete");
+      deSigError(signature, "Extern function parameter types must be concrete");
     }
     deVariableSetInstantiated(var, true);
     deParamspecSetInstantiated(param, true);
@@ -442,7 +442,7 @@ static void verifyCaseTypes(deBlock block) {
       deExpression switchExpr = deStatementGetExpression(statement);
       deDatatype datatype = deExpressionGetDatatype(switchExpr);
       if (deExpressionIsType(switchExpr)) {
-        deError(deExpressionGetLine(switchExpr),
+        deExprError(switchExpr,
             "Cannot switch on a type.  Did you mean typeswitch?");
       }
       deStatement caseStatement;
@@ -452,7 +452,7 @@ static void verifyCaseTypes(deBlock block) {
           deExpression expression;
           deForeachExpressionExpression(listExpression, expression) {
             if (deExpressionGetDatatype(expression) != datatype) {
-              deError(deExpressionGetLine(expression),
+              deExprError(expression,
                   "Case expression has different type than switch expression:%s",
                   deGetOldVsNewDatatypeStrings(deExpressionGetDatatype(expression), datatype));
             }
@@ -484,8 +484,7 @@ static void updateSignature(deSignature signature) {
   utAssert(var == deVariableNull || deVariableGetType(var) != DE_VAR_PARAMETER);
   deForeachBlockVariable(deSignatureGetBlock(signature), var) {
     if (deVariableIsType(var) && deVariableInstantiated(var)) {
-      deLine line = deVariableGetLine(var);
-      deError(line, "Variable %s is assigned a type, but also instantiated",
+      deSigError(signature, "Variable %s is assigned a type, but also instantiated",
               deVariableGetName(var));
     }
   } deEndBlockVariable;
@@ -579,46 +578,16 @@ static void destroyUnusedTclassesContents(void) {
   }
 }
 
-// Resolve a null type, e.g. null(Foo), rather than null(Foo(u32)).  For
-// tclasses that have only one class instantiated, we can resolve the null type
-// to null for that class.
-static bool resolveNullType(deVariable var) {
-  deDatatype datatype = deVariableGetDatatype(var);
-  utAssert(deDatatypeGetType(datatype) == DE_TYPE_NULL);
-  deTclass tclass = deDatatypeGetTclass(datatype);
-  if (deTclassGetNumClasses(tclass) != 1) {
-    return false;
-  }
-  deClass theClass = deTclassGetFirstClass(tclass);
-  deDatatype newDatatype = deSetDatatypeNullable(deClassDatatypeCreate(theClass),
-      true, deVariableGetLine(var));
-  deVariableSetDatatype(var, newDatatype);
-  return true;
-}
-
-// Assign default null values for classes that have a constructor call but no
-// template parameters.
-void deAssignDefaultNullValues(void) {
-  deEvent event;
-  deSafeForeachRootEvent(deTheRoot, event) {
-    if (deEventGetType(event) == DE_EVENT_VARIABLE) {
-      deVariable var = deEventGetVariable(event);
-      deDatatype datatype = deVariableGetDatatype(var);
-      if (datatype != deDatatypeNull && deDatatypeGetType(datatype) == DE_TYPE_NULL) {
-        if (resolveNullType(var)) {
-          deQueueEventBlockedBindings(event);
-        }
-      }
-    }
-  } deEndSafeRootEvent;
-  deBindAllSignatures();
-}
-
 // Report the event and exit.
 static void reportEvent(deEvent event) {
   deBinding binding = deEventGetFirstBinding(event);
   utAssert(binding != deBindingNull);
-  deSignature signature = deEventGetReturnSignature(event);
+  deSignature signature = deBindingGetSignature(binding);
+  if (signature != deSignatureNull) {
+    deCurrentSignature = signature;
+    deCurrentStatement = deSignatureGetCallStatement(signature);
+  }
+  signature = deEventGetReturnSignature(event);
   if (signature != deSignatureNull) {
     deDumpSignature(signature);
     putchar('\n');
@@ -645,7 +614,12 @@ void deReportEvents(void) {
     if (deEventGetFirstBinding(event) == deBindingNull) {
       // This can happen if we destroy the statements that were blocked.
       deEventDestroy(event);
-    } else {
+    } else if (deEventGetType(event) == DE_EVENT_UNDEFINED) {
+      reportEvent(event);
+    }
+  } deEndSafeRootEvent;
+  deSafeForeachRootEvent(deTheRoot, event) {
+    if (deEventGetType(event) != DE_EVENT_UNDEFINED) {
       reportEvent(event);
     }
   } deEndSafeRootEvent;
@@ -663,8 +637,7 @@ void deBind(void) {
   deSignatureSetInstantiated(mainSignature, true);
   deQueueSignature(mainSignature);
   deBindAllSignatures();
-  destroyUnusedTclassesContents();
-  deAssignDefaultNullValues();
+  // destroyUnusedTclassesContents();
   deReportEvents();
 }
 

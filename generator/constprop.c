@@ -144,6 +144,7 @@ static bool propagateExpressionConstants(deBlock scopeBlock, deExpression expres
     case DE_EXPR_NAMEDPARAM:
     case DE_EXPR_NEGATETRUNC:
     case DE_EXPR_IDENT:
+    case DE_EXPR_TCLASS_SPEC:
       // TODO: Write code to evaluate these expressions.
       propagateChildConstants(scopeBlock, expression, modulus);
       return false;

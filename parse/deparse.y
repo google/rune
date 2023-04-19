@@ -169,6 +169,7 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %type <exprTypeVal> assignmentOp
 %type <exprTypeVal> operator
 %type <exprVal> accessExpression
+%type <exprVal> writableExpression
 %type <exprVal> callExpression
 %type <exprVal> addExpression
 %type <exprVal> andExpression
@@ -187,14 +188,16 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %type <exprVal> mulExpression
 %type <exprVal> oneOrMoreExpressions
 %type <exprVal> oneOrMoreCallParameters
+%type <exprVal> oneOrMoreTypeExpressions
 %type <exprVal> optCascade
 %type <uint16Val> optWidth
-%type <exprVal> optExpressionList
+%type <exprVal> optCallParameterList
 %type <exprVal> optFuncTypeExpression
 %type <exprVal> optInitializer
 %type <exprVal> optLabel
 %type <exprVal> optTypeExpression
 %type <exprVal> typeExpression
+%type <exprVal> typePathExpression
 %type <exprVal> typeRangeExpression
 %type <exprVal> compoundTypeExpression
 %type <exprVal> typeRangeExpressionList
@@ -202,7 +205,6 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %type <exprVal> orExpression
 %type <exprVal> pathExpression
 %type <exprVal> pathExpressionWithAlias
-%type <exprVal> postfixExpression
 %type <exprVal> prefixExpression
 %type <exprVal> relationExpression
 %type <exprVal> selectExpression
@@ -210,6 +212,7 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %type <exprVal> switchCaseHeaders
 %type <exprVal> typeswitchCaseHeaders
 %type <exprVal> tokenExpression
+%type <exprVal> returnsTokenExpression
 %type <exprVal> tupleExpression
 %type <exprVal> twoOrMoreExpressions
 %type <exprVal> typeLiteral
@@ -338,7 +341,6 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %%
 
 goal: initialize optNewlines runeFile
-;
 
 initialize: // Empty
 {
@@ -349,11 +351,9 @@ initialize: // Empty
 }
 
 runeFile: statements
-;
 
 statements: // Empty
 | statements statement
-;
 
 statement: appendCode
 | assertStatement
@@ -385,7 +385,6 @@ statement: appendCode
 | unrefStatement
 | whileStatement
 | yield
-;
 
 
 import: KWIMPORT pathExpressionWithAlias newlines
@@ -413,7 +412,6 @@ import: KWIMPORT pathExpressionWithAlias newlines
   deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_USE, $1);
   deStatementSetExpression(statement, deIdentExpressionCreate($2, $1));
 }
-;
 
 class: classHeader '(' oneOrMoreParameters ')' block
 {
@@ -425,7 +423,6 @@ class: classHeader '(' oneOrMoreParameters ')' block
   deCreateFullySpecifiedSignature(constructor);
   deCurrentBlock = deBlockGetOwningBlock(deCurrentBlock);
 }
-;
 
 classHeader: KWCLASS IDENT optWidth
 {
@@ -434,7 +431,6 @@ classHeader: KWCLASS IDENT optWidth
   deTclassCreate(constructor, $3, $1);
   deCurrentBlock = deFunctionGetSubBlock(constructor);
 }
-;
 
 optWidth:  // Empty
 {
@@ -447,7 +443,6 @@ optWidth:  // Empty
   }
   $$ = $2;
 }
-;
 
 exportClassHeader: KWEXPORT KWCLASS IDENT optWidth  // Means the constructor is in package API.
 {
@@ -470,7 +465,6 @@ exportClassHeader: KWEXPORT KWCLASS IDENT optWidth  // Means the constructor is 
   deTclassCreate(constructor, $4, $1);
   deCurrentBlock = deFunctionGetSubBlock(constructor);
 }
-;
 
 struct: structHeader '{' newlines structMembers '}' newlines
 {
@@ -480,7 +474,6 @@ struct: structHeader '{' newlines structMembers '}' newlines
 {
   deCurrentBlock = deBlockGetOwningBlock(deCurrentBlock);
 }
-;
 
 structHeader: KWSTRUCT IDENT
 {
@@ -488,11 +481,9 @@ structHeader: KWSTRUCT IDENT
       DE_FUNC_STRUCT, $2, DE_LINK_MODULE, $1);
   deCurrentBlock = deFunctionGetSubBlock(theStruct);
 }
-;
 
 structMembers:  // Empty
 | structMembers structMember newlines
-;
 
 structMember: IDENT optTypeExpression optInitializer
 {
@@ -502,7 +493,6 @@ structMember: IDENT optTypeExpression optInitializer
     deVariableInsertTypeExpression(parameter, $2);
   }
 }
-;
 
 optInitializer:  // Empty
 {
@@ -512,7 +502,6 @@ optInitializer:  // Empty
 {
   $$ = $2;
 }
-;
 
 exportStructHeader: KWEXPORT KWSTRUCT IDENT  // Means the constructor is in package API.
 {
@@ -526,7 +515,6 @@ exportStructHeader: KWEXPORT KWSTRUCT IDENT  // Means the constructor is in pack
       DE_FUNC_STRUCT, $3, DE_LINK_LIBCALL, $1);
   deCurrentBlock = deFunctionGetSubBlock(theStruct);
 }
-;
 
 appendCode: appendCodeHeader block
 {
@@ -538,7 +526,6 @@ appendCode: appendCodeHeader block
     deSavedBlock = deBlockNull;
   }
 }
-;
 
 appendCodeHeader: KWAPPENDCODE pathExpression
 {
@@ -580,7 +567,6 @@ appendCodeHeader: KWAPPENDCODE pathExpression
     deCurrentBlock = deFilepathGetModuleBlock(deBlockGetFilepath(deCurrentBlock));
   }
 }
-;
 
 prependCode: prependCodeHeader block
 {
@@ -593,7 +579,6 @@ prependCode: prependCodeHeader block
     deSavedBlock = deBlockNull;
   }
 }
-;
 
 prependCodeHeader: KWPREPENDCODE pathExpression
 {
@@ -638,10 +623,8 @@ prependCodeHeader: KWPREPENDCODE pathExpression
     deLastStatement = deBlockGetLastStatement(deCurrentBlock);
   }
 }
-;
 
 block: '{' newlines statements '}' optNewlines
-;
 
 function: functionHeader '(' parameters ')' optFuncTypeExpression block
 {
@@ -677,7 +660,6 @@ function: functionHeader '(' parameters ')' optFuncTypeExpression block
   deCurrentBlock = deFunctionGetBlock(function);
   deInIterator = false;
 }
-;
 
 functionHeader: KWFUNC IDENT
 {
@@ -697,7 +679,6 @@ functionHeader: KWFUNC IDENT
   deFunction operator = deOperatorFunctionCreate(deCurrentBlock, $2, $1);
   deCurrentBlock = deFunctionGetSubBlock(operator);
 }
-;
 
 operator: '+'
 {
@@ -815,7 +796,6 @@ operator: '+'
 {
   $$ = DE_EXPR_IN;
 }
-;
 
 exportFunctionHeader: KWEXPORT KWFUNC IDENT
 {
@@ -835,15 +815,12 @@ exportFunctionHeader: KWEXPORT KWFUNC IDENT
       DE_LINK_LIBCALL, $1);
   deCurrentBlock = deFunctionGetSubBlock(function);
 }
-;
 
 parameters:
 | oneOrMoreParameters
-;
 
 oneOrMoreParameters: parameter
 | oneOrMoreParameters ',' optNewlines parameter
-;
 
 parameter: optVar IDENT optTypeExpression
 {
@@ -861,12 +838,14 @@ parameter: optVar IDENT optTypeExpression
   deVariable parameter = deVariableCreate(deCurrentBlock, DE_VAR_PARAMETER, $1, $3,
       deExpressionNull, false, $2);
   deVariableSetInTclassSignature(parameter, true);
+  deTclass tclass = deFunctionGetTclass(deBlockGetOwningFunction(deCurrentBlock));
+  deTclassSetIsTemplate(tclass, true);
+  deTclassSetNumTemplateParams(tclass, deTclassGetNumTemplateParams(tclass) + 1);
   if ($5 != deExpressionNull) {
     deVariableInsertTypeExpression(parameter, $5);
   }
 }
 | initializedParameter
-;
 
 optVar: // Empty
 {
@@ -880,7 +859,6 @@ optVar: // Empty
   }
   $$ = false;
 }
-;
 
 initializedParameter: optVar IDENT optTypeExpression '=' expression
 {
@@ -892,21 +870,6 @@ initializedParameter: optVar IDENT optTypeExpression '=' expression
     deVariableInsertTypeExpression(parameter, $3);
   }
 }
-| optVar '<' IDENT '>' optTypeExpression '=' expression
-{
-  if (!$1) {
-    deError($2, "Parameters passed by reference cannot have initializers");
-  }
-  if (!deBlockIsConstructor(deCurrentBlock)) {
-    deError($2, "Class signature parameters are only allowed in class declarations");
-  }
-  deVariable parameter = deVariableCreate(deCurrentBlock, DE_VAR_PARAMETER, $1, $3, $7, false, $2);
-  deVariableSetInTclassSignature(parameter, true);
-  if ($5 != deExpressionNull) {
-    deVariableInsertTypeExpression(parameter, $5);
-  }
-}
-;
 
 externFunction: KWEXTERN STRING functionHeader '(' parameters ')' optFuncTypeExpression newlines
 {
@@ -929,7 +892,6 @@ externFunction: KWEXTERN STRING functionHeader '(' parameters ')' optFuncTypeExp
   setFunctionExtern(function, string);
   deStringFree(string);
 }
-;
 
 rpcHeader: KWRPC IDENT
 {
@@ -939,101 +901,82 @@ rpcHeader: KWRPC IDENT
 }
 
 ifStatement: ifPart elseIfParts optElsePart
-;
 
 ifPart: ifStatementHeader expression block
 {
   finishBlockStatement($2);
 }
-;
 
 ifStatementHeader: KWIF
 {
   createBlockStatement(DE_STATEMENT_IF);
 }
-;
 
 elseIfParts: // Empty
 | elseIfParts elseIfPart
-;
 
 elseIfPart: elseIfStatementHeader expression block
 {
   finishBlockStatement($2);
 }
-;
 
 elseIfStatementHeader: KWELSE KWIF
 {
   createBlockStatement(DE_STATEMENT_ELSEIF);
 }
-;
 
 optElsePart: // Empty
 | elsePart
-;
 
 elsePart: elseStatementHeader block
 {
   finishBlockStatement(deExpressionNull);
 }
-;
 
 elseStatementHeader: KWELSE
 {
   createBlockStatement(DE_STATEMENT_ELSE);
 }
-;
 
 switchStatement: switchStatementHeader expression switchBlock
 {
   finishBlockStatement($2);
 }
-;
 
 typeswitchStatement: typeswitchStatementHeader expression typeswitchBlock
 {
   finishBlockStatement($2);
 }
-;
 
 switchStatementHeader: KWSWITCH
 {
   createBlockStatement(DE_STATEMENT_SWITCH);
 }
-;
 
 typeswitchStatementHeader: KWTYPESWITCH
 {
   createBlockStatement(DE_STATEMENT_TYPESWITCH);
 }
-;
 
 switchBlock: '{' newlines switchCases optDefaultCase '}' optNewlines
-;
 
 typeswitchBlock: '{' newlines typeswitchCases optDefaultCase '}' optNewlines
-;
 
 switchCases:  // Empty
 | switchCases switchCase
-;
 
 typeswitchCases:  // Empty
 | typeswitchCases typeswitchCase
-;
 
 switchCase: KWCASE switchCaseHeaders block
 {
   finishBlockStatement(deExpressionNull);
 }
-;
 
 typeswitchCase: KWCASE typeswitchCaseHeaders block
 {
   finishBlockStatement(deExpressionNull);
 }
-;
 
 switchCaseHeaders: expression
 {
@@ -1047,7 +990,6 @@ switchCaseHeaders: expression
   deExpressionAppendExpression($1, $4);
   $$ = $1;
 }
-;
 
 typeswitchCaseHeaders: typeExpression
 {
@@ -1061,7 +1003,6 @@ typeswitchCaseHeaders: typeExpression
   deExpressionAppendExpression($1, $4);
   $$ = $1;
 }
-;
 
 optDefaultCase: // Empty
 {
@@ -1079,7 +1020,6 @@ optDefaultCase: // Empty
 {
   finishBlockStatement(deExpressionNull);
 }
-;
 
 defaultCaseHeader: KWDEFAULT
 {
@@ -1096,29 +1036,24 @@ whileStatement: optDoStatement whileStatementHeader expression newlines
 {
   finishBlockStatement($3);
 }
-;
 
 whileStatementHeader: KWWHILE
 {
   createBlockStatement(DE_STATEMENT_WHILE);
 }
-;
 
 optDoStatement: // Empty
 | doStatement
-;
 
 doStatement: doStatementHeader block
 {
   finishBlockStatement(deExpressionNull);
 }
-;
 
 doStatementHeader: KWDO
 {
   createBlockStatement(DE_STATEMENT_DO);
 }
-;
 
 forStatement: forStatementHeader assignmentExpression ',' optNewlines expression ','
 	    optNewlines assignmentExpression block
@@ -1130,14 +1065,12 @@ forStatement: forStatementHeader assignmentExpression ',' optNewlines expression
   deExpressionAppendExpression(expressionList, $8);
   finishBlockStatement(expressionList);
 }
-;
 
 forStatementHeader: KWFOR
 {
   // Also used to start foreach statements.
   createBlockStatement(DE_STATEMENT_FOR);
 }
-;
 
 assignmentStatement: assignmentExpression newlines
 {
@@ -1145,9 +1078,8 @@ assignmentStatement: assignmentExpression newlines
   deExpressionGetLine($1));
   deStatementInsertExpression(statement, $1);
 }
-;
 
-assignmentExpression: accessExpression optTypeExpression assignmentOp expression
+assignmentExpression: writableExpression optTypeExpression assignmentOp expression
 {
   $$ = deBinaryExpressionCreate($3, $1, $4, deExpressionGetLine($1));
   if ($2 != deExpressionNull) {
@@ -1235,7 +1167,6 @@ assignmentOp: '='
 {
   $$ = DE_EXPR_MULTRUNC_EQUALS;
 }
-;
 
 optTypeExpression: // Empty
 {
@@ -1245,21 +1176,18 @@ optTypeExpression: // Empty
 {
   $$ = $2;
 }
-;
 
 typeExpression: typeRangeExpression
 | typeExpression '|' typeRangeExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_BITOR, $1, $3, $2);
 }
-;
 
 typeRangeExpression: compoundTypeExpression
 | typeLiteral KWDOTDOTDOT typeLiteral
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_DOTDOTDOT, $1, $3, $2);
 }
-;
 
 compoundTypeExpression: basicTypeExpression
 | '[' typeRangeExpressionList ']'
@@ -1278,7 +1206,6 @@ compoundTypeExpression: basicTypeExpression
 {
   $$ = deExpressionCreate(DE_EXPR_TUPLE, $1);
 }
-;
 
 typeRangeExpressionList: typeRangeExpression
 {
@@ -1288,15 +1215,22 @@ typeRangeExpressionList: typeRangeExpression
 {
   deExpressionAppendExpression($1, $3);
 }
-;
 
-basicTypeExpression: pathExpression
+basicTypeExpression: typePathExpression
 | KWTYPEOF '(' expression ')'
 {
   $$ = deUnaryExpressionCreate(DE_EXPR_TYPEOF, $3, $1);
 }
+| KWUNSIGNED '(' expression ')'
+{
+  $$ = deUnaryExpressionCreate(DE_EXPR_UNSIGNED, $3, $1);
+}
+| KWSIGNED '(' expression ')'
+{
+  $$ = deUnaryExpressionCreate(DE_EXPR_SIGNED, $3, $1);
+}
 | typeLiteral
-| pathExpression '?'
+| typePathExpression '?'
 {
   $$ = deUnaryExpressionCreate(DE_EXPR_NULL, $1, $2);
 }
@@ -1304,7 +1238,23 @@ basicTypeExpression: pathExpression
 {
   $$ = deUnaryExpressionCreate(DE_EXPR_SECRET, $3, $1);
 }
-;
+
+typePathExpression: pathExpression
+| pathExpression  '<' oneOrMoreTypeExpressions '>'
+{
+  $$ = deBinaryExpressionCreate(DE_EXPR_TCLASS_SPEC, $1, $3, $2);
+}
+
+oneOrMoreTypeExpressions: typeExpression
+{
+  $$ = deExpressionCreate(DE_EXPR_LIST, deCurrentLine);
+  deExpressionAppendExpression($$, $1);
+}
+| oneOrMoreTypeExpressions ',' typeExpression
+{
+  deExpressionAppendExpression($1, $3);
+  $$ = $1;
+}
 
 optFuncTypeExpression: // Empty
 {
@@ -1314,10 +1264,66 @@ optFuncTypeExpression: // Empty
 {
   $$ = $2;
 }
-;
 
-accessExpression: tokenExpression
+// Access expressions are things that can be followed by dot or index.
+accessExpression: writableExpression
 | callExpression
+| tokenExpression
+| STRING  // Not a token expression, e.g. "test".length().
+{
+  $$ = deStringExpressionCreate($1, deCurrentLine);
+}
+| accessExpression '[' expression ':' expression ']'
+{
+  $$ = deBinaryExpressionCreate(DE_EXPR_SLICE, $1, $3, $2);
+  deExpressionAppendExpression($$, $5);
+}
+| accessExpression '!'
+{
+  $$ = deUnaryExpressionCreate(DE_EXPR_NOTNULL, $1, $2);
+}
+| '[' oneOrMoreExpressions ']'
+{
+  // Modify the type from DE_EXPR_LIST to DE_EXPR_ARRAY.
+  deExpressionSetType($2, DE_EXPR_ARRAY);
+  $$ = $2;
+}
+| '(' expression ')'
+{
+  $$ = $2;
+}
+| tupleExpression
+| KWSECRET '(' expression ')'
+{
+  $$ = deUnaryExpressionCreate(DE_EXPR_SECRET, $3, $1);
+}
+| KWREVEAL '(' expression ')'
+{
+  $$ = deUnaryExpressionCreate(DE_EXPR_REVEAL, $3, $1);
+}
+| KWARRAYOF '(' typeExpression ')'
+{
+  $$ = deUnaryExpressionCreate(DE_EXPR_ARRAYOF, $3, $1);
+}
+| KWTYPEOF '(' expression ')'
+{
+  $$ = deUnaryExpressionCreate(DE_EXPR_TYPEOF, $3, $1);
+}
+| KWNULL '(' callParameterList ')'
+{
+  deExpressionSetType($3, DE_EXPR_NULL);
+  $$ = $3;
+}
+| '&' pathExpression '(' expressionList ')'
+{
+  deExpression callExpr = deBinaryExpressionCreate(DE_EXPR_CALL, $2, $4, $1);
+  $$ = deUnaryExpressionCreate(DE_EXPR_FUNCADDR, callExpr, $1);
+}
+
+writableExpression: IDENT
+{
+  $$ = deIdentExpressionCreate($1, deCurrentLine);
+}
 | accessExpression '.' IDENT
 {
   deExpression identExpr = deIdentExpressionCreate($3, $2);
@@ -1327,22 +1333,30 @@ accessExpression: tokenExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_INDEX, $1, $3, $2);
 }
-| accessExpression '[' expression ':' expression ']'
+
+tokenExpression: INTEGER
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_SLICE, $1, $3, $2);
-  deExpressionAppendExpression($$, $5);
+  $$ = deIntegerExpressionCreate($1, deCurrentLine);
 }
-| postfixExpression '!'
+| FLOAT
 {
-  $$ = deUnaryExpressionCreate(DE_EXPR_NOTNULL, $1, $2);
+  $$ = deFloatExpressionCreate($1, deCurrentLine);
 }
-;
+| RANDUINT
+{
+  $$ = deRandUintExpressionCreate($1, deCurrentLine);
+}
+| BOOL
+{
+  $$ = deBoolExpressionCreate($1, deCurrentLine);
+}
+| typeLiteral
+| returnsTokenExpression
 
 callExpression: accessExpression '(' callParameterList ')'
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_CALL, $1, $3, deExpressionGetLine($1));
 }
-;
 
 callStatement: accessExpression '(' callParameterList ')' newlines
 {
@@ -1350,7 +1364,15 @@ callStatement: accessExpression '(' callParameterList ')' newlines
   deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_CALL, $2);
   deStatementInsertExpression(statement, expr);
 }
-;
+
+optCallParameterList:  // Empty
+{
+  $$ = deExpressionCreate(DE_EXPR_LIST, deCurrentLine);
+}
+| '(' oneOrMoreCallParameters ')'
+{
+  $$ = $2;
+}
 
 callParameterList: // Empty
 {
@@ -1360,7 +1382,6 @@ callParameterList: // Empty
 | oneOrMoreCallParameters optComma
 {
 }
-;
 
 oneOrMoreCallParameters: callParameter
 {
@@ -1372,18 +1393,15 @@ oneOrMoreCallParameters: callParameter
   deExpressionAppendExpression($1, $4);
   $$ = $1;
 }
-;
 
 callParameter: expression
 | IDENT '=' expression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_NAMEDPARAM, deIdentExpressionCreate($1, $2), $3, $2);
 }
-;
 
 optComma:  // Empty
 | ','
-;
 
 printStatement: KWPRINT expressionList newlines
 {
@@ -1393,7 +1411,6 @@ printStatement: KWPRINT expressionList newlines
     deStatementInsertExpression(statement, $2);
   }
 }
-;
 
 printlnStatement: KWPRINTLN expressionList newlines
 {
@@ -1416,14 +1433,12 @@ printlnStatement: KWPRINTLN expressionList newlines
   }
   deStatementInsertExpression(statement, expression);
 }
-;
 
 throwStatement: KWTHROW expressionList newlines
 {
   deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_THROW, $1);
   deStatementInsertExpression(statement, $2);
 }
-;
 
 assertStatement: KWASSERT expressionList newlines
 {
@@ -1440,7 +1455,6 @@ assertStatement: KWASSERT expressionList newlines
   condition = deUnaryExpressionCreate(DE_EXPR_NOT, condition, $1);
   finishBlockStatement(condition);
 }
-;
 
 returnStatement: KWRETURN newlines
 {
@@ -1454,14 +1468,12 @@ returnStatement: KWRETURN newlines
   deFunction function = deBlockGetOwningFunction(scopeBlock);
   deFunctionSetReturnsValue(function, true);
 }
-;
 
 generatorStatement: generatorHeader '(' parameters ')' block
 {
   deInGenerator = false;
   deCurrentBlock = deBlockGetOwningBlock(deCurrentBlock);
 }
-;
 
 generatorHeader: KWGENERATOR IDENT
 {
@@ -1473,7 +1485,6 @@ generatorHeader: KWGENERATOR IDENT
   deCurrentBlock = deGeneratorGetSubBlock(generator);
   deInGenerator = true;
 }
-;
 
 generateStatement: KWGENERATE pathExpression '(' expressionList ')' newlines
 {
@@ -1482,9 +1493,8 @@ generateStatement: KWGENERATE pathExpression '(' expressionList ')' newlines
   deExpression callExpr = deBinaryExpressionCreate(DE_EXPR_CALL, $2, $4, $1);
   deStatementInsertExpression(statement, callExpr);
 }
-;
 
-relationStatement: KWRELATION pathExpression pathExpression optLabel pathExpression optLabel optCascade optExpressionList newlines
+relationStatement: KWRELATION pathExpression typePathExpression optLabel typePathExpression optLabel optCascade optCallParameterList newlines
 {
   deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_RELATION, $1);
   deExpression params = $8;
@@ -1499,18 +1509,15 @@ relationStatement: KWRELATION pathExpression pathExpression optLabel pathExpress
   deBlockRemoveStatement(deCurrentBlock, statement);
   deBlockInsertStatement(deCurrentBlock, statement);
 }
-;
 
 optLabel: // Empty
 {
   $$ = deStringExpressionCreate(deMutableCStringCreate(""), deCurrentLine);
-;
 }
 | ':' STRING
 {
   $$ = deStringExpressionCreate($2, $1);
 }
-;
 
 optCascade: // Empty
 {
@@ -1520,17 +1527,6 @@ optCascade: // Empty
 {
   $$ = deBoolExpressionCreate(true, $1);
 }
-;
-
-optExpressionList: // Empty
-{
-  $$ = deExpressionCreate(DE_EXPR_LIST, deCurrentLine);
-}
-| '(' expressionList ')'
-{
-  $$ = $2;
-}
-;
 
 // Only allowed inside iterator block.
 yield: KWYIELD expression newlines
@@ -1541,7 +1537,6 @@ yield: KWYIELD expression newlines
   deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_YIELD, $1);
   deStatementSetExpression(statement, $2);
 }
-;
 
 unitTestStatement: namedUnitTestHeader block
 {
@@ -1571,7 +1566,6 @@ unitTestStatement: namedUnitTestHeader block
     deSkippedCodeNestedDepth--;
   }
 }
-;
 
 namedUnitTestHeader: KWUNITTEST IDENT
 {
@@ -1579,7 +1573,6 @@ namedUnitTestHeader: KWUNITTEST IDENT
       DE_FUNC_UNITTEST, $2, DE_LINK_MODULE, $1);
   deCurrentBlock = deFunctionGetSubBlock(function);
 }
-;
 
 unnamedUnitTestHeader: KWUNITTEST
 {
@@ -1589,7 +1582,6 @@ unnamedUnitTestHeader: KWUNITTEST
     createBlockStatement(DE_STATEMENT_DO);
   }
 }
-;
 
 debugStatement: debugHeader block
 {
@@ -1601,7 +1593,6 @@ debugStatement: debugHeader block
     deSkippedCodeNestedDepth--;
   }
 }
-;
 
 debugHeader: KWDEBUG
 {
@@ -1610,14 +1601,12 @@ debugHeader: KWDEBUG
     createBlockStatement(DE_STATEMENT_DO);
   }
 }
-;
 
 enum: enumHeader '{' newlines entries '}' newlines
 {
   deAssignEnumEntryConstants(deCurrentBlock);
   deCurrentBlock = deBlockGetOwningBlock(deCurrentBlock);
 }
-;
 
 enumHeader: KWENUM IDENT
 {
@@ -1628,7 +1617,6 @@ enumHeader: KWENUM IDENT
 
 entries:  // Empty
 | entries entry
-;
 
 entry: IDENT newlines
 {
@@ -1643,7 +1631,6 @@ entry: IDENT newlines
   }
   deVariableCreate(deCurrentBlock, DE_VAR_LOCAL, true, $1, intExpr, false, $2);
 }
-;
 
 foreachStatement: forStatementHeader IDENT KWIN expression block
 {
@@ -1654,14 +1641,12 @@ foreachStatement: forStatementHeader IDENT KWIN expression block
       deIdentExpressionCreate($2, $3), $4, $3);
   finishBlockStatement(expr);
 }
-;
 
 finalFunction: finalHeader '(' parameter ')' block
 {
   deFunction function = deBlockGetOwningFunction(deCurrentBlock);
   deCurrentBlock = deFunctionGetBlock(function);
 }
-;
 
 finalHeader: KWFINAL
 {
@@ -1688,7 +1673,6 @@ refStatement: KWREF expression newlines
   deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_REF, $1);
   deStatementSetExpression(statement, $2);
 }
-;
 
 unrefStatement: KWUNREF expression newlines
 {
@@ -1698,7 +1682,6 @@ unrefStatement: KWUNREF expression newlines
   deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_UNREF, $1);
   deStatementSetExpression(statement, $2);
 }
-;
 
 expressionList: // Empty
 {
@@ -1706,7 +1689,6 @@ expressionList: // Empty
   $$ = deExpressionCreate(DE_EXPR_LIST, deCurrentLine);
 }
 | oneOrMoreExpressions
-;
 
 oneOrMoreExpressions: expression
 {
@@ -1718,7 +1700,6 @@ oneOrMoreExpressions: expression
   deExpressionAppendExpression($1, $4);
   $$ = $1;
 }
-;
 
 twoOrMoreExpressions: expression ',' optNewlines expression
 {
@@ -1729,17 +1710,14 @@ twoOrMoreExpressions: expression ',' optNewlines expression
   deExpressionAppendExpression($1, $4);
   $$ = $1;
 }
-;
 
 expression: dotDotDotExpression
-;
 
 dotDotDotExpression: selectExpression KWDOTDOTDOT selectExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_DOTDOTDOT, $1, $3, $2);
 }
 | selectExpression
-;
 
 selectExpression: orExpression
 | orExpression '?' orExpression ':' orExpression
@@ -1750,42 +1728,36 @@ selectExpression: orExpression
   deExpressionAppendExpression(expr, $5);
   $$ = expr;
 }
-;
 
 orExpression: xorExpression
 | orExpression KWOR xorExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_OR, $1, $3, $2);
 }
-;
 
 xorExpression: andExpression
 | xorExpression KWXOR andExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_XOR, $1, $3, $2);
 }
-;
 
 andExpression: inExpression
 | andExpression KWAND inExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_AND, $1, $3, $2);
 }
-;
 
 inExpression: modExpression
 | modExpression KWIN modExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_IN, $1, $3, $2);
 }
-;
 
 modExpression: relationExpression
 | relationExpression KWMOD bitorExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_MODINT, $1, $3, deExpressionGetLine($1));
 }
-;
 
 relationExpression: bitorExpression
 | bitorExpression '<' bitorExpression
@@ -1812,28 +1784,24 @@ relationExpression: bitorExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_NOTEQUAL, $1, $3, deExpressionGetLine($1));
 }
-;
 
 bitorExpression: bitxorExpression
 | bitorExpression '|' bitxorExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_BITOR, $1, $3, $2);
 }
-;
 
 bitxorExpression: bitandExpression
 | bitxorExpression '^' bitandExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_BITXOR, $1, $3, $2);
 }
-;
 
 bitandExpression: shiftExpression
 | bitandExpression '&' shiftExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_BITAND, $1, $3, $2);
 }
-;
 
 shiftExpression: addExpression
 | addExpression KWSHL addExpression
@@ -1852,7 +1820,6 @@ shiftExpression: addExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_ROTR, $1, $3, $2);
 }
-;
 
 addExpression: mulExpression
 | addExpression '+' mulExpression
@@ -1875,7 +1842,6 @@ addExpression: mulExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_SUBTRUNC, $1, $3, $2);
 }
-;
 
 mulExpression: prefixExpression
 | mulExpression '*' prefixExpression
@@ -1894,8 +1860,6 @@ mulExpression: prefixExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_MULTRUNC, $1, $3, $2);
 }
-;
-;
 
 prefixExpression: exponentiateExpression
 | '!' prefixExpression
@@ -1910,84 +1874,24 @@ prefixExpression: exponentiateExpression
 {
   $$ = deUnaryExpressionCreate(DE_EXPR_NEGATE, $2, $1);
 }
-| '<' prefixExpression '>' prefixExpression
+| '<' typeExpression  '>' prefixExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_CAST, $2, $4, $1);
 }
-| KWCASTTRUNC prefixExpression '>' prefixExpression
+| KWCASTTRUNC typeExpression '>' prefixExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_CASTTRUNC, $2, $4, $1);
 }
-;
 
-exponentiateExpression: postfixExpression
-| postfixExpression KWEXP exponentiateExpression  // Binds right to left.
+exponentiateExpression: accessExpression
+| accessExpression KWEXP exponentiateExpression  // Binds right to left.
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_EXP, $1, $3, $2);
 }
-;
 
-postfixExpression: accessExpression
-| '&' pathExpression '(' expressionList ')'
-{
-  deExpression callExpr = deBinaryExpressionCreate(DE_EXPR_CALL, $2, $4, $1);
-  $$ = deUnaryExpressionCreate(DE_EXPR_FUNCADDR, callExpr, $1);
-}
-;
-
-tokenExpression: IDENT
-{
-  $$ = deIdentExpressionCreate($1, deCurrentLine);
-}
-| STRING
-{
-  $$ = deStringExpressionCreate($1, deCurrentLine);
-}
-| INTEGER
-{
-  $$ = deIntegerExpressionCreate($1, deCurrentLine);
-}
-| FLOAT
-{
-  $$ = deFloatExpressionCreate($1, deCurrentLine);
-}
-| RANDUINT
-{
-  $$ = deRandUintExpressionCreate($1, deCurrentLine);
-}
-| BOOL
-{
-  $$ = deBoolExpressionCreate($1, deCurrentLine);
-}
-| '[' oneOrMoreExpressions ']'
-{
-  // Modify the type from DE_EXPR_LIST to DE_EXPR_ARRAY.
-  deExpressionSetType($2, DE_EXPR_ARRAY);
-  $$ = $2;
-}
-| '(' expression ')'
-{
-  $$ = $2;
-}
-| tupleExpression
-| typeLiteral
-| KWSECRET '(' expression ')'
-{
-  $$ = deUnaryExpressionCreate(DE_EXPR_SECRET, $3, $1);
-}
-| KWREVEAL '(' expression ')'
-{
-  $$ = deUnaryExpressionCreate(DE_EXPR_REVEAL, $3, $1);
-}
-| KWARRAYOF '(' expression ')'
-{
-  $$ = deUnaryExpressionCreate(DE_EXPR_ARRAYOF, $3, $1);
-}
-| KWTYPEOF '(' expression ')'
-{
-  $$ = deUnaryExpressionCreate(DE_EXPR_TYPEOF, $3, $1);
-}
-| KWUNSIGNED '(' expression ')'
+// These expresions are known to return integer or Boolean values,
+// and can be treated like tokens.
+returnsTokenExpression: KWUNSIGNED '(' expression ')'
 {
   $$ = deUnaryExpressionCreate(DE_EXPR_UNSIGNED, $3, $1);
 }
@@ -1998,11 +1902,6 @@ tokenExpression: IDENT
 | KWWIDTHOF '(' expression ')'
 {
   $$ = deUnaryExpressionCreate(DE_EXPR_WIDTHOF, $3, $1);
-}
-| KWNULL '(' callParameterList ')'
-{
-  deExpressionSetType($3, DE_EXPR_NULL);
-  $$ = $3;
 }
 | KWISNULL '(' expression ')'
 {
@@ -2037,7 +1936,6 @@ typeLiteral: UINTTYPE
   $$ = deExpressionCreate(DE_EXPR_FLOATTYPE, deCurrentLine);
   deExpressionSetWidth($$, 64);
 }
-;
 
 pathExpression: IDENT
 {
@@ -2048,7 +1946,6 @@ pathExpression: IDENT
   $$ = deBinaryExpressionCreate(
       DE_EXPR_DOT, $1, deIdentExpressionCreate($3, $2), $2);
 }
-;
 
 pathExpressionWithAlias: pathExpression
 | pathExpression KWAS IDENT
@@ -2056,7 +1953,6 @@ pathExpressionWithAlias: pathExpression
   $$ = deBinaryExpressionCreate(
       DE_EXPR_AS, $1, deIdentExpressionCreate($3, $2), $2);
 }
-;
 
 tupleExpression: '(' twoOrMoreExpressions optComma ')'
 {
@@ -2070,16 +1966,13 @@ tupleExpression: '(' twoOrMoreExpressions optComma ')'
 {
   $$ = deExpressionCreate(DE_EXPR_TUPLE, $1);
 }
-;
 
 optNewlines: // Empty
 | optNewlines '\n'
-;
 
 newlines: '\n'
 | ';'
 | newlines '\n'
 | newlines ';'
-;
 
 %%

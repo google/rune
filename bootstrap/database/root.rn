@@ -38,6 +38,6 @@ func getRoot() -> Root {
 }
 
 // Return the root block.
-func getRootBlock() -> Block {
-  return theGlobalRoot.block!
+func getMainFunc() -> Function {
+  return theGlobalRoot.mainFunction!
 }

@@ -1,4 +1,4 @@
-CPP=clang++-9
+CPP=clang++
 CCFLAGS=-Wall -O3
 
 all: priority_queue fh binary_trees_cc

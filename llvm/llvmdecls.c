@@ -228,8 +228,6 @@ static char *getTypeString(deDatatype datatype, bool isDefinition) {
     }
     case DE_TYPE_CLASS:
       return utSprintf("i%u", deClassGetRefWidth(deDatatypeGetClass(datatype)));
-    case DE_TYPE_NULL:
-      return utSprintf("i%u", deTclassGetRefWidth(deDatatypeGetTclass(datatype)));
     case DE_TYPE_FUNCPTR:
       return getFuncptrTypeString(datatype);
     case DE_TYPE_STRUCT:
@@ -243,6 +241,7 @@ static char *getTypeString(deDatatype datatype, bool isDefinition) {
     case DE_TYPE_FUNCTION:
     case DE_TYPE_TCLASS:
     case DE_TYPE_ENUMCLASS:
+    case DE_TYPE_EXPR:
       utExit("Unexpected type");
       break;
   }

@@ -39,7 +39,7 @@ generator DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
       ref child
     }
 
-    func insertAfter$labelB$B(self, prevChild: B, child: B) {
+    func insertAfter$labelB$B(self, prevChild: B?, child: B) {
       debug {
         if !isnull(child.$labelA$A) {
           throw "Object is already in a relation"

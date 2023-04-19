@@ -17,7 +17,7 @@ class Node(self, parent, value) {
   self.markedValue = 0.0f32
   self.unmarkedValue = 0.0f32
   if !isnull(parent) {
-    parent.appendNode(self)
+    parent!.appendNode(self)
   }
 
   func markNodes(self) {

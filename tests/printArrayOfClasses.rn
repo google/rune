@@ -13,7 +13,7 @@
 // limitations under the License.
 
 class Foo(self) {
-  self.bars = arrayof(Bar(self, u64))
+  self.bars = arrayof(Bar)
 }
 
 class Bar:u16 (self, foo: Foo, val: u64) {

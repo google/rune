@@ -623,7 +623,6 @@ static char *getDefaultValue(deDatatype datatype) {
       }
       return "0";
     case DE_TYPE_CLASS:
-    case DE_TYPE_NULL:
       return "0";
     case DE_TYPE_STRING:
     case DE_TYPE_ARRAY:
@@ -634,6 +633,8 @@ static char *getDefaultValue(deDatatype datatype) {
       return "zeroinitializer";
     case DE_TYPE_FUNCPTR:
       return "null";
+    case DE_TYPE_EXPR:
+      utExit("Not expecting an expression type");
   }
   return NULL;  // Dummy return.
 }
@@ -1024,8 +1025,7 @@ static llElement findDatatypeSize(deDatatype datatype) {
     case DE_TYPE_ENUMCLASS:
       utExit("Type has no size");
       break;
-    case DE_TYPE_CLASS:
-    case DE_TYPE_NULL: {
+    case DE_TYPE_CLASS: {
       uint32 refWidth = deClassGetRefWidth(deDatatypeGetClass(datatype));
       uint32 refSize;
       if (refWidth <= 8) {
@@ -1072,6 +1072,8 @@ static llElement findDatatypeSize(deDatatype datatype) {
       return findTupleSize(datatype);
     case DE_TYPE_STRUCT:
       return findTupleSize(deGetStructTupleDatatype(datatype));
+    case DE_TYPE_EXPR:
+      utExit("Not expecting an expression type");
   }
   utExit("Unknown datatype type");
   return llMakeEmptyElement();  // Dummy return;
@@ -2129,7 +2131,6 @@ static void moveTupleOrObject(llElement dest, llElement source) {
   deDatatype datatype = llElementGetDatatype(source);
   deDatatype destType = llElementGetDatatype(dest);
   utAssert(datatype == llElementGetDatatype(dest) ||
-      deDatatypeGetType(datatype) == DE_TYPE_NULL ||
       deDatatypeGetType(destType) == DE_TYPE_STRUCT ||
       deDatatypeNullable(destType));
   char *type = llGetTypeString(datatype, true);
@@ -2694,8 +2695,8 @@ static void generateDotExpression(deExpression expression) {
     case DE_TYPE_FUNCPTR:
     case DE_TYPE_CLASS:
     case DE_TYPE_NONE:
-    case DE_TYPE_NULL:
     case DE_TYPE_ENUM:
+    case DE_TYPE_EXPR:
       utExit("Unexpected type");
       break;
   }
@@ -2826,54 +2827,55 @@ static deDatatype castEnumToBaseType(deExpression expression, bool orEnumClass) 
 
 // Generate a cast expression.
 static void generateCastExpression(deExpression expression, bool truncate) {
-  deExpression left = deExpressionGetFirstExpression(expression);
-  deExpression right = deExpressionGetNextExpression(left);
-  deDatatype leftDatatype = castEnumToBaseType(left, true);
+  deExpression right = deExpressionGetLastExpression(expression);
+  // By using the type on expression, rather than left, we get the coerced
+  // datatype from a tclass to a class.
+  deDatatype datatype = castEnumToBaseType(expression, true);
   deDatatype rightDatatype = castEnumToBaseType(right, false);
-  if (deSetDatatypeSecret(leftDatatype, false) == deSetDatatypeSecret(rightDatatype, false)) {
+  if (deSetDatatypeSecret(datatype, false) == deSetDatatypeSecret(rightDatatype, false)) {
     // No need to generate the cast.
     generateExpression(right);
     topOfStack()->datatype = rightDatatype;
     return;
   }
-  deDatatypeType leftType = deDatatypeGetType(leftDatatype);
+  deDatatypeType type = deDatatypeGetType(datatype);
   deDatatypeType rightType = deDatatypeGetType(rightDatatype);
   generateExpression(right);
   topOfStack()->datatype = rightDatatype;
-  if (deDatatypeTypeIsInteger(leftType) && deDatatypeTypeIsInteger(rightType)) {
+  if (deDatatypeTypeIsInteger(type) && deDatatypeTypeIsInteger(rightType)) {
     llElement rightElement = popElement(true);
-    uint32 newWidth = deDatatypeGetWidth(leftDatatype);
+    uint32 newWidth = deDatatypeGetWidth(datatype);
     pushElement(resizeInteger(rightElement, newWidth,
-        deDatatypeSigned(leftDatatype), truncate), false);
+        deDatatypeSigned(datatype), truncate), false);
     return;
   }
-  if (leftType == DE_TYPE_CLASS || rightType == DE_TYPE_CLASS ||
-      leftType == DE_TYPE_STRING || rightType == DE_TYPE_STRING) {
+  if (type == DE_TYPE_CLASS || rightType == DE_TYPE_CLASS ||
+      type == DE_TYPE_STRING || rightType == DE_TYPE_STRING) {
     // These casts are almost nops.
     llElement *element = topOfStack();
     element->datatype = deExpressionGetDatatype(expression);
     return;
   }
   llElement rightElement = popElement(true);
-  char *leftTypeString = llGetTypeString(leftDatatype, true);
+  char *leftTypeString = llGetTypeString(datatype, true);
   char *rightTypeString = llGetTypeString(rightDatatype, true);
   uint32 value = printNewValue();
-  if (leftType == DE_TYPE_UINT && rightType == DE_TYPE_FLOAT) {
+  if (type == DE_TYPE_UINT && rightType == DE_TYPE_FLOAT) {
       llPrintf("fptoui %s %s to %s\n", rightTypeString,
           llElementGetName(rightElement), leftTypeString);
-  } else if (leftType == DE_TYPE_INT && rightType == DE_TYPE_FLOAT) {
+  } else if (type == DE_TYPE_INT && rightType == DE_TYPE_FLOAT) {
       llPrintf("fptosi %s %s to %s\n", rightTypeString,
           llElementGetName(rightElement), leftTypeString);
-  } else if (leftType == DE_TYPE_FLOAT && rightType == DE_TYPE_UINT) {
+  } else if (type == DE_TYPE_FLOAT && rightType == DE_TYPE_UINT) {
       llPrintf("uitofp %s %s to %s\n", rightTypeString,
           llElementGetName(rightElement), leftTypeString);
-  } else if (leftType == DE_TYPE_FLOAT && rightType == DE_TYPE_INT) {
+  } else if (type == DE_TYPE_FLOAT && rightType == DE_TYPE_INT) {
       llPrintf("sitofp %s %s to %s\n", rightTypeString,
           llElementGetName(rightElement), leftTypeString);
-  } else if (leftType == DE_TYPE_FLOAT && rightType == DE_TYPE_FLOAT) {
+  } else if (type == DE_TYPE_FLOAT && rightType == DE_TYPE_FLOAT) {
     // Must be different width floats.
     uint32 oldWidth = deDatatypeGetWidth(rightDatatype);
-    uint32 newWidth = deDatatypeGetWidth(leftDatatype);
+    uint32 newWidth = deDatatypeGetWidth(datatype);
     utAssert(oldWidth != newWidth);
     if (oldWidth < newWidth) {
       // Extending precision.
@@ -2889,7 +2891,7 @@ static void generateCastExpression(deExpression expression, bool truncate) {
   } else {
     utExit("Cannot cast from array to integer or back");
   }
-  pushValue(leftDatatype, value, false);
+  pushValue(datatype, value, false);
 }
 
 // Generate a cast from/to signed/unsigned.
@@ -3557,8 +3559,6 @@ static uint32 findClassRefWidth(deDatatype datatype) {
   switch(deDatatypeGetType(datatype)) {
     case DE_TYPE_CLASS:
       return deClassGetRefWidth(deDatatypeGetClass(datatype));
-    case DE_TYPE_NULL:
-      return deTclassGetRefWidth(deDatatypeGetTclass(datatype));
     default:
       utExit("Unexpected datatype");
   }
@@ -3824,6 +3824,8 @@ static void generateExpression(deExpression expression) {
     case DE_EXPR_DOT:
       generateDotExpression(expression);
       break;
+    case DE_EXPR_TCLASS_SPEC:
+      utExit("Write me!");
     case DE_EXPR_TUPLE:
       generateTupleExpression(expression);
       break;

@@ -49,14 +49,7 @@ static void setVariableDatatype(deBlock scopeBlock, deVariable variable,
 // Refine NULL types on variables to class types, now that we have a specific class.
 void deRefineAccessExpressionDatatype(deBlock scopeBlock, deExpression target,
     deDatatype valueType) {
-   deDatatype targetType = deExpressionGetDatatype(target);
    deLine line = deExpressionGetLine(target);
-  if (deDatatypeGetType(valueType) == DE_TYPE_NULL) {
-    // Don't unrefine to a NULL class if we have already refined.
-    deDatatypeType type = deDatatypeGetType(targetType);
-    utAssert(type == DE_TYPE_CLASS || type == DE_TYPE_NULL);
-    return;
-  }
   switch (deExpressionGetType(target)) {
     case DE_EXPR_IDENT: {
       deIdent ident = deFindIdent(scopeBlock, deExpressionGetName(target));

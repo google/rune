@@ -135,6 +135,7 @@ enum ExpressionType
   DE_EXPR_STRINGTYPE  // x: string = y
   DE_EXPR_BOOLTYPE  // done: bool = checkForDone()
   DE_EXPR_NAMEDPARAM  // Myclass(name = "me", profession = "hacker")
+  DE_EXPR_TCLASS_SPEC  // Point<i32, i32>
 
 enum DatatypeType
   DE_TYPE_NONE  // Some expressions, such as assignments, have no type.
@@ -153,7 +154,7 @@ enum DatatypeType
   DE_TYPE_STRUCT
   DE_TYPE_ENUM
   DE_TYPE_ENUMCLASS
-  DE_TYPE_NULL  // Returned by null(A).
+  DE_TYPE_EXPR  // Only used to pass expression values to generators.
 
 enum IdentType
   DE_IDENT_FUNCTION
@@ -279,6 +280,8 @@ class Tclass array
   BuiltinTclassType builtinType
   Line line
   uint32 numClasses
+  uint32 numTemplateParams
+  bool isTemplate  // Set if it has any template parameters.
   bool hasFinalMethod
   bool refCounted  // Set if this tclass is in no cascade-delete relationship.
   bool visited  // Used in loop detection.
@@ -344,6 +347,8 @@ class Value
     Tclass tclassVal: DE_TYPE_TCLASS
     Class classVal: DE_TYPE_CLASS
     Function funcVal: DE_TYPE_FUNCTION
+    Expression exprVal: DE_TYPE_EXPR
+  array Value tupleValue  // For tuple types.
 
 class Statement
   StatementType type
@@ -366,7 +371,7 @@ class Datatype array
   union type
     Datatype elementType: DE_TYPE_ARRAY DE_TYPE_STRING
     Datatype returnType: DE_TYPE_FUNCPTR
-    Tclass tclass: DE_TYPE_TCLASS DE_TYPE_NULL
+    Tclass tclass: DE_TYPE_TCLASS
     Function function: DE_TYPE_FUNCTION DE_TYPE_STRUCT DE_TYPE_ENUM DE_TYPE_ENUMCLASS
     Class Class: DE_TYPE_CLASS
     Expression modulus: DE_TYPE_MODINT

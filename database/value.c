@@ -16,6 +16,21 @@
 // and computed from expressions.
 #include "de.h"
 
+// Dump a tuple value to a string.
+static void dumpTupleValueToString(deString string, deValue value) {
+  deStringPuts(string, "(");
+  bool firstTime = true;
+  deValue child;
+  deForeachValueTupleValue(value, child) {
+    if (!firstTime) {
+      deStringPuts(string, ", ");
+    }
+    firstTime = false;
+    deDumpValueStr(string, child);
+  } deEndValueTupleValue;
+  deStringPuts(string, ")");
+}
+
 // Dump a value to the end of |string| for debugging.
 void deDumpValueStr(deString string, deValue value) {
   switch (deValueGetType(value)) {
@@ -38,6 +53,15 @@ void deDumpValueStr(deString string, deValue value) {
     case DE_TYPE_FUNCTION:
       deStringSprintf(string, "<function %s>", deFunctionGetName(deValueGetFuncVal(value)));
       break;
+    case DE_TYPE_EXPR:
+      deStringPuts(string, "<expr ");
+      deDumpExpressionStr(string, deValueGetExprVal(value));
+      deStringPuts(string, ">");
+      break;
+    case DE_TYPE_TUPLE: {
+      dumpTupleValueToString(string, value);
+      break;
+    }
     default:
       utExit("Unexpected value type");
   }
@@ -110,6 +134,20 @@ deValue deClassValueCreate(deClass theClass) {
 deValue deFunctionValueCreate(deFunction function) {
   deValue value = createValue(DE_TYPE_FUNCTION);
   deValueSetFuncVal(value, function);
+  return value;
+}
+
+// Create an expression value.
+deValue deExpressionValueCreate(deExpression expression) {
+  deValue value = createValue(DE_TYPE_EXPR);
+  deValueSetExprVal(value, expression);
+  return value;
+}
+
+// Create an expression value.  The caller should append tuple values after
+// calling this.
+deValue deTupleValueCreate() {
+  deValue value = createValue(DE_TYPE_TUPLE);
   return value;
 }
 

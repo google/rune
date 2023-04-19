@@ -57,7 +57,7 @@ class Point(self, <curve>: EdwardsCurve, x: typeof(curve.m), y: typeof(curve.m))
 
   // Only scalar multiplication is defined for elliptic curve points.
   operator * (k: Uint, P: Point) {
-    R: typeof(P) = Point(P.curve, <P.x>0, <P.y>1)
+    R: typeof(P) = Point(P.curve, <typeof(P.x)>0, <typeof(P.y)>1)
     M: typeof(P) = P  // M is 2**n*P
     f = k
     while f != <f>0 {

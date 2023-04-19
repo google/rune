@@ -32,7 +32,7 @@ class Variable
 
 relationship Function Tclass cascade
 relationship Tclass Class doubly_linked cascade
-relationship Root Function cascade
+relationship Root:Main Function:Main cascade
 relationship Function:Parent Function:Child doubly_linked cascade
 relationship Class:Parent Function:Sub cascade
 relationship Signature:Uniquified Function:Uniquified cascade

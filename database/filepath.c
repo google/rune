@@ -35,11 +35,14 @@ deFilepath deFilepathCreate(char *path, deFilepath parent, bool isPackage) {
 char *deFilepathGetRelativePath(deFilepath filepath) {
   char *path = deFilepathGetName(filepath);
   char *cwd = utGetcwd();
-  while (*path != '\0' && *path == *cwd) {
-    path++;
-    cwd++;
+  size_t i = 0;
+  while (path[i] != '\0' && path[i] == cwd[i]) {
+    i++;
   }
-  if (*path == '/') {
+  while (i > 0 && path[i] == '/') {
+    i--;
+  }
+  if (path[i] == '/') {
     path++;
   }
   return path;

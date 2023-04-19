@@ -12,21 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-class Dict(self, <keyType>, <valueType>) {
+class Dict(self, <key>, <value>) {
 
-  func bindingHint(self, keyType, valueType) {
-    self.insert(null(keyType), null(valueType))
-    return true
-  }
-
-  class Entry(self, <key>, <value>) {
+  class Entry(self, dict, <key>, <value>) {
     self.key = key
     self.value = value
+    dict.insertEntry(self)
   }
 
   func insert(self, key, value) {
-    entry = Dict.Entry(key, value)
-    self.insertEntry(entry)
+    if !isnull(self.findEntry(key)) {
+      throw "Key already exists in dictionary"
+    }
+    Dict.Entry(self, key, value)
   }
 
   func remove(self, key) {
@@ -72,4 +70,4 @@ class Dict(self, <keyType>, <valueType>) {
   }
 }
 
-relation Hashed Dict Dict.Entry cascade ("key", "Entries")
+relation Hashed Dict<key, value> Dict.Entry<key, value> cascade ("key", "Entries")

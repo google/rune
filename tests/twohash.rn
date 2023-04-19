@@ -27,16 +27,16 @@ class Node(self, graph, id: u64) {
   func dump(self) {
     print "n%u ->" % self.id
     for edge in self.outEdges() {
-      print " n", edge.toNode.id
+      print " n", edge.toNode!.id
     }
     println
   }
 
 }
 
-class Edge(self, fromNode, toNode) {
+class Edge(self, fromNode: Node, toNode: Node) {
   self.hash = hashValues(fromNode.id, toNode.id)
-  fromNode.graph.insertEdge(self)
+  fromNode.graph!.insertEdge(self)
   fromNode.insertOutEdge(self)
   toNode.insertInEdge(self)
 }

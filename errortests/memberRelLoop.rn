@@ -1,4 +1,4 @@
-//  Copyright 2021 Google LLC.
+//  Copyright 2023 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,6 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-l = arrayof(u64)
-l.append(123)
-println l[0]
+class Foo(self, bar: Bar) {
+  self.barLoop = bar  // Creates member relationship from Foo to Bar
+  final(self) {
+    println "Destroyed Foo"
+  }
+}
+
+class Bar(self, foo: Foo) {
+  self.insertFoo(foo)
+  final(self) {
+    println "Destroyed Bar"
+  }
+}
+
+// Non-cascade-delete relation.
+relation OneToOne Bar Foo
+
+func memoryLeak() {
+  foo = Foo(null(Bar))
+  bar = Bar(foo)
+  foo.barLoop = bar
+}
+
+memoryLeak()

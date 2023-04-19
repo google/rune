@@ -14,4 +14,4 @@
 
 import importtest as e
 
-println e.add(3, 5)
+println e.add(3i32, 5i32)

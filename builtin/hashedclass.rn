@@ -1,4 +1,4 @@
-//  Copyright 2021 Google LLC.
+//  Copyright 2023 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,78 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Hash together two values.  This is not ensured to work well vs attacker
-// controlled inputs.  It uses combinations of operators popular in recent
-// hashing algorithms: ARX, meaning ADD, ROTATE, and XOR.  The ADD is
-// implemented with multiplication, which works very well on systems with
-// hardware accelerated multiply.  A common problem is when lower bits are
-// consistently 0, such as we see when hashing pointers.  Since the low bits
-// are most likely to be used, e.g. as hash table indexes, they should depend
-// on many of the other bits.  The most significant bits of a 64x64 multiply
-// depend on all the input bits, so left rotation by 23 ensures the lower 23
-// bits are reasonably well mixed.
-func hashValues(val1: u64, val2: u64) -> u64 {
-  return ((val1 ^ val2 ^ 0xa5a5a5a5a5a5a5a5u64) !* 0xdeadbeef31415927u64) <<< 23
-}
-
-// Hash a string.
-func hashString(value: string) -> u64 {
-  hash = 0u64
-  for i = 0, i < value.length(), i += 1 {
-    hash = hashValues(hash, <u64>value[i])
-  }
-  return hash
-}
-
-// Hash an integer of any size.
-func hashInteger(value: Uint | Int) -> u64 {
-  typeswitch value {
-    case u1 ... u64 | i1 ... i64 {
-      return hashValues(0u64, <u64>value)
-    }
-    default {
-      remaining = value
-      hash = 0u64
-      do {
-        hash = hashValues(hash, !<u64>remaining)
-        remaining >>= 64
-      } while remaining != <remaining>0
-      return hash
-    }
-  }
-}
-
-func hashValue(value) -> u64 {
-  // Only one of these cases will be instatiated per func instantiation.
-  typeswitch value {
-    case String {
-      return hashString(value)
-    }
-    case Uint, Int {
-      return hashInteger(value)
-    }
-    case Array {
-      hash = 0u64
-      for i in range(value.length) {
-        element = value[i]
-        hash = hashValues(hash, hashValue(element))
-      }
-      return hash
-    }
-    case Class {
-      // The hash value is just the object index itself.
-      return <u64><u32>value
-    }
-    default {
-      error = 0  // This will cause a ccompile-time error.
-      error = "hashValue: I don't know how to hash this type"
-      return error
-    }
-  }
-}
-
-generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
-    labelA: string = "", labelB: string = "", keyField: string = "hash", pluralB: string = "") {
+// This is a one-to-many relation generator that adds a hash table between
+// class A and B.  The hash table is always a power of 2, and dynamically grows
+// as needed, when the number of hash table elements equals the size of the
+// table.  The child class B must have two methods: hash() -> u64, and
+// equals(other) which compares the two instances of class B and returns true
+// if they are equivalent.
+//
+// This generator embeds a singly-linked list between A and B, which on average
+// will never have more than one element, so the expected insert/remove time is
+// still constant.
+generator HashedClass(A: Class, B: Class, cascadeDelete: bool = false,
+    labelA: string = "", labelB: string = "", pluralB: string = "") {
   if pluralB == "" {
     pluralB = "$B_s";
   }
@@ -91,14 +31,16 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
     self.$labelB$B_Table = arrayof(B)
     self.num$labelB$pluralB = 0
 
-    func find$labelB$B(self, key) {
+    func find$labelB$B(self, $B) {
       if self.$labelB$B_Table.length() == 0 {
         return null(self.$labelB$B_Table[u64])
       }
-      hash = hashValue(key) & (self.$labelB$B_Table.length() - 1)
-      entry = self.$labelB$B_Table[hash]
+      // The B class must have a hash() method that returns u64.
+      hashVal = $B.hash() & (self.$labelB$B_Table.length() - 1)
+      entry = self.$labelB$B_Table[hashVal]
       while !isnull(entry) {
-	if key == entry!.$keyField {
+        // The B class must have an equals method.
+        if entry!.equals($B) {
           return entry!
         }
         entry = entry!.nextHashed$A$labelB$B
@@ -115,7 +57,7 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
       for i in range(length) {
         entry = self.$labelB$B_Table[i]
         while !isnull(entry) {
-          hash = hashValue(entry!.$keyField) & mask
+          hash = entry!.hash() & mask
           if i != hash {
 	    println "Hash table check failed for ", entry!
 	    throw "i = ", i, ", hash = ", hash
@@ -136,7 +78,7 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
           oldEntry = self.$labelB$B_Table[i]
           prevEntry = null(oldEntry)
           while !isnull(oldEntry) {
-            rawHash = hashValue(oldEntry!.$keyField)
+            rawHash = oldEntry!.hash()
             newHash = rawHash & newMask
             oldHash = rawHash & oldMask
 	    assert oldHash == i
@@ -168,7 +110,7 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
           updateHashTableAfterResize(self)
         }
       }
-      hash = hashValue(entry!.$keyField) & (self.$labelB$B_Table.length() - 1)
+      hash = entry.hash() & (self.$labelB$B_Table.length() - 1)
       entry.nextHashed$A$labelB$B = self.$labelB$B_Table[hash]
       self.$labelB$B_Table[hash] = entry
       entry.$labelA$A = self
@@ -177,7 +119,7 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
     }
 
     func remove$labelB$B(self, child) {
-      hash = hashValue(child!.$keyField) & (self.$labelB$B_Table.length() - 1)
+      hash = child.hash() & (self.$labelB$B_Table.length() - 1)
       entry = self.$labelB$B_Table[hash]
       prev = null(entry)
       while !isnull(entry) {

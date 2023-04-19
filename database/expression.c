@@ -574,6 +574,12 @@ void deDumpExpressionStr(deString string, deExpression expression) {
           utSymGetName(deExpressionGetName(deExpressionGetFirstExpression(expression))));
       deDumpExpressionStr(string, deExpressionGetLastExpression(expression));
       break;
+    case DE_EXPR_TCLASS_SPEC:
+      deDumpExpressionStr(string, deExpressionGetFirstExpression(expression));
+      deStringSprintf(string, "< ");
+      deDumpExpressionStr(string, deExpressionGetLastExpression(expression));
+      deStringSprintf(string, " >");
+      break;
   }
 }
 
@@ -782,12 +788,12 @@ static void setExpressionToValue(deExpression expression, deValue value) {
     case DE_TYPE_TUPLE:
     case DE_TYPE_STRUCT:
     case DE_TYPE_ENUM:
-    case DE_TYPE_NULL:
     case DE_TYPE_TCLASS:
     case DE_TYPE_CLASS:
     case DE_TYPE_FUNCTION:
     case DE_TYPE_FUNCPTR:
     case DE_TYPE_ENUMCLASS:
+    case DE_TYPE_EXPR:
       utExit("Cannot morph an expression into this type of value");
       break;
     case DE_TYPE_BOOL:

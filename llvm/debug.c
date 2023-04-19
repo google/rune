@@ -371,8 +371,7 @@ static llTag createDatatypeTag(deDatatype datatype) {
       break;
     }
     case DE_TYPE_CLASS:
-    case DE_TYPE_TCLASS:
-    case DE_TYPE_NULL: {
+    case DE_TYPE_TCLASS: {
       if (llDebugMode && type == DE_TYPE_CLASS) {
         return createClassTypeTag(datatype);
       }
@@ -393,6 +392,7 @@ static llTag createDatatypeTag(deDatatype datatype) {
     case DE_TYPE_FUNCPTR:
       return createFuncptrTag(datatype);
     case DE_TYPE_MODINT:
+    case DE_TYPE_EXPR:
       utExit("Unexpected type");
       break;
   }
@@ -451,7 +451,7 @@ static uint32 createSignatureTypeTag(deSignature signature) {
   deStringSprintf(buf, "%s", "!DISubroutineType(types: !{");
   bool mustUseValue = deSignatureIsCalledByFuncptr(signature);
   bool firstTime = true;
-  for (uint32 i = 0; i < deSignatureGetNumParamspec(signature); i++) {
+  for (uint32 i = 0; i < deSignatureGetUsedParamspec(signature); i++) {
     deParamspec paramspec = deSignatureGetiParamspec(signature, i);
     if (mustUseValue || (deParamspecInstantiated(paramspec) &&
         deParamspecGetDatatype(paramspec) != deDatatypeNull)) {

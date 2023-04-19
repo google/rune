@@ -23,19 +23,26 @@ use variable
 use datatype
 use util
 
-class Ident(self, block: Block, object: Function | Variable, sym: Sym, objLine: Line) {
+class Ident(self, function: Function, object: Function | Variable, sym: Sym, objLine: Line) {
   self.exported = false
   imported = false
   self.sym = sym
-  object.appendIdent(self)
-  // Operator identifiers are not in any block hash table.
-  if !isnull(block) {
-    oldIdent = block.findIdent(sym)
+  typeswitch object {
+    case Function {
+      object.appendNameIdent(self)
+    }
+    case Variable {
+      object.insertIdent(self)
+    }
+  }
+  // Operator identifiers are not in any function hash table.
+  if !isnull(function) {
+    oldIdent = function.findIdent(sym)
     if !isnull(oldIdent) {
-      Error("Tried to create an identifier '%s' that already exists on the block" % sym.name,
+      Error("Tried to create an identifier '%s' that already exists in the function" % sym.name,
           objLine)
     }
-    block.insertIdent(self)
+    function.insertIdent(self)
   }
 
   // Dump the identifier to the end of |string| for debugging purposes.
@@ -49,27 +56,32 @@ class Ident(self, block: Block, object: Function | Variable, sym: Sym, objLine: 
     }
   }
 
-  // Find the identifier in the scope block, or in the module block.  If not found
-  // in the module block, look in the global scope.
-  func find(scopeBlock: Block, sym: Sym) {
-    ident = scopeBlock.findIdent(sym)
+  // Find the identifier in the local scope, or in the module scope.  If
+  // not found in the module scope, look in the global scope, but only
+  // if scopeFunc is main.
+  func find(scopeFunc: Function, sym: Sym) {
+    ident = scopeFunc.findIdent(sym)
     if !isnull(ident) {
       return ident
     }
-    line = scopeBlock.line
+    line = scopeFunc.line
     if isnull(line) {
       // Builtin classes have no line.
       return null(Ident)
     }
     filepath = line.filepath
-    moduleBlock = filepath.moduleBlock
-    ident = moduleBlock.findIdent(name)
+    moduleFunc = filepath.moduleFunc
+    ident = moduleFunc.findIdent(name)
     if !isnull(ident) {
       return ident
     }
     // Some identifiers, like idents for built-in classes, are in the global scope.
-    rootBlock = getRoot().block
-    return reootBlock.findIdent(name)
+    mainFunc = getRoot().mainFunc
+    ident =  mainFunc.findIdent(name)
+    if !isnull(ident) && (!ident.isModuleOrPackage() || scopeFunc == mainFunc) {
+      return ident
+    }
+    return null(ident)
   }
 
   // Find the datatype of the identifier.  If a variable has not yet been set, it
@@ -98,75 +110,63 @@ class Ident(self, block: Block, object: Function | Variable, sym: Sym, objLine: 
   }
 
   // Find an identifier from the path Expr.
-  func findInScopeFromPath(scopeBlock: Block, pathExpr: Expr) -> Ident {
+  func findInScopeFromPath(scopeFunc: Function, pathExpr: Expr) -> Ident {
     realPathExpr = pathExpr
     if pathExpr.type == ExprType.As {
       realPathExpr = pathExpr.firstExpr
     }
     if realPathExpr.type == ExperType.Ident {
-      return scopeBlock.findIdent(realPathExpr.val.symVal.name)
+      return scopeFunc.findIdent(realPathExpr.val.symVal.name)
     }
     assert realPathExpr.type == ExprType.Dot
     subPathExpr = realPathExpr.firstExpr
     identExpr = subPathExpr.nextExprExpr
     assert identExpr.type == ExprType.Ident
-    ident = findInScopeFromPath(scopeBlock, subPathExpr)
+    ident = findInScopeFromPath(scopeFunc, subPathExpr)
     if isnull(ident) {
       return null(Ident)
     }
-    subScopeBlock = ident.subBlock()
-    if isnull(subScopeBlock) {
+    subscopeFunc = ident.subBlock()
+    if isnull(subscopeFunc) {
       return null(Ident)
     }
-    return subScopeBlock.findIdent(identExpr.val.symVal)
+    return subscopeFunc.findIdent(identExpr.val.symVal)
   }
 
-  // Find an identifier from the path Expr.  |scopeBlock| is searched first.
-  func findFromPath(scopeBlock: Block, pathExpr: Expr) -> Ident {
-    ident = findInScopeFromPath(scopeBlock, pathExpr)
+  // Find an identifier from the path Expr.  |scopeFunc| is searched first.
+  func findFromPath(scopeFunc: Function, pathExpr: Expr) -> Ident {
+    ident = findInScopeFromPath(scopeFunc, pathExpr)
     if !isnull(ident) {
       return ident
     }
     // Try to find it in the global scope.
-    return findInScopeFromPath(getRoot().block, pathExpr)
+    return findInScopeFromPath(getRoot().mainFunc, pathExpr)
   }
 
   // Rename the identifier.  Also change the sym in its identifier Exprs.
   func rename(self, newName: Sym) {
-    scopeBlock = ident.block
-    scopeBlock.removeIdent(ident)
+    scopeFunc = ident.function
+    scopeFunc.removeIdent(ident)
     self.sym = newName
-    scopeBlock.appendIdent(ident)
+    scopeFunc.appendIdent(ident)
     for expr in ident.exprs() {
       assert expr.type == ExprType.Ident
       expr.val = Value(newName)
     }
   }
 
-  // Find the identifier for the block owning this identifier.
-  func owningIdent(self) -> Ident? {
-    owningBlock = self.block.owningBlock()
-    if isnull(owningBlock) {
-      return null(self)
-    }
-    return owningBlock.findIdent(self.sym)
-  }
-
   // Return a path Expr to the function.
   func createPathExpr(self) -> Expr {
-    identExpr = Expr.newIdent(self!)
-    owningIdent = self.owningIdent()
-    if isnull(owningIdent) {
-      return identExpr
-    }
-    prefixExpr = Expr.newIdent(owningIdent!)
+    identExpr = Expr.newIdent(self.sym!, self.line())
+    function = self.function!
+    prefixExpr = function.createPathExpr()
     return Expr.newBinary(ExprType.Dot, prefixExpr, identExpr, self.line())
   }
 
-  // Copy the identifier to the destination block.  The caller must ensure the
-  // identifier does not already existe on |destBlock|.
-  func copy(self, destBlock: Block) -> Ident {
-    newIdent = Ident(destBlock, type, self.sym, self.line)
+  // Copy the identifier to the |destFunc|.  The caller must ensure
+  // the identifier does not already exist on |destFunc|.
+  func copy(self, destFunc: Function) -> Ident {
+    newIdent = Ident(destFunction, type, self.sym, self.line)
     if !isnull(self.function) {
       self.function.appendIdent(newIdent)
     } else {
@@ -186,6 +186,6 @@ class Ident(self, block: Block, object: Function | Variable, sym: Sym, objLine: 
   }
 }
 
-relation Hashed Block Ident cascade ("sym")
-relation DoublyLinked Function Ident cascade
+relation Hashed Function Ident cascade ("sym")
+relation DoublyLinked Function:"Name" Ident:"Name" cascade
 relation DoublyLinked Variable Ident cascade

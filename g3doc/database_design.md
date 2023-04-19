@@ -3,13 +3,23 @@
 ![Rune's database schema](Rune.svg "Rune's database schema")
 <p style="text-align: center;"> *Data model for Rune's HIR* </p>
 
-*   <sub>Blue arrows are cascade-delete</sub>
-*   <sub>Black arrows are non-cascade-delete</sub>
-*   <sub>Circles attach to parent class</sub>
-*   <sub>Thin arrows are OneToOne relations</sub>
-*   <sub>Thick Arrows are DoublyLinked relations</sub>
-*   <sub>Boxes with X are Array relations</sub>
-*   <sub>Empty boxes are HashedClass relatoion</sub>
+*   <sub>Lines between classes represent relations.</sub>
+*   <sub>Blue arrows are cascade-delete.</sub>
+*   <sub>Black arrows are non-cascade-delete.</sub>
+*   <sub>Circles attach to parent class.</sub>
+*   <sub>Thin arrows are `OneToOne` relations.</sub>
+*   <sub>Thick Arrows are `LinkedList`, `DoublyLinked`, or `TailLinked`
+    relations.</sub>
+*   <sub>Boxes with X are `Array` relations.</sub>
+*   <sub>Empty boxes are `Hashed` or `HashedClass` relations.</sub>
+
+Classes are either parents or children of relationships. For example `Block`
+(that is, a block consists of multiple statements) is the parent in the
+`DoublyLinked relation from`Block`to`Statement`, and`Statement`is the parent in
+the`Statement:Owning`->`Block:Sub` `OneToOne`relation For instance,
+an`if-else`statement is represented with two consecutive`Statement`s on their
+`parentBlock`, and each have one `subBlock`. By convention, we use Owning/Sub for
+one-to-one relations and Parent/Child for one-to-many.
 
 Rune's High-level IR database is the engine the powers the compiler, between
 lowering the AST to HIR, and generating LLVM IR. Its design is meant to minimize
@@ -29,6 +39,44 @@ With this design, the initial bootstrap Rune compiler written in Rune should
 have similarly low complexity and good readability.
 
 [TOC]
+
+## Compiler phases
+
+For each module found during parsing, we:
+
+*   Parse.
+*   Lower to HIR.
+*   Add a call in `main` to the module's top-level function.
+*   Execute relations and prepend/append statements.
+*   Load modules based on import/use statements found in the module.
+
+The compiler executes this loop for every module found in the `builtin/`
+directory. These modules are incorporated in the main module and identifiers
+declared there are global, such as `abs`, `max`, and `DoublyLinked`.
+
+Next, the module passed to the Rune compiler is run through these steps. The
+result at the end of this process is a complete HIR which can be printed with
+`getMainFunc().dump()`. Next steps are:
+
+*   Create global and local variables (but not class data members)
+*   Binding, which combines identifier binding and type inferencing
+*   Iterator inlining
+*   Memory management pass, where global arrays for data members are added, and
+    functions for allocating and deleting class instances are added.
+*   Multiple post-processing passes to convert the HIR into simpler functions
+    that can be easily written to C or LLVM IR.
+*   Code generation: either C or directly to LLVM IR.
+*   Call the back-end compiler: any C compiler for the C backend, or Clang for
+    the LLVM IR backend.
+
+The LLVM IR backend will be broken down further into:
+
+*   LIR lowering
+*   Optimization passes
+*   LLVM IR output
+
+We don't need LIR for the C backend because the needed optimizations, such as
+loop-unrolling, and vectorization is handled in the C compiler's front-end.
 
 ## Root
 
@@ -842,7 +890,7 @@ compile-time error to ensure memory leaks cannot occur:
 
 ```rune
 class Foo(self, bar: Bar) {
-  self.bar = bar  // Creates member rel fro Foo to Bar
+  self.barLoop = bar  // Creates member rel from Foo to Bar
   final(self) {
     println "Destroyed Foo"
   }
@@ -861,11 +909,10 @@ relation OneToOne Bar Foo
 func memoryLeak() {
   foo = Foo(null(Bar))
   bar = Bar(foo)
-  foo.bar = bar
+  foo.barLoop = bar
 }
 
 memoryLeak()
-
 ```
 
 The Rune compiler detects such loops and reports them as errors. A simple fix is
@@ -880,7 +927,7 @@ constant propagation, we'll also need to perform operations on them. I think we
 can afford to link in the GNU MP Bignum Library, which was done in the C Rune
 compiler.
 
-This is a reference counted clas`and has no`relation`s.
+This is a reference counted class and has no`relation`s.
 
 ## Float
 
@@ -889,10 +936,7 @@ constants in expressions.
 
 ## Value
 
-This class might find use for holding constants in the `Expr` class, but its
-primary use in the C compiler was to help interpret Rune code in generators.
-Since the bootstrap will instead compile generators, it is not clear that we
-need a `Value` class.
+This reference counted class is used for holding constants in the `Expr` class.
 
 ## Filepath
 

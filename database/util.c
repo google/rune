@@ -97,6 +97,39 @@ void deError(deLine line, char* format, ...) {
   deGenerateDummyLLFileAndExit();
 }
 
+// These globals currently have to be set so we can report a proper stack trace.
+void deSetStackTraceGlobals(deExpression expression) {
+  deCurrentStatement = deFindExpressionStatement(expression);
+  deBinding binding = deFindExpressionBinding(expression);
+  deCurrentSignature = deSignatureNull;
+  if (binding != deBindingNull) {
+    deCurrentSignature = deBindingGetSignature(binding);
+  }
+}
+
+// Report an error at a given expression.
+void deExprError(deExpression expression, char* format, ...) {
+  char *buff;
+  va_list ap;
+  va_start(ap, format);
+  buff = utVsprintf(format, ap);
+  va_end(ap);
+  deSetStackTraceGlobals(expression);
+  deError(deExpressionGetLine(expression), "%s", buff);
+}
+
+// Report an error at a given expression.
+void deSigError(deSignature signature, char* format, ...) {
+  char *buff;
+  va_list ap;
+  va_start(ap, format);
+  buff = utVsprintf(format, ap);
+  va_end(ap);
+  deCurrentStatement = deSignatureGetCallStatement(signature);
+  deCurrentSignature = signature;
+  deError(deSignatureGetLine(signature), "%s", buff);
+}
+
 // Return the path to the block with '_' separators if printing as a label, and
 // with '.' separators otherwise.
 char *deGetBlockPath(deBlock block, bool as_label) {
@@ -641,7 +674,6 @@ void dePrintStack(void) {
       deBlock block = deBlockGetScopeBlock(deStatementGetBlock(statement));
       utAssert(deBlockGetType(block) == DE_BLOCK_FUNCTION);
       char *path = deGetBlockPath(block, false);
-      printf("In %s: ", path);
       if (!deStatementGenerated(statement)) {
         deDumpLine(deStatementGetLine(statement));
       } else {
@@ -650,6 +682,7 @@ void dePrintStack(void) {
         printf("generated statement: ");
         deDumpStatement(statement);
       }
+      printf("In %s\n", path);
     }
     signature = deSignatureGetCallSignature(signature);
     prevStatement = statement;

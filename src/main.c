@@ -43,6 +43,7 @@ static void usage(void) {
          "    -b        - Don't load bulitin Rune files.\n"
          "    -g        - Include debug information for gdb.  Implies -l.\n"
          "    -l <llvmfile> - Write LLVM IR to <llvmfile>.\n"
+         "    -L        - Log tokens parsed to rune.log.\n"
          "    -n        - No clang.  Don't compile the resulting .ll output.\n"
          "    -O        - Optimized build.  Passes -O3 to clang.\n"
          "    -p <dir>  - Use <dir> as the root directory for packages.\n"
@@ -58,6 +59,7 @@ int main(int argc, char** argv) {
     usage();
   }
   deDebugMode = false;
+  deLogTokens = false;
   deInvertReturnCode = false;
   deTestMode = false;
   deUnsafeMode = false;
@@ -84,6 +86,8 @@ int main(int argc, char** argv) {
         return 1;
       }
       deLLVMFileName = argv[xArg];
+    } else if (!strcmp(argv[xArg], "-L")) {
+      deLogTokens = true;
     } else if (!strcmp(argv[xArg], "-n")) {
       noClang = true;
     } else if (!strcmp(argv[xArg], "-p")) {
@@ -122,7 +126,6 @@ int main(int argc, char** argv) {
     deVerifyRelationshipGraph();
     deAddMemoryManagement();
     deInlineIterators();
-    deAssignDefaultNullValues();
     // We generate new code in memory management and such, so check binding
     // succeeded.
     deReportEvents();

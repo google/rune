@@ -12,6 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-export func add(a: Uint, b: Uint) {
+export func add(a: Int, b: Int) {
   return a + b
 }

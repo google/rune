@@ -1,4 +1,4 @@
-//  Copyright 2021 Google LLC.
+//  Copyright 2023 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,6 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-l = arrayof(u64)
-l.append(123)
-println l[0]
+class Root(self) {
+}
+
+class Node(self, value) {
+  self.value = value
+}
+
+class Value(self, val) {
+  self.val = val
+  root.appendValue(self)
+}
+
+relation DoublyLinked Root Value cascade
+
+
+root = Root()
+node = Node(Value(123))
+println node

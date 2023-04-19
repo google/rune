@@ -308,10 +308,9 @@ class Expr(self, type: ExprType, line: Line) {
     return expr
   }
 
-  func newIdent(ident: Ident) -> Expr {
-    expr = Expr(ExprType.Ident, ident.line())
-    expr.val = Value(ident.sym)
-    ident.appendExpr(expr)
+  func newIdent(sym: Sym, line: Line) -> Expr {
+    expr = Expr(ExprType.Ident, line)
+    expr.val = Value(sym)
     return expr
   }
 
@@ -339,8 +338,8 @@ class Expr(self, type: ExprType, line: Line) {
 
   // Write out a call expression.
   func dumpCall(self, var text: string) {
-    left = self.firstExpr
-    right = left.nextExprExpr
+    left = self.firstExpr!
+    right = left.nextExprExpr!
     left.dumpToString(text)
     text += "("
     if !isnull(right) {
@@ -351,8 +350,8 @@ class Expr(self, type: ExprType, line: Line) {
 
   // Write out an index expression.
   func dumpIndex(self, var text: string) {
-    left = self.firstExpr
-    right = left.nextExprExpr
+    left = self.firstExpr!
+    right = left.nextExprExpr!
     left.dumpToString(text)
     text += "["
     if !isnull(right) {
@@ -363,9 +362,9 @@ class Expr(self, type: ExprType, line: Line) {
 
   // Write out a slice expression.
   func dumpSlice(self, var text: string) {
-    left = self.firstExpr
-    lower = left.nextExprExpr
-    upper = lower.nextExprExpr
+    left = self.firstExpr!
+    lower = left.nextExprExpr!
+    upper = lower.nextExprExpr!
     left.dumpToString(text)
     text += "["
     lower.dumpToString(text)
@@ -376,8 +375,8 @@ class Expr(self, type: ExprType, line: Line) {
 
   // Write out a cast expression.
   func dumpCast(self, var text: string, parentPrecedence: u32, truncate: bool) {
-    left = self.firstExpr
-    right = left.nextExprExpr
+    left = self.firstExpr!
+    right = left.nextExprExpr!
     precedence = self.getPrecedence()
     if precedence <= parentPrecedence {
       text += "("
@@ -396,9 +395,9 @@ class Expr(self, type: ExprType, line: Line) {
 
   // Write out a select expression.
   func dumpSelect(self, var text: string, parentPrecedence: u32) {
-    s = self.firstExpr
-    a = s.nextExprExpr
-    b = a.nextExprExpr
+    s = self.firstExpr!
+    a = s.nextExprExpr!
+    b = a.nextExprExpr!
     precedence = self.getPrecedence()
     if precedence <= parentPrecedence {
       text += "("
@@ -416,11 +415,11 @@ class Expr(self, type: ExprType, line: Line) {
   // Write out a binary expression.
   func dumpBinary(self, var text: string, opType: string, parentPrecedence: u32) {
     parent = self.expr
-    left = self.firstExpr
-    right = left.nextExprExpr
+    left = self.firstExpr!
+    right = left!.nextExprExpr!
     precedence = self.getPrecedence()
     needParens = precedence < parentPrecedence || (
-        precedence == parentPrecedence && !isnull(parent) && parent.firstExpr != self)
+        precedence == parentPrecedence && !isnull(parent) && parent!.firstExpr != self)
     if needParens {
       text += "("
     }
@@ -438,7 +437,7 @@ class Expr(self, type: ExprType, line: Line) {
 
   // Write out a prefix expression.
   func dumpPrefix(self, var text: string, opType: string, parentPrecedence: u32) {
-    left = self.firstExpr
+    left = self.firstExpr!
     precedence = self.getPrecedence()
     if precedence <= parentPrecedence {
       text += "("
@@ -452,7 +451,7 @@ class Expr(self, type: ExprType, line: Line) {
 
   // Dump a builtin function such as typeof(a).
   func dumpBuiltin(self, var text: string, name: string) {
-    left = self.firstExpr
+    left = self.firstExpr!
     text += name + "("
     left.dumpToString(text)
     text += ")"
@@ -491,14 +490,14 @@ class Expr(self, type: ExprType, line: Line) {
     parent = self.expr
     parentPrecedence = 0u32
     if !isnull(parent) {
-      parentPrecedence = parent.getPrecedence()
+      parentPrecedence = parent!.getPrecedence()
     }
     switch self.type {
       case ExprType.Constant {
-        text += self.val.toString()
+        text += self.val!.toString()
       }
       case ExprType.Ident {
-        text += self.val.symVal.name
+        text += self.val!.symVal!.name
       }
       case ExprType.Array {
         self.dumpArray(text)
@@ -646,12 +645,12 @@ class Expr(self, type: ExprType, line: Line) {
       }
       case ExprType.Secret {
         text += "secret("
-        self.firstExpr.dumpToString(text)
+        self.firstExpr!.dumpToString(text)
         text += ")"
       }
       case ExprType.Reveal {
         text += "reveal("
-        self.firstExpr.dumpToString(text)
+        self.firstExpr!.dumpToString(text)
         text += ")"
       }
       case ExprType.Const {
@@ -748,8 +747,8 @@ class Expr(self, type: ExprType, line: Line) {
         text += "bool"
       }
       case ExprType.Namedparam {
-        text += self.firstExpr.val.symVal.name + " = "
-        self.lastExpr.dumpToString(text)
+        text += self.firstExpr!.val!.symVal!.name + " = "
+        self.lastExpr!.dumpToString(text)
       }
     }
   }
@@ -784,15 +783,6 @@ class Expr(self, type: ExprType, line: Line) {
     }
     return newExpr
   }
-
-  // Reutrn a copy of the expression, or null if the expression is null.
-  func nullOrCopy(self: Expr?) -> Expr? {
-    if isnull(self) {
-      return self
-    }
-    return self!.copy()
-  }
-
 }
 
 // Expressions form a tree, with each expression having a doubly-linked list of children.
@@ -850,10 +840,9 @@ unittest unaryTest {
 }
 
 unittest newIdentTest {
-  block = Block(line)
-  function = Function(block, FuncType.Package, Sym.new("test"), Linkage.Package, line)
-  ident = function.firstIdent!
-  expr = Expr.newIdent(ident)
+  function = Function(null(Function), FuncType.Package, Sym.new("test"), Linkage.Package, line)
+  ident = function.firstNameIdent!
+  expr = Expr.newIdent(ident.sym, line)
   expr.dump()
 }
 

@@ -13,10 +13,6 @@
 // limitations under the License.
 
 func countParens(x) -> Uint {
-  if false {
-    // Type hint.
-    return 0
-  }
   typeswitch x {
     case () {
       println "x is the empty tuple: ", x

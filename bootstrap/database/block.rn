@@ -19,7 +19,6 @@ use filepath
 use function
 use line
 use statement
-use variable
 
 // A liternal block statement.  All statements exist within a block.
 class Block(self, line: Line) {
@@ -30,18 +29,9 @@ class Block(self, line: Line) {
 
   // Dump the block to the end of |text| for debugging.
   func dumpToString(self, var text: string) {
-    getRoot().indent(text)
-    text += "{\n"
-    getRoot().incrementIndent()
-    for function in self.functions() {
-      function.dumpToString(text)
-    }
     for statement in self.statements() {
       statement.dumpToString(text)
     }
-    getRoot().decrementIndent()
-    getRoot().indent(text)
-    text += "}\n"
   }
 
   // Dump the block to stdout for debugging.
@@ -63,7 +53,7 @@ class Block(self, line: Line) {
   // Move the block's statements into the block containing |destStatement| right
   // after |destStatement|.
   func moveStatementsAfterStatement(self, destStatement: Statement) {
-    destBlock = destStatement.block
+    destBlock = destStatement.block!
     lastStatement = destStatement
     for statement in self.safeStatements() {
       self.removeStatement(statement)
@@ -96,51 +86,17 @@ class Block(self, line: Line) {
     for statement in self.statements() {
       statement.appendCopy(newBlock)
     }
-    for function in self.functions() {
-      function.copy(newBlock)
-    }
-    for variable in self.variables() {
-      variable.copy(newBlock)
-    }
     return newBlock
   }
 
-  // Empty the block of contents, but leave sub-blocks in place.
+  // Empty the block of contents.
   func destroyStatements(self) {
     for statement in self.safeStatements() {
       statement.destroy()
     }
   }
-
-  func owningBlock(self) -> Block? {
-    if !isnull(self.owningFunction) {
-      return self.owningFunction!.block
-    } else if !isnull(self.owningStatement) {
-      return self.owningStatement!.block
-    // TODO: Comment back in when we port class.
-    // } else if !isnull(self.owningClass) {
-    //   return self.owningClass.tclass.function.block
-    }
-    return null(self)
-  }
-
-  // Generate a unique name for an identifier in the block, based on |name|.
-  // Just use |name| if there is no conflict, otherwise, add _n, where n is an
-  // integer to make the name unique in the block.
-  func createUniqueSym(self, sym: Sym) -> Sym {
-    if isnull(self.findIdent(sym)) {
-      return sym
-    }
-    counter = 1u32
-    do {
-      newSym = Sym.new("%s_%u" % (sym.name, counter))
-      counter += 1
-    } while !isnull(self.findIdent(newSym))
-    return newSym
-  }
 }
 
-relation OneToOne Root Block cascade
 relation OneToOne Statement:"Owning" Block:"Sub" cascade
 relation OneToOne Function:"Owning" Block:"Sub" cascade
 relation OneToOne Filepath:"Module" Block:"Module"
@@ -150,8 +106,8 @@ unittest {
   use value
   use expr
 
-  rootBlock = getRootBlock()
-  rootLine = rootBlock.line!
+  mainFunc = getMainFunc()
+  rootLine = mainFunc.line!
   rootFilepath = rootLine.filepath!
 
   func createEmptyBlock() -> Block {
@@ -169,9 +125,9 @@ unittest {
     return block
   }
 
-  func createPrintlnFunction(owningBlock: Block?, name: string, text: string) -> Function {
+  func createPrintlnFunction(owningFunc: Function?, name: string, text: string) -> Function {
     block = createPrintlnBlock(text)
-    function = Function(owningBlock, FuncType.Plain, Sym.new(name), Linkage.Module, rootLine)
+    function = Function(owningFunction, FuncType.Plain, Sym.new(name), Linkage.Module, rootLine)
     function.insertSubBlock(block)
     return function
   }
@@ -249,27 +205,4 @@ unittest destroyStatmentsTest {
   block2.destroyStatements()
   assert countBlockStatements(block2) == 0
   block2.dump()
-}
-
-unittest owningBlockTest {
-  subFunc = createPrintlnFunction(null(Block), "print1", "block1")
-  block1 = subFunc.subBlock
-  block2 = createPrintlnBlock("block2")
-  block2.appendFunction(subFunc)
-  subFunc.dump()
-  block2.dump()
-  assert block1.owningBlock() == block2
-}
-
-unittest createUniqueSymTest {
-  baseSym = Sym.new("printTest")
-  topBlock = createPrintlnBlock("topBlock")
-  createPrintlnFunction(topBlock, baseSym.name, "func1")
-  newSym = topBlock.createUniqueSym(baseSym)
-  assert newSym.name == "printTest_1"
-  createPrintlnFunction(topBlock, newSym.name, "func2")
-  newSym = topBlock.createUniqueSym(baseSym)
-  assert newSym.name == "printTest_2"
-  createPrintlnFunction(topBlock, newSym.name, "func3")
-  topBlock.dump()
 }

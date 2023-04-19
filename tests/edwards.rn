@@ -23,7 +23,7 @@ func addPoints(a, b, d, m) {
 
 // Return k*P, where k is an integer and P is a point.  Non-constant time!
 func scalarMultiply(k, P, d, m) {
-  result = (<P[0]>0, <P[1]>1)
+  result = (<typeof(P[0])>0, <typeof(P[1])>1)
   power = P  // power is a power of 2.
   mult = k
   while mult != <mult>0 {

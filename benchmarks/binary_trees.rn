@@ -34,11 +34,6 @@ relation OneToOne Node:"ParentLeft" Node:"Left" cascade
 relation OneToOne Node:"ParentRight" Node:"Right" cascade
 
 func makeTree(depth) {
-  if false {
-    // This is a hint for type resolution under recursion.
-    // TODO: Enhance recursive type detection to jump ahead to later returns.
-    return Node()
-  }
   node = Node()
   if depth != 0 {
     left = makeTree(depth - 1)

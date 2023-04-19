@@ -19,13 +19,13 @@ generator HeapqList(A: Class, B: Class, cascadeDelete:bool = false,
   }
   if (ascend) {
     prependcode A {
-      func _compare$labelB$B(self, child1: B, child2: B) -> bool {
+      func _compare$labelB$B(self, child1, child2) -> bool {
         return child1! < child2!
       }
     }
   } else {
     prependcode A {
-      func _compare$labelB$B(self, child1: B, child2: B) -> bool {
+      func _compare$labelB$B(self, child1, child2) -> bool {
         return child1! > child2!
       }
     }
@@ -43,7 +43,6 @@ generator HeapqList(A: Class, B: Class, cascadeDelete:bool = false,
     }
 
     func _heapqDown$labelB$B(self, startX: u32) {
-      length = 0u32  // Type hint
       length = <u32>self.$labelB$pluralB.length()
       x = startX
       do {
@@ -82,7 +81,7 @@ generator HeapqList(A: Class, B: Class, cascadeDelete:bool = false,
     }
 
     func peek$labelB$B(self) {
-      if self.$labelB$pluralB.length() != 0 {
+      if self.$labelB$pluralB.length() == 0 {
         return null(self.$labelB$pluralB[0])
       }
       return self.$labelB$pluralB[0]
@@ -113,16 +112,13 @@ generator HeapqList(A: Class, B: Class, cascadeDelete:bool = false,
       return self._pop$labelB$B(0u32)
     }
 
-    func update$labelB$B(self, child: B) {
+    func update$labelB$B(self, child) {
       index = child.$labelA$A_Index(child)
       self._heapqUp$labelB$B(index)
       self._heapqDown$labelB$B(index)
     }
 
-    func push$labelB$B(self, child: B) {
-      if false {
-        self.$labelB$pluralB[0] = child  // Type hint
-      }
+    func push$labelB$B(self, child) {
       pos = <u32>self.$labelB$pluralB.length()
       self.$labelB$pluralB.append(child)
       child.$labelA$A_Index = pos
@@ -131,7 +127,7 @@ generator HeapqList(A: Class, B: Class, cascadeDelete:bool = false,
       ref child
     }
 
-    func remove$labelB$B(self, child: B) {
+    func remove$labelB$B(self, child) {
       debug {
         if child.$labelA$A != self {
           throw "remove$labelB$B: Object not owned by me"

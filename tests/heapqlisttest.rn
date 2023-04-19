@@ -48,22 +48,22 @@ relation HeapqList A C cascade (false)
 list = [83, 1, 8, 123, 929, 33, 0, 10]
 a = A()
 for i in range(list.length()) {
-  B(a, list[i])
-  C(a, list[i])
+  B(a!, list[i])
+  C(a!, list[i])
 }
 do {
-  b = a.popB()
+  b = a!.popB()
 } while !isnull(b) {
   println "popped B ", b!.cost
   b!.destroy()
 }
 do {
-  c = a.popC()
+  c = a!.popC()
 } while !isnull(c) {
   println "popped C ", c!.cost
   c!.destroy()
 }
 for i in range(list.length()) {
-  B(a, list[i])
+  B(a!, list[i])
 }
 a = null(a)

@@ -41,14 +41,14 @@ for i in range(1u32 << 10) {
 }
 
 for i in range(10u32) {
-  for element in root.elements() {
-    root.pushHeapElement(element)
+  for elem1 in root.elements() {
+    root.pushHeapElement(elem1)
   }
   totalHash = 0u32
   do {
-    element = root.popHeapElement()
-  } while !isnull(element) {
-    totalHash = hashValues(totalHash, element!.cost)
+    elem2 = root.popHeapElement()
+  } while !isnull(elem2) {
+    totalHash = hashValues(totalHash, elem2!.cost)
   }
   println totalHash
 }

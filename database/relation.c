@@ -124,10 +124,22 @@ void deAddClassMemberRelations(deClass parentClass) {
       deDatatype datatype = deVariableGetDatatype(var);
       if (deDatatypeGetType(datatype) == DE_TYPE_CLASS) {
         deClass childClass = deDatatypeGetClass(datatype);
+        if (!deTclassRefCounted(deClassGetTclass(childClass))) {
+          deError(deVariableGetLine(var), "Viariable %s instantiates a cascade-delete class",
+              deVariableGetName(var));
+        }
         memberRelCreate(var, parentClass, childClass);
       }
     }
   } deEndBlockVariable;
+}
+
+// Add class member relations for all classes.
+static void addMemberRels(void) {
+  deClass theClass;
+  deForeachRootClass(deTheRoot, theClass) {
+    deAddClassMemberRelations(theClass);
+  } deEndRootClass;
 }
 
 // Set tclasses that are owned by a cascade-delete relationship as owned.
@@ -136,6 +148,35 @@ static void setRefCountedTclasses(void) {
   deForeachRootTclass(deTheRoot, tclass) {
     deTclassSetRefCounted(tclass, !tclassHasCascadDeleteParent(tclass));
   } deEndRootTclass;
+}
+
+// Check that destuctors for ref-counted classes are never called other than
+// from generated code.
+static void checkDestroyCalls(void) {
+  deSignature signature;
+  deForeachRootSignature(deTheRoot, signature) {
+    deFunction function = deSignatureGetFunction(signature);
+    if (deFunctionGetType(function) == DE_FUNC_DESTRUCTOR) {
+      deBlock owningBlock = deFunctionGetBlock(function);
+      utAssert(deBlockGetType(owningBlock) == DE_BLOCK_FUNCTION);
+      deFunction tclassFunc = deBlockGetOwningFunction(owningBlock);
+      utAssert(deFunctionGetType(tclassFunc) == DE_FUNC_CONSTRUCTOR);
+      deTclass tclass = deFunctionGetTclass(tclassFunc);
+      if (deTclassRefCounted(tclass)) {
+        deIdent ident;
+        deForeachFunctionIdent(function, ident) {
+          deExpression expression;
+          deForeachIdentExpression(ident, expression) {
+            if (!deStatementGenerated(deFindExpressionStatement(expression))) {
+              deError(deExpressionGetLine(expression),
+                  "Referenced destroy method ref-counted class %s from non-genereated code",
+                  deTclassGetName(tclass));
+            }
+          } deEndIdentExpression;
+        } deEndFunctionIdent;
+      }
+    }
+  } deEndRootSignature;
 }
 
 // Visite tclasses reachable by traversing only child relationships.  If
@@ -192,12 +233,15 @@ static void clearVisitedFlags(deTclassArray visitedTclasses) {
 // class loops.
 void deVerifyRelationshipGraph(void) {
   setRefCountedTclasses();
+  checkDestroyCalls();
+  addMemberRels();
   deTclassArray visitedTclasses = deTclassArrayAlloc();
   deTclass tclass;
   deForeachRootTclass(deTheRoot, tclass) {
     if (deTclassRefCounted(tclass)) {
       if (visitReachableChildTclasses(tclass, tclass, visitedTclasses)) {
-        utExit("Exiting due to error...");
+        deError(deTclassGetLine(tclass),
+            "To avoid potential memory leaks, consider using cascade-delete relations.");
       }
       clearVisitedFlags(visitedTclasses);
     }

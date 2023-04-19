@@ -44,6 +44,9 @@ void deStart(char *fileName) {
   // TODO: Load a precompiled binary database for the standard library.
   // On Linux, this is required to avoid having to search PATH.
   utStart();
+  if (deLogTokens) {
+    utInitLogFile("rune.log");
+  }
   deExeName = utNewA(char, DE_MAX_PATH);
 #ifdef _WIN32
   GetModuleFileNameA(NULL, deExeName, DE_MAX_PATH);

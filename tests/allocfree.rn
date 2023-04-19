@@ -15,13 +15,24 @@
 class Foo(self) {
 }
 
-a = Foo()
-aVal = <u32>a
-a.destroy()
-b = Foo()
-bVal = <u32>b
-if a != b {
-  println "failed"
-} else {
-  println "passed"
+func runAllocFreeTest() {
 }
+
+// We have to run this test from generated code, or the destructor call will give an error.
+generator addTheTest() {
+  appendcode runAllocFreeTest {
+    a = Foo()
+    aVal = <u32>a
+    a.destroy()
+    b = Foo()
+    bVal = <u32>b
+    if a != b {
+      println "failed"
+    } else {
+      println "passed"
+    }
+  }
+}
+
+generate addTheTest()
+runAllocFreeTest()

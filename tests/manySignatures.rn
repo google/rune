@@ -17,11 +17,6 @@
 // base-case, which is when all rings have rotated their maximum distance.
 // This results in 2*3*5*7 = 210 unique function signatures.
 func foo(a1, a2, b1, b2, b3, c1, c2, c3, c4, c5, d1, d2, d3, d4, d5, d6, d7) {
-  if false {
-    // Type hint for recursion.
-    // TODO: When we complete the switch to unification-based type binding, delete this.
-    return
-  }
   println a1, b1, c1, d1
   typeswitch (a1, b1, c1, d1) {
     case (u2, u3, u5, u7) {

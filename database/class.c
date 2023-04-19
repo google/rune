@@ -86,8 +86,6 @@ static void addDestroyMethod(deTclass tclass) {
 deTclass deTclassCreate(deFunction constructor, uint32 refWidth, deLine line) {
   deTclass tclass = deTclassAlloc();
   deTclassSetRefWidth(tclass, refWidth);
-  deDatatype tclassType = deTclassDatatypeCreate(tclass);
-  deTclassSetDatatype(tclass, tclassType);
   deTclassSetLine(tclass, line);
   deFunctionInsertTclass(constructor, tclass);
   if (!deFunctionBuiltin(constructor)) {
@@ -95,21 +93,6 @@ deTclass deTclassCreate(deFunction constructor, uint32 refWidth, deLine line) {
   }
   deRootAppendTclass(deTheRoot, tclass);
   return tclass;
-}
-
-// We allow datatypes to be different in a specific case: if newDatatype is
-// NULL and oldDatatype is an instance of that TCLASS.
-static bool datatypesCompatible(deDatatype newDatatype, deDatatype oldDatatype) {
-  if (newDatatype == oldDatatype) {
-    return true;
-  }
-  deDatatypeType newType = deDatatypeGetType(newDatatype);
-  deDatatypeType oldType = deDatatypeGetType(oldDatatype);
-  if (newType != DE_TYPE_NULL || oldType != DE_TYPE_CLASS) {
-    return false;
-  }
-  deTclass oldTclass = deClassGetTclass(deDatatypeGetClass(oldDatatype));
-  return oldTclass == deDatatypeGetTclass(newDatatype);
 }
 
 // Determine if two signatures generate the same theClass.  This is true if the
@@ -127,7 +110,7 @@ static bool classSignaturesMatch(deSignature newSignature, deSignature oldSignat
     if (deVariableInTclassSignature(parameter)) {
       deDatatype newDatatype = deSignatureGetiType(newSignature, xParam);
       deDatatype oldDatatype = deSignatureGetiType(oldSignature, xParam);
-      if (!datatypesCompatible(newDatatype, oldDatatype)) {
+      if (newDatatype != oldDatatype) {
         return false;
       }
     }
@@ -141,6 +124,9 @@ static bool classSignaturesMatch(deSignature newSignature, deSignature oldSignat
 // TODO: consider speeding this up with a hash table.
 deClass findExistingClass(deSignature signature) {
   deTclass tclass = deFunctionGetTclass(deSignatureGetFunction(signature));
+  if (!deTclassIsTemplate(tclass)) {
+    return deTclassGetFirstClass(tclass);
+  }
   deClass theClass;
   deForeachTclassClass(tclass, theClass) {
     deSignature otherSignature = deClassGetFirstSignature(theClass);
@@ -163,8 +149,6 @@ static deClass classCreate(deTclass tclass) {
   deBlock subBlock = deBlockCreate(filepath, DE_BLOCK_CLASS, deTclassGetLine(tclass));
   deClassInsertSubBlock(theClass, subBlock);
   deTclassAppendClass(tclass, theClass);
-  deDatatype selfType = deClassDatatypeCreate(theClass);
-  deClassSetDatatype(theClass, selfType);
   // Create a nextFree variable.
   deVariable nextFree = deVariableCreate(subBlock, DE_VAR_LOCAL, false, utSymCreate("nextFree"),
       deExpressionNull, true, 0);
@@ -174,39 +158,64 @@ static deClass classCreate(deTclass tclass) {
   return theClass;
 }
 
-// Create a new class object.
-deClass deClassCreate(deTclass tclass, deSignature signature) {
-  if (deSignatureGetClass(signature) != deClassNull) {
-    return deSignatureGetClass(signature);
+// Determine if the class matches the spec.
+static bool classMatchesSpec(deClass theClass, deDatatypeArray tclassSpec) {
+  deDatatype classType = deClassGetDatatype(theClass);
+  uint32 numTypes = deDatatypeGetNumTypeList(classType);
+  for (uint32 xType = 0; xType < numTypes; xType++) {
+    if (deDatatypeGetiTypeList(classType, xType) != deDatatypeArrayGetiDatatype(tclassSpec, xType)) {
+      return false;
+    }
   }
-  deClass theClass = findExistingClass(signature);
+  return true;
+}
+
+// Find an existing class matching the spec.
+static deClass findTclassClassFromSpec(deTclass tclass, deDatatypeArray tclassSpec) {
+  deClass theClass;
+  deForeachTclassClass(tclass, theClass) {
+    if (classMatchesSpec(theClass, tclassSpec)) {
+      return theClass;
+    }
+  } deEndTclassClass;
+  return deClassNull;
+}
+
+// Create a class from the spec.  Free |tclassSpec|.
+static deClass createClassFromSpec(deTclass tclass, deDatatypeArray tclassSpec) {
+  deClass theClass = classCreate(tclass);
+  deDatatype datatype = deClassDatatypeCreateFromSpec(theClass, tclassSpec);
+  deClassSetDatatype(theClass, datatype);
+  return theClass;
+}
+
+// Find or create a class given the tclass spec.
+deClass deTclassFindClassFromSpec(deTclass tclass, deDatatypeArray tclassSpec) {
+  deClass theClass = findTclassClassFromSpec(tclass, tclassSpec);
   if (theClass != deClassNull) {
     return theClass;
   }
-  return classCreate(tclass);
+  return createClassFromSpec(tclass, deCopyDatatypeArray(tclassSpec));
 }
 
-// Determine if there are any template parameters, in which case it is safe to
-// generate a default class.
-static bool tclassHasTemplateParameters(deTclass tclass) {
-  deBlock block = deFunctionGetSubBlock(deTclassGetFunction(tclass));
-  deVariable variable;
-  deForeachBlockVariable(block, variable) {
-    if (deVariableInTclassSignature(variable)) {
-      return true;
-    }
-  } deEndBlockVariable;
-  return false;
-}
-
-// If we already created the default class, return it.  Otherwise, check that we
-// have no template parameters, and if so, create the default class.  Return
-// null if we do have template parameters.
+// Create a class for the non-template Tclass if it does not yet exist.
 deClass deTclassGetDefaultClass(deTclass tclass) {
-  if (tclassHasTemplateParameters(tclass)) {
-    return deClassNull;
+  utAssert(!deTclassIsTemplate(tclass));
+  deClass theClass = deTclassGetFirstClass(tclass);
+  if (theClass == deClassNull) {
+    theClass = classCreate(tclass);
+    deClassSetDatatype(theClass, deClassDatatypeCreate(theClass));
   }
-  return deTclassGetFirstClass(tclass);
+  return theClass;
+}
+
+// Create a new class object.
+deClass deClassCreate(deTclass tclass, deSignature signature) {
+  if (!deTclassIsTemplate(tclass)) {
+    return deTclassGetDefaultClass(tclass);
+  }
+  deDatatypeArray tclassSpec = deFindSignatureTclassSpec(signature);
+  return deTclassFindClassFromSpec(tclass, tclassSpec);
 }
 
 // Make a copy of the tclass in |destBlock|.
@@ -266,20 +275,25 @@ static deString findObjectPrintFormat(deExpression tupleExpr) {
   return deMutableCStringCreate(format);
 }
 
-// Add an if statement checking if self is -1.  If true, print null and return.
-static void addCheckForNull(deBlock functionBlock, deLine line) {
+// Add an if statement checking if self is 0.  If true, print null and return.
+static void addCheckForNull(deBlock functionBlock, bool callPrint, deLine line) {
   deStatement ifStatement = deStatementCreate(functionBlock, DE_STATEMENT_IF, line);
   deExpression selfExpr = deIdentExpressionCreate(utSymCreate("self"), line);
   deExpression isNullExpr = deUnaryExpressionCreate(DE_EXPR_ISNULL, selfExpr, line);
   deStatementSetExpression(ifStatement, isNullExpr);
   deBlock subBlock = deBlockCreate(deBlockGetFilepath(functionBlock), DE_BLOCK_STATEMENT, line);
   deStatementInsertSubBlock(ifStatement, subBlock);
-  deStatement printStatement = deStatementCreate(subBlock, DE_STATEMENT_PRINT, line);
-  deExpression stringExpr = deStringExpressionCreate(deMutableCStringCreate("null\n"), line);
-  deExpression listExpr = deExpressionCreate(DE_EXPR_LIST, line);
-  deExpressionAppendExpression(listExpr, stringExpr);
-  deStatementInsertExpression(printStatement, listExpr);
-  deStatementCreate(subBlock, DE_STATEMENT_RETURN, line);
+  deExpression stringExpr = deStringExpressionCreate(deMutableCStringCreate("null"), line);
+  if (callPrint) {
+    deStatement printStatement = deStatementCreate(subBlock, DE_STATEMENT_PRINT, line);
+    deExpression listExpr = deExpressionCreate(DE_EXPR_LIST, line);
+    deExpressionAppendExpression(listExpr, stringExpr);
+    deStatementInsertExpression(printStatement, listExpr);
+  }
+  deStatement retState = deStatementCreate(subBlock, DE_STATEMENT_RETURN, line);
+  if (!callPrint) {
+    deStatementInsertExpression(retState, stringExpr);
+  }
 }
 
 // Generate a default toString method for the class.
@@ -295,10 +309,7 @@ static deFunction generateDefaultMethod(deClass theClass, utSym funcName,
   deLine line = deBlockGetLine(classBlock);
   utSym paramName = utSymCreate("self");
   deVariableCreate(functionBlock, DE_VAR_PARAMETER, true, paramName, deExpressionNull, false, line);
-  if (callPrint) {
-    // For show method, check for the input being null (-1).
-    addCheckForNull(functionBlock, line);
-  }
+  addCheckForNull(functionBlock, callPrint, line);
   deExpression selfExpr = deIdentExpressionCreate(utSymCreate("self"), line);
   deExpressionSetDatatype(selfExpr, deClassDatatypeCreate(theClass));
   deExpression tupleExpr = buildClassTupleExpression(classBlock, selfExpr, showGenerated);

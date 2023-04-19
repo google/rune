@@ -17,47 +17,38 @@
 class Symtab(self) {
 }
 
-class Symbin(self, hash: u64) {
-  self.hash = hash
-  theSymbolTable.insertSymbin(self)
-
-  func findSym(self, name: string) -> Sym? {
-    for sym in self.syms() {
-      if sym.name == name {
-        return sym
-      }
-    }
-    return null(Sym(Symbin(u64), string))
-  }
-}
-
 // Do not call this constructor directly!  Instead call Sym.new.
 // TODO: Enhance Rune to make it possible to avoid the factory function here.
-class Sym(self, symbin: Symbin, name: string) {
+class Sym(self, name: string) {
   self.name = name
-  self.hash = symbin.hash
-  symbin.insertSym(self)
+  self.hashVal = hashValue(name)
 
   func new(name: string) -> Sym {
-    hash = hashString(name)
-    symbin = theSymbolTable.findSymbin(hash)
-    if isnull(symbin) {
-      symbin = Symbin(hash)
+    // TODO: When array references are implemented, delete this.
+    nameCopy = name
+    newSym = Sym(nameCopy)
+    oldSym = theSymbolTable.findSym(newSym)
+    if !isnull(oldSym) {
+      return oldSym!
     }
-    sym = symbin.findSym(name)
-    if !isnull(sym) {
-      return sym!
-    }
-    return Sym(symbin!, name)
+    theSymbolTable.insertSym(newSym)
+    return newSym
+  }
+
+  func hash(self) -> u64 {
+    return self.hashVal
+  }
+
+  func equals(self: Sym, other: Sym) -> bool {
+    return self.name == other.name
   }
 }
 
-relation Hashed Symtab Symbin cascade ("hash")
-relation LinkedList Symbin Sym cascade
+relation HashedClass Symtab Sym
 
 theSymbolTable = Symtab()
 if false {
   // TODO: Somehow fix binding so we don't need hacks like this.  This hack
   // tells the binding code what a constructed Sym looks like.
-  Sym(Symbin(0u64), "")
+  Sym("")
 }

@@ -56,9 +56,9 @@ func exteuc(a, b) {
 
 func gf2BitLength(a) {
   if a == 0 {
-    return <widthof(a)>0
+    return <typeof(widthof(a))>0
   }
-  n = <widthof(a)>1
+  n = <typeof(widthof(a))>1
   while n < widthof(a) && (a >> n) > 0 && (a >> n) < a {
     n <<= 1
   }
@@ -83,7 +83,7 @@ func gf2ModVect(avec, dvec) {
   }
   i = na - nd
   println "i = %u, na = %u, nd = %u" % (i, na, nd)
-  test = (<avec[0]>1 << (na-1))
+  test = (<typeof(avec[0])>1 << (na-1))
   println "test = 0x%x" % test
   a0 = avec[0]
   a1 = avec[1]

@@ -154,7 +154,7 @@ class Statement(self, block: Block, type: StateType, line: Line) {
     expr = self.expr
     if !isnull(expr) {
       text += " "
-      expr.dumpToString(text)
+      expr!.dumpToString(text)
     }
     text += "\n"
   }
@@ -164,7 +164,12 @@ class Statement(self, block: Block, type: StateType, line: Line) {
     self.dumpNoSubBlock(text)
     block = self.subBlock
     if !isnull(block) {
+      text += " {\n"
+      getRoot().incrementIndent()
       block!.dumpToString(text)
+      getRoot().decrementIndent()
+      getRoot().indent(text)
+      text += "}\n"
     }
   }
 
@@ -184,7 +189,7 @@ class Statement(self, block: Block, type: StateType, line: Line) {
     }
     subBlock = self.subBlock
     if !isnull(subBlock) {
-      newSubBlock = subBlock.copy()
+      newSubBlock = subBlock!.copy()
       newStatement.insertSubBlock(newSubBlock)
     }
   }

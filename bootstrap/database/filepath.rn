@@ -24,7 +24,7 @@ class Filepath(self, path: string, parent: Filepath?, isPackage: bool) {
   self.isPackage = isPackage
   getRoot().insertFilepath(self)
   if !isnull(parent) {
-    parent.appendFilepath(self)
+    parent!.appendFilepath(self)
   }
 
   // Create a filepath object that records the path to a module or package.  If
@@ -53,12 +53,6 @@ class Filepath(self, path: string, parent: Filepath?, isPackage: bool) {
     }
     return path[pos:path.length()]
   }
-}
-
-if (false) {
-  // Type hint for the Filepath class.  This allows code generated from the relations
-  // below to succeed in binding.
-  filepath = Filepath("", null(Filepath), false)
 }
 
 relation Hashed Root Filepath cascade ("sym")

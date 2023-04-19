@@ -99,7 +99,7 @@ class Value(self: Value, value: string | bool | Int | Uint | Bigint | Float | Sy
         return self.intVal!.toString()
       }
       case DatatypeType.Sym {
-        return self.symVal.name
+        return self.symVal!.name
       }
     }
   }

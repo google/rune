@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-class Heapq(self, <valueType>) {
+class Heapq(self, <value>) {
 
   class Element(self, heapq: typeof(Heapq(value)), <value>) {
     self.value = value
@@ -49,4 +49,4 @@ class Heapq(self, <valueType>) {
   }
 }
 
-relation HeapqList Heapq Heapq.Element cascade
+relation HeapqList Heapq<value> Heapq.Element<value> cascade

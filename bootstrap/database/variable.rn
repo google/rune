@@ -17,29 +17,27 @@ use sym
 use root
 use line
 use value
-use block
+use function
 use datatype
 use expr
 
-class Variable(self, block: Block, isParam: bool, isConst: bool, sym: Sym,
+class Variable(self, function: Function, isParam: bool, isConst: bool, sym: Sym,
     initializer: Expr?, typeExpr: Expr?, generated: bool, line: Line) {
   self.isParam = isParam  // Otherwise, it is a local variable.
   self.isConst = isConst
   self.sym = sym
   if !isnull(initializer) {
-    self.insertInitializerExpr(initializer)
+    self.insertInitializerExpr(initializer!)
   }
   if !isnull(typeExpr) {
-    self.insertTypeExpr(typeExpr)
+    self.insertTypeExpr(typeExpr!)
   }
   self.instantiated = false  // Some variables hold types, not values.
   self.line = line
   self.inClassSignature = false
   // TODO: Comment this in when we port Datatype.
   // self.datatype = null(Datatype)
-  // This is the array holding a class data members values.
-  self.globalArrayVariable = null(Variable)
-  // Set if the variable is initialized in the scope-block.  This is used to
+  // Set if the variable is initialized in the scope-func.  This is used to
   // determine if we should initialize it up-front or later.
   self.initializedAtTop = false
   // Class constructor parameters declared <withBrackets> become template parameters.
@@ -53,8 +51,8 @@ class Variable(self, block: Block, isParam: bool, isConst: bool, sym: Sym,
   self.entryValue = 0u32  // Set for variables representing enum entries.
   // TODO: Comment this in when we port Datatype
   // self.savedDatatype = null(Datatype)  // Used in matching overloaded operators.
-  block.appendVariable(self)
-  Ident(block, self, sym, line)
+  function.appendVariable(self)
+  Ident(function, self, sym, line)
 
   // Dump the variable to a string for debugging purposes.
   func dumpToString(self, var text: string) {
@@ -65,11 +63,11 @@ class Variable(self, block: Block, isParam: bool, isConst: bool, sym: Sym,
     text += "%s" % self.sym.name
     if !isnull(self.typeExpr) {
       text += ": "
-      self.typeExpr.dumpToString(text)
+      self.typeExpr!.dumpToString(text)
     }
     if !isnull(self.initializerExpr) {
       text += " = "
-      self.initializerExpr.dumpToString(text)
+      self.initializerExpr!.dumpToString(text)
     }
   }
 
@@ -80,11 +78,18 @@ class Variable(self, block: Block, isParam: bool, isConst: bool, sym: Sym,
     print text
   }
 
-  // Make a copy of a variable in |destBlock|.
-  func copy(self, destBlock: Block) -> Variable {
-    newVariable = Variable(destBlock, self.isParam, self.isConst, self.sym,
-        self.initializerExpr.nullOrCopy(), self.typeExpr.nullOrCopy(),
-        self.generated, self.line)
+  // Make a copy of a variable in |destFunction|.
+  func copy(self, destFunc: Function) -> Variable {
+    initializer = null(Expr)
+    if !isnull(self.initializerExpr) {
+      initializer = self.initializerExpr!.copy()
+    }
+    type = null(Expr)
+    if !isnull(self.typeExpr) {
+      type = self.typeExpr!.copy()
+    }
+    newVariable = Variable(destFunc, self.isParam, self.isConst, self.sym,
+        initializer, type, self.generated, self.line)
     return newVariable
   }
 
@@ -98,4 +103,4 @@ class Variable(self, block: Block, isParam: bool, isConst: bool, sym: Sym,
   }
 }
 
-relation DoublyLinked Block Variable cascade
+relation DoublyLinked Function Variable cascade

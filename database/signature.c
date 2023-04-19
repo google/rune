@@ -106,7 +106,7 @@ static bool signatureMatches(deSignature signature, deFunction function, deDatat
     return false;
   }
   uint32 numTypes = deDatatypeArrayGetUsedDatatype(parameterTypes);
-  if (deSignatureGetNumParamspec(signature) != numTypes) {
+  if (deSignatureGetUsedParamspec(signature) != numTypes) {
     return false;
   }
   for (uint32 i = 0; i < numTypes; i++) {
@@ -151,7 +151,7 @@ static void assignParamspecVariables(deSignature signature) {
   deVariable variable;
   deForeachBlockVariable(block, variable) {
     if (deVariableGetType(variable) != DE_VAR_PARAMETER) {
-      utAssert(xParam == deSignatureGetNumParamspec(signature));
+      utAssert(xParam == deSignatureGetUsedParamspec(signature));
       return;
     }
     deParamspec paramspec = deSignatureGetiParamspec(signature, xParam);
@@ -203,7 +203,6 @@ deSignature deSignatureCreate(deFunction function,
   deSignatureSetNumber(signature, deFunctionGetNumSignatures(function));
   deFunctionSetNumSignatures(function, deFunctionGetNumSignatures(function) + 1);
   uint32 numParameters = deDatatypeArrayGetUsedDatatype(parameterTypes);
-  deSignatureResizeParamspecs(signature, numParameters);
   for (uint32 xParam = 0; xParam < numParameters; xParam++) {
     deDatatype datatype = deDatatypeArrayGetiDatatype(parameterTypes, xParam);
     deParamspecCreate(signature, datatype);
@@ -241,31 +240,6 @@ bool deSignatureIsConstructor(deSignature signature) {
   return deFunctionGetType(function) == DE_FUNC_CONSTRUCTOR;
 }
 
- // Change any parameter types other than the self variable from TCLASS to the
- // return type of the signature.  Return true if we change the signature.
-static bool resolveSignatureParamTypes(deSignature signature) {
-  deDatatype classType = deSignatureGetReturnType(signature);
-  deTclass tclass = deClassGetTclass(deDatatypeGetClass(classType));
-  deDatatype nullType = deNullDatatypeCreate(tclass);
-  deParamspec selfParam = deSignatureGetiParamspec(signature, 0);
-  bool changedType = false;
-  if (deParamspecGetDatatype(selfParam) != classType) {
-    deParamspecSetDatatype(selfParam, classType);
-    changedType = true;
-  }
-  bool firstTime = true;
-  deParamspec paramspec;
-  deForeachSignatureParamspec(signature, paramspec) {
-    // Skip the self variable, which we leave as the tclass type.
-    if (!firstTime && deParamspecGetDatatype(paramspec) == nullType) {
-      deParamspecSetDatatype(paramspec, classType);
-      changedType = true;
-    }
-    firstTime = false;
-  } deEndSignatureParamspec;
-  return changedType;
-}
-
 // Create a datatype array of the datatypes in the signature.
 deDatatypeArray getSignatureParameterTypes(deSignature signature) {
   deDatatypeArray parameterTypes = deDatatypeArrayAlloc();
@@ -277,39 +251,10 @@ deDatatypeArray getSignatureParameterTypes(deSignature signature) {
 }
 
 
-// Once a constructor signature is given its return type, all the parameters that
-// have the tclass type can be resolved to the class type.  This may mean that
-// we find an old signature that matches, in which case, destroy the signature and
-// return the old one.
-deSignature deResolveConstructorSignature(deSignature signature) {
-  if (!resolveSignatureParamTypes(signature)) {
-    return signature;
-  }
-  // We modified at least one parameter type.  Remove it from the hash table,
-  // and lookup an existing one.
-  deSignatureBinRemoveSignature(deSignatureGetSignatureBin(signature), signature);
-  deDatatypeArray parameterTypes = getSignatureParameterTypes(signature);
-  deFunction constructor = deSignatureGetFunction(signature);
-  deSignature oldSignature = deLookupSignature(constructor, parameterTypes);
-  if (oldSignature != deSignatureNull) {
-    deSignatureDestroy(signature);
-    signature = oldSignature;
-  } else {
-    addToHashTable(signature, parameterTypes);
-  }
-  deDatatypeArrayFree(parameterTypes);
-  return signature;
-}
-
 // Bind a type expression and return its concrete type.  If it does not fully
 // specify a type, report an error.
 static deDatatype findTypeExprDatatype(deBlock scopeBlock, deExpression typeExpr) {
   deDatatype datatype = deExpressionGetDatatype(typeExpr);
-  deLine line = deExpressionGetLine(typeExpr);
-  if (datatype == deDatatypeNull) {
-    deError(deExpressionGetLine(typeExpr), "Expected fully qualified type");
-  }
-  datatype = deFindUniqueConcreteDatatype(datatype, line);
   if (datatype == deDatatypeNull) {
     deError(deExpressionGetLine(typeExpr), "Expected fully qualified type");
   }
@@ -319,9 +264,6 @@ static deDatatype findTypeExprDatatype(deBlock scopeBlock, deExpression typeExpr
 // Find the concrete datatype for the datatype, and report an error if it is
 // still not concrete.
 static deDatatype findConcreteDatatype(deDatatype datatype, deLine line) {
-    if (!deDatatypeConcrete(datatype)) {
-      datatype = deFindUniqueConcreteDatatype(datatype, line);
-    }
     if (datatype == deDatatypeNull || !deDatatypeConcrete(datatype)) {
       deError(line, "Expected fully specified type", line);
     }
@@ -417,4 +359,16 @@ deDatatypeArray deSignatureGetParameterTypes(deSignature signature) {
     deDatatypeArrayAppendDatatype(paramTypes, deParamspecGetDatatype(paramspec));
   } deEndSignatureParamspec;
   return paramTypes;
+}
+
+// Return an array of datatypes for the signature's template parameters.
+deDatatypeArray deFindSignatureTclassSpec(deSignature signature) {
+  deDatatypeArray tclassSpec = deDatatypeArrayAlloc();
+  deParamspec paramspec;
+  deForeachSignatureParamspec(signature, paramspec) {
+    if (deVariableInTclassSignature(deParamspecGetVariable(paramspec))) {
+      deDatatypeArrayAppendDatatype(tclassSpec, deParamspecGetDatatype(paramspec));
+    }
+  } deEndSignatureParamspec;
+  return tclassSpec;
 }

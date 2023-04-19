@@ -26,7 +26,7 @@ class Line(self, filepath: Filepath, text: string, lineNum: u32) {
   func dump(self) {
     filepath = self.filepath
     assert !isnull(filepath)
-    path = filepath.getRelativePath()
+    path = filepath!.getRelativePath()
     if path.length() > 0 {
       print "File %s, line %u: ", path, self.lineNum
     } else {
@@ -36,7 +36,7 @@ class Line(self, filepath: Filepath, text: string, lineNum: u32) {
   }
 }
 
-relation TailLinked Filepath Line cascade
+relation TailLinked Filepath Line
 
 unittest filepathTest {
   filepath = Filepath.new("test_filepath", null(Filepath), false)
