@@ -193,6 +193,21 @@ static deExpressionType opEqualsToOp(deExpressionType op) {
   return op - DE_EXPR_ADD_EQUALS + DE_EXPR_ADD;
 }
 
+// Find the identifier in the block.  If not found directly, check if it is a
+// class block, and look in its tclass if so.
+static deIdent findIdentInBlock(deBlock scopeBlock, utSym sym) {
+  deIdent ident = deBlockFindIdent(scopeBlock, sym);
+  if (ident == deIdentNull && deBlockGetType(scopeBlock) == DE_BLOCK_CLASS) {
+    deTclass tclass = deClassGetTclass(deBlockGetOwningClass(scopeBlock));
+    deBlock tclassBlock = deFunctionGetSubBlock(deTclassGetFunction(tclass));
+    deIdent tclassIdent = deBlockFindIdent(tclassBlock, sym);
+    if (tclassIdent != deIdentNull && deIdentGetType(tclassIdent) == DE_IDENT_FUNCTION) {
+      ident = tclassIdent;
+    }
+  }
+  return ident;
+}
+
 // Find a matching operator overload.
 static deFunction findMatchingOperatorOverload(deBlock scopeBlock, deExpression expression,
     deDatatypeArray paramTypes) {
@@ -207,7 +222,7 @@ static deFunction findMatchingOperatorOverload(deBlock scopeBlock, deExpression 
   utSym sym = deGetOperatorSym(opType, numParams == 1);
   if (deDatatypeGetType(selfType) == DE_TYPE_CLASS) {
     block = deClassGetSubBlock(deDatatypeGetClass(selfType));
-    deIdent ident = deBlockFindIdent(block, sym);
+    deIdent ident = findIdentInBlock(block, sym);
     if (ident != deIdentNull) {
       return deIdentGetFunction(ident);
     }
@@ -745,15 +760,7 @@ static bool bindIdentExpression(deBlock scopeBlock, deBinding binding,
     if (!inScopeBlock) {
       ident = deFindIdent(scopeBlock, sym);
     } else {
-      ident = deBlockFindIdent(scopeBlock, sym);
-      if (ident == deIdentNull && deBlockGetType(scopeBlock) == DE_BLOCK_CLASS) {
-        deTclass tclass = deClassGetTclass(deBlockGetOwningClass(scopeBlock));
-        deBlock tclassBlock = deFunctionGetSubBlock(deTclassGetFunction(tclass));
-        deIdent tclassIdent = deBlockFindIdent(tclassBlock, sym);
-        if (tclassIdent != deIdentNull && deIdentGetType(tclassIdent) == DE_IDENT_FUNCTION) {
-          ident = tclassIdent;
-        }
-      }
+      ident = findIdentInBlock(scopeBlock, sym);
     }
     if (ident == deIdentNull) {
       // Create an undefined identifier.
@@ -1980,7 +1987,8 @@ void deBindStatement(deBinding binding) {
       deVariable variable = deBindingGetTypeVariable(binding);
       deDatatype datatype = deVariableGetDatatype(variable);
       deExpression typeExpr = deVariableGetTypeExpression(variable);
-      if (!deDatatypeMatchesTypeExpression(scopeBlock, datatype, typeExpr)) {
+      if (datatype != deDatatypeNull &&
+          !deDatatypeMatchesTypeExpression(scopeBlock, datatype, typeExpr)) {
         deCurrentSignature = deBindingGetSignature(binding);
         deError(deExpressionGetLine(typeExpr), "Failed type constraint: %s",
             deDatatypeGetTypeString(datatype));

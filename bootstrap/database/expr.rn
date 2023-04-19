@@ -840,9 +840,7 @@ unittest unaryTest {
 }
 
 unittest newIdentTest {
-  function = Function(null(Function), FuncType.Package, Sym.new("test"), Linkage.Package, line)
-  ident = function.firstNameIdent!
-  expr = Expr.newIdent(ident.sym, line)
+  expr = Expr.newIdent(Sym.new("test"), line)
   expr.dump()
 }
 

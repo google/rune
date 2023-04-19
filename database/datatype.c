@@ -1141,3 +1141,88 @@ bool deDatatypeIsTemplate(deDatatype datatype) {
   }
   return deTclassIsTemplate(tclass);
 }
+
+// Find a concrete datatype for the function if it is unique.  Functions
+// represent struct types, which often are concrete.
+static deDatatype findUniqueConcreteFunctionDatatype(deDatatype datatype) {
+  deFunction function = deDatatypeGetFunction(datatype);
+  deFunctionType funcType = deFunctionGetType(function);
+  // TODO: deal with other function types such as constructors.
+  if (funcType == DE_FUNC_STRUCT) {
+    deBlock block = deFunctionGetSubBlock(function);
+    deDatatypeArray paramTypes = deFindFullySpecifiedParameters(block);
+    return deStructDatatypeCreate(function, paramTypes, deFunctionGetLine(function));
+  }
+  return deDatatypeNull;
+}
+
+// Find a concrete datatype for the array if it is unique.
+static deDatatype findUniqueConcreteArrayDatatype(deDatatype datatype, deExpression expression) {
+  deDatatype elemType = deFindUniqueConcreteDatatype(deDatatypeGetElementType(datatype), expression);
+  if (elemType == deDatatypeNull) {
+    return deDatatypeNull;
+  }
+  return deArrayDatatypeCreate(elemType);
+}
+
+// Find a concrete datatype for the array if it is unique.
+static deDatatype findUniqueConcreteTclassDatatype(deDatatype datatype) {
+  deClass defaultClass = deTclassGetDefaultClass(deDatatypeGetTclass(datatype));
+  if (defaultClass == deClassNull) {
+    return deDatatypeNull;
+  }
+  return deClassDatatypeCreate(defaultClass);
+}
+
+// Find a concrete datatype for the array if it is unique.
+static deDatatype findUniqueConcreteTupleDatatype(deDatatype datatype, deExpression expression) {
+  deDatatypeArray types = deDatatypeArrayAlloc();
+  deDatatype type;
+  deForeachDatatypeTypeList(datatype, type) {
+    deDatatype concreteType = deFindUniqueConcreteDatatype(type, expression);
+    if (concreteType == deDatatypeNull) {
+      deDatatypeArrayFree(types);
+      return deDatatypeNull;
+    }
+  } deEndDatatypeTypeList;
+  return deTupleDatatypeCreate(types);
+}
+
+// Find a concrete datatype for the array if it is unique.
+static deDatatype findUniqueConcreteStructDatatype(deDatatype datatype) {
+  deFunction function = deDatatypeGetFunction(datatype);
+  deBlock block = deFunctionGetSubBlock(function);
+  deDatatypeArray paramTypes = deFindFullySpecifiedParameters(block);
+  return deStructDatatypeCreate(function, paramTypes, deFunctionGetLine(function));
+}
+
+// Allow users to specify simpler type constraints when an abstract type has
+// only one possible concrete type.  For example a template class (Tclass) with
+// no template parameters has only one possible class instantiation.  Instead of
+// having users specify "point: typeof(Point(i32, i32))", allow them to use
+// "point: Point".  This is helpful in specifying functions/methods/RPCs which
+// are imported/exported, because they are required to have concrete types for
+// all parameters, and the return type.
+deDatatype deFindUniqueConcreteDatatype(deDatatype datatype, deExpression expression) {
+  if (deDatatypeConcrete(datatype)) {
+    return datatype;
+  }
+  deDatatypeType type = deDatatypeGetType(datatype);
+  switch (type) {
+  case DE_TYPE_FUNCTION:
+    return findUniqueConcreteFunctionDatatype(datatype);
+  case DE_TYPE_ARRAY:
+    return findUniqueConcreteArrayDatatype(datatype, expression);
+  case DE_TYPE_TCLASS:
+    return findUniqueConcreteTclassDatatype(datatype);
+  case DE_TYPE_TUPLE:
+    return findUniqueConcreteTupleDatatype(datatype, expression);
+  case DE_TYPE_STRUCT:
+    return findUniqueConcreteStructDatatype(datatype);
+  case DE_TYPE_ENUMCLASS:
+    return deEnumDatatypeCreate(deDatatypeGetFunction(datatype));
+  default:
+    return deDatatypeNull;
+  }
+  return deDatatypeNull;  // Dummy return.
+}

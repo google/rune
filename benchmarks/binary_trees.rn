@@ -21,10 +21,10 @@ class Node(self) {
     left = self.leftNode
     right = self.rightNode
     if !isnull(left) {
-      sum += left.check()
+      sum += left!.check()
     }
     if !isnull(right) {
-      sum += right.check()
+      sum += right!.check()
     }
     return sum
   }

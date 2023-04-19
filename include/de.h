@@ -358,7 +358,7 @@ bool deDatatypeMatchesTypeExpression(deBlock scopeBlock, deDatatype datatype,
     deExpression typeExpression);
 deDatatype deArrayDatatypeGetBaseDatatype(deDatatype datatype);
 uint32 deArrayDatatypeGetDepth(deDatatype datatype);
-deDatatype deFindUniqueConcreteDatatype(deDatatype datatype, deLine line);
+deDatatype deFindUniqueConcreteDatatype(deDatatype datatype, deExpression expression);
 deSecretType deFindDatatypeSectype(deDatatype datatype);
 deSecretType deCombineSectypes(deSecretType a, deSecretType b);
 bool deDatatypeIsTemplate(deDatatype datatype);

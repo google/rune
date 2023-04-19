@@ -145,6 +145,7 @@ static void appendDatatypeString(deString string, deDatatype datatype) {
     case DE_TYPE_TCLASS:
     case DE_TYPE_FUNCTION:
     case DE_TYPE_ENUMCLASS:
+    case DE_TYPE_EXPR:
       utExit("Unexpected datatype");
   }
 }
@@ -293,6 +294,7 @@ static void declareDatatype(deString headerTop, deDatatype datatype, deLine line
     case DE_TYPE_NONE:
     case DE_TYPE_MODINT:
     case DE_TYPE_ENUMCLASS:
+    case DE_TYPE_EXPR:
       utExit("Unexpected datatype in RPC call");
   }
   rpcDatatypeSetDeclared(datatype, true);
@@ -748,6 +750,7 @@ static void decodeParameter(deString server, deString lexpr, deDatatype datatype
     case DE_TYPE_TCLASS:
     case DE_TYPE_MODINT:
     case DE_TYPE_ENUMCLASS:
+    case DE_TYPE_EXPR:
       utExit("Unexpected datatype in RPC call");
   }
 }
@@ -879,6 +882,7 @@ static void encodeParameter(deString server, deString expr, deDatatype datatype)
     case DE_TYPE_TCLASS:
     case DE_TYPE_MODINT:
     case DE_TYPE_ENUMCLASS:
+    case DE_TYPE_EXPR:
       utExit("Unexpected datatype in RPC call");
   }
 }

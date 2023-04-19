@@ -258,14 +258,21 @@ static deDatatype findTypeExprDatatype(deBlock scopeBlock, deExpression typeExpr
   if (datatype == deDatatypeNull) {
     deError(deExpressionGetLine(typeExpr), "Expected fully qualified type");
   }
+  datatype = deFindUniqueConcreteDatatype(datatype, typeExpr);
+  if (datatype == deDatatypeNull) {
+    deError(deExpressionGetLine(typeExpr), "Expected fully qualified type");
+  }
   return datatype;
 }
 
 // Find the concrete datatype for the datatype, and report an error if it is
 // still not concrete.
-static deDatatype findConcreteDatatype(deDatatype datatype, deLine line) {
+static deDatatype findConcreteDatatype(deDatatype datatype, deExpression expression) {
+    if (!deDatatypeConcrete(datatype)) {
+      datatype = deFindUniqueConcreteDatatype(datatype, expression);
+    }
     if (datatype == deDatatypeNull || !deDatatypeConcrete(datatype)) {
-      deError(line, "Expected fully specified type", line);
+      deExprError(expression, "Expected fully specified type");
     }
     return datatype;
 }
@@ -314,13 +321,15 @@ deDatatypeArray deFindFullySpecifiedParameters(deBlock block) {
     deDatatype datatype = deDatatypeNull;
     deExpression initializer = deVariableGetInitializerExpression(var);
     deExpression typeExpr = deVariableGetTypeExpression(var);
+    deExpression expression = deExpressionNull;
     if (initializer != deExpressionNull && !deFunctionExtern(function)) {
+      expression = initializer;
       datatype = deExpressionGetDatatype(initializer);
     } else if (typeExpr != deExpressionNull) {
+      expression = typeExpr;
       datatype = findTypeExprDatatype(block, typeExpr);
     }
-    deLine line = deVariableGetLine(var);
-    datatype = findConcreteDatatype(datatype, line);
+    datatype = findConcreteDatatype(datatype, expression);
     deDatatypeArrayAppendDatatype(datatypes, datatype);
   } deEndBlockVariable;
   return datatypes;
@@ -340,7 +349,7 @@ deSignature deCreateFullySpecifiedSignature(deFunction function) {
     deSignatureSetReturnType(signature, deNoneDatatypeCreate());
   } else {
     deDatatype datatype = findTypeExprDatatype(deFunctionGetBlock(function), typeExpr);
-    datatype = findConcreteDatatype(datatype, line);
+    datatype = findConcreteDatatype(datatype, typeExpr);
     deSignatureSetReturnType(signature, datatype);
   }
   // Set all parameters instantiated.

@@ -1,28 +1,39 @@
-package main(argc: u32, argv: string) -> i32 {
+package main(argc: u32, argv: string) -> i32  {
   return 0i32
 }
-package main(argc: u32, argv: string) -> i32 {
+package main(argc: u32, argv: string) -> i32  {
   return 0i32
 }
-package main(argc: u32, argv: string) -> i32 {
-  func topFunc()   {
-  }
-  func botFunc()   {
-  }
-  call topFunc()
+package main(argc: u32, argv: string) -> i32  {
+  call destFunc.main.topFunc()
   return 0i32
-  call botFunc()
-}
-iterator testItr(var self) {
-}
-operator +() {
-}
-{
-  func module1()   {
+  call destFunc.main.botFunc()
+  func topFunc()  {
   }
-  func module2()   {
+  func botFunc()  {
   }
-  call module1()
-  call module2()
+}
+iterator testItr(var self)  {
+}
+operator +()  {
+}
+package main(argc: u32, argv: string) -> i32  {
+  call main.module1()
+  call main.module2()
   return 0i32
+  func module1()  {
+  }
+  func module2()  {
+  }
+}
+func topFunc()  {
+  func printTest()  {
+    println
+  }
+  func printTest_1()  {
+    println
+  }
+  func printTest_2()  {
+    println
+  }
 }
