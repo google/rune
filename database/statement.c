@@ -61,7 +61,6 @@ void deDumpStatementNoSubBlock(deString string, deStatement statement) {
     deStringPuts(string, " ");
     deDumpExpressionStr(string, expression);
   }
-  deStringPuts(string, "\n");
 }
 
 // Dump the statement to the end of |string| for debugging purposes.

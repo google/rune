@@ -297,14 +297,14 @@ class Expr(self, type: ExprType, line: Line) {
 
   func newBinary(type: ExprType, left: Expr, right: Expr, line: Line) -> Expr {
     expr = Expr(type, line)
-    expr.appendExpr(left)
-    expr.appendExpr(right)
+    expr.appendChildExpr(left)
+    expr.appendChildExpr(right)
     return expr
   }
 
   func newUnary(type: ExprType, child: Expr, line: Line) -> Expr {
     expr = Expr(type, line)
-    expr.appendExpr(child)
+    expr.appendChildExpr(child)
     return expr
   }
 
@@ -327,7 +327,7 @@ class Expr(self, type: ExprType, line: Line) {
   // Dump an expression list, separated by commas.
   func dumpList(self, var text: string) {
     firstTime = true
-    for child in self.exprs() {
+    for child in self.childExprs() {
       if !firstTime {
         text += ", "
       }
@@ -338,8 +338,8 @@ class Expr(self, type: ExprType, line: Line) {
 
   // Write out a call expression.
   func dumpCall(self, var text: string) {
-    left = self.firstExpr!
-    right = left.nextExprExpr!
+    left = self.firstChildExpr!
+    right = left.nextExprChildExpr!
     left.dumpToString(text)
     text += "("
     if !isnull(right) {
@@ -350,8 +350,8 @@ class Expr(self, type: ExprType, line: Line) {
 
   // Write out an index expression.
   func dumpIndex(self, var text: string) {
-    left = self.firstExpr!
-    right = left.nextExprExpr!
+    left = self.firstChildExpr!
+    right = left.nextExprChildExpr!
     left.dumpToString(text)
     text += "["
     if !isnull(right) {
@@ -362,9 +362,9 @@ class Expr(self, type: ExprType, line: Line) {
 
   // Write out a slice expression.
   func dumpSlice(self, var text: string) {
-    left = self.firstExpr!
-    lower = left.nextExprExpr!
-    upper = lower.nextExprExpr!
+    left = self.firstChildExpr!
+    lower = left.nextExprChildExpr!
+    upper = lower.nextExprChildExpr!
     left.dumpToString(text)
     text += "["
     lower.dumpToString(text)
@@ -375,8 +375,8 @@ class Expr(self, type: ExprType, line: Line) {
 
   // Write out a cast expression.
   func dumpCast(self, var text: string, parentPrecedence: u32, truncate: bool) {
-    left = self.firstExpr!
-    right = left.nextExprExpr!
+    left = self.firstChildExpr!
+    right = left.nextExprChildExpr!
     precedence = self.getPrecedence()
     if precedence <= parentPrecedence {
       text += "("
@@ -395,9 +395,9 @@ class Expr(self, type: ExprType, line: Line) {
 
   // Write out a select expression.
   func dumpSelect(self, var text: string, parentPrecedence: u32) {
-    s = self.firstExpr!
-    a = s.nextExprExpr!
-    b = a.nextExprExpr!
+    s = self.firstChildExpr!
+    a = s.nextExprChildExpr!
+    b = a.nextExprChildExpr!
     precedence = self.getPrecedence()
     if precedence <= parentPrecedence {
       text += "("
@@ -414,12 +414,12 @@ class Expr(self, type: ExprType, line: Line) {
 
   // Write out a binary expression.
   func dumpBinary(self, var text: string, opType: string, parentPrecedence: u32) {
-    parent = self.expr
-    left = self.firstExpr!
-    right = left!.nextExprExpr!
+    parent = self.parentExpr
+    left = self.firstChildExpr!
+    right = left!.nextExprChildExpr!
     precedence = self.getPrecedence()
     needParens = precedence < parentPrecedence || (
-        precedence == parentPrecedence && !isnull(parent) && parent!.firstExpr != self)
+        precedence == parentPrecedence && !isnull(parent) && parent!.firstChildExpr != self)
     if needParens {
       text += "("
     }
@@ -437,7 +437,7 @@ class Expr(self, type: ExprType, line: Line) {
 
   // Write out a prefix expression.
   func dumpPrefix(self, var text: string, opType: string, parentPrecedence: u32) {
-    left = self.firstExpr!
+    left = self.firstChildExpr!
     precedence = self.getPrecedence()
     if precedence <= parentPrecedence {
       text += "("
@@ -451,7 +451,7 @@ class Expr(self, type: ExprType, line: Line) {
 
   // Dump a builtin function such as typeof(a).
   func dumpBuiltin(self, var text: string, name: string) {
-    left = self.firstExpr!
+    left = self.firstChildExpr!
     text += name + "("
     left.dumpToString(text)
     text += ")"
@@ -461,7 +461,7 @@ class Expr(self, type: ExprType, line: Line) {
   func dumpArray(self, var text: string) {
     text += "["
     firstTime = true
-    for child in self.exprs() {
+    for child in self.childExprs() {
       if !firstTime {
         text += ", "
       }
@@ -475,7 +475,7 @@ class Expr(self, type: ExprType, line: Line) {
   func dumpTuple(self, var text: string) {
     text += "("
     firstTime = true
-    for child in self.exprs() {
+    for child in self.childExprs() {
       if !firstTime {
         text += ", "
       }
@@ -487,7 +487,7 @@ class Expr(self, type: ExprType, line: Line) {
 
   // Write out the expression in a reasonably readable format to the end of |string|.
   func dumpToString(self, var text: string) {
-    parent = self.expr
+    parent = self.parentExpr
     parentPrecedence = 0u32
     if !isnull(parent) {
       parentPrecedence = parent!.getPrecedence()
@@ -645,12 +645,12 @@ class Expr(self, type: ExprType, line: Line) {
       }
       case ExprType.Secret {
         text += "secret("
-        self.firstExpr!.dumpToString(text)
+        self.firstChildExpr!.dumpToString(text)
         text += ")"
       }
       case ExprType.Reveal {
         text += "reveal("
-        self.firstExpr!.dumpToString(text)
+        self.firstChildExpr!.dumpToString(text)
         text += ")"
       }
       case ExprType.Const {
@@ -747,8 +747,8 @@ class Expr(self, type: ExprType, line: Line) {
         text += "bool"
       }
       case ExprType.Namedparam {
-        text += self.firstExpr!.val!.symVal!.name + " = "
-        self.lastExpr!.dumpToString(text)
+        text += self.firstChildExpr!.val!.symVal!.name + " = "
+        self.lastChildExpr!.dumpToString(text)
       }
     }
   }
@@ -777,16 +777,16 @@ class Expr(self, type: ExprType, line: Line) {
     newExpr.width = self.width
     newExpr.autocast = self.autocast
     newExpr.val = self.val
-    for child in self.exprs() {
+    for child in self.childExprs() {
       newChild = child.copy()
-      newExpr.appendExpr(newChild)
+      newExpr.appendChildExpr(newChild)
     }
     return newExpr
   }
 }
 
 // Expressions form a tree, with each expression having a doubly-linked list of children.
-relation DoublyLinked Expr Expr cascade
+relation DoublyLinked Expr:"Parent" Expr:"Child" cascade
 relation DoublyLinked Ident Expr
 relation OneToOne Statement Expr cascade
 relation OneToOne Variable:"Initializer" Expr:"Initializer" cascade

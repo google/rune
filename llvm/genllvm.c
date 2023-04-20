@@ -4179,7 +4179,7 @@ static void generateRefOrUnrefStatement(deStatement statement) {
 static void dumpStatementInComment(deStatement statement) {
   deString string = deMutableStringCreate();
   deDumpStatementNoSubBlock(string, statement);
-  llPrintf("  ; %s", deStringGetCstr(string));
+  llPrintf("  ; %s\n", deStringGetCstr(string));
   deStringDestroy(string);
 }
 

@@ -61,13 +61,14 @@ static void reportError(deLine line, char *buf) {
       printf("%s:%u: ", path, deLineGetLineNum(line));
     }
   }
-  printf("Error: %s\n", buf);
+  printf("Error: %s\n    ", buf);
   if (line != deLineNull) {
     fputs(deLineGetText(line), stdout);
   }
   if (deCurrentStatement != deStatementNull && deStatementGenerated(deCurrentStatement)) {
-    printf("After generation: ");
+    printf("\n    After generation: ");
     deDumpStatement(deCurrentStatement);
+    printf("\n");
   }
   dePrintStack();
 }
@@ -674,6 +675,7 @@ void dePrintStack(void) {
       deBlock block = deBlockGetScopeBlock(deStatementGetBlock(statement));
       utAssert(deBlockGetType(block) == DE_BLOCK_FUNCTION);
       char *path = deGetBlockPath(block, false);
+      printf("%s: \n    ", path);
       if (!deStatementGenerated(statement)) {
         deDumpLine(deStatementGetLine(statement));
       } else {
@@ -681,8 +683,9 @@ void dePrintStack(void) {
         // generator line of text.
         printf("generated statement: ");
         deDumpStatement(statement);
+        printf("\n");
       }
-      printf("In %s\n", path);
+      printf("%s\n", path);
     }
     signature = deSignatureGetCallSignature(signature);
     prevStatement = statement;

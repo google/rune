@@ -24,7 +24,7 @@ class Filepath(self, path: string, parent: Filepath?, isPackage: bool) {
   self.isPackage = isPackage
   getRoot().insertFilepath(self)
   if !isnull(parent) {
-    parent!.appendFilepath(self)
+    parent!.appendChildFilepath(self)
   }
 
   // Create a filepath object that records the path to a module or package.  If
@@ -56,4 +56,4 @@ class Filepath(self, path: string, parent: Filepath?, isPackage: bool) {
 }
 
 relation Hashed Root Filepath cascade ("sym")
-relation DoublyLinked Filepath Filepath cascade
+relation DoublyLinked Filepath:"Parent" Filepath:"Child" cascade

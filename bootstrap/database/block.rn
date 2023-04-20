@@ -99,7 +99,6 @@ class Block(self, line: Line) {
 
 relation OneToOne Statement:"Owning" Block:"Sub" cascade
 relation OneToOne Function:"Owning" Block:"Sub" cascade
-relation OneToOne Filepath:"Module" Block:"Module"
 
 // Common code between tests.
 unittest {

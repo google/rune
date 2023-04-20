@@ -17,6 +17,7 @@ use filepath
 use line
 use block
 use expr
+use rel
 use value
 
 enum StateType {
@@ -225,6 +226,7 @@ class Statement(self, block: Block, type: StateType, line: Line) {
 }
 
 relation DoublyLinked Block Statement cascade
+relation DoublyLinked Relation:"Generated" Statement:"Generated" cascade
 relation OneToOne Root:"LastInitializer" Statement:"LastInitializer"
 
 unittest basicStatementTest {

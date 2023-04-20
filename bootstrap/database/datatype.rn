@@ -14,6 +14,8 @@
 
 // This module provides datatypes in Rune.  For now, just provide the DatatypeType enumerated type.
 
+use root
+
 enum DatatypeType {
   None  // Some expressions, such as assignments, have no type.
   Bool
@@ -34,3 +36,22 @@ enum DatatypeType {
   Enumclass
   Tbdclass  // Returned by null(A).
 }
+
+class Datatype(self, type: DatatypeType) {
+  self.type = type
+
+  func hash(self) -> u64 {
+    return <u64>self.type
+  }
+
+  operator ==(self, other: Datatype) {
+    return self.type == other.type
+  }
+}
+
+// Type hint until we call Datatype constructor.
+if false {
+  datatype = Datatype(DatatypeType.None)
+}
+
+relation HashedClass Root Datatype cascade

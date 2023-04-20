@@ -18,6 +18,9 @@
 // terminating '\0'.
 deLine deLineCreate(deFilepath filepath, char *buf, uint32 len, uint32 lineNum) {
   deLine line = deLineAlloc();
+  while(len > 0 && buf[len-1] < ' ') {
+    len--;
+  }
   deLineResizeTexts(line, len + 1);
   memcpy(deLineGetText(line), buf, len);
   deLineSetiText(line, len, '\0');

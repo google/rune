@@ -188,4 +188,4 @@ class Ident(self, function: Function, object: Function | Variable, sym: Sym, obj
 
 relation Hashed Function Ident cascade ("sym")
 relation DoublyLinked Function:"Name" Ident:"Name" cascade
-relation DoublyLinked Variable Ident cascade
+relation OneToOne Variable Ident cascade

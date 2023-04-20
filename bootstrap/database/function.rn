@@ -22,7 +22,6 @@ use expr
 use ident
 use statement
 use block
-use op
 use variable
 
 enum FuncType {
@@ -222,11 +221,6 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     name = owningFunc.createUniqueSym(Sym.new(getExprTypeName(opType)))
     function = Function(owningFunc, FuncType.Operator, name, Linkage.Package, line)
     root = getRoot()
-    theOperator = root.findOperator(opType)
-    if isnull(theOperator) {
-      theOperator = Operator(opType)
-    }
-    theOperator.appendFunction(function)
     return function
   }
 
@@ -283,7 +277,6 @@ func insertModuleInitializationCall(moduleFunc: Function) {
 // The root function of the function tree.
 relation OneToOne Root:"Main" Function:"Main" cascade
 relation DoublyLinked Function:"Parent" Function:"Child" cascade
-relation DoublyLinked Operator Function cascade
 relation OneToOne Filepath:"Module" Function:"Module"
 
 // Create the main function.
