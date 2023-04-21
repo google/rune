@@ -300,6 +300,7 @@ static bool expressionTypeCanBeOverloaded(deExpressionType type) {
     case DE_EXPR_BITNOT:
     case DE_EXPR_NOT:
     case DE_EXPR_INDEX:
+    case DE_EXPR_CAST:
     case DE_EXPR_IN:
       return true;
     default:

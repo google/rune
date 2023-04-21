@@ -318,7 +318,7 @@ static deFunction generateDefaultMethod(deClass theClass, utSym funcName,
     // If showing all fields, format like Foo(32) = {...}.
     deExpression uintExpr = deExpressionCreate(DE_EXPR_UINTTYPE, line);
     deExpressionSetWidth(uintExpr, deTclassGetRefWidth(tclass));
-    deExpression castExpr = deBinaryExpressionCreate(DE_EXPR_CAST, uintExpr,
+    deExpression castExpr = deBinaryExpressionCreate(DE_EXPR_CASTTRUNC, uintExpr,
         deCopyExpression(selfExpr), line);
     deExpressionInsertExpression(tupleExpr, castExpr);
     char *text = utSprintf("%s(%%u) = %s", deTclassGetName(tclass), deStringGetCstr(format));

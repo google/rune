@@ -26,8 +26,8 @@ static void generateConstructorString(deClass theClass) {
       "appendcode {\n"
       "  func %1$s_allocate() {\n"
       "    if %1$s_firstFree != 0u%3$u {\n"
-      "      object = < %2$s >%1$s_firstFree\n"
-      "      %1$s_firstFree = %1$s_nextFree[<u%3$u>object]\n"
+      "      object = !< %2$s >%1$s_firstFree\n"
+      "      %1$s_firstFree = %1$s_nextFree[!<u%3$u>object]\n"
       "    } else {\n"
       "      if %1$s_used == %1$s_allocated {\n"
       "        %1$s_allocated <<= 1u%3$u\n",
@@ -40,10 +40,10 @@ static void generateConstructorString(deClass theClass) {
   } deEndBlockVariable;
   deSprintToString(
       "      }\n"
-      "      object = <%2$s >%1$s_used\n"
+      "      object = !<%2$s >%1$s_used\n"
       "      %1$s_used += 1u%3$u\n"
       "    }\n"
-      "    %1$s_nextFree[<u%3$u>object] = 1u%3$u\n",
+      "    %1$s_nextFree[!<u%3$u>object] = 1u%3$u\n",
       theClassPath, selfType, refWidth);
   deSprintToString(
       "    return object\n"
@@ -67,14 +67,14 @@ static void generateDestructorString(deClass theClass) {
     if (!firstTime) {
       deVariable globalArrayVar = deVariableGetGlobalArrayVariable(variable);
       char* zero = deDatatypeGetDefaultValueString(deVariableGetDatatype(variable));
-      deSprintToString("    %1$s[<u%3$u>object] = %2$s\n",
+      deSprintToString("    %1$s[!<u%3$u>object] = %2$s\n",
                      deVariableGetName(globalArrayVar), zero, refWidth);
     }
     firstTime = false;
   } deEndBlockVariable;
   deSprintToString(
-      "    %1$s_nextFree[<u%3$u>%2$s] = %1$s_firstFree\n"
-      "    %1$s_firstFree = <u%3$u>%2$s\n",
+      "    %1$s_nextFree[!<u%3$u>%2$s] = %1$s_firstFree\n"
+      "    %1$s_firstFree = !<u%3$u>%2$s\n",
       theClassPath, self, refWidth);
   deSprintToString(
       "  }\n"
@@ -181,15 +181,15 @@ static void generateRefAndUnrefString(deClass theClass) {
   deSprintToString(
       "appendcode {\n"
       "  func %1$s_ref(object) {\n"
-      "    if !isnull(object) && %1$s_nextFree[<u%2$u>object] != 0u%2$u {\n"
-      "      %1$s_nextFree[<u%2$u>object] += 1u%2$u\n"
+      "    if !isnull(object) && %1$s_nextFree[!<u%2$u>object] != 0u%2$u {\n"
+      "      %1$s_nextFree[!<u%2$u>object] += 1u%2$u\n"
       "    }\n"
       "  }\n"
       "\n"
       "  func %1$s_unref(object) {\n"
-      "    if !isnull(object) && %1$s_nextFree[<u%2$u>object] != 0u%2$u {\n"
-      "      %1$s_nextFree[<u%2$u>object] !-= 1u%2$u\n"
-      "      if %1$s_nextFree[<u%2$u>object] == 0u%2$u {\n"
+      "    if !isnull(object) && %1$s_nextFree[!<u%2$u>object] != 0u%2$u {\n"
+      "      %1$s_nextFree[!<u%2$u>object] !-= 1u%2$u\n"
+      "      if %1$s_nextFree[!<u%2$u>object] == 0u%2$u {\n"
       "        object.destroy()\n"
       "      }\n"
       "    }\n"

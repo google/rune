@@ -2827,6 +2827,11 @@ static deDatatype castEnumToBaseType(deExpression expression, bool orEnumClass) 
 
 // Generate a cast expression.
 static void generateCastExpression(deExpression expression, bool truncate) {
+  deSignature signature = deExpressionGetSignature(expression);
+  if (signature != deSignatureNull) {
+    generateOperatorOverloadCall(expression, signature);
+    return;
+  }
   deExpression right = deExpressionGetLastExpression(expression);
   // By using the type on expression, rather than left, we get the coerced
   // datatype from a tclass to a class.

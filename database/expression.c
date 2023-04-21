@@ -99,6 +99,7 @@ char *deExpressionTypeGetName(deExpressionType type) {
     case DE_EXPR_BITNOT: return "~";
     case DE_EXPR_DOT: return ".";
     case DE_EXPR_INDEX: return "[]";
+    case DE_EXPR_CAST: return "<>";
     case DE_EXPR_IN: return "in";
     default:
       utExit("Unexpected expression type");

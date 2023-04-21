@@ -792,6 +792,10 @@ operator: '+'
 {
   $$ = DE_EXPR_INDEX;
 }
+| '<' '>'
+{
+  $$ = DE_EXPR_CAST;
+}
 | KWIN
 {
   $$ = DE_EXPR_IN;
