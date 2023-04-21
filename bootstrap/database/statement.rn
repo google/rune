@@ -53,87 +53,33 @@ enum StateType {
 // Get the statement type keyword.
 export func statementTypeGetKeyword(type: StateType) {
   switch type {
-    case StateType.If {
-      return "if"
-    }
-    case StateType.Elseif {
-      return "else if"
-    }
-    case StateType.Else {
-      return "else"
-    }
-    case StateType.Do {
-      return "do"
-    }
-    case StateType.While {
-      return "while"
-    }
-    case StateType.For {
-      return "for"
-    }
-    case StateType.Foreach {
-      return "foreach"
-    }
-    case StateType.Assign {
-      return "assignment"
-    }
-    case StateType.Call {
-      return "call"
-    }
-    case StateType.Print {
-      return "print"
-    }
-    case StateType.Println {
-      return "println"
-    }
-    case StateType.Throw {
-      return "throw"
-    }
-    case StateType.Return {
-      return "return"
-    }
-    case StateType.Switch {
-      return "switch"
-    }
-    case StateType.Case {
-      return "case"
-    }
-    case StateType.Default {
-      return "default"
-    }
-    case StateType.Relation {
-      return "relation"
-    }
-    case StateType.Generate {
-      return "generate"
-    }
-    case StateType.Appendcode {
-      return "appendcode"
-    }
-    case StateType.Prependcode {
-      return "prependcode"
-    }
-    case StateType.Use {
-      return "use"
-    }
-    case StateType.Import {
-      return "import"
-    }
-    case StateType.Importlib {
-      return "importlib"
-    }
-    case StateType.Importrpc {
-      return "importrpc"
-    }
-    case StateType.Yield {
-      return "yield"
-    }
-    case StateType.Ref {
-      return "ref"
-    }
-    case StateType.Unref {
-      return "unref"
-    }
+    StateType.If => return "if"
+    StateType.Elseif => return "else if"
+    StateType.Else => return "else"
+    StateType.Do => return "do"
+    StateType.While => return "while"
+    StateType.For => return "for"
+    StateType.Foreach => return "foreach"
+    StateType.Assign => return "assignment"
+    StateType.Call => return "call"
+    StateType.Print => return "print"
+    StateType.Println => return "println"
+    StateType.Throw => return "throw"
+    StateType.Return => return "return"
+    StateType.Switch => return "switch"
+    StateType.Case => return "case"
+    StateType.Default => return "default"
+    StateType.Relation => return "relation"
+    StateType.Generate => return "generate"
+    StateType.Appendcode => return "appendcode"
+    StateType.Prependcode => return "prependcode"
+    StateType.Use => return "use"
+    StateType.Import => return "import"
+    StateType.Importlib => return "importlib"
+    StateType.Importrpc => return "importrpc"
+    StateType.Yield => return "yield"
+    StateType.Ref => return "ref"
+    StateType.Unref => return "unref"
   }
 }
 

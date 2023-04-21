@@ -38,9 +38,7 @@ func hashString(value: string) -> u64 {
 // Hash an integer of any size.
 func hashInteger(value: Uint | Int) -> u64 {
   typeswitch value {
-    case u1 ... u64 | i1 ... i64 {
-      return hashValues(0u64, <u64>value)
-    }
+    u1 ... u64 | i1 ... i64 => return hashValues(0u64, <u64>value)
     default {
       remaining = value
       hash = 0u64
@@ -56,13 +54,9 @@ func hashInteger(value: Uint | Int) -> u64 {
 func hashValue(value) -> u64 {
   // Only one of these cases will be instatiated per func instantiation.
   typeswitch value {
-    case String {
-      return hashString(value)
-    }
-    case Uint, Int {
-      return hashInteger(value)
-    }
-    case Array {
+    String => return hashString(value)
+    Uint, Int => return hashInteger(value)
+    Array {
       hash = 0u64
       for i in range(value.length) {
         element = value[i]
@@ -70,10 +64,8 @@ func hashValue(value) -> u64 {
       }
       return hash
     }
-    case Class {
-      // The hash value is just the object index itself.
-      return <u64><u32>value
-    }
+    // The hash value is just the object index itself.
+    Class => return <u64><u32>value
     default {
       error = 0  // This will cause a ccompile-time error.
       error = "hashValue: I don't know how to hash this type"

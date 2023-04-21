@@ -19,33 +19,19 @@ use datatype
 
 func getDatatypeType(value) -> DatatypeType {
   typeswitch value {
-    case string {
-      return DatatypeType.String
-    }
-    case bool {
-      return DatatypeType.Bool
-    }
-    case Int {
-      return DatatypeType.Int
-    }
-    case Uint {
-      return DatatypeType.Uint
-    }
-    case Bigint {
+    string => return DatatypeType.String
+    bool => return DatatypeType.Bool
+    Int => return DatatypeType.Int
+    Uint => return DatatypeType.Uint
+    Bigint {
       if value.isSigned {
         return DatatypeType.Int
       }
       return DatatypeType.Uint
     }
-    case Float {
-      return DatatypeType.Float
-    }
-    case Sym {
-      return DatatypeType.Sym
-    }
-    default {
-      throw "Datatype not yet supported by the Value class"
-    }
+    Float => return DatatypeType.Float
+    Sym => return DatatypeType.Sym
+    default => throw "Datatype not yet supported by the Value class"
   }
 }
 
@@ -59,48 +45,31 @@ class Value(self: Value, value: string | bool | Int | Uint | Bigint | Float | Sy
   self.floatVal = 0.0f64
   self.symVal = null(Sym)
   typeswitch value {
-    case string {
-      self.stringVal = value
-    }
-    case bool {
-      self.boolVal = value
-    }
-    case Float {
+    string => self.stringVal = value
+    bool => self.boolVal = value
+    Float {
       // This must be the widest supported floating point type, currently f64.
       self.floatVal = <f64>value
       self.width = widthof(value)
     }
-    case Int, Uint {
+    Int, Uint {
       self.intVal = Bigint(value)
       self.width = widthof(value)
     }
-    case Bigint {
+    Bigint {
       self.intVal = value
       self.width = value.width
-    }
-    case Sym {
-      self.symVal = value
-    }
+      }
+    Sym => self.symVal = value
   }
 
   export func toString(self) -> string {
     switch self.type {
-      case DatatypeType.String {
-        // TODO: Escape the string.
-        return "\"" + self.stringVal + "\""
-      }
-      case DatatypeType.Bool {
-        return self.boolVal ? "true" : "false"
-      }
-      case DatatypeType.Float {
-        return "%ff%u" % (self.floatVal, self.width)
-      }
-      case DatatypeType.Int, DatatypeType.Uint {
-        return self.intVal!.toString()
-      }
-      case DatatypeType.Sym {
-        return self.symVal!.name
-      }
+      DatatypeType.String => return "\"" + self.stringVal + "\"" // TODO: Escape the string.
+      DatatypeType.Bool => return self.boolVal ? "true" : "false"
+      DatatypeType.Float => return "%ff%u" % (self.floatVal, self.width)
+      DatatypeType.Int, DatatypeType.Uint => return self.intVal!.toString()
+      DatatypeType.Sym => return self.symVal!.name
     }
   }
 
@@ -109,21 +78,11 @@ class Value(self: Value, value: string | bool | Int | Uint | Bigint | Float | Sy
       return false
     }
     switch v1.type {
-      case DatatypeType.String {
-        return v1.stringVal == v2.stringVal
-      }
-      case DatatypeType.Bool {
-        return v1.stringVal == v2.stringVal
-      }
-      case DatatypeType.Uint, DatatypeType.Int {
-        return v1.intVal! == v2.intVal!
-      }
-      case DatatypeType.Float {
-        return v1.floatVal == v2.floatVal
-      }
-      case DatatypeType.Sym {
-        return v1.symVal == v2.symVal
-      }
+      DatatypeType.String => return v1.stringVal == v2.stringVal
+      DatatypeType.Bool => return v1.stringVal == v2.stringVal
+      DatatypeType.Uint, DatatypeType.Int => return v1.intVal! == v2.intVal!
+      DatatypeType.Float => return v1.floatVal == v2.floatVal
+      DatatypeType.Sym => return v1.symVal == v2.symVal
     }
   }
 }

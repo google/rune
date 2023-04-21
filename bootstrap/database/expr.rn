@@ -123,157 +123,63 @@ enum ExprType {
 // Example: "value & 1 == 0" should test that value is even, but in C the result is always 0.
 func getPrecedence(type: ExprType) -> u32 {
   switch type {
-    case ExprType.Modint {
-      return 1u32
-    }
-    case ExprType.Select {
-      return 2u32
-    }
-    case ExprType.And {
-      return 3u32
-    }
-    case ExprType.Xor {
-      return 4u32
-    }
-    case ExprType.Or {
-      return 5u32
-    }
-    case ExprType.Lt, ExprType.Le, ExprType.Gt, ExprType.Ge,
-        ExprType.Equal, ExprType.Notequal {
-      return 6u32
-    }
-    case ExprType.Shl, ExprType.Shr, ExprType.Rotl, ExprType.Rotr {
-      return 7u32
-    }
-    case ExprType.Bitand {
-      return 8u32
-    }
-    case ExprType.Bitxor {
-      return 9u32
-    }
-    case ExprType.Bitor {
-      return 10u32
-    }
-    case ExprType.Sub, ExprType.Add {
-      return 11u32
-    }
-    case ExprType.Mul,ExprType.Div, ExprType.Mod {
-      return 12u32
-    }
-    case ExprType.Exp {
-      return 13u32
-    }
-    case ExprType.Not, ExprType.Negate, ExprType.Secret,
+    ExprType.Modint => return 1u32
+    ExprType.Select => return 2u32
+    ExprType.And => return 3u32
+    ExprType.Xor => return 4u32
+    ExprType.Or => return 5u32
+    ExprType.Lt, ExprType.Le, ExprType.Gt, ExprType.Ge,
+        ExprType.Equal, ExprType.Notequal => return 6u32
+    ExprType.Shl, ExprType.Shr, ExprType.Rotl, ExprType.Rotr => return 7u32
+    ExprType.Bitand => return 8u32
+    ExprType.Bitxor => return 9u32
+    ExprType.Bitor => return 10u32
+    ExprType.Sub, ExprType.Add => return 11u32
+    ExprType.Mul,ExprType.Div, ExprType.Mod => return 12u32
+    ExprType.Exp => return 13u32
+    ExprType.Not, ExprType.Negate, ExprType.Secret,
         ExprType.Reveal, ExprType.Funcaddr, ExprType.Typeof,
         ExprType.Widthof, ExprType.Arrayof, ExprType.Bitnot,
-        ExprType.Isnull {
-      return 14u32
-    }
-    case ExprType.Call,  ExprType.Cast {
-      return 15u32
-    }
-    case ExprType.Dot, ExprType.Index {
-      return 16u32
-    }
-    case ExprType.Constant, ExprType.Ident, ExprType.Typeindex {
-      return 17u32
-    }
-    default {
-      return 1u32
-    }
+        ExprType.Isnull => return 14u32
+    ExprType.Call,  ExprType.Cast => return 15u32
+    ExprType.Dot, ExprType.Index => return 16u32
+    ExprType.Constant, ExprType.Ident, ExprType.Typeindex => return 17u32
+    default => return 1u32
   }
 }
 
 // Return the expression type's name.
 func getExprTypeName(type: ExprType) -> string {
   switch type {
-    case ExprType.Modint {
-      return "mod"
-    }
-    case ExprType.And {
-      return "&&"
-    }
-    case ExprType.Xor {
-      return "^^"
-    }
-    case ExprType.Or {
-      return "||"
-    }
-    case ExprType.Lt {
-      return "<"
-    }
-    case ExprType.Le {
-      return "<="
-    }
-    case ExprType.Gt {
-      return ">"
-    }
-    case ExprType.Ge {
-      return ">="
-    }
-    case ExprType.Equal {
-      return "=="
-    }
-    case ExprType.Notequal {
-      return "!="
-    }
-    case ExprType.Shl {
-      return "<<"
-    }
-    case ExprType.Shr {
-      return ">>"
-    }
-    case ExprType.Rotl {
-      return "<<<"
-    }
-    case ExprType.Rotr {
-      return ">>>"
-    }
-    case ExprType.Bitand {
-      return "&"
-    }
-    case ExprType.Bitxor {
-      return "^"
-    }
-    case ExprType.Bitor {
-      return "|"
-    }
-    case ExprType.Negate, ExprType.Sub {
-      return "-"
-    }
-    case ExprType.Add {
-      return "+"
-    }
-    case ExprType.Mul {
-      return "*"
-    }
-    case ExprType.Div {
-      return "/"
-    }
-    case ExprType.Mod {
-      return "%"
-    }
-    case ExprType.Exp {
-      return "**"
-    }
-    case ExprType.Not {
-      return "!"
-    }
-    case ExprType.Bitnot {
-      return "~"
-    }
-    case ExprType.Dot {
-      return "."
-    }
-    case ExprType.Index {
-      return "[]"
-    }
-    case ExprType.In {
-      return "in"
-    }
-    default {
-      throw "Unexpected expression type"
-    }
+    ExprType.Modint => return "mod"
+    ExprType.And => return "&&"
+    ExprType.Xor => return "^^"
+    ExprType.Or => return "||"
+    ExprType.Lt => return "<"
+    ExprType.Le => return "<="
+    ExprType.Gt => return ">"
+    ExprType.Ge => return ">="
+    ExprType.Equal => return "=="
+    ExprType.Notequal => return "!="
+    ExprType.Shl => return "<<"
+    ExprType.Shr => return ">>"
+    ExprType.Rotl => return "<<<"
+    ExprType.Rotr => return ">>>"
+    ExprType.Bitand => return "&"
+    ExprType.Bitxor => return "^"
+    ExprType.Bitor => return "|"
+    ExprType.Negate, ExprType.Sub => return "-"
+    ExprType.Add => return "+"
+    ExprType.Mul => return "*"
+    ExprType.Div => return "/"
+    ExprType.Mod => return "%"
+    ExprType.Exp => return "**"
+    ExprType.Not => return "!"
+    ExprType.Bitnot => return "~"
+    ExprType.Dot => return "."
+    ExprType.Index => return "[]"
+    ExprType.In => return "in"
+    default => throw "Unexpected expression type"
   }
 }
 
@@ -493,260 +399,98 @@ class Expr(self, type: ExprType, line: Line) {
       parentPrecedence = parent!.getPrecedence()
     }
     switch self.type {
-      case ExprType.Constant {
-        text += self.val!.toString()
-      }
-      case ExprType.Ident {
-        text += self.val!.symVal!.name
-      }
-      case ExprType.Array {
-        self.dumpArray(text)
-      }
-      case ExprType.Tuple {
-        self.dumpTuple(text)
-      }
-      case ExprType.Randuint {
-        text += "rand%u" % self.width
-      }
-      case ExprType.Modint {
-        self.dumpBinary(text, "mod", parentPrecedence)
-      }
-      case ExprType.Add {
-        self.dumpBinary(text, "+", parentPrecedence)
-      }
-      case ExprType.Sub {
-        self.dumpBinary(text, "-", parentPrecedence)
-      }
-      case ExprType.Mul {
-        self.dumpBinary(text, "*", parentPrecedence)
-      }
-      case ExprType.Div {
-        self.dumpBinary(text, "/", parentPrecedence)
-      }
-      case ExprType.Mod {
-        self.dumpBinary(text, "%", parentPrecedence)
-      }
-      case ExprType.And {
-        self.dumpBinary(text, "&&", parentPrecedence)
-      }
-      case ExprType.Or {
-        self.dumpBinary(text, "||", parentPrecedence)
-      }
-      case ExprType.Xor {
-        self.dumpBinary(text, "^^", parentPrecedence)
-      }
-      case ExprType.Bitand {
-        self.dumpBinary(text, "&", parentPrecedence)
-      }
-      case ExprType.Bitor {
-        self.dumpBinary(text, "|", parentPrecedence)
-      }
-      case ExprType.Bitxor {
-        self.dumpBinary(text, "^", parentPrecedence)
-      }
-      case ExprType.Exp {
-        self.dumpBinary(text, "**", parentPrecedence)
-      }
-      case ExprType.Shl {
-        self.dumpBinary(text, "<<", parentPrecedence)
-      }
-      case ExprType.Shr {
-        self.dumpBinary(text, ">>", parentPrecedence)
-      }
-      case ExprType.Rotl {
-        self.dumpBinary(text, "<<<", parentPrecedence)
-      }
-      case ExprType.Rotr {
-        self.dumpBinary(text, ">>>", parentPrecedence)
-      }
-      case ExprType.Addtrunc {
-        self.dumpBinary(text, "!+", parentPrecedence)
-      }
-      case ExprType.Subtrunc {
-        self.dumpBinary(text, "!-", parentPrecedence)
-      }
-      case ExprType.Multrunc {
-        self.dumpBinary(text, "!*", parentPrecedence)
-      }
-      case ExprType.Lt {
-        self.dumpBinary(text, "<", parentPrecedence)
-      }
-      case ExprType.Le {
-        self.dumpBinary(text, "<=", parentPrecedence)
-      }
-      case ExprType.Gt {
-        self.dumpBinary(text, ">", parentPrecedence)
-      }
-      case ExprType.Ge {
-        self.dumpBinary(text, ">=", parentPrecedence)
-      }
-      case ExprType.Equal {
-        self.dumpBinary(text, "==", parentPrecedence)
-      }
-      case ExprType.Notequal {
-        self.dumpBinary(text, "!=", parentPrecedence)
-      }
-      case ExprType.Negate {
-        self.dumpPrefix(text, "-", parentPrecedence)
-      }
-      case ExprType.Negatetrunc {
-        self.dumpPrefix(text, "!-", parentPrecedence)
-      }
-      case ExprType.Not {
-        self.dumpPrefix(text, "!", parentPrecedence)
-      }
-      case ExprType.Bitnot {
-        self.dumpPrefix(text, "~", parentPrecedence)
-      }
-      case ExprType.Cast {
-        self.dumpCast(text, parentPrecedence, false)
-      }
-      case ExprType.Casttrunc {
-        self.dumpCast(text, parentPrecedence, true)
-      }
-      case ExprType.Select {
-        self.dumpSelect(text, parentPrecedence)
-      }
-      case ExprType.Call {
-        self.dumpCall(text)
-      }
-      case ExprType.Funcaddr {
-        self.dumpPrefix(text, "&", parentPrecedence)
-      }
-      case ExprType.Arrayof {
-        self.dumpBuiltin(text, "arrayof")
-      }
-      case ExprType.Typeof {
-        self.dumpBuiltin(text, "typeof")
-      }
-      case ExprType.Unsigned {
-        self.dumpBuiltin(text, "unsigned")
-      }
-      case ExprType.Signed {
-        self.dumpBuiltin(text, "signed")
-      }
-      case ExprType.Widthof {
-        self.dumpBuiltin(text, "widthof")
-      }
-      case ExprType.Isnull {
-        self.dumpBuiltin(text, "isnull")
-      }
-      case ExprType.Null {
-        self.dumpBuiltin(text, "null")
-      }
-      case ExprType.Nullself {
-        text += "null"
-      }
-      case ExprType.Index, ExprType.Typeindex {
-        self.dumpIndex(text)
-      }
-      case ExprType.Slice {
-        self.dumpSlice(text)
-      }
-      case ExprType.Secret {
+      ExprType.Constant => text += self.val!.toString()
+      ExprType.Ident => text += self.val!.symVal!.name
+      ExprType.Array => self.dumpArray(text)
+      ExprType.Tuple => self.dumpTuple(text)
+      ExprType.Randuint => text += "rand%u" % self.width
+      ExprType.Modint => self.dumpBinary(text, "mod", parentPrecedence)
+      ExprType.Add => self.dumpBinary(text, "+", parentPrecedence)
+      ExprType.Sub => self.dumpBinary(text, "-", parentPrecedence)
+      ExprType.Mul => self.dumpBinary(text, "*", parentPrecedence)
+      ExprType.Div => self.dumpBinary(text, "/", parentPrecedence)
+      ExprType.Mod => self.dumpBinary(text, "%", parentPrecedence)
+      ExprType.And => self.dumpBinary(text, "&&", parentPrecedence)
+      ExprType.Or => self.dumpBinary(text, "||", parentPrecedence)
+      ExprType.Xor => self.dumpBinary(text, "^^", parentPrecedence)
+      ExprType.Bitand => self.dumpBinary(text, "&", parentPrecedence)
+      ExprType.Bitor => self.dumpBinary(text, "|", parentPrecedence)
+      ExprType.Bitxor => self.dumpBinary(text, "^", parentPrecedence)
+      ExprType.Exp => self.dumpBinary(text, "**", parentPrecedence)
+      ExprType.Shl => self.dumpBinary(text, "<<", parentPrecedence)
+      ExprType.Shr => self.dumpBinary(text, ">>", parentPrecedence)
+      ExprType.Rotl => self.dumpBinary(text, "<<<", parentPrecedence)
+      ExprType.Rotr => self.dumpBinary(text, ">>>", parentPrecedence)
+      ExprType.Addtrunc => self.dumpBinary(text, "!+", parentPrecedence)
+      ExprType.Subtrunc => self.dumpBinary(text, "!-", parentPrecedence)
+      ExprType.Multrunc => self.dumpBinary(text, "!*", parentPrecedence)
+      ExprType.Lt => self.dumpBinary(text, "<", parentPrecedence)
+      ExprType.Le => self.dumpBinary(text, "<=", parentPrecedence)
+      ExprType.Gt => self.dumpBinary(text, ">", parentPrecedence)
+      ExprType.Ge => self.dumpBinary(text, ">=", parentPrecedence)
+      ExprType.Equal => self.dumpBinary(text, "==", parentPrecedence)
+      ExprType.Notequal => self.dumpBinary(text, "!=", parentPrecedence)
+      ExprType.Negate => self.dumpPrefix(text, "-", parentPrecedence)
+      ExprType.Negatetrunc => self.dumpPrefix(text, "!-", parentPrecedence)
+      ExprType.Not => self.dumpPrefix(text, "!", parentPrecedence)
+      ExprType.Bitnot => self.dumpPrefix(text, "~", parentPrecedence)
+      ExprType.Cast => self.dumpCast(text, parentPrecedence, false)
+      ExprType.Casttrunc => self.dumpCast(text, parentPrecedence, true)
+      ExprType.Select => self.dumpSelect(text, parentPrecedence)
+      ExprType.Call => self.dumpCall(text)
+      ExprType.Funcaddr => self.dumpPrefix(text, "&", parentPrecedence)
+      ExprType.Arrayof => self.dumpBuiltin(text, "arrayof")
+      ExprType.Typeof => self.dumpBuiltin(text, "typeof")
+      ExprType.Unsigned => self.dumpBuiltin(text, "unsigned")
+      ExprType.Signed => self.dumpBuiltin(text, "signed")
+      ExprType.Widthof => self.dumpBuiltin(text, "widthof")
+      ExprType.Isnull => self.dumpBuiltin(text, "isnull")
+      ExprType.Null => self.dumpBuiltin(text, "null")
+      ExprType.Nullself => text += "null"
+      ExprType.Index, ExprType.Typeindex => self.dumpIndex(text)
+      ExprType.Slice => self.dumpSlice(text)
+      ExprType.Secret {
         text += "secret("
         self.firstChildExpr!.dumpToString(text)
         text += ")"
       }
-      case ExprType.Reveal {
+      ExprType.Reveal {
         text += "reveal("
         self.firstChildExpr!.dumpToString(text)
         text += ")"
       }
-      case ExprType.Const {
-        self.dumpPrefix(text, "const ", parentPrecedence)
-      }
-      case ExprType.Equals {
-        self.dumpBinary(text, "=", parentPrecedence)
-      }
-      case ExprType.AddEquals {
-        self.dumpBinary(text, "+=", parentPrecedence)
-      }
-      case ExprType.SubEquals {
-        self.dumpBinary(text, "-=", parentPrecedence)
-      }
-      case ExprType.MulEquals {
-        self.dumpBinary(text, "*=", parentPrecedence)
-      }
-      case ExprType.DivEquals {
-        self.dumpBinary(text, "/=", parentPrecedence)
-      }
-      case ExprType.ModEquals {
-        self.dumpBinary(text, "%=", parentPrecedence)
-      }
-      case ExprType.AndEquals {
-        self.dumpBinary(text, "&&=", parentPrecedence)
-      }
-      case ExprType.OrEquals {
-        self.dumpBinary(text, "||=", parentPrecedence)
-      }
-      case ExprType.XorEquals {
-        self.dumpBinary(text, "^^=", parentPrecedence)
-      }
-      case ExprType.ExpEquals {
-        self.dumpBinary(text, "**=", parentPrecedence)
-      }
-      case ExprType.ShlEquals {
-        self.dumpBinary(text, "<<=", parentPrecedence)
-      }
-      case ExprType.ShrEquals {
-        self.dumpBinary(text, ">>=", parentPrecedence)
-      }
-      case ExprType.RotlEquals {
-        self.dumpBinary(text, "<<<=", parentPrecedence)
-      }
-      case ExprType.RotrEquals {
-        self.dumpBinary(text, ">>>=", parentPrecedence)
-      }
-      case ExprType.AddtruncEquals {
-        self.dumpBinary(text, "!+=", parentPrecedence)
-      }
-      case ExprType.SubtruncEquals {
-        self.dumpBinary(text, "!-=", parentPrecedence)
-      }
-      case ExprType.MultruncEquals {
-        self.dumpBinary(text, "!*=", parentPrecedence)
-      }
-      case ExprType.BitandEquals {
-        self.dumpBinary(text, "&=", parentPrecedence)
-      }
-      case ExprType.BitorEquals {
-        self.dumpBinary(text, "|=", parentPrecedence)
-      }
-      case ExprType.BitxorEquals {
-        self.dumpBinary(text, "^=", parentPrecedence)
-      }
-      case ExprType.As {
-        self.dumpBinary(text, " as ", parentPrecedence)
-      }
-      case ExprType.In {
-        self.dumpBinary(text, " in ", parentPrecedence)
-      }
-      case ExprType.Dot {
-        self.dumpBinary(text, ".", parentPrecedence)
-      }
-      case ExprType.Dotdotdot {
-        self.dumpBinary(text, "...", parentPrecedence)
-      }
-      case ExprType.List {
-        self.dumpList(text)
-      }
-      case ExprType.UintType {
-        text += "u%u" % self.width
-      }
-      case ExprType.IntType {
-        text += "i%u" % self.width
-      }
-      case ExprType.FloatType {
-        text += "f%u" % self.width
-      }
-      case ExprType.StringType {
-        text += "string"
-      }
-      case ExprType.BoolType {
-        text += "bool"
-      }
-      case ExprType.Namedparam {
+      ExprType.Const => self.dumpPrefix(text, "const ", parentPrecedence)
+      ExprType.Equals => self.dumpBinary(text, "=", parentPrecedence)
+      ExprType.AddEquals => self.dumpBinary(text, "+=", parentPrecedence)
+      ExprType.SubEquals => self.dumpBinary(text, "-=", parentPrecedence)
+      ExprType.MulEquals => self.dumpBinary(text, "*=", parentPrecedence)
+      ExprType.DivEquals => self.dumpBinary(text, "/=", parentPrecedence)
+      ExprType.ModEquals => self.dumpBinary(text, "%=", parentPrecedence)
+      ExprType.AndEquals => self.dumpBinary(text, "&&=", parentPrecedence)
+      ExprType.OrEquals => self.dumpBinary(text, "||=", parentPrecedence)
+      ExprType.XorEquals => self.dumpBinary(text, "^^=", parentPrecedence)
+      ExprType.ExpEquals => self.dumpBinary(text, "**=", parentPrecedence)
+      ExprType.ShlEquals => self.dumpBinary(text, "<<=", parentPrecedence)
+      ExprType.ShrEquals => self.dumpBinary(text, ">>=", parentPrecedence)
+      ExprType.RotlEquals => self.dumpBinary(text, "<<<=", parentPrecedence)
+      ExprType.RotrEquals => self.dumpBinary(text, ">>>=", parentPrecedence)
+      ExprType.AddtruncEquals => self.dumpBinary(text, "!+=", parentPrecedence)
+      ExprType.SubtruncEquals => self.dumpBinary(text, "!-=", parentPrecedence)
+      ExprType.MultruncEquals => self.dumpBinary(text, "!*=", parentPrecedence)
+      ExprType.BitandEquals => self.dumpBinary(text, "&=", parentPrecedence)
+      ExprType.BitorEquals => self.dumpBinary(text, "|=", parentPrecedence)
+      ExprType.BitxorEquals => self.dumpBinary(text, "^=", parentPrecedence)
+      ExprType.As => self.dumpBinary(text, " as ", parentPrecedence)
+      ExprType.In => self.dumpBinary(text, " in ", parentPrecedence)
+      ExprType.Dot => self.dumpBinary(text, ".", parentPrecedence)
+      ExprType.Dotdotdot => self.dumpBinary(text, "...", parentPrecedence)
+      ExprType.List => self.dumpList(text)
+      ExprType.UintType => text += "u%u" % self.width
+      ExprType.IntType => text += "i%u" % self.width
+      ExprType.FloatType => text += "f%u" % self.width
+      ExprType.StringType => text += "string"
+      ExprType.BoolType => text += "bool"
+      ExprType.Namedparam {
         text += self.firstChildExpr!.val!.symVal!.name + " = "
         self.lastChildExpr!.dumpToString(text)
       }

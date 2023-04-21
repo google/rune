@@ -16,10 +16,6 @@ t = ()
 println t
 
 typeswitch t {
-  case () {
-    println "Empty tuple"
-  }
-  default {
-    println "Something else"
-  }
+  () => println "Empty tuple"
+  default => println "Something else"
 }

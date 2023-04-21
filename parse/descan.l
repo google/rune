@@ -298,7 +298,6 @@ static void logMsg(char *format, ...) {
 <INITIAL>"assert"               { retToken(KWASSERT); }
 <INITIAL>"bool"                 { retToken(KWBOOL); }
 <INITIAL>"cascade"              { retToken(KWCASCADE); }
-<INITIAL>"case"                 { retToken(KWCASE); }
 <INITIAL>"class"                { retToken(KWCLASS); }
 <INITIAL>"debug"                { retToken(KWDEBUG); }
 <INITIAL>"default"              { retToken(KWDEFAULT); }
@@ -357,6 +356,7 @@ static void logMsg(char *format, ...) {
 <INITIAL>"&="                   { retToken(KWBITANDEQUALS); }
 <INITIAL>"&&"                   { retToken(KWAND); }
 <INITIAL>"->"                   { retToken(KWARROW); }
+<INITIAL>"=>"                   { retToken(KWIMPLIES); }
 <INITIAL>"!<"                   { retToken(KWCASTTRUNC); }
 <INITIAL>"/="                   { retToken(KWDIVEQUALS); }
 <INITIAL>"..."                  { retToken(KWDOTDOTDOT); }

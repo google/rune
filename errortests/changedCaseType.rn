@@ -14,13 +14,7 @@
 
 x = 1u32
 switch x {
-  case 1u32 {
-    println 1u32
-  }
-  case 2u8 {
-    println 1u32
-  }
-  default {
-    println "something else"
-  }
+  1u32 => println 1u32
+  2u8 => println 1u32
+  default => println "something else"
 }

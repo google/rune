@@ -18,9 +18,7 @@ enum ValueType {
 
 func toString(type) {
   switch type {
-    case ValueType.String {
-      return "test"
-    }
+    ValueType.String => return "test"
   }
 }
 

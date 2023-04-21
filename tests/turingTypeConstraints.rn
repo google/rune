@@ -14,7 +14,7 @@
 
 func countParens(x) -> Uint {
   typeswitch x {
-    case () {
+    () {
       println "x is the empty tuple: ", x
       return 1
     }
@@ -35,25 +35,17 @@ func decParens(x) {
 
 func addParens(a, b) {
   typeswitch a {
-    case () {
-      // The empty tuple represents 0.
-      return b
-    }
-    default {
-      return addParens(decParens(a), incParens(b))
-    }
+    // The empty tuple represents 0.
+    () => return b
+    default => return addParens(decParens(a), incParens(b))
   }
 }
 
 // Input a must have at least as many parens as b.
 func subParens(a, b) {
   typeswitch b {
-    case () {
-      return a
-    }
-    default {
-      return subParens(decParens(a), decParens(b))
-    }
+    () => return a
+    default => return subParens(decParens(a), decParens(b))
   }
 }
 
@@ -63,16 +55,10 @@ func doubleParens(x) {
 
 func mulParens(a, b) {
   typeswitch a {
-    case () {
-      return a
-    }
-    case (()) {
-      // (()) represents 1.
-      return b
-    }
-    default {
-      return addParens(mulParens(decParens(a), b), b)
-    }
+    () => return a
+    // (()) represents 1.
+    (()) => return b
+    default => return addParens(mulParens(decParens(a), b), b)
   }
 }
 
@@ -81,22 +67,14 @@ func equalsParens(a, b) -> bool {
     return true
   }
   typeswitch (a, b) {
-    case ((), ()) {
-      return true
-    }
+    ((), ()) => return true
     default {
       typeswitch a {
-        case () {
-          return false
-        }
+        () => return false
         default {
           typeswitch b {
-            case () {
-              return false
-            }
-            default {
-              return equalsParens(decParens(a), decParens(b))
-            }
+            () => return false
+            default => return equalsParens(decParens(a), decParens(b))
           }
         }
       }

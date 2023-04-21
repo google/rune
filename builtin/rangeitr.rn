@@ -14,7 +14,7 @@
 
 iterator range(first, second = false, third = false) {
   typeswitch second {
-    case bool {
+    bool {
       // This is a one-parameter range, eg range(10).
       for i = <first>0, i < first, i += <first>1 {
         yield i
@@ -22,7 +22,7 @@ iterator range(first, second = false, third = false) {
     }
     default {
       typeswitch third {
-        case bool {
+        bool {
           // This is a two-parameter range, eg range(1, 11).
           for i = first, i < second, i += <first>1 {
             yield i

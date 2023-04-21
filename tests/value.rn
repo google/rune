@@ -20,15 +20,9 @@ enum ValueType {
 
 func getValueType(value) {
   typeswitch value {
-    case string {
-      return ValueType.String
-    }
-    case bool {
-      return ValueType.Bool
-    }
-    case i64 {
-      return ValueType.Int64
-    }
+    string => return ValueType.String
+    bool => return ValueType.Bool
+    i64 => return ValueType.Int64
   }
 }
 
@@ -38,28 +32,16 @@ class Value(self, value: string | bool | i64) {
   self.boolVal = false
   self.intVal = 0i64
   typeswitch value {
-    case string {
-      self.stringVal = value
-    }
-    case bool {
-      self.boolVal = value
-    }
-    case i64 {
-      self.intVal = value
-    }
+    string => self.stringVal = value
+    bool => self.boolVal = value
+    i64 => self.intVal = value
   }
 
   func toString(self) -> string {
     typeswitch self.type {
-      case ValueType.String {
-        return self.stringVal
-      }
-      case ValueType.Bool {
-        return self.boolVal ? "true" : "false"
-      }
-      case ValueType.Int64 {
-        return "%i" % self.intVal
-      }
+      ValueType.String => return self.stringVal
+      ValueType.Bool => return self.boolVal ? "true" : "false"
+      ValueType.Int64 => return "%i" % self.intVal
     }
   }
 }

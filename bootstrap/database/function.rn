@@ -53,42 +53,18 @@ enum Linkage {
 // Return a name for the function type.
 func getFuncTypeName(type: FuncType) -> string {
   switch type {
-    case FuncType.Plain {  // Includes methods.
-      return "func"
-    }
-    case FuncType.Unittest {  // Includes methods.
-      return "unittest"
-    }
-    case FuncType.Constructor {
-      return "class"
-    }
-    case FuncType.Destructor {
-      return "destructor"
-    }
-    case FuncType.Package {  // Initializes all modules in the package.
-      return "package"
-    }
-    case FuncType.Module {  // Initializes the module.
-      return "module"
-    }
-    case FuncType.Iterator {
-      return "iterator"
-    }
-    case FuncType.Operator {
-      return "operator"
-    }
-    case FuncType.Final {
-      return "final"
-    }
-    case FuncType.Struct {
-      return "struct"
-    }
-    case FuncType.Enum {
-      return "enum"
-    }
-    case FuncType.Generator {
-      return "generator"
-    }
+    FuncType.Plain => return "func"  // Includes methods.
+    FuncType.Unittest => return "unittest"  // Includes methods.
+    FuncType.Constructor => return "class"
+    FuncType.Destructor => return "destructor"
+    FuncType.Package => return "package"  // Initializes all modules in the package.
+    FuncType.Module => return "module"  // Initializes the module.
+    FuncType.Iterator => return "iterator"
+    FuncType.Operator => return "operator"
+    FuncType.Final => return "final"
+    FuncType.Struct => return "struct"
+    FuncType.Enum => return "enum"
+    FuncType.Generator => return "generator"
   }
 }
 

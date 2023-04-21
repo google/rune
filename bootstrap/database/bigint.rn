@@ -34,24 +34,16 @@ kMaxBigintWidth = 0x1000000u32
 // speculative execution.
 func isSecret(value) -> bool {
   typeswitch value {
-    case typeof(reveal(value)) {
-      return false
-    }
-    case typeof(secret(value)) {
-      return true
-    }
+    typeof(reveal(value)) => return false
+    typeof(secret(value)) => return true
   }
 }
 
 // Determine if the value is signed or not.
 func isSigned(value: Int | Uint) {
   typeswitch value {
-    case Int {
-      return true
-    }
-    case Uint {
-      return false
-    }
+    Int => return true
+    Uint => return false
   }
 }
 
@@ -64,7 +56,7 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   self.isSigned = false
   self.isSecret = false
   typeswitch value {
-    case Int | Uint {
+    Int | Uint {
       if widthof(value) > kMaxBigintWidth {
         throw "Integer width too large.  Pass in BigintArray instead."
       }
@@ -84,7 +76,7 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
      self.bigint = runtime.integerToBigint(!<u64>value, self.width,
          self.isSigned, self.isSecret)
     }
-    case runtime.BigintArray {
+    runtime.BigintArray {
       if width != 0 {
         throw "Can't change bigint width in Bigint constructor.  Use cast instead."
       }

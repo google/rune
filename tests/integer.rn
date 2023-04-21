@@ -14,12 +14,8 @@
 
 func isSigned(value: Int | Uint) -> bool {
   typeswitch value {
-    case Int {
-      return true
-    }
-    case Uint {
-      return false
-    }
+    Int => return true
+    Uint => return false
   }
 }
 

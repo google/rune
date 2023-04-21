@@ -28,12 +28,8 @@ class Ident(self, function: Function, object: Function | Variable, sym: Sym, obj
   imported = false
   self.sym = sym
   typeswitch object {
-    case Function {
-      object.appendNameIdent(self)
-    }
-    case Variable {
-      object.insertIdent(self)
-    }
+    Function => object.appendNameIdent(self)
+    Variable => object.insertIdent(self)
   }
   // Operator identifiers are not in any function hash table.
   if !isnull(function) {

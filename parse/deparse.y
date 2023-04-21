@@ -226,6 +226,7 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %token <lineVal> KWAPPENDCODE
 %token <lineVal> KWARRAYOF
 %token <lineVal> KWARROW
+%token <lineVal> KWIMPLIES
 %token <lineVal> KWAS
 %token <lineVal> KWASSERT
 %token <lineVal> KWBITANDEQUALS
@@ -233,7 +234,6 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %token <lineVal> KWBITXOREQUALS
 %token <lineVal> KWBOOL
 %token <lineVal> KWCASCADE
-%token <lineVal> KWCASE
 %token <lineVal> KWCASTTRUNC
 %token <lineVal> KWCLASS
 %token <lineVal> KWDEBUG
@@ -968,12 +968,20 @@ switchCases:  // Empty
 typeswitchCases:  // Empty
 | typeswitchCases typeswitchCase
 
-switchCase: KWCASE switchCaseHeaders block
+switchCase: switchCaseHeaders block
+{
+  finishBlockStatement(deExpressionNull);
+}
+| switchCaseHeaders KWIMPLIES statement
 {
   finishBlockStatement(deExpressionNull);
 }
 
-typeswitchCase: KWCASE typeswitchCaseHeaders block
+typeswitchCase: typeswitchCaseHeaders block
+{
+  finishBlockStatement(deExpressionNull);
+}
+| typeswitchCaseHeaders KWIMPLIES statement
 {
   finishBlockStatement(deExpressionNull);
 }
@@ -1017,6 +1025,10 @@ optDefaultCase: // Empty
   finishBlockStatement(deExpressionNull);
 }
 | defaultCaseHeader block
+{
+  finishBlockStatement(deExpressionNull);
+}
+| defaultCaseHeader KWIMPLIES statement
 {
   finishBlockStatement(deExpressionNull);
 }

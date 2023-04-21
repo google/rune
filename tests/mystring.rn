@@ -14,18 +14,10 @@
 
 class MyString(self, value) {
   typeswitch value {
-    case string {
-      self.value: string = value
-    }
-    case u8 {
-      self.value: string = <string>[value]
-    }
-    case [u8] {
-      self.value: string = <string>value
-    }
-    case MyString {
-      self.value: string = value.value
-    }
+    string => self.value: string = value
+    u8 => self.value: string = <string>[value]
+    [u8] => self.value: string = <string>value
+    MyString => self.value: string = value.value
   }
 }
 

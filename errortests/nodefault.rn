@@ -14,10 +14,6 @@
 
 // Check that switch without matching case throws an error.
 switch (3) {
-  case 1 {
-    print "one\n"
-  }
-  case 2 {
-    print "two\n"
-  }
+  1 => print "one\n"
+  2 => print "two\n"
 }

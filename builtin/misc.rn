@@ -38,12 +38,8 @@ func chr(x: Int | Uint) -> string {
 // Emulate the Python ord builtin.
 func ord(s: string | u8) {
   typeswitch s {
-    case string {
-      return s[0]
-    }
-    case u8 {
-      return s
-    }
+    string => return s[0]
+    u8 => return s
   }
 }
 
@@ -54,23 +50,15 @@ func ord(s: string | u8) {
 // propagation.
 func issecret(value) -> bool {
   typeswitch value {
-    case typeof(reveal(value)) {
-      return false
-    }
-    case typeof(secret(value)) {
-      return true
-    }
+    typeof(reveal(value)) => return false
+    typeof(secret(value)) => return true
   }
 }
 
 // Determine if the value is signed or not.
 func issigned(value: Int | Uint) {
   typeswitch value {
-    case Int {
-      return true
-    }
-    case Uint {
-      return false
-    }
+    Int => return true
+    Uint => return false
   }
 }

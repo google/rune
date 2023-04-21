@@ -14,18 +14,10 @@
 
 func printValue(n) {
   switch n {
-    case 1 {
-      println "one"
-    }
-    case 2 {
-      println "two"
-    }
-    case 3 {
-      println "three"
-    }
-    default {
-      println "many"
-    }
+    1 => println "one"
+    2 => println "two"
+    3 => println "three"
+    default => println "many"
   }
 }
 

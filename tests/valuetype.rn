@@ -24,15 +24,9 @@ class Integer(self, value) {
 
 func getValueType(value) {
   typeswitch value {
-    case String {
-      return ValueType.String
-    }
-    case Bool {
-      return ValueType.Bool
-    }
-    case Integer {
-      return ValueType.Integer
-    }
+    String => return ValueType.String
+    Bool => return ValueType.Bool
+    Integer => return ValueType.Integer
   }
 }
 
