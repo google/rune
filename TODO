@@ -11,7 +11,6 @@ Use concrete type constraints in binding.  This can help eleminate problems
     in binding recursive functions, and also non-template classes.
 Don't allow generated fields to be written outside of generated code.
 Add an Object class that matches all types, so we can have case (Object, Object, Object).
-Allow cast to be overloaded.
 Defend vs Spectre/Meltdown: duplicate bignum functions in runtime to have constant-time vs
     non-constant time APIs.  Do not pass in a secret bit.
 Figure out how to programatically manipulate labels in generators.
@@ -55,6 +54,7 @@ Add schema-level reuse statements
 Write a schema generator for Rune similar to the dataview program for DataDraw schemas.
 Flush out generator's Rune code interpreter.
 Finish transition to memory pools, and allocation of global arrays with mmap of the memory available on the machine so large arrays never move.
+Add support for 32-bit mode.
 
 ## Long term
 Rewrite Rune in Rune.

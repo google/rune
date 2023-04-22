@@ -64,6 +64,7 @@ static void reportError(deLine line, char *buf) {
   printf("Error: %s\n    ", buf);
   if (line != deLineNull) {
     fputs(deLineGetText(line), stdout);
+    printf("\n");
   }
   if (deCurrentStatement != deStatementNull && deStatementGenerated(deCurrentStatement)) {
     printf("\n    After generation: ");
@@ -683,9 +684,8 @@ void dePrintStack(void) {
         // generator line of text.
         printf("generated statement: ");
         deDumpStatement(statement);
-        printf("\n");
       }
-      printf("%s\n", path);
+      printf("\n%s\n", path);
     }
     signature = deSignatureGetCallSignature(signature);
     prevStatement = statement;

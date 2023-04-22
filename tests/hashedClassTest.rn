@@ -27,6 +27,13 @@
 // limitations under the License.
 
 class Foo(self) {
+  func countBars(self: Foo) {
+    numBars = 0
+    for bar in foo.bars() {
+      numBars += 1
+    }
+    return numBars
+  }
 }
 
 class Bar(self, name: string) {
@@ -72,24 +79,32 @@ alice.destroy()
 assert foo.numBars == 0
 
 // Insert entries.
-numEntries = 100
+numEntries = 256
 for i in range(numEntries) {
   name = "bar%u" % i
   Bar.new(foo, name)
 }
 
 // Delete some randomly.
+numDeleted = 0
 for bar in foo.safeBars() {
   if hashValue(bar.hash()) & 0x1 == 0 {
     bar.destroy()
+    numDeleted += 1
   }
 }
+
+// The universe will reach heat death before this fails.
+assert numDeleted > 0
+assert foo.countBars() == numEntries - numDeleted
 
 // Insert more entries.
 for i in range(numEntries) {
   name = "baz%u" % i
   Bar.new(foo, name)
 }
+
+assert foo.countBars() == numEntries * 2 - numDeleted
 
 // Check the table.
 foo.checkBarTable()

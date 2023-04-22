@@ -1,0 +1,44 @@
+//  Copyright 2023 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import io
+
+func readFile(fileName: string, len: u64 = 0) -> string {
+  file = io.open(fileName, "r")
+  if isnull(file) {
+    throw "Unable to read file ", fileName
+  }
+  return file!.read(len)
+}
+
+func writeFile(fileName: string, data: string) {
+  file = io.open(fileName, "w")
+  if isnull(file) {
+    throw "Unable to write file ", fileName
+  }
+  file!.write(data)
+}
+
+name = "test_data"
+text = "This is a test.\nThis is a second line."
+writeFile(name, text)
+readText = readFile(name)
+if readText != text {
+  throw "Unable to read back text"
+}
+partialText = readFile(name, 15)
+if partialText != text[0:15] {
+  throw "Unable to read back text"
+}
+println "passed"

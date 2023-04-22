@@ -48,6 +48,54 @@ void io_getcwd(runtime_array *array) {
   free(path);
 }
 
+// Return a temp buffer containing the C string representation of the array data.
+// The caller must free the returned string.
+static char *arrayToCstr(runtime_array *array) {
+  size_t len = array->numElements;
+  char *string = malloc(len + 1);
+  memcpy(string, array->data, len);
+  string[len] = '\0';
+  return string;
+}
+
+// Call fopen.
+uint64_t io_file_fopenInternal(runtime_array *fileName, runtime_array *mode) {
+  char *fileNameCstr = arrayToCstr(fileName);
+  char *modeCstr = arrayToCstr(mode);
+  uint64_t result = (uint64_t)(uintptr_t)fopen(fileNameCstr, modeCstr);
+  free(fileNameCstr);
+  free(modeCstr);
+  return result;
+}
+
+// Call fclose
+bool io_file_fcloseInternal(uint64_t ptr) {
+  FILE *file = (FILE*)(uintptr_t)ptr;
+  if (file == NULL) {
+    return false;
+  }
+  return fclose(file) == 0;
+}
+
+// Read into a string buffer from the file, up to the current length of the
+// string.  Return the number of bytes read.
+uint64_t io_file_freadInternal(uint64_t ptr, runtime_array *buf) {
+  uint64_t len = buf->numElements;
+  if (len == 0) {
+    runtime_throwExceptionCstr("Tried to read from file into an empty string");
+  }
+  FILE *file = (FILE*)(uintptr_t)ptr;
+  uint64_t bytesRead = fread(buf->data, 1, len, file);
+  return bytesRead;
+}
+
+// Write the data to the file.
+bool io_file_fwriteInternal(uint64_t ptr, runtime_array *buf) {
+  uint64_t len = buf->numElements;
+  size_t bytesWritten = fwrite(buf->data, 1, len, (FILE*)(uintptr_t)ptr);
+  return bytesWritten == len;
+}
+
 // Return one byte from stdin.
 uint8_t readByte() {
   return getchar();

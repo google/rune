@@ -27,8 +27,8 @@ generator Map(A, B, cascadeDelete = false, labelA = "", labelB = "") {
     func find$B(self, key) {
       for i = 0, i < self.$B_s.length(), i += 1 {
         if self.$B_s[i].key == key {
-	  return self.$B_s[i]
-	}
+          return self.$B_s[i]
+        }
       }
       return null(self.$B_s[0])
     }

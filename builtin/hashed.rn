@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Hash together two values.  This is not ensured to work well vs attacker
+// Hash together two values.  This is not assured to work well vs attacker
 // controlled inputs.  It uses combinations of operators popular in recent
 // hashing algorithms: ARX, meaning ADD, ROTATE, and XOR.  The ADD is
 // implemented with multiplication, which works very well on systems with
@@ -74,6 +74,15 @@ func hashValue(value) -> u64 {
   }
 }
 
+// This is a one-to-many relation generator that adds a hash table between
+// class A and B.  The hash table is always a power of 2, and dynamically grows
+// as needed, when the number of hash table elements equals the size of the
+// table.  The child class B must have a data member matching the value of keyField.
+// No two elements in the hash table can have the same keyField value.
+//
+// This generator embeds a singly-linked list between A and B, which on average
+// will never have more than one element, so the expected insert/remove time is
+// still constant.
 generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
     labelA: string = "", labelB: string = "", keyField: string = "hash", pluralB: string = "") {
   if pluralB == "" {
@@ -90,7 +99,7 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
       hash = hashValue(key) & (self.$labelB$B_Table.length() - 1)
       entry = self.$labelB$B_Table[hash]
       while !isnull(entry) {
-	if key == entry!.$keyField {
+        if key == entry!.$keyField {
           return entry!
         }
         entry = entry!.nextHashed$A$labelB$B
@@ -109,9 +118,9 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
         while !isnull(entry) {
           hash = hashValue(entry!.$keyField) & mask
           if i != hash {
-	    println "Hash table check failed for ", entry!
-	    throw "i = ", i, ", hash = ", hash
-	  }
+            println "Hash table check failed for ", entry!
+            throw "i = ", i, ", hash = ", hash
+          }
           entry = entry!.nextHashed$A$labelB$B
         }
       }
@@ -131,11 +140,11 @@ generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
             rawHash = hashValue(oldEntry!.$keyField)
             newHash = rawHash & newMask
             oldHash = rawHash & oldMask
-	    assert oldHash == i
+            assert oldHash == i
             nextEntry = oldEntry!.nextHashed$A$labelB$B
             if newHash == oldHash {
               prevEntry = oldEntry!
-	    } else {
+            } else {
               // Remove oldEntry.
               if isnull(prevEntry) {
                 self.$labelB$B_Table[i] = nextEntry

@@ -1,4 +1,4 @@
-//  Copyright 2021 Google LLC.
+//  Copyright 2023 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// File I/O utilities.
-use file
+use sym
 
-extern "C" func getcwd() -> string
+use parser
+
+class Keyword(self, parser, name: string) {
+  self.sym = Sym.new(name)
+  parser.insertKeyword(self)
+}
+
+relation Hashed Parser Keyword cascade ("sym")
+
+// Type hint.
+if false {
+  dummyParser = Parser("dummy text")
+  dummyKeyword = Keyword(dummyParser, "dummy")
+}

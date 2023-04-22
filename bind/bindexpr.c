@@ -194,15 +194,28 @@ static deExpressionType opEqualsToOp(deExpressionType op) {
 }
 
 // Find the identifier in the block.  If not found directly, check if it is a
-// class block, and look in its tclass if so.
+// class block, and look in its tclass if so.  Also see if scopeBlock is a
+// package, in which case check in the package sub-module.
 static deIdent findIdentInBlock(deBlock scopeBlock, utSym sym) {
   deIdent ident = deBlockFindIdent(scopeBlock, sym);
-  if (ident == deIdentNull && deBlockGetType(scopeBlock) == DE_BLOCK_CLASS) {
-    deTclass tclass = deClassGetTclass(deBlockGetOwningClass(scopeBlock));
-    deBlock tclassBlock = deFunctionGetSubBlock(deTclassGetFunction(tclass));
-    deIdent tclassIdent = deBlockFindIdent(tclassBlock, sym);
-    if (tclassIdent != deIdentNull && deIdentGetType(tclassIdent) == DE_IDENT_FUNCTION) {
-      ident = tclassIdent;
+  if (ident == deIdentNull) {
+    if (deBlockGetType(scopeBlock) == DE_BLOCK_CLASS) {
+      deTclass tclass = deClassGetTclass(deBlockGetOwningClass(scopeBlock));
+      deBlock tclassBlock = deFunctionGetSubBlock(deTclassGetFunction(tclass));
+      deIdent tclassIdent = deBlockFindIdent(tclassBlock, sym);
+      if (tclassIdent != deIdentNull && deIdentGetType(tclassIdent) == DE_IDENT_FUNCTION) {
+        ident = tclassIdent;
+      }
+    } else if (deBlockGetType(scopeBlock) ==DE_BLOCK_FUNCTION) {
+      deFunction function = deBlockGetOwningFunction(scopeBlock);
+      if (deFunctionGetType(function) == DE_FUNC_PACKAGE) {
+        deIdent packageIdent = deBlockFindIdent(deFunctionGetSubBlock(function),
+            utSymCreate("package"));
+        if (packageIdent != deIdentNull) {
+          deFunction moduleFunc = deIdentGetFunction(packageIdent);
+          ident = deBlockFindIdent(deFunctionGetSubBlock(moduleFunc), sym);
+        }
+      }
     }
   }
   return ident;
@@ -1089,7 +1102,8 @@ static deDatatypeArray findCallDatatypes(deBlock scopeBlock,
     // Add the type of the object on the left of the dot expression as self parameter.
     deDatatype selfType = deExpressionGetDatatype(deExpressionGetFirstExpression(access));
     if (deDatatypeArrayGetUsedDatatype(paramTypes) == 0) {
-      deExprError(access, "Function %s takes no parameters, not even self", deFunctionGetName(function));
+      deExprError(access, "Function %s lacks a self parameter, but is called as a method",
+          deFunctionGetName(function));
     }
     deDatatypeArraySetiDatatype(paramTypes, xParam, selfType);
     xParam++;
@@ -2000,10 +2014,22 @@ void deBindStatement(deBinding binding) {
       deFunction function = deBindingGetTypeFunction(binding);
       deExpression typeExpr = deFunctionGetTypeExpression(function);
       deDatatype datatype = deExpressionGetDatatype(typeExpr);
-      if (deDatatypeConcrete(datatype)) {
-        deSignature signature = deBindingGetSignature(binding);
-        if (signature != deSignatureNull) {
-          updateSignatureReturnType(deBindingGetSignature(binding), datatype);
+      deSignature signature = deBindingGetSignature(binding);
+      if (deDatatypeConcrete(datatype) && signature != deSignatureNull) {
+        updateSignatureReturnType(deBindingGetSignature(binding), datatype);
+      }
+      if (deFunctionExtern(function)) {
+        if (datatype != deDatatypeNull) {
+          datatype = deFindUniqueConcreteDatatype(datatype,typeExpr);
+        }
+        if (datatype == deDatatypeNull || !deDatatypeConcrete(datatype)) {
+          printf("Extern function return type: %s\n", deDatatypeGetTypeString(datatype));
+          deSigError(signature, "Extern function return types must be concrete");
+        }
+        deSignatureSetReturnType(signature, datatype);
+        if (!deSignatureBound(signature)) {
+          deSignatureSetBound(signature, true);
+          deQueueEventBlockedBindings(deSignatureGetReturnEvent(signature));
         }
       }
       break;

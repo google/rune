@@ -34,6 +34,7 @@ void deDumpBlockStr(deString string, deBlock block) {
   deStatement statement;
   deForeachBlockStatement(block, statement) {
     deDumpStatementStr(string, statement);
+    deStringPuts(string, "\n");
   } deEndBlockStatement;
   --deDumpIndentLevel;
   dePrintIndentStr(string);

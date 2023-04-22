@@ -1,0 +1,39 @@
+//  Copyright 2023 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use itemset
+use production
+use tset
+
+class Item(self, itemset: Itemset, production: Production) {
+  self.dotPosition = 0u32
+  self.core = false
+  self.inUpdateList = false
+  self.lookaheadTset = null(tset)
+  itemset.appendItem(self)
+  production.appendItem(self)
+}
+
+relation TailLinked Parser:"Updated" Item:"Updated" cascade
+relation DoublyLinked Itemset Item cascade
+relation DoublyLinked Production Item cascade
+
+// Type hint.
+if false {
+  dummyParser = Parser("test text")
+  rule = Rule(parser)
+  dummyProduction = Production(ule)
+  dummyItemset = Itemset(dummyParser)
+  dummyItem = Item(itemset, production)
+}

@@ -59,9 +59,9 @@ generator HashedClass(A: Class, B: Class, cascadeDelete: bool = false,
         while !isnull(entry) {
           hash = entry!.hash() & mask
           if i != hash {
-	    println "Hash table check failed for ", entry!
-	    throw "i = ", i, ", hash = ", hash
-	  }
+            println "Hash table check failed for ", entry!
+            throw "i = ", i, ", hash = ", hash
+          }
           entry = entry!.nextHashed$A$labelB$B
         }
       }
@@ -81,11 +81,11 @@ generator HashedClass(A: Class, B: Class, cascadeDelete: bool = false,
             rawHash = oldEntry!.hash()
             newHash = rawHash & newMask
             oldHash = rawHash & oldMask
-	    assert oldHash == i
+            assert oldHash == i
             nextEntry = oldEntry!.nextHashed$A$labelB$B
             if newHash == oldHash {
               prevEntry = oldEntry!
-	    } else {
+            } else {
               // Remove oldEntry.
               if isnull(prevEntry) {
                 self.$labelB$B_Table[i] = nextEntry

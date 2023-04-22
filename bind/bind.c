@@ -191,7 +191,7 @@ static void  postProcessAssignment(deExpression expression) {
   }
 }
 
-// Remove the identifier to the right of the dot from the expression queue.  The
+// Remove the identifier to the right of the dot from the binding queue.  The
 // handler for expression dot expressions must bind this once the scope from the
 // expression to the left is bound.
 static void  postProcessDotExpression(deExpression expression) {
@@ -200,7 +200,7 @@ static void  postProcessDotExpression(deExpression expression) {
 }
 
 // Remove the identifier to the left of the named parameter expression from the
-// expression queue.  The handler for expression named parameter expressions must bind
+// binding queue.  The handler for expression named parameter expressions must bind
 // this once the right hand side is bound.
 static void  postProcessNamedParameterExpression(deExpression expression) {
   deExpression identExpression = deExpressionGetFirstExpression(expression);
@@ -221,7 +221,7 @@ static void queueModintExpression(deBinding binding, deExpression modExpr, bool 
   deQueueExpression(binding, child, instantiating, false);
 }
 
-// Queue the expression for expression.
+// Queue the expression for binding.
 void deQueueExpression(deBinding binding, deExpression expression, bool instantiating, bool lhs) {
   deExpressionSetInstantiating(expression, instantiating);
   deExpressionSetLhs(expression, lhs);
@@ -402,16 +402,6 @@ static deDatatype findStructDatatype(deSignature signature) {
 static void updateExternSignature(deSignature signature) {
   deFunction function = deGetSignatureFunction(signature);
   deExpression typeExpr = deFunctionGetTypeExpression(function);
-  if (typeExpr == deExpressionNull) {
-    deSignatureSetReturnType(signature, deNoneDatatypeCreate());
-  } else {
-    deDatatype datatype = deExpressionGetDatatype(typeExpr);
-    if (datatype == deDatatypeNull || !deDatatypeConcrete(datatype)) {
-      printf("Extern function return type: %s\n", deDatatypeGetTypeString(datatype));
-      deSigError(signature, "Extern function return types must be concrete");
-    }
-    deSignatureSetReturnType(signature, datatype);
-  }
   deBlock block = deSignatureGetBlock(signature);
   deVariable var = deBlockGetFirstVariable(block);
   deParamspec param;
@@ -426,9 +416,13 @@ static void updateExternSignature(deSignature signature) {
     deParamspecSetInstantiated(param, true);
     var = deVariableGetNextBlockVariable(var);
   } deEndSignatureParamspec;
-  if (!deSignatureBound(signature)) {
-    deSignatureSetBound(signature, true);
-    deQueueEventBlockedBindings(deSignatureGetReturnEvent(signature));
+  if (typeExpr == deExpressionNull) {
+    // If it exists, we wait until it is bound to set the return type.
+    deSignatureSetReturnType(signature, deNoneDatatypeCreate());
+    if (!deSignatureBound(signature)) {
+      deSignatureSetBound(signature, true);
+      deQueueEventBlockedBindings(deSignatureGetReturnEvent(signature));
+    }
   }
 }
 
@@ -465,7 +459,7 @@ static void verifyCaseTypes(deBlock block) {
   } deEndBlockStatement;
 }
 
-// Once we finish expression a signature, update its paramspecs.
+// Once we finish binding a signature, update its paramspecs.
 static void updateSignature(deSignature signature) {
   deBlock block = deSignatureGetBlock(signature);
   verifyCaseTypes(block);
@@ -509,7 +503,7 @@ static void updateSignature(deSignature signature) {
   }
 }
 
-// Add a signature to the expression queue.
+// Add a signature to the binding queue.
 void deQueueSignature(deSignature signature) {
   if (deSignatureQueued(signature) ||
       (deSignatureBound(signature) && !deSignatureInstantiated(signature))) {

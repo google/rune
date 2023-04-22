@@ -77,7 +77,10 @@ rune: $(OBJS) $(LIBS)
 
 $(OBJS): obj
 
-all: obj rune schema
+all: obj rune schema foo
+
+foo: foo.rn
+	./rune -g foo.rn
 
 lib/libcttk.a:
 	mkdir -p lib
@@ -136,7 +139,7 @@ install: rune
 	install runtime/package.rn $(PREFIX)/lib/rune/runtime
 
 clean:
-	rm -rf obj lib rune */*database.[ch] *.ps parse/descan.c parse/deparse.[ch] rune.log tests/*.ll tests/*.result crypto_class/*.ll crypto_class/*.result errortests/*.ll
+	rm -rf obj lib rune */*database.[ch] *.ps parse/descan.c parse/deparse.[ch] rune.log tests/*.ll tests/*.result crypto_class/*.ll crypto_class/*.result errortests/*.ll test_data
 	for file in tests/*.rn crypto_class/*.rn errortests/*.rn; do exeFile=$$(echo "$$file" | sed 's/.rn$$//'); rm -f "$$exeFile"; done
 	cd runtime ; make clean
 	cd bootstrap/database ; make clean

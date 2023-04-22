@@ -1,4 +1,4 @@
-//  Copyright 2021 Google LLC.
+//  Copyright 2023 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// File I/O utilities.
-use file
+import io
 
-extern "C" func getcwd() -> string
+func readFile(fileName: string, len: u64 = 0) -> string {
+  file = io.open(fileName, "r")
+  if isnull(file) {
+    throw "Unable to read file ", name
+  }
+  return file!.read(len)
+}
+
+name = "tests/fileread.rn"
+println readFile(name)
+println readFile(name, 100)
