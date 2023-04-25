@@ -371,13 +371,13 @@ deDatatypeArray deSignatureGetParameterTypes(deSignature signature) {
 }
 
 // Return an array of datatypes for the signature's template parameters.
-deDatatypeArray deFindSignatureTclassSpec(deSignature signature) {
-  deDatatypeArray tclassSpec = deDatatypeArrayAlloc();
+deDatatypeArray deFindSignatureTemplateParams(deSignature signature) {
+  deDatatypeArray templParams = deDatatypeArrayAlloc();
   deParamspec paramspec;
   deForeachSignatureParamspec(signature, paramspec) {
-    if (deVariableInTclassSignature(deParamspecGetVariable(paramspec))) {
-      deDatatypeArrayAppendDatatype(tclassSpec, deParamspecGetDatatype(paramspec));
+    if (deVariableInTemplateSignature(deParamspecGetVariable(paramspec))) {
+      deDatatypeArrayAppendDatatype(templParams, deParamspecGetDatatype(paramspec));
     }
   } deEndSignatureParamspec;
-  return tclassSpec;
+  return templParams;
 }

@@ -17,14 +17,14 @@
 // Dump a relationship to the end of |string| for debugging.
 void deDumpRelationStr(deString string, deRelation relation) {
   deStringSprintf(string, "relation %s", deGeneratorGetName(deRelationGetGenerator(relation)));
-  deTclass parent = deRelationGetParentTclass(relation);
-  deTclass child = deRelationGetChildTclass(relation);
-  deStringSprintf(string, " %s", deTclassGetName(parent));
+  deTemplate parent = deRelationGetParentTemplate(relation);
+  deTemplate child = deRelationGetChildTemplate(relation);
+  deStringSprintf(string, " %s", deTemplateGetName(parent));
   deString parentLabel = deRelationGetParentLabel(relation);
   if (deStringGetNumText(parentLabel) != 0) {
     deStringSprintf(string, ":%s", deStringGetCstr(parentLabel));
   }
-  deStringSprintf(string, " %s", deTclassGetName(child));
+  deStringSprintf(string, " %s", deTemplateGetName(child));
   deString childLabel = deRelationGetChildLabel(relation);
   if (deStringGetNumText(childLabel) != 0) {
     deStringSprintf(string, ":%s", deStringGetCstr(childLabel));
@@ -49,8 +49,8 @@ void deDumpMemberRelStr(deString string, deMemberRel memberRel) {
   deVariable var = deMemberRelGetVariable(memberRel);
   deClass parentClass = deMemberRelGetParentClass(memberRel);
   deClass childClass = deMemberRelGetChildClass(memberRel);
-  deStringSprintf(string, "member %s.%s -> %s\n", deTclassGetName(deClassGetTclass(parentClass)),
-      deVariableGetName(var), deTclassGetName(deClassGetTclass(childClass)));
+  deStringSprintf(string, "member %s.%s -> %s\n", deTemplateGetName(deClassGetTemplate(parentClass)),
+      deVariableGetName(var), deTemplateGetName(deClassGetTemplate(childClass)));
 }
 
 // Dump a MemberRel object to stdout for debugging.
@@ -64,44 +64,44 @@ void deDumpMemberRel(deMemberRel memberRel) {
 
 // Dump all relations.
 void deDumpRelations(void) {
-  deTclass tclass;
-  deForeachRootTclass(deTheRoot, tclass) {
+  deTemplate templ;
+  deForeachRootTemplate(deTheRoot, templ) {
     deClass theClass;
-    deForeachTclassClass(tclass, theClass) {
+    deForeachTemplateClass(templ, theClass) {
       deMemberRel memberRel;
       deForeachClassChildMemberRel(theClass, memberRel) {
         deDumpMemberRel(memberRel);
       } deEndClassChildMemberRel;
-    } deEndTclassClass;
+    } deEndTemplateClass;
     deRelation relation;
-    deForeachTclassChildRelation(tclass, relation) {
+    deForeachTemplateChildRelation(templ, relation) {
       deDumpRelation(relation);
-    } deEndTclassChildRelation;
-  } deEndRootTclass;
+    } deEndTemplateChildRelation;
+  } deEndRootTemplate;
   fflush(stdout);
 }
 
-// Create a new relationship object between two tclasses.
-deRelation deRelationCreate(deGenerator generator, deTclass parent, deString parentLabel,
-    deTclass child, deString childLabel, bool cascadeDelete) {
+// Create a new relationship object between two templates.
+deRelation deRelationCreate(deGenerator generator, deTemplate parent, deString parentLabel,
+    deTemplate child, deString childLabel, bool cascadeDelete) {
   deRelation relation = deRelationAlloc();
   deRelationSetCascadeDelete(relation, cascadeDelete);
   deRelationSetParentLabel(relation, parentLabel);
   deRelationSetChildLabel(relation, childLabel);
-  deTclassAppendChildRelation(parent, relation);
-  deTclassAppendParentRelation(child, relation);
+  deTemplateAppendChildRelation(parent, relation);
+  deTemplateAppendParentRelation(child, relation);
   deGeneratorAppendRelation(generator, relation);
   return relation;
 }
 
-// Return true if the tclass has a cascade-delete parent relationship.
-static bool tclassHasCascadDeleteParent(deTclass tclass) {
+// Return true if the template has a cascade-delete parent relationship.
+static bool templHasCascadDeleteParent(deTemplate templ) {
   deRelation rel;
-  deForeachTclassParentRelation(tclass, rel) {
+  deForeachTemplateParentRelation(templ, rel) {
     if (deRelationCascadeDelete(rel)) {
       return true;
     }
-  } deEndTclassParentRelation;
+  } deEndTemplateParentRelation;
   return false;
 }
 
@@ -124,7 +124,7 @@ void deAddClassMemberRelations(deClass parentClass) {
       deDatatype datatype = deVariableGetDatatype(var);
       if (deDatatypeGetType(datatype) == DE_TYPE_CLASS) {
         deClass childClass = deDatatypeGetClass(datatype);
-        if (!deTclassRefCounted(deClassGetTclass(childClass))) {
+        if (!deTemplateRefCounted(deClassGetTemplate(childClass))) {
           deError(deVariableGetLine(var), "Viariable %s instantiates a cascade-delete class",
               deVariableGetName(var));
         }
@@ -142,12 +142,12 @@ static void addMemberRels(void) {
   } deEndRootClass;
 }
 
-// Set tclasses that are owned by a cascade-delete relationship as owned.
-static void setRefCountedTclasses(void) {
-  deTclass tclass;
-  deForeachRootTclass(deTheRoot, tclass) {
-    deTclassSetRefCounted(tclass, !tclassHasCascadDeleteParent(tclass));
-  } deEndRootTclass;
+// Set templates that are owned by a cascade-delete relationship as owned.
+static void setRefCountedTemplates(void) {
+  deTemplate templ;
+  deForeachRootTemplate(deTheRoot, templ) {
+    deTemplateSetRefCounted(templ, !templHasCascadDeleteParent(templ));
+  } deEndRootTemplate;
 }
 
 // Check that destuctors for ref-counted classes are never called other than
@@ -159,10 +159,10 @@ static void checkDestroyCalls(void) {
     if (deFunctionGetType(function) == DE_FUNC_DESTRUCTOR) {
       deBlock owningBlock = deFunctionGetBlock(function);
       utAssert(deBlockGetType(owningBlock) == DE_BLOCK_FUNCTION);
-      deFunction tclassFunc = deBlockGetOwningFunction(owningBlock);
-      utAssert(deFunctionGetType(tclassFunc) == DE_FUNC_CONSTRUCTOR);
-      deTclass tclass = deFunctionGetTclass(tclassFunc);
-      if (deTclassRefCounted(tclass)) {
+      deFunction templFunc = deBlockGetOwningFunction(owningBlock);
+      utAssert(deFunctionGetType(templFunc) == DE_FUNC_CONSTRUCTOR);
+      deTemplate templ = deFunctionGetTemplate(templFunc);
+      if (deTemplateRefCounted(templ)) {
         deIdent ident;
         deForeachFunctionIdent(function, ident) {
           deExpression expression;
@@ -170,7 +170,7 @@ static void checkDestroyCalls(void) {
             if (!deStatementGenerated(deFindExpressionStatement(expression))) {
               deError(deExpressionGetLine(expression),
                   "Referenced destroy method ref-counted class %s from non-genereated code",
-                  deTclassGetName(tclass));
+                  deTemplateGetName(templ));
             }
           } deEndIdentExpression;
         } deEndFunctionIdent;
@@ -179,72 +179,72 @@ static void checkDestroyCalls(void) {
   } deEndRootSignature;
 }
 
-// Visite tclasses reachable by traversing only child relationships.  If
-// |targetTclass| is reached, report the loop as an error.
-static bool visitReachableChildTclasses(deTclass targetTclass, deTclass tclass,
-      deTclassArray visitedTclasses) {
-  deTclassSetVisited(tclass, true);
-  deTclassArrayAppendTclass(visitedTclasses, tclass);
+// Visite templates reachable by traversing only child relationships.  If
+// |targetTemplate| is reached, report the loop as an error.
+static bool visitReachableChildTemplates(deTemplate targetTemplate, deTemplate templ,
+      deTemplateArray visitedTemplates) {
+  deTemplateSetVisited(templ, true);
+  deTemplateArrayAppendTemplate(visitedTemplates, templ);
   deRelation rel;
-  deForeachTclassChildRelation(tclass, rel) {
-    deTclass child = deRelationGetChildTclass(rel);
-    if (child == targetTclass) {
+  deForeachTemplateChildRelation(templ, rel) {
+    deTemplate child = deRelationGetChildTemplate(rel);
+    if (child == targetTemplate) {
       printf("Error: Relationship loop contains reference-counted class %s\n",
-          deTclassGetName(targetTclass));
+          deTemplateGetName(targetTemplate));
       deDumpRelation(rel);
       return true;
-    } else if (!deTclassVisited(child) &&
-        visitReachableChildTclasses(targetTclass, child, visitedTclasses)) {
+    } else if (!deTemplateVisited(child) &&
+        visitReachableChildTemplates(targetTemplate, child, visitedTemplates)) {
       deDumpRelation(rel);
       return true;
     }
-  } deEndTclassChildRelation;
+  } deEndTemplateChildRelation;
   deClass parentClass;
-  deForeachTclassClass(tclass, parentClass) {
+  deForeachTemplateClass(templ, parentClass) {
     deMemberRel memberRel;
     deForeachClassChildMemberRel(parentClass, memberRel) {
       deClass childClass = deMemberRelGetChildClass(memberRel);
-      deTclass child = deClassGetTclass(childClass);
-      if (child == targetTclass) {
+      deTemplate child = deClassGetTemplate(childClass);
+      if (child == targetTemplate) {
         printf("Error: Relationship loop contains reference-counted class %s\n",
-               deTclassGetName(targetTclass));
+               deTemplateGetName(targetTemplate));
         deDumpMemberRel(memberRel);
         return true;
-      } else if (!deTclassVisited(child) &&
-          visitReachableChildTclasses(targetTclass, child, visitedTclasses)) {
+      } else if (!deTemplateVisited(child) &&
+          visitReachableChildTemplates(targetTemplate, child, visitedTemplates)) {
         deDumpMemberRel(memberRel);
         return true;
       }
     } deEndClassChildMemberRel;
-  } deEndTclassClass;
+  } deEndTemplateClass;
   return false;
 }
 
-// Clear visited flags on all tclasses in the array.
-static void clearVisitedFlags(deTclassArray visitedTclasses) {
-  deTclass tclass;
-  deForeachTclassArrayTclass(visitedTclasses, tclass) {
-    deTclassSetVisited(tclass, false);
-  } deEndTclassArrayTclass;
+// Clear visited flags on all templates in the array.
+static void clearVisitedFlags(deTemplateArray visitedTemplates) {
+  deTemplate templ;
+  deForeachTemplateArrayTemplate(visitedTemplates, templ) {
+    deTemplateSetVisited(templ, false);
+  } deEndTemplateArrayTemplate;
 }
 
-// Verify the relationship graph.  Mark Tclasses not in cascade-delete
+// Verify the relationship graph.  Mark templates not in cascade-delete
 // relationships as reference-counted.  Generate an error for reference-counted
 // class loops.
 void deVerifyRelationshipGraph(void) {
-  setRefCountedTclasses();
+  setRefCountedTemplates();
   checkDestroyCalls();
   addMemberRels();
-  deTclassArray visitedTclasses = deTclassArrayAlloc();
-  deTclass tclass;
-  deForeachRootTclass(deTheRoot, tclass) {
-    if (deTclassRefCounted(tclass)) {
-      if (visitReachableChildTclasses(tclass, tclass, visitedTclasses)) {
-        deError(deTclassGetLine(tclass),
+  deTemplateArray visitedTemplates = deTemplateArrayAlloc();
+  deTemplate templ;
+  deForeachRootTemplate(deTheRoot, templ) {
+    if (deTemplateRefCounted(templ)) {
+      if (visitReachableChildTemplates(templ, templ, visitedTemplates)) {
+        deError(deTemplateGetLine(templ),
             "To avoid potential memory leaks, consider using cascade-delete relations.");
       }
-      clearVisitedFlags(visitedTclasses);
+      clearVisitedFlags(visitedTemplates);
     }
-  } deEndRootTclass;
-  deTclassArrayFree(visitedTclasses);
+  } deEndRootTemplate;
+  deTemplateArrayFree(visitedTemplates);
 }

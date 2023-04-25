@@ -25,7 +25,7 @@ enum DatatypeType {
   Modint
   Float
   Array
-  Tclass
+  Template
   Class
   Function
   Funcptr
@@ -47,11 +47,6 @@ class Datatype(self, type: DatatypeType) {
   operator ==(self, other: Datatype) {
     return self.type == other.type
   }
-}
-
-// Type hint until we call Datatype constructor.
-if false {
-  datatype = Datatype(DatatypeType.None)
 }
 
 relation HashedClass Root Datatype cascade

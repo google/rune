@@ -428,7 +428,7 @@ classHeader: KWCLASS IDENT optWidth
 {
   deFunction constructor = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_CONSTRUCTOR, $2, DE_LINK_MODULE, $1);
-  deTclassCreate(constructor, $3, $1);
+  deTemplateCreate(constructor, $3, $1);
   deCurrentBlock = deFunctionGetSubBlock(constructor);
 }
 
@@ -448,21 +448,21 @@ exportClassHeader: KWEXPORT KWCLASS IDENT optWidth  // Means the constructor is 
 {
   deFunction constructor = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_CONSTRUCTOR, $3, DE_LINK_PACKAGE, $1);
-  deTclassCreate(constructor, $4, $1);
+  deTemplateCreate(constructor, $4, $1);
   deCurrentBlock = deFunctionGetSubBlock(constructor);
 }
 | KWEXPORTLIB KWCLASS IDENT optWidth  // Means the constructor is a libcall.
 {
   deFunction constructor = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_CONSTRUCTOR, $3, DE_LINK_LIBCALL, $1);
-  deTclassCreate(constructor, $4, $1);
+  deTemplateCreate(constructor, $4, $1);
   deCurrentBlock = deFunctionGetSubBlock(constructor);
 }
 | KWRPC KWCLASS IDENT optWidth  // Means the constructor is an RPC call.
 {
   deFunction constructor = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_CONSTRUCTOR, $3, DE_LINK_RPC, $1);
-  deTclassCreate(constructor, $4, $1);
+  deTemplateCreate(constructor, $4, $1);
   deCurrentBlock = deFunctionGetSubBlock(constructor);
 }
 
@@ -841,10 +841,10 @@ parameter: optVar IDENT optTypeExpression
   }
   deVariable parameter = deVariableCreate(deCurrentBlock, DE_VAR_PARAMETER, $1, $3,
       deExpressionNull, false, $2);
-  deVariableSetInTclassSignature(parameter, true);
-  deTclass tclass = deFunctionGetTclass(deBlockGetOwningFunction(deCurrentBlock));
-  deTclassSetIsTemplate(tclass, true);
-  deTclassSetNumTemplateParams(tclass, deTclassGetNumTemplateParams(tclass) + 1);
+  deVariableSetInTemplateSignature(parameter, true);
+  deTemplate templ = deFunctionGetTemplate(deBlockGetOwningFunction(deCurrentBlock));
+  deTemplateSetIsTemplate(templ, true);
+  deTemplateSetNumTemplateParams(templ, deTemplateGetNumTemplateParams(templ) + 1);
   if ($5 != deExpressionNull) {
     deVariableInsertTypeExpression(parameter, $5);
   }
@@ -1258,7 +1258,7 @@ basicTypeExpression: typePathExpression
 typePathExpression: pathExpression
 | pathExpression  '<' oneOrMoreTypeExpressions '>'
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_TCLASS_SPEC, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_TEMPLATE_INST, $1, $3, $2);
 }
 
 oneOrMoreTypeExpressions: typeExpression
@@ -1674,8 +1674,8 @@ finalHeader: KWFINAL
   if (deFunctionGetType(constructor) != DE_FUNC_CONSTRUCTOR) {
     deError($1, "final(self) functions only allowed inside constructors");
   }
-  deTclass tclass = deFunctionGetTclass(constructor);
-  deTclassSetHasFinalMethod(tclass, true);
+  deTemplate templ = deFunctionGetTemplate(constructor);
+  deTemplateSetHasFinalMethod(templ, true);
   deFunction function = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_PLAIN, utSymCreate("final"), DE_LINK_MODULE, $1);
   deCurrentBlock = deFunctionGetSubBlock(function);

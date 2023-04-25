@@ -56,8 +56,8 @@ char *deDatatypeTypeGetName(deDatatypeType type) {
     return "float";
   case DE_TYPE_ARRAY:
     return "array";
-  case DE_TYPE_TCLASS:
-    return "tclass";
+  case DE_TYPE_TEMPLATE:
+    return "templ";
   case DE_TYPE_CLASS:
     return "class";
   case DE_TYPE_FUNCTION:
@@ -82,14 +82,14 @@ char *deDatatypeTypeGetName(deDatatypeType type) {
 // Every datatype has a class.  For unsigned integers, it is the builtin Uint
 // class, etc.  For classes, the type is itself, which is also true for class
 // versions.
-deTclass deFindDatatypeTclass(deDatatype datatype) {
+deTemplate deFindDatatypeTemplate(deDatatype datatype) {
   deDatatypeType type = deDatatypeGetType(datatype);
-  if (type == DE_TYPE_TCLASS) {
-    return deDatatypeGetTclass(datatype);
+  if (type == DE_TYPE_TEMPLATE) {
+    return deDatatypeGetTemplate(datatype);
   } else if (type == DE_TYPE_CLASS) {
-    return deClassGetTclass(deDatatypeGetClass(datatype));
+    return deClassGetTemplate(deDatatypeGetClass(datatype));
   }
-  return deFindTypeTclass(type);
+  return deFindTypeTemplate(type);
 }
 
 // Create a datatype of type DE_TYPE_NONE.  Making it unique comes later.
@@ -119,8 +119,8 @@ deDatatype copyDatatype(deDatatype datatype) {
     case DE_TYPE_FUNCPTR:
       deDatatypeSetReturnType(copy, deDatatypeGetReturnType(datatype));
       break;
-    case DE_TYPE_TCLASS:
-      deDatatypeSetTclass(copy, deDatatypeGetTclass(datatype));
+    case DE_TYPE_TEMPLATE:
+      deDatatypeSetTemplate(copy, deDatatypeGetTemplate(datatype));
       break;
     case DE_TYPE_CLASS:
       deDatatypeSetClass(copy, deDatatypeGetClass(datatype));
@@ -153,8 +153,8 @@ static uint32 hashDatatype(deDatatype datatype) {
     case DE_TYPE_FUNCPTR:
       hash = utHashValues(hash, deDatatype2Index(deDatatypeGetReturnType(datatype)));
       break;
-    case DE_TYPE_TCLASS:
-      hash = utHashValues(hash, deTclass2Index(deDatatypeGetTclass(datatype)));
+    case DE_TYPE_TEMPLATE:
+      hash = utHashValues(hash, deTemplate2Index(deDatatypeGetTemplate(datatype)));
       break;
     case DE_TYPE_CLASS:
       hash = utHashValues(hash, deClass2Index(deDatatypeGetClass(datatype)));
@@ -197,8 +197,8 @@ static bool datatypesAreIdentical(deDatatype datatype1, deDatatype datatype2) {
         return false;
       }
       break;
-    case DE_TYPE_TCLASS:
-      if (deDatatypeGetTclass(datatype1) != deDatatypeGetTclass(datatype2)) {
+    case DE_TYPE_TEMPLATE:
+      if (deDatatypeGetTemplate(datatype1) != deDatatypeGetTemplate(datatype2)) {
         return false;
       }
       break;
@@ -372,10 +372,10 @@ deDatatype deArrayDatatypeCreate(deDatatype elementType) {
   return addToHashTable(datatype);
 }
 
-// Create a tclass datatype.  If it already exists, return the old one.
-deDatatype deTclassDatatypeCreate(deTclass tclass) {
-  deDatatype datatype = datatypeCreate(DE_TYPE_TCLASS, deTclassGetRefWidth(tclass), false);
-  deDatatypeSetTclass(datatype, tclass);
+// Create a template datatype.  If it already exists, return the old one.
+deDatatype deTemplateDatatypeCreate(deTemplate templ) {
+  deDatatype datatype = datatypeCreate(DE_TYPE_TEMPLATE, deTemplateGetRefWidth(templ), false);
+  deDatatypeSetTemplate(datatype, templ);
   return addToHashTable(datatype);
 }
 
@@ -385,29 +385,29 @@ deDatatype deClassDatatypeCreate(deClass theClass) {
   if (datatype != deDatatypeNull) {
     return datatype;
   }
-  utAssert(!deTclassIsTemplate(deClassGetTclass(theClass)));
+  utAssert(!deTemplateIsTemplate(deClassGetTemplate(theClass)));
   datatype = datatypeCreate(DE_TYPE_CLASS, deClassGetRefWidth(theClass), true);
   deDatatypeSetClass(datatype, theClass);
   return addToHashTable(datatype);
 }
 
-// Ceate a class from the template spec.  |tclassSpec| is freed.
-deDatatype deClassDatatypeCreateFromSpec(deClass theClass, deDatatypeArray tclassSpec) {
+// Create a class from the template parameters.  |tclassParams| is freed.
+deDatatype deClassDatatypeCreateFromParams(deClass theClass, deDatatypeArray templParams) {
   utAssert(deClassGetDatatype(theClass) == deDatatypeNull);
-  uint32 numTypes = deDatatypeArrayGetUsedDatatype(tclassSpec);
+  uint32 numTypes = deDatatypeArrayGetUsedDatatype(templParams);
   utAssert(numTypes != 0);
   deDatatype datatype = deClassGetDatatype(theClass);
   if (datatype != deDatatypeNull) {
     return datatype;
   }
-  deTclass tclass = deClassGetTclass(theClass);
-  if (!deTclassIsTemplate(tclass)) {
-    return deClassDatatypeCreate(deTclassGetDefaultClass(tclass));
+  deTemplate templ = deClassGetTemplate(theClass);
+  if (!deTemplateIsTemplate(templ)) {
+    return deClassDatatypeCreate(deTemplateGetDefaultClass(templ));
   }
   datatype = datatypeCreate(DE_TYPE_CLASS, deClassGetRefWidth(theClass), true);
   if (numTypes != 0) {
     deDatatypeResizeTypeLists(datatype, numTypes);
-    memcpy(deDatatypeGetTypeLists(datatype), deDatatypeArrayGetDatatypes(tclassSpec),
+    memcpy(deDatatypeGetTypeLists(datatype), deDatatypeArrayGetDatatypes(templParams),
            numTypes * sizeof(deDatatype));
   }
   deDatatypeSetClass(datatype, theClass);
@@ -433,8 +433,8 @@ deDatatype deFunctionDatatypeCreate(deFunction function) {
     case DE_FUNC_ENUM:
       return deEnumClassDatatypeCreate(function);
     case DE_FUNC_CONSTRUCTOR: {
-      deTclass tclass = deFunctionGetTclass(function);
-      return deTclassDatatypeCreate(tclass);
+      deTemplate templ = deFunctionGetTemplate(function);
+      return deTemplateDatatypeCreate(templ);
     }
     case DE_FUNC_OPERATOR:
       utExit("Operators don't have idents");
@@ -541,7 +541,7 @@ deDatatype deSetDatatypeNullable(deDatatype datatype, bool nullable) {
     return datatype;
   }
   deDatatypeType type = deDatatypeGetType(datatype);
-  if (type != DE_TYPE_CLASS && type != DE_TYPE_TCLASS) {
+  if (type != DE_TYPE_CLASS && type != DE_TYPE_TEMPLATE) {
     return datatype;
   }
   deDatatype nullableDatatype = copyDatatype(datatype);
@@ -683,9 +683,9 @@ char *deDatatypeGetDefaultValueString(deDatatype datatype) {
     case DE_TYPE_ARRAY:
       return utSprintf("[%s]", deDatatypeGetDefaultValueString(deDatatypeGetElementType(datatype)));
     case DE_TYPE_CLASS: {
-      deTclass tclass = deClassGetTclass(deDatatypeGetClass(datatype));
+      deTemplate templ = deClassGetTemplate(deDatatypeGetClass(datatype));
       return utSprintf("<%s%s>0u%u", deDatatypeGetTypeString(datatype),
-          deTclassIsTemplate(tclass)? " " : "", deTclassGetRefWidth(tclass));
+          deTemplateIsTemplate(templ)? " " : "", deTemplateGetRefWidth(templ));
     }
     case DE_TYPE_FUNCPTR:
       return getFuncptrDefaultValue(datatype);
@@ -702,8 +702,8 @@ char *deDatatypeGetDefaultValueString(deDatatype datatype) {
       return utSprintf("func %s", deFunctionGetName(deDatatypeGetFunction(datatype)));
     case DE_TYPE_EXPR:
       utExit("Not expecting an expr value");
-    case DE_TYPE_TCLASS:
-      utExit("Not expecting a tclass to have a default value");
+    case DE_TYPE_TEMPLATE:
+      utExit("Not expecting a templ to have a default value");
   }
   return "";  // Dummy return
 }
@@ -712,16 +712,16 @@ char *deDatatypeGetDefaultValueString(deDatatype datatype) {
 static char *getClassTypeString(deDatatype datatype) {
   deClass theClass = deDatatypeGetClass(datatype);
   char *name = deGetBlockPath(deClassGetSubBlock(theClass), false);
-  deTclass tclass = deClassGetTclass(theClass);
-  if (deTclassIsTemplate(tclass)) {
+  deTemplate templ = deClassGetTemplate(theClass);
+  if (deTemplateIsTemplate(templ)) {
     name = utSprintf("%s<", name);
-    deBlock block = deFunctionGetSubBlock(deTclassGetFunction(tclass));
+    deBlock block = deFunctionGetSubBlock(deTemplateGetFunction(templ));
     bool firstTime = true;
     bool lastWasTemplate = false;
     uint32_t xPos = 0;
     deVariable var;
     deForeachBlockVariable(block, var) {
-      if (deVariableInTclassSignature(var)) {
+      if (deVariableInTemplateSignature(var)) {
         if (!firstTime) {
           name = utSprintf("%s, ", name);
         }
@@ -766,7 +766,7 @@ static char *getEnumClassTypeString(deDatatype datatype) {
 }
 
 // Return a Rune formatted type string corresponding to this datatype.  The
-// datatype must be instantiatable, meaning Class, not Tclass.
+// datatype must be instantiatable, meaning Class, not Template.
 char *deDatatypeGetTypeString(deDatatype datatype) {
   if (datatype == deDatatypeNull) {
     return "<null datatype>";
@@ -801,12 +801,12 @@ char *deDatatypeGetTypeString(deDatatype datatype) {
     case DE_TYPE_ENUMCLASS:
     case DE_TYPE_ENUM:
       return getEnumClassTypeString(datatype);
-    case DE_TYPE_TCLASS: {
-      deTclass tclass = deDatatypeGetTclass(datatype);
-      deFunction function = deTclassGetFunction(tclass);
+    case DE_TYPE_TEMPLATE: {
+      deTemplate templ = deDatatypeGetTemplate(datatype);
+      deFunction function = deTemplateGetFunction(templ);
       deBlock block = deFunctionGetSubBlock(function);
       char *name = deGetBlockPath(block, false);
-      return utSprintf("<tclass %s>", name);
+      return utSprintf("<templ %s>", name);
     }
     case DE_TYPE_FUNCTION:
       return utSprintf("func %s", deFunctionGetName(deDatatypeGetFunction(datatype)));
@@ -857,12 +857,12 @@ static bool datatypeMatchesIdentExpression(deBlock scopeBlock, deDatatype dataty
       if (deDatatypeNullable(datatype)) {
         return false;
       }
-      deTclass tclass = deFunctionGetTclass(deIdentGetFunction(ident));
-      if (tclass == deClassTclass) {
+      deTemplate templ = deFunctionGetTemplate(deIdentGetFunction(ident));
+      if (templ == deClassTemplate) {
         // The point of "Class" is matching all class objects.
         return true;
       }
-      return deFindDatatypeTclass(datatype) == tclass;
+      return deFindDatatypeTemplate(datatype) == templ;
     } else if (type == DE_FUNC_STRUCT) {
       if (deDatatypeGetType(datatype) != DE_TYPE_STRUCT) {
         return false;
@@ -953,11 +953,11 @@ bool deDatatypeMatchesTypeExpression(deBlock scopeBlock, deDatatype datatype,
       if (datatype == constraintType) {
         return true;
       }
-      if (deDatatypeGetType(constraintType) != DE_TYPE_TCLASS) {
+      if (deDatatypeGetType(constraintType) != DE_TYPE_TEMPLATE) {
         deError(line, "Invalid constraint type %s", deDatatypeGetTypeString(constraintType));
       }
-      deTclass tclass = deDatatypeGetTclass(constraintType);
-      return deFindDatatypeTclass(datatype) == tclass;
+      deTemplate templ = deDatatypeGetTemplate(constraintType);
+      return deFindDatatypeTemplate(datatype) == templ;
     }
     case DE_EXPR_UINTTYPE:
       return datatype == deSetDatatypeSecret(deUintDatatypeCreate(
@@ -1012,7 +1012,7 @@ static deDatatype unifyTupleDatatypes(deDatatype datatype1, deDatatype datatype2
 }
 
 // Unify two datatypes.  A NULL datatype unifies to the other class type, if
-// they have the same tclasses.
+// they have the same template.
 deDatatype deUnifyDatatypes(deDatatype datatype1, deDatatype datatype2) {
   if (datatype1 == datatype2) {
     return datatype1;
@@ -1109,7 +1109,7 @@ deSecretType deFindDatatypeSectype(deDatatype datatype) {
     case DE_TYPE_FUNCPTR:
     case DE_TYPE_FUNCTION:
     case DE_TYPE_CLASS:
-    case DE_TYPE_TCLASS:
+    case DE_TYPE_TEMPLATE:
     case DE_TYPE_MODINT:
     case DE_TYPE_EXPR:
       utExit("Unexpected datatype in RPC call");
@@ -1128,18 +1128,19 @@ deDatatypeArray deCopyDatatypeArray(deDatatypeArray datatypes) {
 }
 
 // Determine if the datatype represents a template.  Returns true for template
-// tclass datatypes and also class datatypes of template tclasses.
+// datatypes and also class datatypes of templates that have template
+// parameters.
 bool deDatatypeIsTemplate(deDatatype datatype) {
-  deTclass tclass = deTclassNull;
+  deTemplate templ = deTemplateNull;
   deDatatypeType type = deDatatypeGetType(datatype);
   if (type == DE_TYPE_CLASS) {
-    tclass = deClassGetTclass(deDatatypeGetClass(datatype));
-  } else if (type == DE_TYPE_TCLASS) {
-    tclass = deDatatypeGetTclass(datatype);
+    templ = deClassGetTemplate(deDatatypeGetClass(datatype));
+  } else if (type == DE_TYPE_TEMPLATE) {
+    templ = deDatatypeGetTemplate(datatype);
   } else {
     return false;
   }
-  return deTclassIsTemplate(tclass);
+  return deTemplateIsTemplate(templ);
 }
 
 // Find a concrete datatype for the function if it is unique.  Functions
@@ -1166,8 +1167,8 @@ static deDatatype findUniqueConcreteArrayDatatype(deDatatype datatype, deExpress
 }
 
 // Find a concrete datatype for the array if it is unique.
-static deDatatype findUniqueConcreteTclassDatatype(deDatatype datatype) {
-  deClass defaultClass = deTclassGetDefaultClass(deDatatypeGetTclass(datatype));
+static deDatatype findUniqueConcreteTemplateDatatype(deDatatype datatype) {
+  deClass defaultClass = deTemplateGetDefaultClass(deDatatypeGetTemplate(datatype));
   if (defaultClass == deClassNull) {
     return deDatatypeNull;
   }
@@ -1197,7 +1198,7 @@ static deDatatype findUniqueConcreteStructDatatype(deDatatype datatype) {
 }
 
 // Allow users to specify simpler type constraints when an abstract type has
-// only one possible concrete type.  For example a template class (Tclass) with
+// only one possible concrete type.  For example a template class (Template) with
 // no template parameters has only one possible class instantiation.  Instead of
 // having users specify "point: typeof(Point(i32, i32))", allow them to use
 // "point: Point".  This is helpful in specifying functions/methods/RPCs which
@@ -1213,8 +1214,8 @@ deDatatype deFindUniqueConcreteDatatype(deDatatype datatype, deExpression expres
     return findUniqueConcreteFunctionDatatype(datatype);
   case DE_TYPE_ARRAY:
     return findUniqueConcreteArrayDatatype(datatype, expression);
-  case DE_TYPE_TCLASS:
-    return findUniqueConcreteTclassDatatype(datatype);
+  case DE_TYPE_TEMPLATE:
+    return findUniqueConcreteTemplateDatatype(datatype);
   case DE_TYPE_TUPLE:
     return findUniqueConcreteTupleDatatype(datatype, expression);
   case DE_TYPE_STRUCT:

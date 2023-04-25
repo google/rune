@@ -159,29 +159,31 @@ static inline bool deFunctionIsRpc(deFunction function) {
   return linkage == DE_LINK_RPC || linkage == DE_LINK_EXTERN_RPC;
 }
 
-// Tclass and Class methods.
+// Template and Class methods.
 void deClassStart(void);
 void deClassStop(void);
-deTclass deTclassCreate(deFunction constructor, uint32 refWidth, deLine line);
-void deDumpTclass(deTclass tclass);
-void deDumpTclassStr(deString string, deTclass tclass);
-deClass deClassCreate(deTclass tclass, deSignature signature);
-deClass deTclassGetDefaultClass(deTclass tclass);
-deTclass deCopyTclass(deTclass tclass, deFunction destConstructor);
+deTemplate deTemplateCreate(deFunction constructor, uint32 refWidth,
+                            deLine line);
+void deDumpTemplate(deTemplate templ);
+void deDumpTemplateStr(deString string, deTemplate templ);
+deClass deClassCreate(deTemplate templ, deSignature signature);
+deClass deTemplateGetDefaultClass(deTemplate templ);
+deTemplate deCopyTemplate(deTemplate templ, deFunction destConstructor);
 void deGenerateDefaultMethods(deClass theClass);
 deFunction deGenerateDefaultToStringMethod(deClass theClass);
 deFunction deGenerateDefaultShowMethod(deClass theClass);
 deFunction deClassFindMethod(deClass theClass, utSym methodSym);
-deClass deTclassFindClassFromSpec(deTclass tclass, deDatatypeArray tclassSpec);
-void deDestroyTclassContents(deTclass tclass);
-static inline utSym deTclassGetSym(deTclass tclass) {
-  return deFunctionGetSym(deTclassGetFunction(tclass));
+deClass deTemplateFindClassFromParams(deTemplate templ,
+                                      deDatatypeArray templParams);
+void deDestroyTemplateContents(deTemplate templ);
+static inline utSym deTemplateGetSym(deTemplate templ) {
+  return deFunctionGetSym(deTemplateGetFunction(templ));
 }
-static inline char *deTclassGetName(deTclass tclass) {
-  return deFunctionGetName(deTclassGetFunction(tclass));
+static inline char *deTemplateGetName(deTemplate templ) {
+  return deFunctionGetName(deTemplateGetFunction(templ));
 }
-static inline bool deTclassBuiltin(deTclass tclass) {
-  return deFunctionBuiltin(deTclassGetFunction(tclass));
+static inline bool deTemplateBuiltin(deTemplate templ) {
+  return deFunctionBuiltin(deTemplateGetFunction(templ));
 }
 
 // Generator methods.
@@ -336,9 +338,10 @@ deDatatype deIntDatatypeCreate(uint32 width);
 deDatatype deModintDatatypeCreate(deExpression modulus);
 deDatatype deFloatDatatypeCreate(uint32 width);
 deDatatype deArrayDatatypeCreate(deDatatype elementType);
-deDatatype deTclassDatatypeCreate(deTclass tclass);
+deDatatype deTemplateDatatypeCreate(deTemplate templ);
 deDatatype deClassDatatypeCreate(deClass theClass);
-deDatatype deClassDatatypeCreateFromSpec(deClass theClass, deDatatypeArray tclassSpec);
+deDatatype deClassDatatypeCreateFromParams(deClass theClass,
+                                           deDatatypeArray templParams);
 deDatatype deFunctionDatatypeCreate(deFunction function);
 deDatatype deFuncptrDatatypeCreate(deDatatype returnType, deDatatypeArray parameterTypes);
 deDatatype deTupleDatatypeCreate(deDatatypeArray types);
@@ -350,7 +353,7 @@ deDatatype deSetDatatypeSecret(deDatatype datatype, bool secret);
 deDatatype deSetDatatypeNullable(deDatatype datatype, bool nullable);
 deDatatype deDatatypeResize(deDatatype datatype, uint32 width);
 deDatatype deDatatypeSetSigned(deDatatype datatype, bool isSigned);
-deTclass deFindDatatypeTclass(deDatatype datatype);
+deTemplate deFindDatatypeTemplate(deDatatype datatype);
 char *deDatatypeTypeGetName(deDatatypeType type);
 char *deDatatypeGetDefaultValueString(deDatatype datatype);
 char *deDatatypeGetTypeString(deDatatype datatype);
@@ -358,7 +361,8 @@ bool deDatatypeMatchesTypeExpression(deBlock scopeBlock, deDatatype datatype,
     deExpression typeExpression);
 deDatatype deArrayDatatypeGetBaseDatatype(deDatatype datatype);
 uint32 deArrayDatatypeGetDepth(deDatatype datatype);
-deDatatype deFindUniqueConcreteDatatype(deDatatype datatype, deExpression expression);
+deDatatype deFindUniqueConcreteDatatype(deDatatype datatype,
+                                        deExpression expression);
 deSecretType deFindDatatypeSectype(deDatatype datatype);
 deSecretType deCombineSectypes(deSecretType a, deSecretType b);
 bool deDatatypeIsTemplate(deDatatype datatype);
@@ -394,7 +398,7 @@ void deDumpSignature(deSignature signature);
 void deDumpSignatureStr(deString string, deSignature signature);
 void deDumpParamspec(deParamspec paramspec);
 void deDumpParamspecStr(deString string, deParamspec paramspec);
-deDatatypeArray deFindSignatureTclassSpec(deSignature signature);
+deDatatypeArray deFindSignatureTemplateParams(deSignature signature);
 deBlock deSignatureGetBlock(deSignature signature);
 static inline deFunction deGetSignatureFunction(deSignature signature) {
   deFunction function = deSignatureGetUniquifiedFunction(signature);
@@ -416,7 +420,7 @@ deValue deIntegerValueCreate(deBigint bigint);
 deValue deFloatValueCreate(deFloat theFloat);
 deValue deBoolValueCreate(bool value);
 deValue deStringValueCreate(deString string);
-deValue deTclassValueCreate(deTclass tclass);
+deValue deTemplateValueCreate(deTemplate templ);
 deValue deClassValueCreate(deClass theClass);
 deValue deFunctionValueCreate(deFunction function);
 deValue deExpressionValueCreate(deExpression expression);
@@ -429,12 +433,13 @@ void deDumpValueStr(deString string, deValue value);
 // Builtin classes.
 void deBuiltinStart(void);
 void deBuiltinStop(void);
-deTclass deFindTypeTclass(deDatatypeType type);
+deTemplate deFindTypeTemplate(deDatatypeType type);
 deDatatype deBindBuiltinCall(deBlock scopeBlock, deFunction function,
     deDatatypeArray parameterTypes, deExpression expression);
-extern deTclass deArrayTclass, deFuncptrTclass, deFunctionTclass, deBoolTclass,
-    deStringTclass, deUintTclass, deIntTclass, deModintTclass, deFloatTclass,
-    deTupleTclass, deStructTclass, deEnumTclass, deClassTclass;
+extern deTemplate deArrayTemplate, deFuncptrTemplate, deFunctionTemplate,
+    deBoolTemplate, deStringTemplate, deUintTemplate, deIntTemplate,
+    deModintTemplate, deFloatTemplate, deTupleTemplate, deStructTemplate,
+    deEnumTemplate, deClassTemplate;
 
 // String methods.  Strings are uniquified and stored in a hash table.  To use a
 // string as a buffer, call deStringAlloc, and later deStringFree.
@@ -458,8 +463,9 @@ deLine deLineCreate(deFilepath filepath, char *buf, uint32 len, uint32 lineNum);
 void deDumpLine(deLine line);
 
 // Relation methods.
-deRelation deRelationCreate(deGenerator generator, deTclass parent, deString parentLabel,
-    deTclass child, deString childLabel, bool cascadeDelete);
+deRelation deRelationCreate(deGenerator generator, deTemplate parent,
+                            deString parentLabel, deTemplate child,
+                            deString childLabel, bool cascadeDelete);
 void deAddClassMemberRelations(deClass parentClass);
 void deDumpMemberRel(deMemberRel memberRel);
 void deDumpMemberRelStr(deString string, deMemberRel memberRel);
@@ -495,8 +501,8 @@ char *deGetBlockPath(deBlock block, bool as_label);
 char *deGetSignaturePath(deSignature signature);
 char *deGetPathExpressionPath(deExpression pathExpression);
 void deError(deLine line, char *format, ...);
-void deExprError(deExpression expression, char* format, ...);
-void deSigError(deSignature signature, char* format, ...);
+void deExprError(deExpression expression, char *format, ...);
+void deSigError(deSignature signature, char *format, ...);
 void deSetStackTraceGlobals(deExpression expression);
 void deReportError(deLine line, char *format, ...);
 void dePrintStack(void);

@@ -37,7 +37,7 @@ static void checkExpressionIsPrintable(deExpression expression) {
   case DE_TYPE_ENUMCLASS:
   case DE_TYPE_ENUM:
   case DE_TYPE_ARRAY:
-  case DE_TYPE_TCLASS:
+  case DE_TYPE_TEMPLATE:
   case DE_TYPE_CLASS:
     break;
   case DE_TYPE_MODINT:

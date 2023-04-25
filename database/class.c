@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Tclasses are templates.  Every class in Rune is a template.  Tclasses are
-// called, just like functions, and each class signature results in a new
-// constructor, but not always a new class type (class version, or Class).  The
-// class type is bound to the types of the self.<variable> assignments made by
-// the call to the constructor.  If the member type signature is different, it's
-// a different class version.
+// Every class in Rune has a template, even when there are no template
+// parameters.  Templates are called, just like functions, and each class
+// signature results in a new constructor, but not always a new class type
+// (class version, or Class).  The class type is bound to the types of the
+// self.<variable> assignments made by the call to the constructor.  If the
+// member type signature is different, it's a different class version.
 //
 // The returned datatype from a constructor points to the Class, not the
 // class.  The generated class is not in the namespace.  It's variables are the
@@ -46,32 +46,32 @@ void deClassStop(void) {
 }
 
 // Dump the class to the end of |string| for debugging purposes.
-void deDumpTclassStr(deString string, deTclass tclass) {
+void deDumpTemplateStr(deString string, deTemplate templ) {
   dePrintIndentStr(string);
-  deStringSprintf(string, "class %s (0x%x) {\n", deTclassGetName(tclass), deTclass2Index(tclass));
+  deStringSprintf(string, "class %s (0x%x) {\n", deTemplateGetName(templ), deTemplate2Index(templ));
   deDumpIndentLevel++;
-  deDumpBlockStr(string, deFunctionGetSubBlock(deTclassGetFunction(tclass)));
+  deDumpBlockStr(string, deFunctionGetSubBlock(deTemplateGetFunction(templ)));
   --deDumpIndentLevel;
   dePrintIndentStr(string);
   deStringPuts(string, "}\n");
 }
 
 // Dump the class to stdout for debugging purposes.
-void deDumpTclass(deTclass tclass) {
+void deDumpTemplate(deTemplate templ) {
   deString string = deMutableStringCreate();
-  deDumpTclassStr(string, tclass);
+  deDumpTemplateStr(string, templ);
   printf("%s", deStringGetCstr(string));
   fflush(stdout);
   deStringDestroy(string);
 }
 
-// Add the destroy method to the tclass.  By default, it just deletes the
+// Add the destroy method to the template.  By default, it just deletes the
 // object, but code generators will be able to add more to it.
-static void addDestroyMethod(deTclass tclass) {
-  deBlock classBlock = deFunctionGetSubBlock(deTclassGetFunction(tclass));
+static void addDestroyMethod(deTemplate templ) {
+  deBlock classBlock = deFunctionGetSubBlock(deTemplateGetFunction(templ));
   deLine line = deBlockGetLine(classBlock);
   utSym funcName = utSymCreate("destroy");
-  deLinkage linkage = deFunctionGetLinkage(deTclassGetFunction(tclass));
+  deLinkage linkage = deFunctionGetLinkage(deTemplateGetFunction(templ));
   deFunction function = deFunctionCreate(deBlockGetFilepath(classBlock), classBlock,
       DE_FUNC_DESTRUCTOR, funcName, linkage, line);
   deBlock functionBlock = deFunctionGetSubBlock(function);
@@ -80,23 +80,23 @@ static void addDestroyMethod(deTclass tclass) {
   deVariableCreate(functionBlock, DE_VAR_PARAMETER, true, paramName, deExpressionNull, false, line);
 }
 
-// Create a new class object.  Add a destroy method.  The tclass is a child of
+// Create a new class object.  Add a destroy method.  The template is a child of
 // its constructor function, essentially implementing inheritance through
 // composition.
-deTclass deTclassCreate(deFunction constructor, uint32 refWidth, deLine line) {
-  deTclass tclass = deTclassAlloc();
-  deTclassSetRefWidth(tclass, refWidth);
-  deTclassSetLine(tclass, line);
-  deFunctionInsertTclass(constructor, tclass);
+deTemplate deTemplateCreate(deFunction constructor, uint32 refWidth, deLine line) {
+  deTemplate templ = deTemplateAlloc();
+  deTemplateSetRefWidth(templ, refWidth);
+  deTemplateSetLine(templ, line);
+  deFunctionInsertTemplate(constructor, templ);
   if (!deFunctionBuiltin(constructor)) {
-    addDestroyMethod(tclass);
+    addDestroyMethod(templ);
   }
-  deRootAppendTclass(deTheRoot, tclass);
-  return tclass;
+  deRootAppendTemplate(deTheRoot, templ);
+  return templ;
 }
 
 // Determine if two signatures generate the same theClass.  This is true if the
-// types for variables in the class constructor marked inTclassSignature have the
+// types for variables in the class constructor marked inTemplateSignature have the
 // same type.
 static bool classSignaturesMatch(deSignature newSignature, deSignature oldSignature) {
   deFunction constructor = deSignatureGetFunction(newSignature);
@@ -107,7 +107,7 @@ static bool classSignaturesMatch(deSignature newSignature, deSignature oldSignat
     if (deVariableGetType(parameter) != DE_VAR_PARAMETER) {
       return true;
     }
-    if (deVariableInTclassSignature(parameter)) {
+    if (deVariableInTemplateSignature(parameter)) {
       deDatatype newDatatype = deSignatureGetiType(newSignature, xParam);
       deDatatype oldDatatype = deSignatureGetiType(oldSignature, xParam);
       if (newDatatype != oldDatatype) {
@@ -123,104 +123,105 @@ static bool classSignaturesMatch(deSignature newSignature, deSignature oldSignat
 // variables that are in the class signature.
 // TODO: consider speeding this up with a hash table.
 deClass findExistingClass(deSignature signature) {
-  deTclass tclass = deFunctionGetTclass(deSignatureGetFunction(signature));
-  if (!deTclassIsTemplate(tclass)) {
-    return deTclassGetFirstClass(tclass);
+  deTemplate templ = deFunctionGetTemplate(deSignatureGetFunction(signature));
+  if (!deTemplateIsTemplate(templ)) {
+    return deTemplateGetFirstClass(templ);
   }
   deClass theClass;
-  deForeachTclassClass(tclass, theClass) {
+  deForeachTemplateClass(templ, theClass) {
     deSignature otherSignature = deClassGetFirstSignature(theClass);
     if (classSignaturesMatch(signature, otherSignature)) {
       return theClass;
     }
-  } deEndTclassClass;
+  } deEndTemplateClass;
   return deClassNull;
 }
 
 // Create a new class object.
-static deClass classCreate(deTclass tclass) {
+static deClass classCreate(deTemplate templ) {
   deClass theClass = deClassAlloc();
-  uint32 numClass = deTclassGetNumClasses(tclass) + 1;
+  uint32 numClass = deTemplateGetNumClasses(templ) + 1;
   deClassSetNumber(theClass, numClass);
-  deClassSetRefWidth(theClass, deTclassGetRefWidth(tclass));
-  deTclassSetNumClasses(tclass, numClass);
-  deFunction constructor = deTclassGetFunction(tclass);
+  deClassSetRefWidth(theClass, deTemplateGetRefWidth(templ));
+  deTemplateSetNumClasses(templ, numClass);
+  deFunction constructor = deTemplateGetFunction(templ);
   deFilepath filepath = deBlockGetFilepath(deFunctionGetSubBlock(constructor));
-  deBlock subBlock = deBlockCreate(filepath, DE_BLOCK_CLASS, deTclassGetLine(tclass));
+  deBlock subBlock = deBlockCreate(filepath, DE_BLOCK_CLASS, deTemplateGetLine(templ));
   deClassInsertSubBlock(theClass, subBlock);
-  deTclassAppendClass(tclass, theClass);
+  deTemplateAppendClass(templ, theClass);
   // Create a nextFree variable.
   deVariable nextFree = deVariableCreate(subBlock, DE_VAR_LOCAL, false, utSymCreate("nextFree"),
       deExpressionNull, true, 0);
-  deVariableSetDatatype(nextFree, deUintDatatypeCreate(deTclassGetRefWidth(tclass)));
+  deVariableSetDatatype(nextFree, deUintDatatypeCreate(deTemplateGetRefWidth(templ)));
   deVariableSetInstantiated(nextFree, true);
   deRootAppendClass(deTheRoot, theClass);
   return theClass;
 }
 
-// Determine if the class matches the spec.
-static bool classMatchesSpec(deClass theClass, deDatatypeArray tclassSpec) {
+// Determine if the class matches the parameters.
+static bool classMatchesParams(deClass theClass, deDatatypeArray templParams) {
   deDatatype classType = deClassGetDatatype(theClass);
   uint32 numTypes = deDatatypeGetNumTypeList(classType);
   for (uint32 xType = 0; xType < numTypes; xType++) {
-    if (deDatatypeGetiTypeList(classType, xType) != deDatatypeArrayGetiDatatype(tclassSpec, xType)) {
+    if (deDatatypeGetiTypeList(classType, xType) !=
+        deDatatypeArrayGetiDatatype(templParams, xType)) {
       return false;
     }
   }
   return true;
 }
 
-// Find an existing class matching the spec.
-static deClass findTclassClassFromSpec(deTclass tclass, deDatatypeArray tclassSpec) {
+// Find an existing class matching the parameters.
+static deClass findTemplateClassFromParams(deTemplate templ, deDatatypeArray templParams) {
   deClass theClass;
-  deForeachTclassClass(tclass, theClass) {
-    if (classMatchesSpec(theClass, tclassSpec)) {
+  deForeachTemplateClass(templ, theClass) {
+    if (classMatchesParams(theClass, templParams)) {
       return theClass;
     }
-  } deEndTclassClass;
+  } deEndTemplateClass;
   return deClassNull;
 }
 
-// Create a class from the spec.  Free |tclassSpec|.
-static deClass createClassFromSpec(deTclass tclass, deDatatypeArray tclassSpec) {
-  deClass theClass = classCreate(tclass);
-  deDatatype datatype = deClassDatatypeCreateFromSpec(theClass, tclassSpec);
+// Create a class from template parameters.  Free |templParams|.
+static deClass createClassFromParams(deTemplate templ, deDatatypeArray templParams) {
+  deClass theClass = classCreate(templ);
+  deDatatype datatype = deClassDatatypeCreateFromParams(theClass, templParams);
   deClassSetDatatype(theClass, datatype);
   return theClass;
 }
 
-// Find or create a class given the tclass spec.
-deClass deTclassFindClassFromSpec(deTclass tclass, deDatatypeArray tclassSpec) {
-  deClass theClass = findTclassClassFromSpec(tclass, tclassSpec);
+// Find or create a class given the template parameters.
+deClass deTemplateFindClassFromParams(deTemplate templ, deDatatypeArray templParams) {
+  deClass theClass = findTemplateClassFromParams(templ, templParams);
   if (theClass != deClassNull) {
     return theClass;
   }
-  return createClassFromSpec(tclass, deCopyDatatypeArray(tclassSpec));
+  return createClassFromParams(templ, deCopyDatatypeArray(templParams));
 }
 
-// Create a class for the non-template Tclass if it does not yet exist.
-deClass deTclassGetDefaultClass(deTclass tclass) {
-  utAssert(!deTclassIsTemplate(tclass));
-  deClass theClass = deTclassGetFirstClass(tclass);
+// Create a class for the non-template Template if it does not yet exist.
+deClass deTemplateGetDefaultClass(deTemplate templ) {
+  utAssert(!deTemplateIsTemplate(templ));
+  deClass theClass = deTemplateGetFirstClass(templ);
   if (theClass == deClassNull) {
-    theClass = classCreate(tclass);
+    theClass = classCreate(templ);
     deClassSetDatatype(theClass, deClassDatatypeCreate(theClass));
   }
   return theClass;
 }
 
 // Create a new class object.
-deClass deClassCreate(deTclass tclass, deSignature signature) {
-  if (!deTclassIsTemplate(tclass)) {
-    return deTclassGetDefaultClass(tclass);
+deClass deClassCreate(deTemplate templ, deSignature signature) {
+  if (!deTemplateIsTemplate(templ)) {
+    return deTemplateGetDefaultClass(templ);
   }
-  deDatatypeArray tclassSpec = deFindSignatureTclassSpec(signature);
-  return deTclassFindClassFromSpec(tclass, tclassSpec);
+  deDatatypeArray templParams = deFindSignatureTemplateParams(signature);
+  return deTemplateFindClassFromParams(templ, templParams);
 }
 
-// Make a copy of the tclass in |destBlock|.
-deTclass deCopyTclass(deTclass tclass, deFunction destConstructor) {
-  return deTclassCreate(destConstructor, deTclassGetRefWidth(tclass), deTclassGetLine(tclass));
+// Make a copy of the template in |destBlock|.
+deTemplate deCopyTemplate(deTemplate templ, deFunction destConstructor) {
+  return deTemplateCreate(destConstructor, deTemplateGetRefWidth(templ), deTemplateGetLine(templ));
 }
 
 // Build a tuple expression for the class members.  Bind types as we go.
@@ -300,8 +301,8 @@ static void addCheckForNull(deBlock functionBlock, bool callPrint, deLine line) 
 static deFunction generateDefaultMethod(deClass theClass, utSym funcName,
     bool showGenerated, bool callPrint) {
   deBlock classBlock = deClassGetSubBlock(theClass);
-  deTclass tclass = deClassGetTclass(theClass);
-  deLinkage linkage = deFunctionGetLinkage(deTclassGetFunction(tclass));
+  deTemplate templ = deClassGetTemplate(theClass);
+  deLinkage linkage = deFunctionGetLinkage(deTemplateGetFunction(templ));
   deFunction function = deFunctionCreate(deBlockGetFilepath(classBlock), classBlock,
       DE_FUNC_PLAIN, funcName, linkage, 0);
   deBlock functionBlock = deFunctionGetSubBlock(function);
@@ -317,11 +318,11 @@ static deFunction generateDefaultMethod(deClass theClass, utSym funcName,
   if (showGenerated) {
     // If showing all fields, format like Foo(32) = {...}.
     deExpression uintExpr = deExpressionCreate(DE_EXPR_UINTTYPE, line);
-    deExpressionSetWidth(uintExpr, deTclassGetRefWidth(tclass));
+    deExpressionSetWidth(uintExpr, deTemplateGetRefWidth(templ));
     deExpression castExpr = deBinaryExpressionCreate(DE_EXPR_CASTTRUNC, uintExpr,
         deCopyExpression(selfExpr), line);
     deExpressionInsertExpression(tupleExpr, castExpr);
-    char *text = utSprintf("%s(%%u) = %s", deTclassGetName(tclass), deStringGetCstr(format));
+    char *text = utSprintf("%s(%%u) = %s", deTemplateGetName(templ), deStringGetCstr(format));
     format = deMutableCStringCreate(text);
   }
   deExpression formatExpr = deStringExpressionCreate(format, line);
@@ -359,7 +360,7 @@ deFunction deClassFindMethod(deClass theClass, utSym methodSym) {
   return deIdentGetFunction(ident);
 }
 
-// Some functions, like tclass functions need to continue existing even if they
+// Some functions, like template functions need to continue existing even if they
 // are never constructed, since they are used in datatypes.  Instead of
 // destroying them, destroy most of their contents.  This will destroy
 // relations and any statements and functions generated by them.  If we do not
@@ -368,8 +369,8 @@ deFunction deClassFindMethod(deClass theClass, utSym methodSym) {
 //
 // This situation is common when developing modules with unit tests that may
 // import other modules, but not instantiate all classes in those modules.
-void deDestroyTclassContents(deTclass tclass) {
-  deFunction function = deTclassGetFunction(tclass);
+void deDestroyTemplateContents(deTemplate templ) {
+  deFunction function = deTemplateGetFunction(templ);
   deBlock oldSubBlock = deFunctionGetSubBlock(function);
   deFilepath filepath = deBlockGetFilepath(oldSubBlock);
   deLine line = deBlockGetLine(oldSubBlock);
@@ -377,18 +378,18 @@ void deDestroyTclassContents(deTclass tclass) {
   deBlockDestroy(oldSubBlock);
   deFunctionInsertSubBlock(function, newSubBlock);
   deRelation relation;
-  deSafeForeachTclassParentRelation(tclass, relation) {
+  deSafeForeachTemplateParentRelation(templ, relation) {
     deRelationDestroy(relation);
-  } deEndSafeTclassParentRelation;
-  deSafeForeachTclassChildRelation(tclass, relation) {
+  } deEndSafeTemplateParentRelation;
+  deSafeForeachTemplateChildRelation(templ, relation) {
     deRelationDestroy(relation);
-  } deEndSafeTclassChildRelation;
+  } deEndSafeTemplateChildRelation;
 }
 
 // Create a signature for the default method so it becomes part of the debug
 // binary.  This is useful in gdb during debugging.
 static void createSignature(deClass theClass, deFunction method) {
-  deLine line = deTclassGetLine(deClassGetTclass(theClass));
+  deLine line = deTemplateGetLine(deClassGetTemplate(theClass));
   deDatatypeArray parameterTypes = deDatatypeArrayAlloc();
   deDatatype selfType = deClassDatatypeCreate(theClass);
   deDatatypeArrayAppendDatatype(parameterTypes, selfType);

@@ -41,8 +41,8 @@ class Variable(self, function: Function, isParam: bool, isConst: bool, sym: Sym,
   // determine if we should initialize it up-front or later.
   self.initializedAtTop = false
   // Class constructor parameters declared <withBrackets> become template parameters.
-  // Template parameters are in the tclass signature.
-  self.inTclassSig = false
+  // Template parameters are in the template signature.
+  self.inTemplateSig = false
   // Used when renaming variables to eliminate conflicts with generated code.
   self.savedSym = null(Sym)
   // Used when interpreting Rune code generators.

@@ -39,10 +39,10 @@ char *deFilepathGetRelativePath(deFilepath filepath) {
   while (path[i] != '\0' && path[i] == cwd[i]) {
     i++;
   }
-  while (i > 0 && path[i] == '/') {
+  while (i > 0 && path[i] == UTDIRSEP) {
     i--;
   }
-  if (path[i] == '/') {
+  if (path[i] == UTDIRSEP) {
     path++;
   }
   return path;

@@ -216,7 +216,7 @@ deIdent deFindIdentOwningIdent(deIdent ident) {
       utExit("Statement blocks do not have identifiers");
       break;
     case DE_BLOCK_CLASS: {
-      deFunction function = deTclassGetFunction(deClassGetTclass(deBlockGetOwningClass(block)));
+      deFunction function = deTemplateGetFunction(deClassGetTemplate(deBlockGetOwningClass(block)));
       name = deFunctionGetSym(function);
       break;
     }

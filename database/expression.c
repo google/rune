@@ -575,7 +575,7 @@ void deDumpExpressionStr(deString string, deExpression expression) {
           utSymGetName(deExpressionGetName(deExpressionGetFirstExpression(expression))));
       deDumpExpressionStr(string, deExpressionGetLastExpression(expression));
       break;
-    case DE_EXPR_TCLASS_SPEC:
+    case DE_EXPR_TEMPLATE_INST:
       deDumpExpressionStr(string, deExpressionGetFirstExpression(expression));
       deStringSprintf(string, "< ");
       deDumpExpressionStr(string, deExpressionGetLastExpression(expression));
@@ -712,7 +712,7 @@ bool deExpressionIsMethodCall(deExpression accessExpression) {
     return true;
   }
   // Allow method calls on builtin types, such as array.length().
-  return type != DE_TYPE_TCLASS  && type != DE_TYPE_FUNCTION;
+  return type != DE_TYPE_TEMPLATE  && type != DE_TYPE_FUNCTION;
 }
 
 // Make a deep copy of the expression.
@@ -789,7 +789,7 @@ static void setExpressionToValue(deExpression expression, deValue value) {
     case DE_TYPE_TUPLE:
     case DE_TYPE_STRUCT:
     case DE_TYPE_ENUM:
-    case DE_TYPE_TCLASS:
+    case DE_TYPE_TEMPLATE:
     case DE_TYPE_CLASS:
     case DE_TYPE_FUNCTION:
     case DE_TYPE_FUNCPTR:

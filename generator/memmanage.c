@@ -149,7 +149,7 @@ static void allocateSelfInConstructor(deClass theClass) {
   deGenerating = false;
   deFunction allocateFunc = deBlockGetLastFunction(rootBlock);
   deDatatypeArray parameterTypes = deDatatypeArrayAlloc();
-  deLine line = deTclassGetLine(deClassGetTclass(theClass));
+  deLine line = deTemplateGetLine(deClassGetTemplate(theClass));
   deSignature signature = deSignatureCreate(allocateFunc, parameterTypes, line);
   deSignatureSetInstantiated(signature, true);
   deSignatureSetReturnType(signature, deClassGetDatatype(theClass));
@@ -220,9 +220,9 @@ static void addRefAndUnref(deClass theClass) {
   bindNewSignature(signature);
 }
 
-// Find the tclass' destructor.
-static deFunction findTclassDestructor(deTclass tclass) {
-  deBlock block = deFunctionGetSubBlock(deTclassGetFunction(tclass));
+// Find the template's destructor.
+static deFunction findTemplateDestructor(deTemplate templ) {
+  deBlock block = deFunctionGetSubBlock(deTemplateGetFunction(templ));
   utSym name = utSymCreate("destroy");
   deIdent ident = deBlockFindIdent(block, name);
   if (ident == deIdentNull) {
@@ -250,15 +250,15 @@ static void callFinalInDestructor(deFunction destructor) {
 
 // Call final method if it exists in class destructors.
 void deCallFinalInDestructors(void) {
-  deTclass tclass;
-  deForeachRootTclass(deTheRoot, tclass) {
-    if (deTclassHasFinalMethod(tclass)) {
-      deFunction destructor = findTclassDestructor(tclass);
+  deTemplate templ;
+  deForeachRootTemplate(deTheRoot, templ) {
+    if (deTemplateHasFinalMethod(templ)) {
+      deFunction destructor = findTemplateDestructor(templ);
       if (destructor != deFunctionNull) {
         callFinalInDestructor(destructor);
       }
     }
-  } deEndRootTclass;
+  } deEndRootTemplate;
 }
 
 // Add code to constructors to allocate a new object, and add variables in the
@@ -270,7 +270,7 @@ void deAddMemoryManagement(void) {
     if (deClassBound(theClass)) {
       allocateSelfInConstructor(theClass);
       freeSelfInDestructor(theClass);
-      if (deTclassRefCounted(deClassGetTclass(theClass))) {
+      if (deTemplateRefCounted(deClassGetTemplate(theClass))) {
         addRefAndUnref(theClass);
       }
     }

@@ -19,9 +19,4 @@ class Generator(self, function: Function) {
   function.insertGenerator(self)
 }
 
-// Type hint until Generator is called.
-if false {
-  Generator(getMainFunc())
-}
-
 relation OneToOne Function Generator cascade

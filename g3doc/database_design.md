@@ -17,9 +17,9 @@ Classes are either parents or children of relationships. For example `Block`
 (that is, a block consists of multiple statements) is the parent in the
 `DoublyLinked relation from`Block`to`Statement`, and`Statement`is the parent in
 the`Statement:Owning`->`Block:Sub` `OneToOne`relation For instance,
-an`if-else`statement is represented with two consecutive`Statement`s on their
-`parentBlock`, and each have one `subBlock`. By convention, we use Owning/Sub for
-one-to-one relations and Parent/Child for one-to-many.
+an`if-else`statement is represented with two consecutive`Statement`s on
+their`parentBlock`, and each have one`subBlock`. By convention, we use
+Owning/Sub for one-to-one relations and Parent/Child for one-to-many.
 
 Rune's High-level IR database is the engine the powers the compiler, between
 lowering the AST to HIR, and generating LLVM IR. Its design is meant to minimize
@@ -87,17 +87,17 @@ database. The global `Root` instance is accessed via the `getRoot()` function.
 
 Any global data needed by the compiler is added to the `Root` class.
 
-## Tclass
+## Template
 
-The `Tclass` class represents template classes. All class definitions are
+The `Template` class represents template classes. All class definitions are
 assumed to be templates, even if no template parameters are defined. The most
-common case is there are no template parameters, in which case the `Tclass` will
-have at most one `Class`. Zero is also possible, in case the `Tclass`
+common case is there are no template parameters, in which case the `Template`
+will have at most one `Class`. Zero is also possible, in case the `Template`
 constructor is never called.
 
-A `Tclass` is owned by a function of type `FuncType.Constructor`, which defines
-its contents. Unlike some object oriented languages, a `Tclass` is defined by
-its constructor:
+A `Template` is owned by a function of type `FuncType.Constructor`, which
+defines its contents. Unlike some object oriented languages, a `Template` is
+defined by its constructor:
 
 ```rune
 class Node(self, graph: Graph, name: string) {
@@ -106,36 +106,37 @@ class Node(self, graph: Graph, name: string) {
 }
 ```
 
-The `class` keyword is similar to the `func` keyword, but defines a `Tclass`
+The `class` keyword is similar to the `func` keyword, but defines a `Template`
 constructor rather than a `Function`.
 
 *Datatype*
 
-A `Tclass` data type is represented by the `Tclass` name, without parameters,
-e.g. `Node`.
+A `Template` data type is represented by the `Template` name, without
+parameters, e.g. `Node`.
 
 *Parent relations*
 
 ```
-relation OneToOne Function `Tclass` cascade
+relation OneToOne Function `Template` cascade
 ```
 
 ## Memory Safety
 
-There are two types of `Tclass`es: Reference-counted and cascade-deleted. If a
-`Tclass` is in at least one cascade-delete `relation`, then before any function
-(including the constructor) returns, the class instance must be inserted into a
-cascade-delete `relation`. This ensures memory safety: Instances are either
-reference counted, or they are in a cascade-delete `relation` in which case they
-still have valid references. Reference counted instances are destroyed when no
-longer referenced. Since cascade-delete instances are always referenced, they
-must be explicitly destroyed by calling their `destroy()` method. `destroy()`
-methods are auto-generated, and cannot be edited by the user, though a `final`
-function can be declared which is called just before an instance is destroyed.
+There are two types of `Template`es: Reference-counted and cascade-deleted. If a
+`Template` is in at least one cascade-delete `relation`, then before any
+function (including the constructor) returns, the class instance must be
+inserted into a cascade-delete `relation`. This ensures memory safety: Instances
+are either reference counted, or they are in a cascade-delete `relation` in
+which case they still have valid references. Reference counted instances are
+destroyed when no longer referenced. Since cascade-delete instances are always
+referenced, they must be explicitly destroyed by calling their `destroy()`
+method. `destroy()` methods are auto-generated, and cannot be edited by the
+user, though a `final` function can be declared which is called just before an
+instance is destroyed.
 
-Cascade-delete `Tclass` constructors must add self to an owning instance, or an
-error will be reported at either compile time or at runtime in debug mode\*.
-Instances of reference counted `Tclass`es cannot be destroyed by calling their
+Cascade-delete `Template` constructors must add self to an owning instance, or
+an error will be reported at either compile time or at runtime in debug mode\*.
+Instances of reference counted `Template`es cannot be destroyed by calling their
 destructor. Unlike some languages, Rune ensures all references are properly
 managed when any object is destroyed, and frees the programmer from having to
 manually remove references to an object before it can be freed.
@@ -143,7 +144,7 @@ manually remove references to an object before it can be freed.
 There are two types of `relation`: those declared with the relation keyword, and
 "member" `relation`s where a class has an instance of another class as a data
 member. It is a compile-time error to have a data member that is a
-cascade-delete `Tclass`, since destroying the data member would not
+cascade-delete `Template`, since destroying the data member would not
 automatically null out the data member.
 
 Unsafe code which could result in dangling pointers is allowed only in code
@@ -152,15 +153,15 @@ written, and very carefully reviewed for correctness.
 
 ## Class
 
-`Class`es are concrete instantiations of `Tclass` template classes. They are
+`Class`es are concrete instantiations of `Template` template classes. They are
 created during "binding", which is a pass that does type inferencing and
 determines what function/constructor signatures are called. A `Class` has a
 sub-function that contains all of its data member variables. The types of data
-members can differ between `Class`es of the same `Tclass`. These variables are
+members can differ between `Class`es of the same `Template`. These variables are
 created when binding signatures that instantiates the `Class`. Different
 constructor signatures for the same `Class` must result in the same member data
 types. To create different `Class`es, different data types must be passed to
-"template" parameters of the `Tclass` constructor. Template parameters are
+"template" parameters of the `Template` constructor. Template parameters are
 declared in angle brackets:
 
 ```rune
@@ -186,7 +187,7 @@ data types passed to non-template parameters. A good example of this is the
 *Parent relations*
 
 ```rune
-relation DoublyLinked Tclass Class cascade
+relation DoublyLinked Template Class cascade
 ```
 
 ## Function
@@ -211,7 +212,7 @@ enum FuncType {
 }
 ```
 
-`Function`s represent plain-old-functions, `Tclass` construtors, modules (Rune
+`Function`s represent plain-old-functions, `Template` construtors, modules (Rune
 `.rn` files) packages (directories containing Rune files), iterators, structs,
 enums and even unit tests.
 
@@ -333,8 +334,8 @@ Finally, there is the function-local scope. Functions and methods have local
 `Statement`s.
 
 In addition to hierarchical scoping, `Class` data members and methods can be
-accessed via the dot operator on a `Class` instance. Tclass functions can be
-called directly through the `Tclass`.
+accessed via the dot operator on a `Class` instance. Template functions can be
+called directly through the `Template`.
 
 ```rune
 class Foo(self, name) {
@@ -345,11 +346,11 @@ class Foo(self, name) {
 }
 foo = Foo("Bob")
 foo.dump()  // Call method via instance foo
-Foo.dump(foo)  // Call same function through Foo tclass.
+Foo.dump(foo)  // Call same function through Foo template.
 ```
 
-If a `Tclass` is in scope via use or import statement, then functions in the
-`Tclass` can be called with the dot operator.
+If a `Template` is in scope via use or import statement, then functions in the
+`Template` can be called with the dot operator.
 
 ```rune
 sym = Sym.new("name")
@@ -615,7 +616,7 @@ enum DatatypeType {}
   Modint  // Only annotated on modular expressions
   Float
   Array
-  Tclass  // The non-concrete type, sych as Graph
+  Template  // The non-concrete type, sych as Graph
   Class  // The concrete type such as Graph("g1")
   Function
   Funcptr
@@ -627,11 +628,11 @@ enum DatatypeType {}
 }
 ```
 
-The capitalized version names of `Tclass`s representing the type. Concrete types
-are lower case. For example, `Uint` is a valid type constraint that matches all
-unsigned integer types, such as `u32` or `u4096`. Some of these `Tclass`es have
-only one concrete type, such as `String` and `Bool` that have concrete types
-`string` and `bool`.
+The capitalized version names of `Template`s representing the type. Concrete
+types are lower case. For example, `Uint` is a valid type constraint that
+matches all unsigned integer types, such as `u32` or `u4096`. Some of these
+`Template`es have only one concrete type, such as `String` and `Bool` that have
+concrete types `string` and `bool`.
 
 `Datatype`s constructed the same way return the same `Datatype` instance. For
 example, there is only one `Datatype` object representing `u32` no matter how
@@ -653,7 +654,7 @@ return no value have signatues with return type None.
 `Bool` is the tclas for the concrete `bool` `Datatype`. Values can be `true` or
 `false`.
 
-`String` is the `Tclass` for the concrete `string` `Datatype`. It represents
+`String` is the `Template` for the concrete `string` `Datatype`. It represents
 strings in UTF-8, and are declared with the `string` type. Indexing a string
 returns a u8, not a u32 Unicode value. Character literals, such as `'a'` are
 simply another way of writing a `u8` constant. Converting sequences of bytes to
@@ -719,7 +720,7 @@ Foo(b = "asdf")
 ```
 
 `Null` is the the most difficult data type to support in Rune. It specifically
-represents the non-concrete nullable type of a `tclass`. It is created like:
+represents the non-concrete nullable type of a `Template`. It is created like:
 
 ```rune
   self.firstFoo = null(Foo)
@@ -791,18 +792,18 @@ relation OneToOne Variable Paramspec cascade
 
 ## Generator
 
-`Generator`s generate code, typically for `relation`s between two `Tclass`es.
+`Generator`s generate code, typically for `relation`s between two `Template`es.
 This is what enables Rune to auto-generated destructors while avoiding dangling
 pointers. Generators are just compiled Rune code\* (in the C compiler, a subset
 of Rune is interpreted) that gets dynamically loaded and executed by the Rune
 compiler.
 
 Generators call`prependcode` and `appendcode` to add functionality to
-`Tclass`es. Identifiers and strings in these blocks of code are expanded to
+`Template`es. Identifiers and strings in these blocks of code are expanded to
 generate the final code that is inserted. In a string or identifier, `$<name>`
-is replaced with the name of the `Tclass` passed to the generator. For example,
-`$A` is replaced with `Graph` if `Graph` is passed in as parameter `A`. The end
-of the local name can be clarified with a trailing `_`. For example
+is replaced with the name of the `Template` passed to the generator. For
+example, `$A` is replaced with `Graph` if `Graph` is passed in as parameter `A`.
+The end of the local name can be clarified with a trailing `_`. For example
 `num$B_Entries` might expand to `numSymtabEntries`.
 
 Reference counting is disabled in generators. Instead the generator should call
@@ -842,11 +843,11 @@ relation OneToOne Function Generator cascade
 
 ## Relation
 
-`Relation`s are between two `Tclass`es, unlike containers in most languages.
+`Relation`s are between two `Template`es, unlike containers in most languages.
 Possibly the most significant bug addressed by `Relation`s is what happens when
 a child object is destroyed, when it is owned by multiple parents? In Rune code
 generators in the builtin directory generate code in both the parent and child
-`Tclass`es, updating their destructors, creating iterators, add/remove
+`Template`es, updating their destructors, creating iterators, add/remove
 functions, and more.
 
 `Relation` statements are just syntactic sugar around calling the corresponding
@@ -873,8 +874,8 @@ memory leaks.
 *Parent relations*/
 
 ```rune
-relation DoublyLinked Tclass:"Parent" Relation:"Child" cascade
-relation DoublyLinked Tclass:"Child" Relation:"Parent" cascade
+relation DoublyLinked Template:"Parent" Relation:"Child" cascade
+relation DoublyLinked Template:"Child" Relation:"Parent" cascade
 relation DoublyLinked Generator Relation cascade
 
 ```
@@ -957,5 +958,5 @@ just a line so that the bootstrap compiler can directly point to the error in a
 line.
 
 This reference counted class is annotated on all class`es that are associated
-with a line in a Rune module, such as`Tclass`,`Function`,`Block`,`Statement`,
+with a line in a Rune module, such as`Template`,`Function`,`Block`,`Statement`,
 and`Expr`.

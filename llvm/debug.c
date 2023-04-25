@@ -149,10 +149,10 @@ static llTag createArrayTypeTag(deDatatype datatype) {
 static llTag createClassTypeTag(deDatatype datatype) {
   deClass theClass = deDatatypeGetClass(datatype);
   llTag baseTypeTag = createDatatypeTag(deUintDatatypeCreate(deDatatypeGetWidth(datatype)));
-  deTclass tclass = deClassGetTclass(theClass);
-  deBlock tclassBlock = deFunctionGetSubBlock(deTclassGetFunction(tclass));
-  deFilepath filepath = deBlockGetFilepath(tclassBlock);
-  deLine line = deBlockGetLine(tclassBlock);
+  deTemplate templ = deClassGetTemplate(theClass);
+  deBlock templBlock = deFunctionGetSubBlock(deTemplateGetFunction(templ));
+  deFilepath filepath = deBlockGetFilepath(templBlock);
+  deLine line = deBlockGetLine(templBlock);
   llTag fileTag = llFilepathGetTag(filepath);
   char *classTypeName = deGetBlockPath(deClassGetSubBlock(theClass), false);
   char *text = utSprintf(
@@ -196,7 +196,7 @@ static uint32 findDatatypeSize(deDatatype datatype) {
     case DE_TYPE_ENUM:
     case DE_TYPE_FLOAT:
       return deDatatypeGetWidth(datatype);
-    case DE_TYPE_TCLASS:
+    case DE_TYPE_TEMPLATE:
     case DE_TYPE_CLASS:
       return 32;
     case DE_TYPE_FUNCPTR:
@@ -371,7 +371,7 @@ static llTag createDatatypeTag(deDatatype datatype) {
       break;
     }
     case DE_TYPE_CLASS:
-    case DE_TYPE_TCLASS: {
+    case DE_TYPE_TEMPLATE: {
       if (llDebugMode && type == DE_TYPE_CLASS) {
         return createClassTypeTag(datatype);
       }

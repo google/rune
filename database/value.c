@@ -44,11 +44,11 @@ void deDumpValueStr(deString string, deValue value) {
     case DE_TYPE_INT:
       deDumpBigint(deValueGetBigintVal(value));
       break;
-    case DE_TYPE_TCLASS:
-      deStringSprintf(string, "<tclass %s>", deTclassGetName(deValueGetTclassVal(value)));
+    case DE_TYPE_TEMPLATE:
+      deStringSprintf(string, "<templ %s>", deTemplateGetName(deValueGetTemplateVal(value)));
       break;
     case DE_TYPE_CLASS:
-      deStringSprintf(string, "<class of %s>", deTclassGetName(deClassGetTclass(deValueGetClassVal(value))));
+      deStringSprintf(string, "<class of %s>", deTemplateGetName(deClassGetTemplate(deValueGetClassVal(value))));
       break;
     case DE_TYPE_FUNCTION:
       deStringSprintf(string, "<function %s>", deFunctionGetName(deValueGetFuncVal(value)));
@@ -116,10 +116,10 @@ deValue deStringValueCreate(deString string) {
   return value;
 }
 
-// Create a tclass value.
-deValue deTclassValueCreate(deTclass tclass) {
-  deValue value = createValue(DE_TYPE_TCLASS);
-  deValueSetTclassVal(value, tclass);
+// Create a template value.
+deValue deTemplateValueCreate(deTemplate templ) {
+  deValue value = createValue(DE_TYPE_TEMPLATE);
+  deValueSetTemplateVal(value, templ);
   return value;
 }
 
@@ -160,10 +160,10 @@ utSym deValueGetName(deValue value) {
     case DE_TYPE_STRING:
       return utSymCreate(deEscapeString(deValueGetStringVal(value)));
       break;
-    case DE_TYPE_TCLASS:
-      return deTclassGetSym(deValueGetTclassVal(value));
+    case DE_TYPE_TEMPLATE:
+      return deTemplateGetSym(deValueGetTemplateVal(value));
     case DE_TYPE_CLASS:
-      return deTclassGetSym(deClassGetTclass(deValueGetClassVal(value)));
+      return deTemplateGetSym(deClassGetTemplate(deValueGetClassVal(value)));
     case DE_TYPE_FUNCTION:
       return deFunctionGetSym(deValueGetFuncVal(value));
     default:
@@ -185,8 +185,8 @@ bool deValuesEqual(deValue a, deValue b) {
     case DE_TYPE_UINT:
     case DE_TYPE_INT:
       return deBigintsEqual(deValueGetBigintVal(a), deValueGetBigintVal(b));
-    case DE_TYPE_TCLASS:
-      return deValueGetTclassVal(a) == deValueGetTclassVal(b);
+    case DE_TYPE_TEMPLATE:
+      return deValueGetTemplateVal(a) == deValueGetTemplateVal(b);
     case DE_TYPE_CLASS:
       return deValueGetClassVal(a) == deValueGetClassVal(b);
     case DE_TYPE_FUNCTION:

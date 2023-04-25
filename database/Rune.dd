@@ -135,7 +135,7 @@ enum ExpressionType
   DE_EXPR_STRINGTYPE  // x: string = y
   DE_EXPR_BOOLTYPE  // done: bool = checkForDone()
   DE_EXPR_NAMEDPARAM  // Myclass(name = "me", profession = "hacker")
-  DE_EXPR_TCLASS_SPEC  // Point<i32, i32>
+  DE_EXPR_TEMPLATE_INST  // Point<i32, i32>
 
 enum DatatypeType
   DE_TYPE_NONE  // Some expressions, such as assignments, have no type.
@@ -146,7 +146,7 @@ enum DatatypeType
   DE_TYPE_MODINT
   DE_TYPE_FLOAT
   DE_TYPE_ARRAY
-  DE_TYPE_TCLASS
+  DE_TYPE_TEMPLATE
   DE_TYPE_CLASS
   DE_TYPE_FUNCTION
   DE_TYPE_FUNCPTR
@@ -184,20 +184,20 @@ enum BlockType
   DE_BLOCK_STATEMENT
   DE_BLOCK_CLASS
 
-enum BuiltinTclassType
-  DE_BUILTINTCLASS_ARRAY
-  DE_BUILTINTCLASS_FUNCPTR
-  DE_BUILTINTCLASS_FUNCTION
-  DE_BUILTINTCLASS_BOOL
-  DE_BUILTINTCLASS_STRING
-  DE_BUILTINTCLASS_UINT
-  DE_BUILTINTCLASS_INT
-  DE_BUILTINTCLASS_MODINT
-  DE_BUILTINTCLASS_FLOAT
-  DE_BUILTINTCLASS_TUPLE
-  DE_BUILTINTCLASS_STRUCT
-  DE_BUILTINTCLASS_ENUM
-  DE_BUILTINTCLASS_NONE
+enum BuiltinTemplateType
+  DE_BUILTINTEMPLATE_ARRAY
+  DE_BUILTINTEMPLATE_FUNCPTR
+  DE_BUILTINTEMPLATE_FUNCTION
+  DE_BUILTINTEMPLATE_BOOL
+  DE_BUILTINTEMPLATE_STRING
+  DE_BUILTINTEMPLATE_UINT
+  DE_BUILTINTEMPLATE_INT
+  DE_BUILTINTEMPLATE_MODINT
+  DE_BUILTINTEMPLATE_FLOAT
+  DE_BUILTINTEMPLATE_TUPLE
+  DE_BUILTINTEMPLATE_STRUCT
+  DE_BUILTINTEMPLATE_ENUM
+  DE_BUILTINTEMPLATE_NONE
 
 enum BuiltinFuncType
   DE_BUILTINFUNC_ARRAYLENGTH
@@ -275,15 +275,15 @@ class Ident
 
 // Template classes.  All class declarations are templates.  Template classes are owned by the function
 // that implement's the constructor.
-class Tclass array
+class Template array
   Datatype datatype
-  BuiltinTclassType builtinType
+  BuiltinTemplateType builtinType
   Line line
   uint32 numClasses
   uint32 numTemplateParams
   bool isTemplate  // Set if it has any template parameters.
   bool hasFinalMethod
-  bool refCounted  // Set if this tclass is in no cascade-delete relationship.
+  bool refCounted  // Set if this template is in no cascade-delete relationship.
   bool visited  // Used in loop detection.
   bool marked  // Used in loop detection.
   uint32 refWidth  // Width of an object reference, 32 by default.
@@ -328,7 +328,7 @@ class Variable
   // Set if the variable is initialized in the scope-block.  This is used to
   // determine if we should initialize it up-front or later.
   bool initializedAtTop
-  bool inTclassSignature
+  bool inTemplateSignature
   sym savedName
   Value value cascade  // Used in generation.
   bool generated  // We don't reference count via generated variables.
@@ -344,7 +344,7 @@ class Value
     String stringVal: DE_TYPE_STRING  // Don't destroy immutable strings.
     Bigint bigintVal cascade: DE_TYPE_UINT DE_TYPE_INT
     Float floatVal cascade: DE_TYPE_FLOAT
-    Tclass tclassVal: DE_TYPE_TCLASS
+    Template templateVal: DE_TYPE_TEMPLATE
     Class classVal: DE_TYPE_CLASS
     Function funcVal: DE_TYPE_FUNCTION
     Expression exprVal: DE_TYPE_EXPR
@@ -371,7 +371,7 @@ class Datatype array
   union type
     Datatype elementType: DE_TYPE_ARRAY DE_TYPE_STRING
     Datatype returnType: DE_TYPE_FUNCPTR
-    Tclass tclass: DE_TYPE_TCLASS
+    Template Template: DE_TYPE_TEMPLATE
     Function function: DE_TYPE_FUNCTION DE_TYPE_STRUCT DE_TYPE_ENUM DE_TYPE_ENUMCLASS
     Class Class: DE_TYPE_CLASS
     Expression modulus: DE_TYPE_MODINT
@@ -457,14 +457,17 @@ class String
   array char text
   uint32 used
 
-// This is a directed edge between Tclasses which are built from relation statements.  Reference
-// counted "value" classes are those that have no cascade-delete parents.  These may not be in
-// relationship loops, but can form DAGs.  Tclasses in cascade-delete relationships with parent
-// tclasses are "owned" classes which are only destroyed when a cascade-delete parent is destroyed,
-// or if the destroy() method is called.  Owned classes can be in relationship loops.  They must
-// always have at least one cascade-delete parent when constructed.  An error is thrown if an owned
-// object is removed from its last owner and is not added to a new owner before its reference goes
-// out of scope.  A runtime error is thrown if an object with non-zero reference count is destroyed.
+// This is a directed edge between templates which are built from relation
+// statements.  Reference counted "value" classes are those that have no
+// cascade-delete parents.  These may not be in relationship loops, but can
+// form DAGs.  Templates in cascade-delete relationships with parent templates
+// are "owned" templates which are only destroyed when a cascade-delete parent
+// is destroyed, or if the destroy() method is called.  Owned classes can be in
+// relationship loops.  They must always have at least one cascade-delete
+// parent when constructed.  An error is thrown if an owned object is removed
+// from its last owner and is not added to a new owner before its reference
+// goes out of scope.  A runtime error is thrown if an object with non-zero
+// reference count is destroyed.
 class Relation
   bool cascadeDelete
   String parentLabel
@@ -472,7 +475,7 @@ class Relation
 
 // Represents a non-cascade-delete 1-to-1 relationship accessed as a class member.  Children must
 // be reference counted, not owned.  MemberRels are directed edges between Class objects rather than
-// Tclass, since the child is often a class template parameter.
+// Template, since the child is often a class template parameter.
 class MemberRel
 
 relationship Root Block cascade
@@ -490,7 +493,7 @@ relationship Variable:Type Binding:Type cascade
 relationship Function:Type Binding:Type cascade
 // This is the queue of expressions waiting to be bound on the binding.
 relationship Binding Expression doubly_linked
-relationship Root Tclass doubly_linked mandatory
+relationship Root Template doubly_linked mandatory
 relationship Signature:Call Signature:Call doubly_linked
 relationship Statement:Call Signature:Call doubly_linked
 relationship Root DatatypeBin hashed hash cascade
@@ -504,7 +507,7 @@ relationship Class Signature doubly_linked cascade
 relationship Function Signature doubly_linked cascade
 relationship Signature:Uniquified Function:Uniquified
 relationship Function:Default Signature:Default
-relationship Function Tclass cascade
+relationship Function Template cascade
 relationship Class:Lazy Signature:Lazy doubly_linked cascade
 relationship Signature Paramspec array mandatory
 relationship Block Ident hashed cascade
@@ -514,7 +517,7 @@ relationship Ident Expression doubly_linked
 relationship Block Function doubly_linked cascade
 relationship Block Variable doubly_linked mandatory
 relationship Block Statement doubly_linked mandatory
-relationship Tclass Class doubly_linked mandatory
+relationship Template Class doubly_linked mandatory
 relationship Class:Owning Block:Sub cascade
 relationship Function:Owning Block:Sub cascade
 relationship Function:Type Expression:Type cascade
@@ -527,8 +530,8 @@ relationship Variable:Type Expression:Type cascade
 // If we delete the statement that created a variable, also delete the variable
 relationship Statement Variable cascade
 relationship Root String hashed text cascade
-relationship Tclass:Parent Relation:Child doubly_linked mandatory
-relationship Tclass:Child Relation:Parent doubly_linked mandatory
+relationship Template:Parent Relation:Child doubly_linked mandatory
+relationship Template:Child Relation:Parent doubly_linked mandatory
 relationship Relation:Generated Statement:Generated doubly_linked cascade
 relationship Relation:Generated Function:Generated doubly_linked cascade
 relationship Generator Relation doubly_linked mandatory

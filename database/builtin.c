@@ -16,9 +16,9 @@
 #include <stdarg.h>
 
 // The global array class.
-deTclass deArrayTclass, deFuncptrTclass, deFunctionTclass, deBoolTclass, deStringTclass,
-    deUintTclass, deIntTclass, deModintTclass, deFloatTclass, deTupleTclass,
-    deStructTclass, deEnumTclass, deClassTclass, deNoneTclass;
+deTemplate deArrayTemplate, deFuncptrTemplate, deFunctionTemplate, deBoolTemplate, deStringTemplate,
+    deUintTemplate, deIntTemplate, deModintTemplate, deFloatTemplate, deTupleTemplate,
+    deStructTemplate, deEnumTemplate, deClassTemplate, deNoneTemplate;
 
 // Builtin methods.
 static deFunction deArrayLengthFunc, deArrayResizeFunc, deArrayAppendFunc,
@@ -30,46 +30,46 @@ static deFunction deArrayLengthFunc, deArrayResizeFunc, deArrayAppendFunc,
     deBoolToStringFunc, deUintToStringFunc, deIntToStringFunc,
     deTupleToStringFunc, deStructToStringFunc, deEnumToStringFunc;
 
-deTclass deFindTypeTclass(deDatatypeType type) {
+deTemplate deFindTypeTemplate(deDatatypeType type) {
   switch (type) {
     case DE_TYPE_BOOL:
-      return deBoolTclass;
+      return deBoolTemplate;
     case DE_TYPE_STRING:
-      return deStringTclass;
+      return deStringTemplate;
     case DE_TYPE_UINT:
-      return deUintTclass;
+      return deUintTemplate;
     case DE_TYPE_INT:
-      return deIntTclass;
+      return deIntTemplate;
     case DE_TYPE_MODINT:
-      return deModintTclass;
+      return deModintTemplate;
     case DE_TYPE_FLOAT:
-      return deFloatTclass;
+      return deFloatTemplate;
     case DE_TYPE_ARRAY:
-      return deArrayTclass;
+      return deArrayTemplate;
     case DE_TYPE_FUNCTION:
-      return deFunctionTclass;
+      return deFunctionTemplate;
     case DE_TYPE_FUNCPTR:
-      return deFuncptrTclass;
+      return deFuncptrTemplate;
     case DE_TYPE_TUPLE:
-      return deTupleTclass;
+      return deTupleTemplate;
     case DE_TYPE_STRUCT:
-      return deStructTclass;
+      return deStructTemplate;
     case DE_TYPE_ENUM:
     case DE_TYPE_ENUMCLASS:
-      return deEnumTclass;
+      return deEnumTemplate;
     case DE_TYPE_CLASS:
-      return deClassTclass;
-    case DE_TYPE_TCLASS:
+      return deClassTemplate;
+    case DE_TYPE_TEMPLATE:
     case DE_TYPE_NONE:
     case DE_TYPE_EXPR:
       utExit("Unexpected type");
   }
-  return deTclassNull;  // Dummy return.
+  return deTemplateNull;  // Dummy return.
 }
 
 // Create a builtin class.  Parameters are strings.  All builtin methods have
 // custom code to verify parameter types and determine the return time.
-static deTclass createBuiltinTclass(char* name, deBuiltinTclassType type,
+static deTemplate createBuiltinTemplate(char* name, deBuiltinTemplateType type,
                                     uint32 numParameters, ...) {
   va_list ap;
   va_start(ap, numParameters);
@@ -77,8 +77,8 @@ static deTclass createBuiltinTclass(char* name, deBuiltinTclassType type,
   deFilepath filepath = deBlockGetFilepath(globalBlock);
   deFunction function = deFunctionCreate(filepath, globalBlock, DE_FUNC_CONSTRUCTOR,
       utSymCreate(name), DE_LINK_BUILTIN, 0);
-  deTclass tclass = deTclassCreate(function, 32, deLineNull);
-  deTclassSetBuiltinType(tclass, type);
+  deTemplate templ = deTemplateCreate(function, 32, deLineNull);
+  deTemplateSetBuiltinType(templ, type);
   deBlock subBlock = deFunctionGetSubBlock(function);
   // Add self parameter.
   deVariableCreate(subBlock, DE_VAR_PARAMETER, false, utSymCreate("self"), deExpressionNull, false, 0);
@@ -87,14 +87,14 @@ static deTclass createBuiltinTclass(char* name, deBuiltinTclassType type,
     deVariableCreate(subBlock, DE_VAR_PARAMETER, false, utSymCreate(name), deExpressionNull, false, 0);
   }
   va_end(ap);
-  return tclass;
+  return templ;
 }
 
 // Create a builtin method.
-static deFunction addMethod(deTclass tclass, deBuiltinFuncType type, char* name, uint32 numParameters, ...) {
+static deFunction addMethod(deTemplate templ, deBuiltinFuncType type, char* name, uint32 numParameters, ...) {
   va_list ap;
   va_start(ap, numParameters);
-  deBlock subBlock = deFunctionGetSubBlock(deTclassGetFunction(tclass));
+  deBlock subBlock = deFunctionGetSubBlock(deTemplateGetFunction(templ));
   utSym sym = utSymCreate(name);
   deFilepath filepath = deBlockGetFilepath(subBlock);
   utAssert(filepath != deFilepathNull);
@@ -122,57 +122,57 @@ static void setParameterDefault(deFunction function, uint32 index, deExpression 
 
 // Initialize the builtin classes module.
 void deBuiltinStart(void) {
-  deArrayTclass = createBuiltinTclass("Array", 1, DE_BUILTINTCLASS_ARRAY, "elementType");
-  deArrayLengthFunc = addMethod(deArrayTclass, DE_BUILTINFUNC_ARRAYLENGTH, "length", 0);
-  deArrayResizeFunc = addMethod(deArrayTclass, DE_BUILTINFUNC_ARRAYRESIZE, "resize", 1, "length");
-  deArrayAppendFunc = addMethod(deArrayTclass, DE_BUILTINFUNC_ARRAYAPPEND, "append", 1, "element");
-  deArrayConcatFunc = addMethod(deArrayTclass, DE_BUILTINFUNC_ARRAYCONCAT, "concat", 1, "array");
-  deArrayReverseFunc = addMethod(deArrayTclass, DE_BUILTINFUNC_ARRAYREVERSE, "reverse", 0);
-  deArrayToStringFunc = addMethod(deArrayTclass, DE_BUILTINFUNC_ARRAYTOSTRING, "toString", 0);
-  createBuiltinTclass("Funcptr", DE_BUILTINTCLASS_FUNCPTR, 2, "function", "parameterArray");
+  deArrayTemplate = createBuiltinTemplate("Array", 1, DE_BUILTINTEMPLATE_ARRAY, "elementType");
+  deArrayLengthFunc = addMethod(deArrayTemplate, DE_BUILTINFUNC_ARRAYLENGTH, "length", 0);
+  deArrayResizeFunc = addMethod(deArrayTemplate, DE_BUILTINFUNC_ARRAYRESIZE, "resize", 1, "length");
+  deArrayAppendFunc = addMethod(deArrayTemplate, DE_BUILTINFUNC_ARRAYAPPEND, "append", 1, "element");
+  deArrayConcatFunc = addMethod(deArrayTemplate, DE_BUILTINFUNC_ARRAYCONCAT, "concat", 1, "array");
+  deArrayReverseFunc = addMethod(deArrayTemplate, DE_BUILTINFUNC_ARRAYREVERSE, "reverse", 0);
+  deArrayToStringFunc = addMethod(deArrayTemplate, DE_BUILTINFUNC_ARRAYTOSTRING, "toString", 0);
+  createBuiltinTemplate("Funcptr", DE_BUILTINTEMPLATE_FUNCPTR, 2, "function", "parameterArray");
   // TODO: upgrade Function constructor to take statement expression and
   // construct the function.  This would implement lambda expressions.
-  deFunctionTclass = createBuiltinTclass("Function", DE_BUILTINTCLASS_FUNCTION, 0);
+  deFunctionTemplate = createBuiltinTemplate("Function", DE_BUILTINTEMPLATE_FUNCTION, 0);
   // The value class constructors just return the value passed, and are not
   // particularly useful.
-  deBoolTclass = createBuiltinTclass("Bool", DE_BUILTINTCLASS_BOOL, 1, "value");
-  deBoolToStringFunc = addMethod(deBoolTclass, DE_BUILTINFUNC_BOOLTOSTRING, "toString", 0);
-  deStringTclass = createBuiltinTclass("String", DE_BUILTINTCLASS_STRING, 1, "value");
-  deStringLengthFunc = addMethod(deStringTclass, DE_BUILTINFUNC_STRINGLENGTH, "length", 0);
-  deStringResizeFunc = addMethod(deStringTclass, DE_BUILTINFUNC_STRINGRESIZE,
+  deBoolTemplate = createBuiltinTemplate("Bool", DE_BUILTINTEMPLATE_BOOL, 1, "value");
+  deBoolToStringFunc = addMethod(deBoolTemplate, DE_BUILTINFUNC_BOOLTOSTRING, "toString", 0);
+  deStringTemplate = createBuiltinTemplate("String", DE_BUILTINTEMPLATE_STRING, 1, "value");
+  deStringLengthFunc = addMethod(deStringTemplate, DE_BUILTINFUNC_STRINGLENGTH, "length", 0);
+  deStringResizeFunc = addMethod(deStringTemplate, DE_BUILTINFUNC_STRINGRESIZE,
       "resize", 1, "length");
-  deStringAppendFunc = addMethod(deStringTclass, DE_BUILTINFUNC_STRINGAPPEND,
+  deStringAppendFunc = addMethod(deStringTemplate, DE_BUILTINFUNC_STRINGAPPEND,
       "append", 1, "element");
-  deStringConcatFunc = addMethod(deStringTclass, DE_BUILTINFUNC_STRINGCONCAT, "concat", 1, "array");
-  deStringToUintLEFunc = addMethod(deStringTclass, DE_BUILTINFUNC_STRINGTOUINTLE,
+  deStringConcatFunc = addMethod(deStringTemplate, DE_BUILTINFUNC_STRINGCONCAT, "concat", 1, "array");
+  deStringToUintLEFunc = addMethod(deStringTemplate, DE_BUILTINFUNC_STRINGTOUINTLE,
      "toUintLE", 1, "width");
-  deStringToUintBEFunc = addMethod(deStringTclass, DE_BUILTINFUNC_STRINGTOUINTBE,
+  deStringToUintBEFunc = addMethod(deStringTemplate, DE_BUILTINFUNC_STRINGTOUINTBE,
      "toUintBE", 1, "width");
-  deStringToHexFunc = addMethod(deStringTclass, DE_BUILTINFUNC_STRINGTOHEX, "toHex", 0);
-  deHexToStringFunc = addMethod(deStringTclass, DE_BUILTINFUNC_HEXTOSTRING, "fromHex", 0);
-  deFindFunc = addMethod(deStringTclass, DE_BUILTINFUNC_FIND, "find", 2, "subString", "offset");
+  deStringToHexFunc = addMethod(deStringTemplate, DE_BUILTINFUNC_STRINGTOHEX, "toHex", 0);
+  deHexToStringFunc = addMethod(deStringTemplate, DE_BUILTINFUNC_HEXTOSTRING, "fromHex", 0);
+  deFindFunc = addMethod(deStringTemplate, DE_BUILTINFUNC_FIND, "find", 2, "subString", "offset");
   setParameterDefault(deFindFunc, 2, deIntegerExpressionCreate(deNativeUintBigintCreate(0), 0));
-  deRfindFunc = addMethod(deStringTclass, DE_BUILTINFUNC_RFIND, "rfind", 2, "subString", "offset");
+  deRfindFunc = addMethod(deStringTemplate, DE_BUILTINFUNC_RFIND, "rfind", 2, "subString", "offset");
   setParameterDefault(deRfindFunc, 2, deIntegerExpressionCreate(deNativeUintBigintCreate(0), 0));
-  deStringReverseFunc = addMethod(deStringTclass, DE_BUILTINFUNC_STRINGREVERSE, "reverse", 0);
-  deUintTclass = createBuiltinTclass("Uint", DE_BUILTINTCLASS_UINT, 1, "value");
-  deUintToStringLEFunc = addMethod(deUintTclass, DE_BUILTINFUNC_UINTTOSTRINGLE, "toStringLE", 0);
-  deUintToStringBEFunc = addMethod(deUintTclass, DE_BUILTINFUNC_UINTTOSTRINGBE, "toStringBE", 0);
-  deUintToStringFunc = addMethod(deUintTclass, DE_BUILTINFUNC_UINTTOSTRING, "toString", 1, "base");
+  deStringReverseFunc = addMethod(deStringTemplate, DE_BUILTINFUNC_STRINGREVERSE, "reverse", 0);
+  deUintTemplate = createBuiltinTemplate("Uint", DE_BUILTINTEMPLATE_UINT, 1, "value");
+  deUintToStringLEFunc = addMethod(deUintTemplate, DE_BUILTINFUNC_UINTTOSTRINGLE, "toStringLE", 0);
+  deUintToStringBEFunc = addMethod(deUintTemplate, DE_BUILTINFUNC_UINTTOSTRINGBE, "toStringBE", 0);
+  deUintToStringFunc = addMethod(deUintTemplate, DE_BUILTINFUNC_UINTTOSTRING, "toString", 1, "base");
   setParameterDefault(deUintToStringFunc, 1, deIntegerExpressionCreate(deNativeUintBigintCreate(10), 0));
-  deIntTclass = createBuiltinTclass("Int", DE_BUILTINTCLASS_INT, 1, "value");
-  deIntToStringFunc = addMethod(deIntTclass, DE_BUILTINFUNC_INTTOSTRING, "toString", 1, "base");
+  deIntTemplate = createBuiltinTemplate("Int", DE_BUILTINTEMPLATE_INT, 1, "value");
+  deIntToStringFunc = addMethod(deIntTemplate, DE_BUILTINFUNC_INTTOSTRING, "toString", 1, "base");
   setParameterDefault(deIntToStringFunc, 1, deIntegerExpressionCreate(deNativeUintBigintCreate(10), 0));
-  deFloatTclass = createBuiltinTclass("Float", DE_BUILTINTCLASS_FLOAT, 1, "value");
-  deModintTclass = createBuiltinTclass("Modint", DE_BUILTINTCLASS_MODINT, 1, "value");
-  deTupleTclass = createBuiltinTclass("Tuple", DE_BUILTINTCLASS_TUPLE, 1, "value");
-  deTupleToStringFunc = addMethod(deTupleTclass, DE_BUILTINFUNC_TUPLETOSTRING, "toString", 0);
-  deStructTclass = createBuiltinTclass("Struct", DE_BUILTINTCLASS_STRUCT, 1, "value");
-  deStructToStringFunc = addMethod(deStructTclass, DE_BUILTINFUNC_STRUCTTOSTRING, "toString", 0);
-  deEnumTclass = createBuiltinTclass("Enum", DE_BUILTINTCLASS_ENUM, 1, "value");
-  deEnumToStringFunc = addMethod(deEnumTclass, DE_BUILTINFUNC_ENUMTOSTRING, "toString", 0);
-  deClassTclass = createBuiltinTclass("Class", DE_BUILTINTCLASS_STRUCT, 0);
-  deNoneTclass = createBuiltinTclass("None", DE_BUILTINTCLASS_NONE, 0);
+  deFloatTemplate = createBuiltinTemplate("Float", DE_BUILTINTEMPLATE_FLOAT, 1, "value");
+  deModintTemplate = createBuiltinTemplate("Modint", DE_BUILTINTEMPLATE_MODINT, 1, "value");
+  deTupleTemplate = createBuiltinTemplate("Tuple", DE_BUILTINTEMPLATE_TUPLE, 1, "value");
+  deTupleToStringFunc = addMethod(deTupleTemplate, DE_BUILTINFUNC_TUPLETOSTRING, "toString", 0);
+  deStructTemplate = createBuiltinTemplate("Struct", DE_BUILTINTEMPLATE_STRUCT, 1, "value");
+  deStructToStringFunc = addMethod(deStructTemplate, DE_BUILTINFUNC_STRUCTTOSTRING, "toString", 0);
+  deEnumTemplate = createBuiltinTemplate("Enum", DE_BUILTINTEMPLATE_ENUM, 1, "value");
+  deEnumToStringFunc = addMethod(deEnumTemplate, DE_BUILTINFUNC_ENUMTOSTRING, "toString", 0);
+  deClassTemplate = createBuiltinTemplate("Class", DE_BUILTINTEMPLATE_STRUCT, 0);
+  deNoneTemplate = createBuiltinTemplate("None", DE_BUILTINTEMPLATE_NONE, 0);
 }
 
 // Cleanup after the builtin classes module.

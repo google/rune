@@ -124,18 +124,18 @@ of an identifier being found.
 When an identifier is successfully bound, all binding objects blocking on this
 event are appended to the queue of active bindings.
 
-When the binding queue is finally empty, we destroy the contents of all tclasses
-which were never instantiated by a constructor.  This also destroys binding
-objects associated with the destroyed code.  If there are any binding objects
-still waiting for binding events, these are reported as undefined or
+When the binding queue is finally empty, we destroy the contents of all
+templates which were never instantiated by a constructor.  This also destroys
+binding objects associated with the destroyed code.  If there are any binding
+objects still waiting for binding events, these are reported as undefined or
 uninitialized identifier errors.
 
-Null expressions remain difficult, but manageable.  When called with a Tclass,
+Null expressions remain difficult, but manageable.  When called with a template,
 null expressions, as in null(Foo), we still return DE_NULL_TYPE datatypes.  We
 allow assignment of null datatypes to variables, but consider a variable bound
 only when we know the specific class for the variable.  Note that null
 expressions can be fully bound, such as null(Foo(123)), since we pass a specific
-class returned by the constructor A(123), rather than a tclass.  The complex
+class returned by the constructor A(123), rather than a template.  The complex
 task of type resolution of variables that have null types in their
 datatype, such as (u32, [null(Foo)]), still remains.  It is OK to still have
 null datatypes after binding so long as we do not try to access class methods
@@ -554,20 +554,22 @@ void deBindAllSignatures(void) {
   }
 }
 
-// Destroy contents of tclasses that were never consttructed.  Delete relations
-// with the tclass, and generated all generated code from those relations.
-static void destroyUnusedTclassesContents(void) {
-  // This iterator is tricky because if we destroy an tclass, and it has an
-  // inner tclass, we'll destroy that too, breaking the assumption made by the
-  // auto-generated safe iterators.  Inner tclasses are always after their
-  // outer tclasses, so it should be safe to destroy them in a backwards
-  // traversal of tclasses.
-  deTclass tclass, prevTclass;
-  for (tclass = deRootGetLastTclass(deTheRoot); tclass != deTclassNull;
-       tclass = prevTclass) {
-    prevTclass = deTclassGetPrevRootTclass(tclass);
-    if (!deTclassBuiltin(tclass) && deTclassGetNumClasses(tclass) == 0) {
-      deDestroyTclassContents(tclass);
+// Destroy contents of templates that were never constructed.  Delete relations
+// with the template, and generated all generated code from those relations.
+static void destroyUnusedTemplateContents(void) {
+  // This iterator is tricky because if we destroy an template, and it has an
+  // inner template, we'll destroy that too, breaking the assumption made by the
+  // auto-generated safe iterators.  Inner templates are always after their
+  // outer templates, so it should be safe to destroy them in a backwards
+  // traversal of templates.
+  deTemplate templ, prevTemplate;
+  for (templ = deRootGetLastTemplate(deTheRoot); templ != deTemplateNull;
+       templ = prevTemplate) {
+    prevTemplate = deTemplateGetPrevRootTemplate(templ);
+    uint32 numClasses = deTemplateGetNumClasses(templ);
+    if (!deTemplateBuiltin(templ) && (numClasses == 0 || (numClasses == 1 &&
+        deClassGetFirstSignature(deTemplateGetFirstClass( templ)) == deSignatureNull))) {
+      deDestroyTemplateContents(templ);
     }
   }
 }
@@ -631,7 +633,7 @@ void deBind(void) {
   deSignatureSetInstantiated(mainSignature, true);
   deQueueSignature(mainSignature);
   deBindAllSignatures();
-  // destroyUnusedTclassesContents();
+  destroyUnusedTemplateContents();
   deReportEvents();
 }
 

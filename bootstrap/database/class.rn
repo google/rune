@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use tclass
+use template
 
-class Class(tclass: Tclass) {
-  tclass.appendClass(self);
+class Class(template: Template) {
+  template.appendClass(self);
 }
 
-relation DoublyLinked Tclass Class cascade
+relation DoublyLinked Template Class cascade

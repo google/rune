@@ -12,19 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use sym
+use function
 
-use parser
-
-class Keyword(self, parser, name: string) {
-  self.sym = Sym.new(name)
-  parser.insertKeyword(self)
+class Template(self) {
 }
 
-relation Hashed Parser Keyword cascade ("sym")
-
-// Type hint.
-if false {
-  dummyParser = Parser("dummy text")
-  dummyKeyword = Keyword(dummyParser, "dummy")
-}
+relation OneToOne Function Template cascade

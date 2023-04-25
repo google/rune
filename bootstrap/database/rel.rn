@@ -13,21 +13,15 @@
 // limitations under the License.
 
 use gen
-use tclass
+use template
 use root
 
-class Relation(self, gen: Generator, parent: Tclass, child: Tclass) {
+class Relation(self, gen: Generator, parent: Template, child: Template) {
   gen.appendRelation(self)
   parent.appendChildRelation(self)
   child.appendParentRelation(self)
 }
 
-// Type hint until Relation constructor is called.
-if false {
-  gen = Generator(getMainFunc())
-  Relation(gen, Tclass(), Tclass())
-}
-
 relation DoublyLinked Generator Relation cascade
-relation DoublyLinked Tclass:"Parent" Relation:"Child" cascade
-relation DoublyLinked Tclass:"Child" Relation:"Parent" cascade
+relation DoublyLinked Template:"Parent" Relation:"Child" cascade
+relation DoublyLinked Template:"Child" Relation:"Parent" cascade

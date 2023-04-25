@@ -136,11 +136,11 @@ static deValue evaluateDotExpression(deBlock scopeBlock, deExpression expression
     type= deValueGetType(value);
   }
   deBlock subBlock = deBlockNull;
-  if (type == DE_TYPE_TCLASS) {
-    subBlock = deFunctionGetSubBlock(deTclassGetFunction(deValueGetTclassVal(value)));
+  if (type == DE_TYPE_TEMPLATE) {
+    subBlock = deFunctionGetSubBlock(deTemplateGetFunction(deValueGetTemplateVal(value)));
   } else if (type == DE_TYPE_CLASS) {
     subBlock = deFunctionGetSubBlock(
-        deTclassGetFunction(deClassGetTclass(deValueGetClassVal(value))));
+        deTemplateGetFunction(deClassGetTemplate(deValueGetClassVal(value))));
   } else if (type == DE_TYPE_FUNCTION) {
     subBlock = deFunctionGetSubBlock(deValueGetFuncVal(value));
   } else {
@@ -269,7 +269,7 @@ static char *expandText(deBlock scopeBlock, char *oldText, deLine line) {
             deValue value = deVariableGetValue(deIdentGetVariable(ident));
             utAssert(value != deValueNull);
             if (deValueGetType(value) == DE_TYPE_TUPLE) {
-              // Must be a tclass spec.
+              // Must be a template instantiation.
               utAssert(deValueGetNumTupleValue(value) == 2);
               value = deValueGetiTupleValue(value, 0);
             }
@@ -330,18 +330,18 @@ static deString expandString(deBlock scopeBlock, deString string, deLine line) {
   return deCStringCreate(result);
 }
 
-// Tclass specs, like Dict<key, value> are inlined where they are used directly,
-// as in self.table = arrayof(B).  In label generation, only the Tclass name is
-// used.  We create a tuple value (tclass, templateParams), where tclass is the
-// tclass found by evaluating the tclass spec's path, and templateParams is the
-// expression list of the tclass spec.
-static deValue createTclassSpecValue(deBlock scopeBlock, deExpression
+// Template instantiations, like Dict<key, value> are inlined where they are used
+// directly, as in self.table = arrayof(B).  In label generation, only the
+// Template name is used.  We create a tuple value (templ, templateParams), where
+// templ is the templ found by evaluating the template instantiation's path, and
+// templateParams is the expression list of the template instantiation.
+static deValue createTemplateInstValue(deBlock scopeBlock, deExpression
     expression, deBigint modulus) {
-  deExpression tclassPath = deExpressionGetFirstExpression(expression);
+  deExpression templPath = deExpressionGetFirstExpression(expression);
   deExpression templateParams = deExpressionGetLastExpression(expression);
-  deValue tclassValue = deEvaluateExpression(scopeBlock, tclassPath, modulus);
+  deValue templValue = deEvaluateExpression(scopeBlock, templPath, modulus);
   deValue tupleVal = deTupleValueCreate();
-  deValueAppendTupleValue(tupleVal, tclassValue);
+  deValueAppendTupleValue(tupleVal, templValue);
   deValueAppendTupleValue(tupleVal, deExpressionValueCreate(templateParams));
   return tupleVal;
 }
@@ -372,8 +372,8 @@ deValue deEvaluateExpression(deBlock scopeBlock, deExpression expression, deBigi
       return evaluateBinaryExpression(scopeBlock, expression, modulus);
     case DE_EXPR_NEGATE:
       return evaluateNegateExpression(scopeBlock, expression, modulus);
-    case DE_EXPR_TCLASS_SPEC:
-      return createTclassSpecValue(scopeBlock, expression, modulus);
+    case DE_EXPR_TEMPLATE_INST:
+      return createTemplateInstValue(scopeBlock, expression, modulus);
     default: {
       deDatatype datatype = deExpressionGetDatatype(expression);
       if (datatype == deDatatypeNull) {
@@ -422,10 +422,10 @@ static deBlock findAppendStatementDestBlock(deBlock scopeBlock, deStatement stat
   deValue value = deEvaluateExpression(scopeBlock, expression, deBigintNull);
   deLine line = deStatementGetLine(statement);
   deDatatypeType type = deValueGetType(value);
-  if (type == DE_TYPE_TCLASS) {
-    return deFunctionGetSubBlock(deTclassGetFunction(deValueGetTclassVal(value)));
+  if (type == DE_TYPE_TEMPLATE) {
+    return deFunctionGetSubBlock(deTemplateGetFunction(deValueGetTemplateVal(value)));
   } else if (type == DE_TYPE_CLASS) {
-    return deFunctionGetSubBlock(deTclassGetFunction(deClassGetTclass(deValueGetClassVal(value))));
+    return deFunctionGetSubBlock(deTemplateGetFunction(deClassGetTemplate(deValueGetClassVal(value))));
   } else if (type == DE_TYPE_FUNCTION) {
     return deFunctionGetSubBlock(deValueGetFuncVal(value));
   } else if (type == DE_TYPE_TUPLE) {
@@ -448,18 +448,18 @@ static void expandIdent(deBlock scopeBlock, deIdent ident) {
   }
 }
 
-// Inline the tclass spec.  Replace the ident expression, say "A", with a tclass
-// spec, like "Entry<key, value>".
-static void inlineTclassSpec(deExpression expression, deValue value) {
+// Inline the template instantiation.  Replace the ident expression, say "A", with
+// a template instantiation, like "Entry<key, value>".
+static void inlineTemplateInst(deExpression expression, deValue value) {
     utAssert(deValueGetNumTupleValue(value) == 2);
-    deValue tclassVal = deValueGetiTupleValue(value, 0);
+    deValue templVal = deValueGetiTupleValue(value, 0);
     deValue paramsVal = deValueGetiTupleValue(value, 1);
     deExpression templateParams = deCopyExpression(deValueGetExprVal(paramsVal));
-    deFunction tclassFunc = deValueGetFuncVal(tclassVal);
-    deIdent ident = deFunctionGetFirstIdent(tclassFunc);
+    deFunction templFunc = deValueGetFuncVal(templVal);
+    deIdent ident = deFunctionGetFirstIdent(templFunc);
     deLine line = deExpressionGetLine(expression);
     deExpression pathExpr = deIdentExpressionCreate(deIdentGetSym(ident), line);
-    deExpressionSetType(expression, DE_EXPR_TCLASS_SPEC);
+    deExpressionSetType(expression, DE_EXPR_TEMPLATE_INST);
     deExpressionAppendExpression(expression, pathExpr);
     deExpressionAppendExpression(expression, templateParams);
 }
@@ -474,7 +474,7 @@ static void expandExpressionIdentifiers(deBlock scopeBlock, deExpression express
     if (ident != deIdentNull) {
       deValue value = getIdentValue(ident, deExpressionGetLine(expression));
       if (deValueGetType(value) == DE_TYPE_TUPLE) {
-        inlineTclassSpec(expression, value);
+        inlineTemplateInst(expression, value);
       }
       newSym = deValueGetName(value);
     } else {
@@ -494,7 +494,7 @@ static void expandExpressionIdentifiers(deBlock scopeBlock, deExpression express
 
 // Expand identifiers and strings in the entire block.
 static void expandBlockIdentifiers(deBlock scopeBlock, deBlock block) {
-  // This handles tclasses, functions, and variables.
+  // This handles templates, functions, and variables.
   deIdent ident;
   deSafeForeachBlockIdent(block, ident) {
     expandIdent(scopeBlock, ident);
@@ -682,19 +682,19 @@ static void importChildClassIntoParentModule(deFunction parentFunc, deFunction c
 }
 
 // If the value is a function, just return the function.  If it is an expession,
-// it must be a tclass spec, in which case, return tclass function.
-static deFunction getValueTclass(deValue value) {
+// it must be a templ instantiation, in which case, return template function.
+static deFunction getValueTemplate(deValue value) {
   if (deValueGetType(value) == DE_TYPE_FUNCTION) {
     return deValueGetFuncVal(value);
   }
   utAssert(deValueGetType(value) == DE_TYPE_TUPLE);
   utAssert(deValueGetNumTupleValue(value) == 2);
-  deValue tclassValue = deValueGetiTupleValue(value, 0);
-  return deValueGetFuncVal(tclassValue);
+  deValue templValue = deValueGetiTupleValue(value, 0);
+  return deValueGetFuncVal(templValue);
 }
 
-// Build a Relation edge between the two tclasses.  The first three parameters
-// MUST be parent tclass, child tclass, and bool cascade.
+// Build a Relation edge between the two templates.  The first three parameters
+// MUST be parent template, child template, and bool cascade.
 static deRelation buildRelation(deGenerator generator) {
   deBlock block = deGeneratorGetSubBlock(generator);
   deVariable parent = deBlockGetFirstVariable(block);
@@ -707,15 +707,15 @@ static deRelation buildRelation(deGenerator generator) {
   deValue cascadeVal = deVariableGetValue(cascade);
   deValue parentLabelVal = deVariableGetValue(parentLabel);
   deValue childLabelVal = deVariableGetValue(childLabel);
-  deFunction parentFunc = getValueTclass(parentVal);
-  deFunction childFunc = getValueTclass(childVal); 
+  deFunction parentFunc = getValueTemplate(parentVal);
+  deFunction childFunc = getValueTemplate(childVal);
   bool cascadeDelete = deValueBoolVal(cascadeVal);
   deString parentLabelString = deValueGetStringVal(parentLabelVal);
   deString childLabelString = deValueGetStringVal(childLabelVal);
-  deTclass parentTclass = deFunctionGetTclass(parentFunc);
-  deTclass childTclass = deFunctionGetTclass(childFunc);
+  deTemplate parentTemplate = deFunctionGetTemplate(parentFunc);
+  deTemplate childTemplate = deFunctionGetTemplate(childFunc);
   importChildClassIntoParentModule(parentFunc, childFunc);
-  return deRelationCreate(generator, parentTclass, parentLabelString, childTclass,
+  return deRelationCreate(generator, parentTemplate, parentLabelString, childTemplate,
       childLabelString, cascadeDelete);
 }
 

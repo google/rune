@@ -101,7 +101,7 @@ static inline void llSetTopOfStackAsDelegate(void) {
 static inline bool isRefCounted(deDatatype datatype) {
   return !deStatementGenerated(llCurrentStatement) &&
       deDatatypeGetType(datatype) == DE_TYPE_CLASS &&
-      deTclassRefCounted(deClassGetTclass(deDatatypeGetClass(datatype)));
+      deTemplateRefCounted(deClassGetTemplate(deDatatypeGetClass(datatype)));
 }
 
 // Generate a location tag if in debug mode.
@@ -609,7 +609,7 @@ static void generateCallToFreeFunc() {
 static char *getDefaultValue(deDatatype datatype) {
   switch (deDatatypeGetType(datatype)) {
     case DE_TYPE_NONE:
-    case DE_TYPE_TCLASS:
+    case DE_TYPE_TEMPLATE:
     case DE_TYPE_FUNCTION:
       utExit("Invalid data type instantiated");
       break;
@@ -1020,7 +1020,7 @@ static llElement findTupleSize(deDatatype datatype) {
 static llElement findDatatypeSize(deDatatype datatype) {
   switch (deDatatypeGetType(datatype)) {
     case DE_TYPE_NONE:
-    case DE_TYPE_TCLASS:
+    case DE_TYPE_TEMPLATE:
     case DE_TYPE_FUNCTION:
     case DE_TYPE_ENUMCLASS:
       utExit("Type has no size");
@@ -1436,7 +1436,7 @@ static bool arrayHasSubArrays(deDatatype datatype) {
 static runtime_type findRuntimeType(deDatatypeType type) {
   switch (type) {
     case DE_TYPE_BOOL:
-    case DE_TYPE_TCLASS:
+    case DE_TYPE_TEMPLATE:
     case DE_TYPE_CLASS:
     case DE_TYPE_UINT:
     case DE_TYPE_STRING:
@@ -2678,13 +2678,13 @@ static void generateDotExpression(deExpression expression) {
     case DE_TYPE_ARRAY:
     case DE_TYPE_TUPLE: {
       // This is a buitin type method access.
-      deTclass tclass = deFindTypeTclass(type);
-      block = deFunctionGetSubBlock(deTclassGetFunction(tclass));
+      deTemplate templ = deFindTypeTemplate(type);
+      block = deFunctionGetSubBlock(deTemplateGetFunction(templ));
       isDelegate = true;
       break;
     }
     case DE_TYPE_FUNCTION:
-    case DE_TYPE_TCLASS:
+    case DE_TYPE_TEMPLATE:
     case DE_TYPE_ENUMCLASS: {
       popElement(false);
       deFunction function = deDatatypeGetFunction(datatype);
@@ -2834,7 +2834,7 @@ static void generateCastExpression(deExpression expression, bool truncate) {
   }
   deExpression right = deExpressionGetLastExpression(expression);
   // By using the type on expression, rather than left, we get the coerced
-  // datatype from a tclass to a class.
+  // datatype from a template to a class.
   deDatatype datatype = castEnumToBaseType(expression, true);
   deDatatype rightDatatype = castEnumToBaseType(right, false);
   if (deSetDatatypeSecret(datatype, false) == deSetDatatypeSecret(rightDatatype, false)) {
@@ -3557,9 +3557,8 @@ static void generateLogicalOrExpression( deExpression expression) {
   llPrevLabel = orShortcutTakenLabel;
 }
 
-// Find the ref width of the class, if this is a class datatype, or the tclass
-// if it is a NULL.  There should not still be TBD classes at this point, so
-// when this is fixed, simplify this code.
+// Find the ref width of the class, if this is a class datatype, or the template
+// if it is a NULL.
 static uint32 findClassRefWidth(deDatatype datatype) {
   switch(deDatatypeGetType(datatype)) {
     case DE_TYPE_CLASS:
@@ -3829,7 +3828,7 @@ static void generateExpression(deExpression expression) {
     case DE_EXPR_DOT:
       generateDotExpression(expression);
       break;
-    case DE_EXPR_TCLASS_SPEC:
+    case DE_EXPR_TEMPLATE_INST:
       utExit("Write me!");
     case DE_EXPR_TUPLE:
       generateTupleExpression(expression);
@@ -4167,7 +4166,7 @@ static void generateReturnStatement(deStatement statement) {
 static void generateRefOrUnrefStatement(deStatement statement) {
   deExpression expression = deStatementGetExpression(statement);
   deDatatype datatype = deExpressionGetDatatype(expression);
-  if (!deTclassRefCounted(deClassGetTclass(deDatatypeGetClass(datatype)))) {
+  if (!deTemplateRefCounted(deClassGetTemplate(deDatatypeGetClass(datatype)))) {
       return;
   }
   generateExpression(expression);

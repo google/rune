@@ -194,17 +194,17 @@ static deExpressionType opEqualsToOp(deExpressionType op) {
 }
 
 // Find the identifier in the block.  If not found directly, check if it is a
-// class block, and look in its tclass if so.  Also see if scopeBlock is a
+// class block, and look in its template if so.  Also see if scopeBlock is a
 // package, in which case check in the package sub-module.
 static deIdent findIdentInBlock(deBlock scopeBlock, utSym sym) {
   deIdent ident = deBlockFindIdent(scopeBlock, sym);
   if (ident == deIdentNull) {
     if (deBlockGetType(scopeBlock) == DE_BLOCK_CLASS) {
-      deTclass tclass = deClassGetTclass(deBlockGetOwningClass(scopeBlock));
-      deBlock tclassBlock = deFunctionGetSubBlock(deTclassGetFunction(tclass));
-      deIdent tclassIdent = deBlockFindIdent(tclassBlock, sym);
-      if (tclassIdent != deIdentNull && deIdentGetType(tclassIdent) == DE_IDENT_FUNCTION) {
-        ident = tclassIdent;
+      deTemplate templ = deClassGetTemplate(deBlockGetOwningClass(scopeBlock));
+      deBlock templBlock = deFunctionGetSubBlock(deTemplateGetFunction(templ));
+      deIdent templIdent = deBlockFindIdent(templBlock, sym);
+      if (templIdent != deIdentNull && deIdentGetType(templIdent) == DE_IDENT_FUNCTION) {
+        ident = templIdent;
       }
     } else if (deBlockGetType(scopeBlock) ==DE_BLOCK_FUNCTION) {
       deFunction function = deBlockGetOwningFunction(scopeBlock);
@@ -504,7 +504,7 @@ static deDatatype bindUnaryExpression(deBlock scopeBlock, deExpression expressio
 static void bindMarkSecretOrPublic(deBlock scopeBlock, deExpression expression) {
   deDatatype datatype = bindUnaryExpression(scopeBlock, expression);
   deDatatypeType type = deDatatypeGetType(datatype);
-  if (type == DE_TYPE_CLASS || type == DE_TYPE_TCLASS) {
+  if (type == DE_TYPE_CLASS || type == DE_TYPE_TEMPLATE) {
     deExprError(expression, "Object references cannot be marked secret");
   }
   bool secret = deExpressionGetType(expression) == DE_EXPR_SECRET;
@@ -537,8 +537,8 @@ static void bindDotDotDotExpression(deBlock scopeBlock, deExpression expression)
     if (leftWidth > rightWidth) {
       deExprError(expression, "Left type width must be <= right type width, eg i64 ... i256");
     }
-    deTclass tclass = deFindDatatypeTclass(leftDatatype);
-    deExpressionSetDatatype(expression, deTclassDatatypeCreate(tclass));
+    deTemplate templ = deFindDatatypeTemplate(leftDatatype);
+    deExpressionSetDatatype(expression, deTemplateDatatypeCreate(templ));
     deExpressionSetIsType(expression, true);
   } else {
     if (leftType != DE_TYPE_UINT && leftType != DE_TYPE_INT) {
@@ -562,32 +562,32 @@ static deDatatypeArray listDatatypes(deExpression list) {
   return types;
 }
 
-// Coerce non-template tclass datatypes to their class.  This is OK for null
+// Coerce non-template template datatypes to their class.  This is OK for null
 // expressions, and arrayof.  Be careful that casting the datatype from the
-// tclass to the class does not result in the compiler thinking it has a valid
-// object reference when it does not, e.g. do not cast tclass Sym to its
+// template to the class does not result in the compiler thinking it has a valid
+// object reference when it does not, e.g. do not cast template Sym to its
 // default class in a Sym.new expression.
 static deDatatype coerceToClassDatatype(deDatatype datatype) {
-  if (deDatatypeGetType(datatype) == DE_TYPE_TCLASS) {
-    deTclass tclass = deDatatypeGetTclass(datatype);
-    if (!deTclassIsTemplate(tclass)) {
-      return deClassDatatypeCreate(deTclassGetDefaultClass(tclass));
+  if (deDatatypeGetType(datatype) == DE_TYPE_TEMPLATE) {
+    deTemplate templ = deDatatypeGetTemplate(datatype);
+    if (!deTemplateIsTemplate(templ)) {
+      return deClassDatatypeCreate(deTemplateGetDefaultClass(templ));
     }
   }
   return datatype;
 }
 
-// Create an array of datatypes for the tclass spec.  Coerce non-template
-// tclass types to their classes.  Report an error if any non-qualified
-// templates are in the spec.
-static deDatatypeArray listTclassSpecDatatypes(deExpression list) {
+// Create an array of datatypes for the template instantiation.  Coerce
+// non-template template types to their classes.  Report an error if any
+// non-qualified templates are used in the instantiation.
+static deDatatypeArray listTemplateInstDatatypes(deExpression list) {
   deDatatypeArray types = deDatatypeArrayAlloc();
   deExpression child;
   deForeachExpressionExpression(list, child) {
     deDatatype datatype = deExpressionGetDatatype(child);
-    if (deDatatypeGetType(datatype) == DE_TYPE_TCLASS) {
-      deTclass tclass = deDatatypeGetTclass(datatype);
-      if (deTclassIsTemplate(tclass)) {
+    if (deDatatypeGetType(datatype) == DE_TYPE_TEMPLATE) {
+      deTemplate templ = deDatatypeGetTemplate(datatype);
+      if (deTemplateIsTemplate(templ)) {
         deExprError(child, "Template parameters must be fully qualified");
       }
       datatype = coerceToClassDatatype(datatype);
@@ -613,13 +613,13 @@ static void bindTupleExpression(deBlock scopeBlock, deExpression expression) {
 // Bind a null expression.  We can say null(f32), which returns 0.0f32, or
 // null(string), which returns "".  Calling null on a call to a constructor
 // yields null for that class, such as foo = null(Foo(123)).  The difficult
-// case is where we call null(Foo), where we pass a Tclass to null.  This can
+// case is where we call null(Foo), where we pass a template to null.  This can
 // be used to set a variable or class data member to null.
 static void bindNullExpression(deBlock scopeBlock, deExpression expression) {
   deDatatype datatype = bindUnaryExpression(scopeBlock, expression);
   datatype = coerceToClassDatatype(datatype);
-  if (deDatatypeGetType(datatype) == DE_TYPE_TCLASS) {
-    deExprError(expression, "Template class must be fully specified in null expression");
+  if (deDatatypeGetType(datatype) == DE_TYPE_TEMPLATE) {
+    deExprError(expression, "Template class parameters must be fully specified in null expression");
   }
   switch (deDatatypeGetType(datatype)) {
     case DE_TYPE_CLASS:
@@ -636,7 +636,7 @@ static void bindNullExpression(deBlock scopeBlock, deExpression expression) {
     case DE_TYPE_ENUMCLASS:
     case DE_TYPE_ENUM:
     case DE_TYPE_FUNCPTR:
-    case DE_TYPE_TCLASS:
+    case DE_TYPE_TEMPLATE:
     case DE_TYPE_EXPR:
       break;
     case DE_TYPE_FUNCTION: {
@@ -689,7 +689,7 @@ static void bindFunctionPointerExpression(deExpression expression) {
 static void bindArrayofExpression(deBlock scopeBlock, deExpression expression) {
   deDatatype datatype = bindUnaryExpression(scopeBlock, expression);
   datatype = coerceToClassDatatype(datatype);
-  if (deDatatypeGetType(datatype) == DE_TYPE_TCLASS) {
+  if (deDatatypeGetType(datatype) == DE_TYPE_TEMPLATE) {
     deExprError(expression, "Cannot have array of template classes");
   }
   deExpressionSetDatatype(expression, deArrayDatatypeCreate(datatype));
@@ -801,7 +801,7 @@ static bool bindIdentExpression(deBlock scopeBlock, deBinding binding,
     case DE_IDENT_FUNCTION: {
       deDatatype datatype = deFunctionDatatypeCreate(deIdentGetFunction(ident));
       deExpressionSetDatatype(expression, datatype);
-      deExpressionSetIsType(expression, deDatatypeGetType(datatype) == DE_TYPE_TCLASS);
+      deExpressionSetIsType(expression, deDatatypeGetType(datatype) == DE_TYPE_TEMPLATE);
       return true;
     }
     case DE_IDENT_UNDEFINED: {
@@ -984,7 +984,7 @@ static void verifyCast(deExpression expression, deDatatype leftDatatype,
     return;
   }
   if (!deDatatypeTypeIsInteger(rightType) && rightType != DE_TYPE_CLASS &&
-      rightType != DE_TYPE_TCLASS) {
+      rightType != DE_TYPE_TEMPLATE) {
     deExprError(expression, "Invalid cast");
   }
   if (rightType  == DE_TYPE_CLASS) {
@@ -1053,7 +1053,7 @@ static bool isMethodCall(deExpression access) {
     return true;
   }
   // Allow method calls on builtin types, such as array.length().
-  return type != DE_TYPE_TCLASS  && type != DE_TYPE_FUNCTION;
+  return type != DE_TYPE_TEMPLATE  && type != DE_TYPE_FUNCTION;
 }
 
 // Return the named parameter variable.
@@ -1076,7 +1076,7 @@ static deVariable findNamedParam(deBlock block, deExpression param) {
 static deDatatypeArray findCallDatatypes(deBlock scopeBlock,
     deExpression expression, deFunction function, deExpression params) {
   deDatatypeArray paramTypes = deDatatypeArrayAlloc();
-  deDatatypeArray tclassSpec = deDatatypeArrayNull;
+  deDatatypeArray templParams = deDatatypeArrayNull;
   deBlock block = deFunctionGetSubBlock(function);
   uint32 numParams = deBlockCountParameterVariables(block);
   deDatatypeArrayResizeDatatypes(paramTypes, numParams);
@@ -1085,14 +1085,14 @@ static deDatatypeArray findCallDatatypes(deBlock scopeBlock,
   deVariable var = deBlockGetFirstVariable(block);
   deExpression access = deExpressionGetFirstExpression(expression);
   uint32 xParam = 0;
-  deTclass tclass = deTclassNull;
+  deTemplate templ = deTemplateNull;
   if (deFunctionGetType(function) == DE_FUNC_CONSTRUCTOR) {
-    tclass = deFunctionGetTclass(function);
+    templ = deFunctionGetTemplate(function);
     if (deDatatypeArrayGetUsedDatatype(paramTypes) == 0) {
       deError(deFunctionGetLine(function), "Constructors require a \"self\" parameter");
     }
-    if (deTclassIsTemplate(tclass)) {
-      tclassSpec = deDatatypeArrayAlloc();
+    if (deTemplateIsTemplate(templ)) {
+      templParams = deDatatypeArrayAlloc();
     }
     // Set a dummy value for now.  It is fixed at the end of this function.
     deDatatypeArraySetiDatatype(paramTypes, 0, deNoneDatatypeCreate());
@@ -1138,9 +1138,9 @@ static deDatatypeArray findCallDatatypes(deBlock scopeBlock,
     if (datatype == deDatatypeNull && deVariableGetInitializerExpression(var) == deExpressionNull) {
       deExprError(params, "Parameter %s was not set and has no default value", deVariableGetName(var));
     }
-    if (deVariableInTclassSignature(var)) {
+    if (deVariableInTemplateSignature(var)) {
       utAssert(datatype != deDatatypeNull);
-      deDatatypeArrayAppendDatatype(tclassSpec, datatype);
+      deDatatypeArrayAppendDatatype(templParams, datatype);
     }
     var = deVariableGetNextBlockVariable(var);
   }
@@ -1149,10 +1149,10 @@ static deDatatypeArray findCallDatatypes(deBlock scopeBlock,
   }
   if (deFunctionGetType(function) == DE_FUNC_CONSTRUCTOR) {
     deClass theClass;
-    if (deTclassIsTemplate(tclass)) {
-      theClass = deTclassFindClassFromSpec(tclass, tclassSpec);
+    if (deTemplateIsTemplate(templ)) {
+      theClass = deTemplateFindClassFromParams(templ, templParams);
     } else {
-      theClass = deTclassGetDefaultClass(tclass);
+      theClass = deTemplateGetDefaultClass(templ);
     }
     utAssert(theClass != deClassNull);
     deDatatypeArraySetiDatatype(paramTypes, 0, deClassGetDatatype(theClass));
@@ -1161,21 +1161,21 @@ static deDatatypeArray findCallDatatypes(deBlock scopeBlock,
 }
 
 // Find the function being called from the bound access expression.  There are
-// three cases: a normal function call, a method call on a Tclass, and a call on
+// three cases: a normal function call, a method call on a Template, and a call on
 // a concrete type such as an array.
 static deFunction findCalledFunction(deExpression access) {
   deDatatype accessDatatype = deExpressionGetDatatype(access);
   deDatatypeType accessType = deDatatypeGetType(accessDatatype);
-  bool isTclass = accessType == DE_TYPE_TCLASS;
-  if (!isTclass && accessType != DE_TYPE_FUNCTION) {
-    deTclass tclass = deFindDatatypeTclass(accessDatatype);
-    if (tclass == deTclassNull) {
+  bool isTemplate = accessType == DE_TYPE_TEMPLATE;
+  if (!isTemplate && accessType != DE_TYPE_FUNCTION) {
+    deTemplate templ = deFindDatatypeTemplate(accessDatatype);
+    if (templ == deTemplateNull) {
       deExprError(access, "Cannot call object of type %s\n", deDatatypeGetTypeString(accessDatatype));
     }
-    accessDatatype = deTclassDatatypeCreate(tclass);
-    isTclass = true;
+    accessDatatype = deTemplateDatatypeCreate(templ);
+    isTemplate = true;
   }
-  return isTclass? deTclassGetFunction(deDatatypeGetTclass(accessDatatype)) :
+  return isTemplate? deTemplateGetFunction(deDatatypeGetTemplate(accessDatatype)) :
       deDatatypeGetFunction(accessDatatype);
 }
 
@@ -1211,8 +1211,8 @@ static void bindFunctionPointerCall(deBlock scopeBlock, deExpression expression)
 // Mark the class created by the constructor as bound.
 static void markConstructorClassBound(deSignature signature) {
   deFunction function = deSignatureGetFunction(signature);
-  deTclass tclass = deFunctionGetTclass(function);
-  deClass theClass = deClassCreate(tclass, signature);
+  deTemplate templ = deFunctionGetTemplate(function);
+  deClass theClass = deClassCreate(templ, signature);
   if (!deClassBound(theClass)) {
     deParamspec paramspec = deSignatureGetiParamspec(signature, 0);
     deSignatureSetReturnType(signature, deParamspecGetDatatype(paramspec));
@@ -1360,8 +1360,8 @@ static deBlock findExpressionSubScope(deExpression expression) {
       break;
     case DE_TYPE_CLASS:
       return deClassGetSubBlock(deDatatypeGetClass(datatype));
-    case DE_TYPE_TCLASS:
-      return deFunctionGetSubBlock(deTclassGetFunction(deDatatypeGetTclass(datatype)));
+    case DE_TYPE_TEMPLATE:
+      return deFunctionGetSubBlock(deTemplateGetFunction(deDatatypeGetTemplate(datatype)));
     case DE_TYPE_FUNCTION:
     case DE_TYPE_TUPLE:
     case DE_TYPE_STRUCT:
@@ -1565,8 +1565,8 @@ static bool bindDotExpression(deBlock scopeBlock, deExpression expression) {
           deStringGetCstr(string));
     }
     classBlock = deClassGetSubBlock(deDatatypeGetClass(datatype));
-  } else if (type == DE_TYPE_TCLASS) {
-    classBlock = deFunctionGetSubBlock(deTclassGetFunction(deDatatypeGetTclass(datatype)));
+  } else if (type == DE_TYPE_TEMPLATE) {
+    classBlock = deFunctionGetSubBlock(deTemplateGetFunction(deDatatypeGetTemplate(datatype)));
   } else if (type == DE_TYPE_FUNCTION || type == DE_TYPE_STRUCT || type == DE_TYPE_ENUMCLASS) {
     deFunction function = deDatatypeGetFunction(datatype);
     deFunctionType funcType = deFunctionGetType(function);
@@ -1578,8 +1578,8 @@ static bool bindDotExpression(deBlock scopeBlock, deExpression expression) {
     classBlock = deFunctionGetSubBlock(function);
   } else {
     // Some builtin types have method calls.
-    deTclass tclass = deFindDatatypeTclass(datatype);
-    classBlock = deFunctionGetSubBlock(deTclassGetFunction(tclass));
+    deTemplate templ = deFindDatatypeTemplate(datatype);
+    classBlock = deFunctionGetSubBlock(deTemplateGetFunction(templ));
   }
   utAssert(deExpressionGetType(identExpr) == DE_EXPR_IDENT);
   // Make the right-hand expression, if we haven't already.
@@ -1634,24 +1634,24 @@ static void bindNamedParameter(deBlock scopeBlock, deExpression expression) {
   deIdentAppendExpression(ident, paramNameExpression);
 }
 
-// Bind a tclass specification, e.g. Point<i322, i32>.  The list expression of
-// types on the right specifies the class type of the tclass on the left.
-static void bindTclassSpec(deBlock scopeBlock, deExpression expression) {
+// Bind a template instantiation, e.g. Point<i322, i32>.  The list expression of
+// types on the right instantiates a class instance of the template on the left.
+static void bindTemplateInst(deBlock scopeBlock, deExpression expression) {
   deExpression left = deExpressionGetFirstExpression(expression);
   deExpression right = deExpressionGetNextExpression(left);
   deDatatype leftType = deExpressionGetDatatype(left);
-  if (deDatatypeGetType(leftType) != DE_TYPE_TCLASS) {
-    deExprError(expression, "Only template classes can have template specifiers");
+  if (deDatatypeGetType(leftType) != DE_TYPE_TEMPLATE) {
+    deExprError(expression, "Only template classes can have template parameters");
   }
-  deTclass tclass = deDatatypeGetTclass(leftType);
-  deDatatypeArray tclassSpec = listTclassSpecDatatypes(right);
-  uint32 numSpecs = deDatatypeArrayGetUsedDatatype(tclassSpec);
-  uint32 expectedSpecs = deTclassGetNumTemplateParams(tclass);
-  if (numSpecs != expectedSpecs) {
+  deTemplate templ = deDatatypeGetTemplate(leftType);
+  deDatatypeArray templParams = listTemplateInstDatatypes(right);
+  uint32 numParams = deDatatypeArrayGetUsedDatatype(templParams);
+  uint32 expectedParams = deTemplateGetNumTemplateParams(templ);
+  if (numParams != expectedParams) {
     deExprError(expression, "Template class %s expected %u parameters, got %u",
-        deTclassGetName(tclass), expectedSpecs, numSpecs);
+        deTemplateGetName(templ), expectedParams, numParams);
   }
-  deClass theClass = deTclassFindClassFromSpec(tclass, tclassSpec);
+  deClass theClass = deTemplateFindClassFromParams(templ, templParams);
   deExpressionSetDatatype(expression, deClassGetDatatype(theClass));
 }
 
@@ -1869,8 +1869,8 @@ static deBindRes bindExpression(deBlock scopeBlock, deExpression expression) {
     case DE_EXPR_NAMEDPARAM:
       bindNamedParameter(scopeBlock, expression);
       break;
-    case DE_EXPR_TCLASS_SPEC:
-      bindTclassSpec(scopeBlock, expression);
+    case DE_EXPR_TEMPLATE_INST:
+      bindTemplateInst(scopeBlock, expression);
       break;
   }
   return DE_BINDRES_OK;  // Success.

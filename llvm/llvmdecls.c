@@ -239,7 +239,7 @@ static char *getTypeString(deDatatype datatype, bool isDefinition) {
     case DE_TYPE_NONE:
       return "void";
     case DE_TYPE_FUNCTION:
-    case DE_TYPE_TCLASS:
+    case DE_TYPE_TEMPLATE:
     case DE_TYPE_ENUMCLASS:
     case DE_TYPE_EXPR:
       utExit("Unexpected type");

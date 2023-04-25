@@ -48,23 +48,17 @@ void io_getcwd(runtime_array *array) {
   free(path);
 }
 
-// Return a temp buffer containing the C string representation of the array data.
-// The caller must free the returned string.
-static char *arrayToCstr(runtime_array *array) {
-  size_t len = array->numElements;
-  char *string = malloc(len + 1);
-  memcpy(string, array->data, len);
-  string[len] = '\0';
-  return string;
-}
-
 // Call fopen.
 uint64_t io_file_fopenInternal(runtime_array *fileName, runtime_array *mode) {
-  char *fileNameCstr = arrayToCstr(fileName);
-  char *modeCstr = arrayToCstr(mode);
+  size_t fileNameLen = fileName->numElements;
+  size_t modeLen = mode->numElements;
+  char fileNameCstr[fileNameLen + 1];
+  char modeCstr[modeLen + 1];
+  memcpy(fileNameCstr, fileName->data, fileNameLen);
+  memcpy(modeCstr, mode->data, modeLen);
+  fileNameCstr[fileNameLen] = '\0';
+  modeCstr[modeLen] = '\0';
   uint64_t result = (uint64_t)(uintptr_t)fopen(fileNameCstr, modeCstr);
-  free(fileNameCstr);
-  free(modeCstr);
   return result;
 }
 

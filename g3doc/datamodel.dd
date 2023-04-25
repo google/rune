@@ -26,12 +26,12 @@ class Signature
 
 class Statement
 
-class Tclass
+class Template
 
 class Variable
 
-relationship Function Tclass cascade
-relationship Tclass Class doubly_linked cascade
+relationship Function Template cascade
+relationship Template Class doubly_linked cascade
 relationship Root:Main Function:Main cascade
 relationship Function:Parent Function:Child doubly_linked cascade
 relationship Class:Parent Function:Sub cascade
@@ -63,6 +63,6 @@ relationship Function Signature doubly_linked cascade
 relationship Signature Paramspec array cascade
 relationship Variable Paramspec cascade
 relationship Function Generator cascade
-relationship Tclass:Parent Relation:Child doubly_linked cascade
-relationship Tclass:Child Relation:Parent doubly_linked cascade
+relationship Template:Parent Relation:Child doubly_linked cascade
+relationship Template:Child Relation:Parent doubly_linked cascade
 relationship Generator Relation doubly_linked cascade

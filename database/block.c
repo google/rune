@@ -87,7 +87,7 @@ deBlock deBlockGetOwningBlock(deBlock block) {
     case DE_BLOCK_STATEMENT:
       return deStatementGetBlock(deBlockGetOwningStatement(block));
     case DE_BLOCK_CLASS:
-      return deFunctionGetBlock(deTclassGetFunction(deClassGetTclass(deBlockGetOwningClass(block))));
+      return deFunctionGetBlock(deTemplateGetFunction(deClassGetTemplate(deBlockGetOwningClass(block))));
   }
   utExit("Unknown block type");
   return deBlockNull;  // Dummy return.
@@ -187,7 +187,7 @@ deBlock deCopyBlock(deBlock block) {
   return newBlock;
 }
 
-// Copy identifiers for sub-tclasses, iterators, and functions from
+// Copy identifiers for sub-templates, iterators, and functions from
 // |sourceBlock| to |destBlock|.
 void deCopyFunctionIdentsToBlock(deBlock sourceBlock, deBlock destBlock) {
   deIdent ident;

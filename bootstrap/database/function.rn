@@ -151,9 +151,9 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     if !isnull(self.typeExpr) {
       newFunction.typeExpr = self.typeExpr!.copy()
     }
-    // TODO: Comment this back in when we port tclass.
+    // TODO: Comment this back in when we port templates.
     // if self.type == FuncType.Constructor {
-      // self.tclass.copy(newFunction)
+      // self.templ.copy(newFunction)
     // }
     return newFunction
   }

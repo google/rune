@@ -127,7 +127,7 @@ static deFunction copyFunction(deFunction function, deBlock destBlock, bool shal
   if (!shallow) {
     deFunctionType type = deFunctionGetType(function);
     if (type == DE_FUNC_CONSTRUCTOR) {
-      deCopyTclass(deFunctionGetTclass(function), newFunction);
+      deCopyTemplate(deFunctionGetTemplate(function), newFunction);
     }
   }
   deRelation relation = deFunctionGetGeneratedRelation(function);

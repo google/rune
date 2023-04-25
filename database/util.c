@@ -155,14 +155,14 @@ char *deGetBlockPath(deBlock block, bool as_label) {
     case DE_BLOCK_CLASS: {
       deClass theClass = deBlockGetOwningClass(block);
       if (as_label) {
-        deTclass tclass = deClassGetTclass(theClass);
+        deTemplate templ = deClassGetTemplate(theClass);
         if (deClassGetNumber(theClass) == 1) {
-          name = deTclassGetName(tclass);
+          name = deTemplateGetName(templ);
         } else {
-          name = utSprintf("%s_ver%u", deTclassGetName(tclass), deClassGetNumber(theClass));
+          name = utSprintf("%s_ver%u", deTemplateGetName(templ), deClassGetNumber(theClass));
         }
       } else {
-        name = deTclassGetName(deClassGetTclass(theClass));
+        name = deTemplateGetName(deClassGetTemplate(theClass));
       }
       break;
     }
