@@ -1,0 +1,103 @@
+//  Copyright 2023 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import io
+
+use char
+use mtoken
+use rule
+
+enum TokenType {
+  Nonterm
+  Colon
+  Eof
+}
+
+struct Lexval {
+  type: TokenType
+  pos: u32  // Position the lexical value occurs in the text.
+  len: u32
+}
+
+// Parse the file of grammar rules and return a Parser for it.
+func parseRules(fileName: string) -> Parser {
+  text = io.open(fileName).read()
+  parser = Parser(text)
+  parser.parseRules(parser)
+}
+
+class Parser(self, text: string) {
+  self.text = text
+  self.pos = 0
+  self.lineNum = 1
+
+  // Parse rules from text, and build
+  func parseRules(self: Parser) {
+    while self.parserRule() {
+    }
+  }
+
+  // Parse a single rule.
+  func parserRule(self: Parser) {
+    self.parseRuleHeader()
+    self.parseProductions()
+  }
+
+  // Parse a rule header: NONTERM ':'.
+  func parseRuleHeader(self: Parser) {
+    lexval = self.parseToken()
+    self.expectToken(lexval, TokenType.Nonterm)
+    lexVal = self.parseToken()
+    self.expectToken(lexval, TokenType.Colon)
+  }
+
+  // Parse productionos for a rule.
+  func parseProductions(parser: Parser) {
+  }
+
+  func parseToken(self:Parser) -> Lexval {
+    self.skipSpace()
+    if self.eof() {
+      return Lexval(TokenType.Eof, self.pos, 0)
+    }
+    c = self.text[self.pos]
+    // Note: For now, the syntax parser does not support UTF-8.
+    if isalpha(c) {
+      do {
+        self.pos += 1
+      } while !self.eof() && isalnum(c)
+    }
+  }
+
+  // Skip space in the input.
+  func skipSpace(self) {
+    while !self.eof() && self.text[pos] < ' ' {
+      self.pos += 1
+    }
+  }
+
+  func eof(self) {
+    return self.pos >= self.text.length()
+  }
+
+  func expectToken(self, lexval: Lexval, value: string) {
+    if self.pos + value.length() > self.text.length() {
+      self.error("Input too short: expecting " + value)
+    }
+  }
+
+  func error(self, text) {
+    throw "Syntax error at ", self.lineNum, ": ", text
+  }
+}

@@ -1,0 +1,212 @@
+//  Copyright 2023 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// This is enough info to describe the position of one UTF-8 character.
+struct Char {
+  pos: u32
+  len: u8
+  valid: bool
+}
+
+func isapha(c: Char) {
+  if c.len != 1 {
+    return false
+  }
+  return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+}
+
+func readChar(text: string, pos: u32) -> Char {
+  if pos >= <pos>text.length() {
+    return Char(pos, 0u8, false)
+  }
+  if isAscii(text, pos) {
+    if isValidAscii(text, pos) {
+      return Char(pos, 1u8, true)
+    }
+    return Char(pos, 1u8, false)
+  }
+  return readUTF8Char(text, pos)
+}
+
+func isAscii(text: string, pos:u32) {
+  return text[pos] < 128
+}
+
+func isValidAscii(text: string, pos: u32) {
+  c = text[pos]
+  if c >= ' ' && c <= '~' {
+    return true
+  }
+  return c == '\n' || c == '\r' || c == '\t'
+}
+
+// A non-ASCII UTF-8 character will match [\xc0-\xf7][\x80-\xbf]*.
+// See https://en.wikipedia.org/wiki/UTF-8 for the format details.
+func readUTF8Char(text: string, pos: u32) {
+  textlen = <u32>text.length()
+  c = text[pos]
+  if c & 0x20 == 0 {
+    len = 2u8
+  } else if c & 0x10 == 0 {
+    len = 3u8
+  } else if c & 0x08 == 0 {
+    len = 4u8
+  } else {
+    return Char(pos, 1u8, false)
+  }
+  if pos + <pos>len > textlen {
+    return Char(pos, <u8>(textlen - pos), false)
+  }
+  for i in range(1u8, len) {
+    if text[pos + <pos>i] & 0xC0 != 0x80 {
+      return Char(pos, <u8>(i + 1), false)
+    }
+  }
+  if encodingIsOverlong(text, pos, len) || isTrojanSourceChar(text, pos, len) {
+    return Char(pos, len, false)
+  }
+  return Char(pos, len, true)
+}
+
+// Determine if the encoding is overly long.  All valid encodings are the
+// shortest possible.  E.g. 0xC041 encodes 'A', but is 2 bytes.  The first
+// extra byte adds 4 new bits, and after that each adds 5 bits.
+func encodingIsOverlong(text: string, pos: u32, len: u8) {
+  if len == 2 {
+    // See if the leading 4 bits are zero.
+    return text[pos] & 0x1E == 0
+  }
+  if len == 3 {
+    // See if the leading 5 bits are zero.
+    return text[pos] & 0x0F == 0 && text[pos + 1] & 0x20 == 0
+  }
+  // See if the leading 5 bits are zero.
+  return text[pos] & 0x07 == 0 && text[pos + 1] & 0x30 == 0
+}
+
+// Defend against Trojan source reordering attacks.  See:
+//
+//     https://trojansource.codes/trojan-source.pdf
+//
+// The characters which can be used in reordering attacks:
+//
+//    LRE U+202A Left-to-Right Embedding
+//    RLE U+202B Right-to-Left Embedding
+//    PDF U+202C Pop Directional Formatting
+//    LRO U+202D Left-to-Right Override
+//    RLO U+202E Right-to-Left Override
+//    LRI U+2066 Left-to-Right Isolate
+//    RLI U+2067 Right-to-Left Isolate
+//    FSI U+2068 First Strong Isolate
+//    PDI U+2069 Pop Directional Isolate
+//
+// These are all 14-bit characters, requiring 3 bytes.  The low 12 bits are
+// encoded in the last two bytes, and the 2 MSB bits are in the low nibble of
+// the first.  The first character is 0xE2.  The lower 12 bits, when split into
+// 6-bi chunks and ORed with 0x80, are:
+//
+//   2A ... 2E => 80 AA ... 80 AE
+//   66 ... 68 => 81 A6 ... 81 A9
+//
+// Note that we do _not_ defend against homoglyphs attacks and non-printable
+// characters, as Unicode makes this a more complex task than writing the Rune
+// compiler.  This attack is reasonably described at
+// https://access.redhat.com/security/cve/cve-2021-42694
+// Note that no mitigation is suggested.  At https://trojansource.codes, the
+// Trojan Source authors suggest banning "identifiers with mixed-script
+// confusable characters."  Good luck with that.  There are "zero width"
+// characters, "invisible" format characters, inter-line annotations,
+// characters that are only printable depending on context. There are nearly
+// identical letters in several languages.  There are characters with the dots
+// above integrated with the character, and there are equivalent forms that add
+// the dot using a Unicode diacritical suffix.
+func isTrojanSourceChar(text: string, pos: u32, len: u8) {
+  c1 = text[pos]
+  if (c1 == 0xE2) {
+    c2 = text[pos + 1]
+    c3 = text[pos + 2]
+    if (c2 == 0x80) {
+      if ((c3 >= 0xAA && c3 <= 0xAE)) {
+        return true
+      }
+    } else if (c2 == 0x81) {
+      if (c3 >= 0xA6 && c3 <= 0xA9) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+unittest readAscii {
+  for val in range(32u8) {
+    c = readChar(chr(val), 0u32)
+    if val == '\n' || val == '\r' || val == '\t' {
+      assert c.valid
+    } else {
+      assert !c.valid
+    }
+  }
+  for val in range(32u8, 127u8) {
+    c = readChar(chr(val), 0u32)
+    assert c.valid
+  }
+  c = readChar(chr(127u8), 0u32)
+  assert !c.valid  // 128 is the DEL character.
+}
+
+unittest readUTF8 {
+  char = readChar("€", 0u32)
+  assert char.pos == 0 && char.len == 3
+  schön = "Ἀφροδίτη"
+  println schön 
+  pos = 0u32
+  while pos < <pos>schön.length() {
+    char = readChar(schön, pos)
+    assert char.valid
+    println "'", schön[pos:pos + <u32>char.len], "'"
+    pos += <pos>char.len
+  }
+}
+
+unittest overlong {
+  // Overlong encoding of '\0'
+  char = readChar("\xc0\x80", 0u32)
+  assert !char.valid
+  // An even longer overlong encoding of '\0'
+  char = readChar("\xe0\x80\x80", 0u32)
+  assert !char.valid
+  // Overlong encoding of €.
+  char = readChar("\xf0\82\82\ac", 0u32)
+  assert !char.valid
+}
+
+unittest trojanSource {
+  table = [
+      [0xE2u8, 0x80u8, 0xAAu8],
+      [0xE2u8, 0x80u8, 0xABu8],
+      [0xE2u8, 0x80u8, 0xACu8],
+      [0xE2u8, 0x80u8, 0xADu8],
+      [0xE2u8, 0x80u8, 0xAEu8],
+      [0xE2u8, 0x81u8, 0xA6u8],
+      [0xE2u8, 0x81u8, 0xA7u8],
+      [0xE2u8, 0x81u8, 0xA8u8],
+      [0xE2u8, 0x81u8, 0xA9u8]
+  ]
+  for l in table {
+    s = <string>l
+    char = readChar(s, 0u32)
+    assert !char.valid
+  }
+}

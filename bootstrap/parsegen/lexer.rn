@@ -1,0 +1,109 @@
+//  Copyright 2023 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import io
+use sym
+
+use char
+use mtoken
+use rule
+
+enum TokenType {
+  Ident
+  Keyword
+  Eof
+}
+
+// This is all the info needed to be able to point out exactly where the token
+// occurs when reporting errors.
+struct Lexval {
+  type: TokenType
+  pos: u32  // Position the lexical value occurs in the text.
+  len: u32
+  line: u32
+}
+
+class Keytab(self) {
+}
+
+class Keyword(self, keytab: Keytab, name: string) {
+  self.sym = Sym.new(name)
+  keytab.insertKeyword(self)
+}
+
+relation Hashed Keytab Keyword cascade ("sym")
+
+// Type hint.
+if false {
+  dummyKeytab = Keytab()
+  dummyKeyword = Keyword(dummyKeytab, "dummy")
+}
+
+class Lexer(self, fileName: string, keytab: Keytab, text: string) {
+  file = io.open(fileName)
+  if isnu(file) {
+    self.error(0, "Unable to open file " + fileName)
+  }
+  self.text = file!.read()
+  self.pos = 0
+  self.len = self.text.length()
+  self.lineNum = 1
+
+  func parseToken(self:Parser) -> Lexval {
+    self.skipSpace()
+    if self.eof() {
+      return self.eofToken()
+    }
+    c = self.readChar()
+    if isalpha(c) {
+      do {
+        self.pos += 1
+      } while !self.eof() && isalnum(c)
+    }
+  }
+
+  // Skip space in the input.
+  func skipSpace(self) {
+    while !self.eof() && self.text[pos] < ' ' {
+      self.pos += 1
+    }
+  }
+
+  func eof(self) {
+    return self.pos >= self.text.length()
+  }
+
+  // A non-ASCII UTF-8 character will match ([\xc0-\xff][\x80-\xbf]*).
+  func readChar(self) -> Char {
+    if self.isAscii() {
+      if isInvalidAsciiChar() {
+        self.error(1, "Invalid ASCII character")
+      }
+    }
+  }
+
+  func eofToken(self) {
+    return Lexval(TokenType.Eof, self.pos, 0)
+  }
+
+  func expectToken(self, lexval: Lexval, value: string) {
+    if self.pos + value.length() > self.text.length() {
+      self.error("Input too short: expecting " + value)
+    }
+  }
+
+  func error(self, text) {
+    throw "Syntax error at ", self.lineNum, ": ", text
+  }
+}

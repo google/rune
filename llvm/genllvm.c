@@ -2558,8 +2558,10 @@ static void generateSliceExpression(deExpression expression) {
   generateExpression(left);
   llElement sourceElement = popElement(false);
   generateExpression(lower);
+  resizeTop(llSizeWidth);
   llElement lowerElement = popElement(true);
   generateExpression(upper);
+  resizeTop(llSizeWidth);
   llElement upperElement = popElement(true);
   llElement destElement = allocateTempArray(datatype);
   llElement sizeValue = findDatatypeSize(elementDatatype);
