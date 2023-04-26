@@ -681,7 +681,7 @@ void dePrintStack(void) {
         deDumpLine(deStatementGetLine(statement));
       } else {
         // The fully generated statement can hold more information than the
-        // generator line of text.
+        // generated line of text.
         printf("generated statement: ");
         deDumpStatement(statement);
       }

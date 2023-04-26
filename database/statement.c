@@ -34,7 +34,7 @@ char* deStatementTypeGetKeyword(deStatementType type) {
     case DE_STATEMENT_CASE: return "case";
     case DE_STATEMENT_DEFAULT: return "default";
     case DE_STATEMENT_RELATION: return "relation";
-    case DE_STATEMENT_GENERATE: return "generate";
+    case DE_STATEMENT_TRANSFORM: return "transform";
     case DE_STATEMENT_APPENDCODE: return "appendcode";
     case DE_STATEMENT_PREPENDCODE: return "prependcode";
     case DE_STATEMENT_USE: return "use";

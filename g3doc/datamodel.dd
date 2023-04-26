@@ -12,7 +12,7 @@ class Filepath
 
 class Function
 
-class Generator
+class Transformer
 
 class Ident
 
@@ -62,7 +62,7 @@ relationship Class Signature doubly_linked cascade
 relationship Function Signature doubly_linked cascade
 relationship Signature Paramspec array cascade
 relationship Variable Paramspec cascade
-relationship Function Generator cascade
+relationship Function Transformer cascade
 relationship Template:Parent Relation:Child doubly_linked cascade
 relationship Template:Child Relation:Parent doubly_linked cascade
-relationship Generator Relation doubly_linked cascade
+relationship Transformer Relation doubly_linked cascade

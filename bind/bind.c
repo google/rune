@@ -24,7 +24,7 @@ Binding in Rune is challenging.  The usual one-pass per function fails because:
 
 * Recursive binding: While binding a function signature that calls itself, we
   are blocked on the recursive call since the return type is still unknown.
-* Code generation: While binding a function signature, there is an undefined
+* Code transforms: While binding a function signature, there is an undefined
   identifier.  This may be real, or maybe it hasn't been generated yet.
 * Undefined class data members: While binding class A, we refer to a method in
   class B that uses an undefined member variable on B.  These members are
@@ -85,13 +85,13 @@ In A.rn:
       ...  The rest is unit test code that does not use B.
     }
 
-The problem is that the DoublyLinked code generator added lines to A's
+The problem is that the DoublyLinked code transformer added lines to A's
 constructor:
 
     self.firstB = null(B)
     self.lastB = null(B)
 
-In A's destructor, the code generator added a loop to destroy all the B
+In A's destructor, the code transformer added a loop to destroy all the B
 objects, and that loop refers to self.firstB.  The statement self.firstB =
 null(B) does not provide enough information to fully specify the type of B,
 which is a template class due to the <value> parameter.  The type hint gets
@@ -112,7 +112,7 @@ will be uniquified per signature, before binding, so binding can be done once.
 Similarly a Binding has a list of Expression objects representing the queue
 of expressions to be bound for a statement, default value expression, or type
 expression.  The new scheme allows multiple expression trees to be bound in
-parallel, and the assembly code generator no longer has to rebind a function
+parallel, and the assembly code transformer no longer has to rebind a function
 signature before generating code.
 
 Binding objects, when created, are appended to a global queue of binding objects

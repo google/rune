@@ -66,7 +66,7 @@ void deDumpTemplate(deTemplate templ) {
 }
 
 // Add the destroy method to the template.  By default, it just deletes the
-// object, but code generators will be able to add more to it.
+// object, but code transformers will be able to add more to it.
 static void addDestroyMethod(deTemplate templ) {
   deBlock classBlock = deFunctionGetSubBlock(deTemplateGetFunction(templ));
   deLine line = deBlockGetLine(classBlock);

@@ -45,7 +45,7 @@ uint32 deInputStringPos;
 uint32 deCommentDepth;
 int32 deParenDepth, deBracketDepth;
 bool deReachedEndOfFile;
-bool deInGenerator;
+bool deInTransformer;
 bool deParsing;
 char *deCurrentFileName;
 bool deParsingMainModule;
@@ -368,7 +368,7 @@ static void executeModuleRelations(deBlock moduleBlock) {
   deStatement statement;
   deSafeForeachBlockStatement(moduleBlock, statement) {
     deStatementType type = deStatementGetType(statement);
-    if (type == DE_STATEMENT_RELATION || type == DE_STATEMENT_GENERATE) {
+    if (type == DE_STATEMENT_RELATION || type == DE_STATEMENT_TRANSFORM) {
       deInstantiateRelation(statement);
       deStatementDestroy(statement);
     }

@@ -148,8 +148,8 @@ cascade-delete `Template`, since destroying the data member would not
 automatically null out the data member.
 
 Unsafe code which could result in dangling pointers is allowed only in code
-generators, which are assumed to be correct. Code generators should be rarely
-written, and very carefully reviewed for correctness.
+transformers, which are assumed to be correct. Code transformers should be
+rarely written, and very carefully reviewed for correctness.
 
 ## Class
 
@@ -207,7 +207,7 @@ enum FuncType {
   Final
   Struct
   Enum
-  Generator
+  Transformer
   Unittest
 }
 ```
@@ -296,9 +296,9 @@ locations of the Function. They can be referenced before assigned, e.g. in a
 `typeof()` expression.
 
 There are three levels of hierarchical scoping. The main `Function` contains
-global variables that are accessible to any code generator, but not accessible
-elsewhere. These globals include the dynamic arrays of member data for `class`
-members. Rune uses
+global variables that are accessible to any code transformers, but not
+accessible elsewhere. These globals include the dynamic arrays of member data
+for `class` members. Rune uses
 [SoA memory layout](https://en.wikipedia.org/wiki/AoS_and_SoA), and objects are
 typically 32-bit references that index into these global arrays. In general,
 Rune users do not need to be aware of the global scope. Unlike some languages,
@@ -422,7 +422,7 @@ enum StateType {
   Println  // println "Hello, World!"
   Throw
   Return
-  Generate
+  Transform
   Relation
   Appendcode
   Prependcode
@@ -432,7 +432,7 @@ enum StateType {
   Importrpc
   Foreach
   Yield
-  Ref  // These two are used by generators to manage reference counts.
+  Ref  // These two are used by transformers to manage reference counts.
   Unref
 }
 ```
@@ -790,34 +790,34 @@ relation Array Signature Paramspec cascade
 relation OneToOne Variable Paramspec cascade
 ```
 
-## Generator
+## Transformer
 
-`Generator`s generate code, typically for `relation`s between two `Template`es.
-This is what enables Rune to auto-generated destructors while avoiding dangling
-pointers. Generators are just compiled Rune code\* (in the C compiler, a subset
-of Rune is interpreted) that gets dynamically loaded and executed by the Rune
-compiler.
+`Transformers`s generate Rune code, typically for `relation`s between two
+`Template`es. This is what enables Rune to auto-generated destructors while
+avoiding dangling pointers. Transformers are just compiled Rune code\* (in the C
+compiler, a subset of Rune is interpreted) that gets dynamically loaded and
+executed by the Rune compiler.
 
-Generators call`prependcode` and `appendcode` to add functionality to
+Transformers call`prependcode` and `appendcode` to add functionality to
 `Template`es. Identifiers and strings in these blocks of code are expanded to
 generate the final code that is inserted. In a string or identifier, `$<name>`
-is replaced with the name of the `Template` passed to the generator. For
+is replaced with the name of the `Template` passed to the transformer. For
 example, `$A` is replaced with `Graph` if `Graph` is passed in as parameter `A`.
 The end of the local name can be clarified with a trailing `_`. For example
 `num$B_Entries` might expand to `numSymtabEntries`.
 
-Reference counting is disabled in generators. Instead the generator should call
-`ref` and `unref` statements as appropriate. For example, a doubly-linked list
-generator should `ref` a child object when inserted, and `unref` it when
+Reference counting is disabled in transformer. Instead the transformer should
+call `ref` and `unref` statements as appropriate. For example, a doubly-linked
+list transformer should `ref` a child object when inserted, and `unref` it when
 removed. There is no need to call `ref` and `unref` for parent, previous, or
 next references.
 
-`Relation` generators must update destructors. The general rule is first remove
+`Relation` transformer must update destructors. The general rule is first remove
 an object from all `relation`s, using `prependcode`, and then cascade-delete or
 remove children from the `relation` using `appendcode`.
 
 Currently, the C Rune compiler does not generate compile-time errors when doing
-dangerous operations outside of code generators. For example, I can do the
+dangerous operations outside of code transformers. For example, I can do the
 following:
 
 ```rune
@@ -838,7 +838,7 @@ compile-time error for this.
 *Parent relations*
 
 ```rune
-relation OneToOne Function Generator cascade
+relation OneToOne Function Transformer cascade
 ```
 
 ## Relation
@@ -846,28 +846,28 @@ relation OneToOne Function Generator cascade
 `Relation`s are between two `Template`es, unlike containers in most languages.
 Possibly the most significant bug addressed by `Relation`s is what happens when
 a child object is destroyed, when it is owned by multiple parents? In Rune code
-generators in the builtin directory generate code in both the parent and child
+transformers in the builtin directory generate code in both the parent and child
 `Template`es, updating their destructors, creating iterators, add/remove
 functions, and more.
 
 `Relation` statements are just syntactic sugar around calling the corresponding
-`Generator` directly. The following are equivalent:
+`Transformer` directly. The following are equivalent:
 
 ```rune
 relation DoublyLinked Foo Bar cascade
 DoublyLinked(Foo, Bar, true)
 ```
 
-If a `Generator` has parameters not supported by this basic syntactic sugar, the
-extra parameters can be added using argument passing syntax at the end of the
-`relation` statement.
+If a `Transformer` has parameters not supported by this basic syntactic sugar,
+the extra parameters can be added using argument passing syntax at the end of
+the `relation` statement.
 
 ```rune
 // Pass the name of the field that will be used as the key in the hash table.
 relation Hashed Company Employee ("name")
 ```
 
-Code generators for `relation` statements are assumed to be correct, as the
+Code transformers for `relation` statements are assumed to be correct, as the
 operations done there are dangerous and can result in null dereferencing, or
 memory leaks.
 
@@ -876,7 +876,7 @@ memory leaks.
 ```rune
 relation DoublyLinked Template:"Parent" Relation:"Child" cascade
 relation DoublyLinked Template:"Child" Relation:"Parent" cascade
-relation DoublyLinked Generator Relation cascade
+relation DoublyLinked Transformer Relation cascade
 
 ```
 

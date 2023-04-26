@@ -6,14 +6,14 @@ Add an option for generating SoA vs AoS memory layout so folks can do their own 
 Write a C or C++ backend code generator for improved debugging of Rune, and so folks can benchmark with
     full front-end optimization of different C compilers for benchmarking.
 Enhance gdb pretty printer so that we don't have to generate show methods.
-Figure out when relationship generators should run.  Right now it is in the order statements are bound so that module-level variables can be passed into the generators, but we assume all generators are run before binding a constructor, which is currently false.  Figure out the right thing and do it.
+Figure out when relationship transformers should run.  Right now it is in the order statements are bound so that module-level variables can be passed into the transformers, but we assume all transformers are run before binding a constructor, which is currently false.  Figure out the right thing and do it.
 Use concrete type constraints in binding.  This can help eleminate problems
     in binding recursive functions, and also non-template classes.
 Don't allow generated fields to be written outside of generated code.
 Add an Object class that matches all types, so we can have case (Object, Object, Object).
 Defend vs Spectre/Meltdown: duplicate bignum functions in runtime to have constant-time vs
     non-constant time APIs.  Do not pass in a secret bit.
-Figure out how to programatically manipulate labels in generators.
+Figure out how to programatically manipulate labels in transformers.
 Flesh out index overloading: write is not yet supported.
 Support Overloading method get/set methods.
 Improve safe mode:
@@ -52,7 +52,7 @@ Support overloading modular operations, so we can support modular polynomials, e
 Add multi-threading support.
 Add schema-level reuse statements
 Write a schema generator for Rune similar to the dataview program for DataDraw schemas.
-Flush out generator's Rune code interpreter.
+Flush out transformers's Rune code interpreter.
 Finish transition to memory pools, and allocation of global arrays with mmap of the memory available on the machine so large arrays never move.
 Add support for 32-bit mode.
 

@@ -74,16 +74,16 @@ func hashValue(value) -> u64 {
   }
 }
 
-// This is a one-to-many relation generator that adds a hash table between
+// This is a one-to-many relation transformer that adds a hash table between
 // class A and B.  The hash table is always a power of 2, and dynamically grows
 // as needed, when the number of hash table elements equals the size of the
 // table.  The child class B must have a data member matching the value of keyField.
 // No two elements in the hash table can have the same keyField value.
 //
-// This generator embeds a singly-linked list between A and B, which on average
+// This transformer embeds a singly-linked list between A and B, which on average
 // will never have more than one element, so the expected insert/remove time is
 // still constant.
-generator Hashed(A: Class, B: Class, cascadeDelete: bool = false,
+transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
     labelA: string = "", labelB: string = "", keyField: string = "hash", pluralB: string = "") {
   if pluralB == "" {
     pluralB = "$B_s";

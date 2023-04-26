@@ -54,10 +54,10 @@ database/string.c \
 database/util.c \
 database/value.c \
 database/variable.c \
-generator/constprop.c \
-generator/generator.c \
-generator/iterator.c \
-generator/memmanage.c \
+transformer/constprop.c \
+transformer/transformer.c \
+transformer/iterator.c \
+transformer/memmanage.c \
 llvm/debug.c \
 llvm/genllvm.c \
 llvm/lldatabase.c \
@@ -145,7 +145,7 @@ clean:
 	cd bootstrap/database ; make clean
 
 obj: include/dedatabase.h llvm/lldatabase.h
-	mkdir -p obj/database obj/llvm obj/parse obj/runtime obj/src obj/util obj/rpc obj/bind obj/generator
+	mkdir -p obj/database obj/llvm obj/parse obj/runtime obj/src obj/util obj/rpc obj/bind obj/transformer
 
 obj/%.o: %.c $(DEPS)
 	$(CC) $(CFLAGS) -c -o $@ $<

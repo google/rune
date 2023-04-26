@@ -16,7 +16,7 @@ class Foo(self) {
   self.x = 1
 }
 
-generator addToClass(A: Class, label:string) {
+transformer addToClass(A: Class, label:string) {
   appendcode A {
     self.y = 2
     self.$label$A_label = "baz"
@@ -27,7 +27,7 @@ generator addToClass(A: Class, label:string) {
   }
 }
 
-generate addToClass(Foo, "bar")
+transform addToClass(Foo, "bar")
 
 f = Foo()
 f.dump()

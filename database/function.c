@@ -54,8 +54,8 @@ char *deGetFunctionTypeName(deFunctionType type) {
       return "struct";
     case DE_FUNC_ENUM:
       return "enum";
-    case DE_FUNC_GENERATOR:
-      return "generator";
+    case DE_FUNC_TRANSFORMER:
+      return "transformer";
   }
   return NULL;
 }

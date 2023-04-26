@@ -59,12 +59,12 @@ For improved safety and efficiency, nullable types should be converted to
 non-nullable with `<`_expression_`>!`, which checks for non-null at runtime, and
 returns a non-nullable type.
 
-Exactly how generators for relations should handle null safety is a work in
+Exactly how transformers for relations should handle null safety is a work in
 progress.
 
 ### Rules for memory safety
 
-Memory corruption is impossible in Rune, assuming relationship generators are
+Memory corruption is impossible in Rune, assuming relationship transformers are
 correct. All object references are either valid or null at all times. Index
 bounds are checked, and dereferencing null throws an error.
 
@@ -371,16 +371,17 @@ Rune uses C-like comments:
 ### Random values
 
 ## Keywords
+
 ```
-appendcode arrayof   as        assert   bool        cascade
-case       class     debug     default  do          else
-enum       export    exportlib extern   f32         f64
-final      for       func      generate generator   if
-import     importlib importrpc in       isnull      iterator
-message    mod       null      operator prependcode print'
-println    ref       relation  return   reveal      rpc
-secret     signed    string    struct   switch      throw
-typeof     unittest  unref     unsigned use         var
+appendcode arrayof   as        assert    bool        cascade
+case       class     debug     default   do          else
+enum       export    exportlib extern    f32         f64
+final      for       func      transform transformer if
+import     importlib importrpc in        isnull      iterator
+message    mod       null      operator  prependcode print'
+println    ref       relation  return    reveal      rpc
+secret     signed    string    struct    switch      throw
+typeof     unittest  unref     unsigned  use         var
 while      widthof   yield
 ```
 
@@ -544,11 +545,11 @@ appliances when accessing extensions.
 ## Statements
 
 ```
-appendcode  debug    function   prependcode  return    while
-assert      extern   generate   print        switch    yield
-assignment  final    generator  println      throw
-call        for      if         ref          unittest
-class       foreach  import     relation     unref
+appendcode  debug    function    prependcode  return    while
+assert      extern   transform   print        switch    yield
+assignment  final    transformer println      throw
+call        for      if          ref          unittest
+class       foreach  import      relation     unref
 ```
 
 ## Expressions
@@ -830,17 +831,17 @@ range
 
 ## Iterators
 
-## Generators
+## Transformers
 
-In short, generators are compile-time interpreted Rune functions that create
-new code or modify existing code.  All Rune relationships are written in Rune
-using generators, which are able to modify both the parent and child classes.
+In short, transformers are compile-time interpreted Rune functions that create
+new code or modify existing code. All Rune relationships are written in Rune
+using transformers, which are able to modify both the parent and child classes.
 
-The full Rune language is available to be interpreted in code generators,
-and the full Rune database representing code is available to generators to
-modify in any way.
+The full Rune language is available to be interpreted in code transformers, and
+the full Rune database representing code is available to transformers to modify
+in any way.
 
-Examples of cool capabilities generators enable include:
+Examples of cool capabilities transformers enable include:
 
 * Writing relationships in Rune, which cannot be done using templates or
   inheritance.
@@ -850,7 +851,6 @@ Examples of cool capabilities generators enable include:
 * Generating optimized code for a parameterized algorithm, such as FFTs.
 
 ## Grammar
-
 
 ```
 runeFile ::= statement*
@@ -868,8 +868,8 @@ statement ::=
     | foreachStatement
     | forStatement
     | functionStatement
-    | generateStatement
-    | generatorStatement
+    | transformStatement
+    | transformerStatement
     | ifStatement
     | importStatement
     | prependCodeStatement
@@ -1017,9 +1017,9 @@ assertStatement ::=  "assert" expressionList newlines
 returnStatement ::=  "return" newlines
     | "return" expression newlines
 
-generatorStatement ::=  "generator" IDENT '(' parameters ')' block
+transformerStatement ::=  "transformer" IDENT '(' parameters ')' block
 
-generateStatement ::=  "generate" pathExpression '(' expressionList ')' newlines
+transformStatement ::=  "transform" pathExpression '(' expressionList ')' newlines
 
 relationStatement ::=  "relation" pathExpression pathExpression optLabel pathExpression optLabel
     optCascade optExpressionList newlines
@@ -1121,7 +1121,7 @@ prefixExpression ::=  exponentiateExpression
     | "!<" prefixExpression '>' prefixExpression
 
 exponentiateExpression ::=  postfixExpression
-    | postfixExpression '**' exponentiateExpression 
+    | postfixExpression '**' exponentiateExpression
 
 postfixExpression ::=  accessExpression
     | '&' pathExpression '(' expressionList ')'

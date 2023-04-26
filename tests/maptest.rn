@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-generator Map(A, B, cascadeDelete = false, labelA = "", labelB = "") {
+transformer Map(A, B, cascadeDelete = false, labelA = "", labelB = "") {
   prependcode A {
     self.$B_s = arrayof(B)
   }

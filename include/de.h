@@ -186,19 +186,20 @@ static inline bool deTemplateBuiltin(deTemplate templ) {
   return deFunctionBuiltin(deTemplateGetFunction(templ));
 }
 
-// Generator methods.
-deGenerator deGeneratorCreate(deBlock block, utSym name, deLine line);
+// Transformer methods.
+deTransformer deTransformerCreate(deBlock block, utSym name, deLine line);
 void deExecuteRelationStatement(deStatement statement);
-void deDumpGenerator(deGenerator generator);
-void deDumpGeneratorStr(deString string, deGenerator generator);
-static inline utSym deGeneratorGetSym(deGenerator generator) {
-  return deIdentGetSym(deFunctionGetFirstIdent(deGeneratorGetFunction(generator)));
+void deDumpTransformer(deTransformer transformer);
+void deDumpTransformerStr(deString string, deTransformer transformer);
+static inline utSym deTransformerGetSym(deTransformer transformer) {
+  return deIdentGetSym(
+      deFunctionGetFirstIdent(deTransformerGetFunction(transformer)));
 }
-static inline char *deGeneratorGetName(deGenerator generator) {
-  return utSymGetName(deGeneratorGetSym(generator));
+static inline char *deTransformerGetName(deTransformer transformer) {
+  return utSymGetName(deTransformerGetSym(transformer));
 }
-static inline deBlock deGeneratorGetSubBlock(deGenerator generator) {
-  return deFunctionGetSubBlock(deGeneratorGetFunction(generator));
+static inline deBlock deTransformerGetSubBlock(deTransformer transformer) {
+  return deFunctionGetSubBlock(deTransformerGetFunction(transformer));
 }
 
 // Variable methods.
@@ -463,7 +464,7 @@ deLine deLineCreate(deFilepath filepath, char *buf, uint32 len, uint32 lineNum);
 void deDumpLine(deLine line);
 
 // Relation methods.
-deRelation deRelationCreate(deGenerator generator, deTemplate parent,
+deRelation deRelationCreate(deTransformer transformer, deTemplate parent,
                             deString parentLabel, deTemplate child,
                             deString childLabel, bool cascadeDelete);
 void deAddClassMemberRelations(deClass parentClass);

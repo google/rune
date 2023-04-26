@@ -425,7 +425,7 @@ deDatatype deFunctionDatatypeCreate(deFunction function) {
     case DE_FUNC_MODULE:
     case DE_FUNC_ITERATOR:
     case DE_FUNC_STRUCT:
-    case DE_FUNC_GENERATOR: {
+    case DE_FUNC_TRANSFORMER: {
       deDatatype datatype = datatypeCreate(DE_TYPE_FUNCTION, 0, false);
       deDatatypeSetFunction(datatype, function);
       return addToHashTable(datatype);

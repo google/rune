@@ -19,7 +19,7 @@ func runAllocFreeTest() {
 }
 
 // We have to run this test from generated code, or the destructor call will give an error.
-generator addTheTest() {
+transformer addTheTest() {
   appendcode runAllocFreeTest {
     a = Foo()
     aVal = <u32>a
@@ -34,5 +34,5 @@ generator addTheTest() {
   }
 }
 
-generate addTheTest()
+transform addTheTest()
 runAllocFreeTest()

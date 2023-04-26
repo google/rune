@@ -16,7 +16,7 @@
 
 // Dump a relationship to the end of |string| for debugging.
 void deDumpRelationStr(deString string, deRelation relation) {
-  deStringSprintf(string, "relation %s", deGeneratorGetName(deRelationGetGenerator(relation)));
+  deStringSprintf(string, "relation %s", deTransformerGetName(deRelationGetTransformer(relation)));
   deTemplate parent = deRelationGetParentTemplate(relation);
   deTemplate child = deRelationGetChildTemplate(relation);
   deStringSprintf(string, " %s", deTemplateGetName(parent));
@@ -82,7 +82,7 @@ void deDumpRelations(void) {
 }
 
 // Create a new relationship object between two templates.
-deRelation deRelationCreate(deGenerator generator, deTemplate parent, deString parentLabel,
+deRelation deRelationCreate(deTransformer transformer, deTemplate parent, deString parentLabel,
     deTemplate child, deString childLabel, bool cascadeDelete) {
   deRelation relation = deRelationAlloc();
   deRelationSetCascadeDelete(relation, cascadeDelete);
@@ -90,7 +90,7 @@ deRelation deRelationCreate(deGenerator generator, deTemplate parent, deString p
   deRelationSetChildLabel(relation, childLabel);
   deTemplateAppendChildRelation(parent, relation);
   deTemplateAppendParentRelation(child, relation);
-  deGeneratorAppendRelation(generator, relation);
+  deTransformerAppendRelation(transformer, relation);
   return relation;
 }
 

@@ -32,7 +32,7 @@ syn keyword runeRepeat do for in while
 syn keyword runeImport as import importlib importrpc use
 syn keyword runeStatements println print return yield
 syn keyword runeQualifierKeywords const export exportlib extern final secret signed unsigned var
-syn keyword runeDeclKeywords enum generate generator iterator operator rpc struct message unittest
+syn keyword runeDeclKeywords enum transform transformer iterator operator rpc struct message unittest
 syn keyword runeRelationKeywords relation appendcode prependcode cascade
 
 " Declaration Keywords

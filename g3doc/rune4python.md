@@ -106,9 +106,9 @@ class Person(self, name) {
 }
 ```
 
-Rune uses CapitalCamelCase by convention for classes, just like Python.  Lower
-case is for variables, functions and methods.  Underscores are not legal
-in identifiers.  Underscores are reserved for code generators where they ensure
+Rune uses CapitalCamelCase by convention for classes, just like Python. Lower
+case is for variables, functions and methods. Underscores are not legal in
+identifiers. Underscores are reserved for code transformers where they ensure
 non-collision with user variable names.
 
 Rather than using \_ to create private identifiers, Rune makes identifiers public
@@ -996,9 +996,10 @@ func printReachableNodes(node: Node, reachedNodes) {
 
 Now destroying the graph recursively deletes all its nodes and edges.
 
-You can create your own relationship types, but take care!  Rune’s safety
-guarantees require relationship generators to be bug-free, which is harder than
-it sounds.  Most folks will just use the default relationship types, which are:
+You can create your own relationship types, but take care! Rune’s safety
+guarantees require relationship transformers to be bug-free, which is harder
+than it sounds. Most folks will just use the default relationship types, which
+are:
 
 * LinkedList - Singly-linked list: insert is fast, remove is slow.
 * DoublyLinked - Doubly-linked list: both insert and remove are fast.
@@ -1084,27 +1085,27 @@ relationship loops.
 This scheme offers memory safety like Rust, with improved performance, and
 without the no-pointer-loop (other than in "unsafe" code) restriction.
 
-## Generators
+## Transformers
 
 Not be confused with Python’s "generators", which other languages call
-co-routines, Rune’s generators are actual code generators!  Rune generators are
-interpreted by the compiler to instantiate code in existing classes, methods,
-and functions.  Relationship generators automatically update both the parent and
-child destructors to clean up when a child is destroyed, cascade-delete if the
-relationship is cascade-delete, or remove children that are not cascade-delete
-before destroying the parent.
+co-routines, Rune’s transformers are actual code transformers! Rune transformers
+are interpreted by the compiler to instantiate code in existing classes,
+methods, and functions. Relationship transformers automatically update both the
+parent and child destructors to clean up when a child is destroyed,
+cascade-delete if the relationship is cascade-delete, or remove children that
+are not cascade-delete before destroying the parent.
 
 This simple rule ensures that dangling pointers in Rune are impossible, so long
-as the relationship generators are bug-free.  Generators are more powerful than
-templates.  Generators can modify existing class methods, while templates
+as the relationship transformers are bug-free. Transformers are more powerful
+than templates. Transformers can modify existing class methods, while templates
 cannot.
 
-Like complex C++ templates, most users will never write Rune generators.  If
+Like complex C++ templates, most users will never write Rune transformers. If
 you’ve read this far, and still want to see the magic under the hood, take a
-look at existing relationship generators in the rune/builtin directory, such as
-doublylinked.rn and hashed.rn.  Long-term, Rune’s generator capability will be
+look at existing relationship transformers in the rune/builtin directory, such
+as doublylinked.rn and hashed.rn. Long-term, Rune’s transform capability will be
 enhanced to have similar power to Java’s mirror classes, but they run at
-compile-time.  For now, only features required to support the builtin
+compile-time. For now, only features required to support the builtin
 relationships are implemented.
 
 ## Running Rune

@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This is a one-to-many relation generator that adds a hash table between
+// This is a one-to-many relation transformer that adds a hash table between
 // class A and B.  The hash table is always a power of 2, and dynamically grows
 // as needed, when the number of hash table elements equals the size of the
 // table.  The child class B must have two methods: hash() -> u64, and
 // equals(other) which compares the two instances of class B and returns true
 // if they are equivalent.
 //
-// This generator embeds a singly-linked list between A and B, which on average
+// This transformer embeds a singly-linked list between A and B, which on average
 // will never have more than one element, so the expected insert/remove time is
 // still constant.
-generator HashedClass(A: Class, B: Class, cascadeDelete: bool = false,
+transformer HashedClass(A: Class, B: Class, cascadeDelete: bool = false,
     labelA: string = "", labelB: string = "", pluralB: string = "") {
   if pluralB == "" {
     pluralB = "$B_s";

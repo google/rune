@@ -175,7 +175,7 @@ static bool functionIsUnique(deFunction function) {
     case DE_FUNC_PACKAGE:
     case DE_FUNC_MODULE:
     case DE_FUNC_ENUM:
-    case DE_FUNC_GENERATOR:
+    case DE_FUNC_TRANSFORMER:
     case DE_FUNC_UNITTEST:
       break;
   }

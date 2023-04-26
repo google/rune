@@ -22,7 +22,7 @@ static void checkExpressionIsPrintable(deExpression expression) {
   deDatatype datatype = deExpressionGetDatatype(expression);
   switch (deDatatypeGetType(datatype)) {
   case DE_TYPE_EXPR:
-    deExprError(expression, "Cannot print generator expressions");
+    deExprError(expression, "Cannot print transformer expressions");
     break;
   case DE_TYPE_NONE:
     deExprError(expression, "Printed argument has no type");

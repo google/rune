@@ -17,12 +17,12 @@
 
 deRelation deCurrentRelation;
 
-// Dump the generator to stdout.
-void deDumpGenerator(deGenerator generator) {
+// Dump the transformer to stdout.
+void deDumpTransformer(deTransformer transformer) {
   dePrintIndent();
-  printf("generator %s (0x%x) {\n", deGeneratorGetName(generator), deGenerator2Index(generator));
+  printf("transformer %s (0x%x) {\n", deTransformerGetName(transformer), deTransformer2Index(transformer));
   deDumpIndentLevel++;
-  deDumpBlock(deGeneratorGetSubBlock(generator));
+  deDumpBlock(deTransformerGetSubBlock(transformer));
   --deDumpIndentLevel;
   dePrintIndent();
   printf("}\n");
@@ -37,32 +37,32 @@ static void setVariableValue(deVariable variable, deValue value) {
   deVariableSetValue(variable, value);
 }
 
-// Create a new generator object.
-deGenerator deGeneratorCreate(deBlock block, utSym name, deLine line) {
+// Create a new transformer object.
+deTransformer deTransformerCreate(deBlock block, utSym name, deLine line) {
   deFilepath filepath = deBlockGetFilepath(block);
-  deFunction function = deFunctionCreate(filepath, block, DE_FUNC_GENERATOR, name,
+  deFunction function = deFunctionCreate(filepath, block, DE_FUNC_TRANSFORMER, name,
       DE_LINK_PACKAGE, line);
-  deGenerator generator = deGeneratorAlloc();
-  deGeneratorSetLine(generator, line);
-  deFunctionInsertGenerator(function, generator);
-  return generator;
+  deTransformer transformer = deTransformerAlloc();
+  deTransformerSetLine(transformer, line);
+  deFunctionInsertTransformer(function, transformer);
+  return transformer;
 }
 
-// Find the generator from its path expression.
-static deGenerator findGenerator(deBlock moduleBlock, deExpression pathExpression) {
+// Find the transformer from its path expression.
+static deTransformer findTransformer(deBlock moduleBlock, deExpression pathExpression) {
   deIdent ident = deFindIdentFromPath(moduleBlock, pathExpression);
   deLine line = deExpressionGetLine(pathExpression);
   if (ident == deIdentNull) {
-    deError(line, "Generator %s not found", deGetPathExpressionPath(pathExpression));
+    deError(line, "Transformer %s not found", deGetPathExpressionPath(pathExpression));
   }
   if (deIdentGetType(ident) != DE_IDENT_FUNCTION) {
-    deError(line, "Not a generator: %s", deIdentGetName(ident));
+    deError(line, "Not a transformer: %s", deIdentGetName(ident));
   }
   deFunction function = deIdentGetFunction(ident);
-  if (deFunctionGetType(function) != DE_FUNC_GENERATOR) {
-    deError(line, "Not a generator: %s", deIdentGetName(ident));
+  if (deFunctionGetType(function) != DE_FUNC_TRANSFORMER) {
+    deError(line, "Not a transformer: %s", deIdentGetName(ident));
   }
-  return deFunctionGetGenerator(function);
+  return deFunctionGetTransformer(function);
 }
 
 // Return the value of the identifier.
@@ -76,17 +76,17 @@ static deValue getIdentValue(deIdent ident, deLine line) {
         return deVariableGetValue(deIdentGetVariable(ident));
       }
       if (!deVariableIsType(variable)) {
-        deError(line, "Only global type variables can be passed to relation generators");
+        deError(line, "Only global type variables can be passed to relation transformers");
       }
       deDatatype datatype = deVariableGetDatatype(variable);
       utAssert(datatype != deDatatypeNull);
       if (deDatatypeGetType(datatype) != DE_TYPE_CLASS) {
-          deError(line, "Only class type variables can be passed to relation generators");
+          deError(line, "Only class type variables can be passed to relation transformers");
         }
         return deClassValueCreate(deDatatypeGetClass(datatype));
       }
     case DE_IDENT_UNDEFINED:
-      deError(line, "Accessing undefined variable %s in generator", deIdentGetName(ident));
+      deError(line, "Accessing undefined variable %s in transformer", deIdentGetName(ident));
       break;
     }
   return deValueNull;  // Dummy return.
@@ -160,7 +160,7 @@ static deValue evaluateAddExpression(deBlock scopeBlock, deValue left, deValue r
     return deIntegerValueCreate(deBigintAdd(deValueGetBigintVal(left), deValueGetBigintVal(right)));
   }
   if (type == DE_TYPE_ARRAY) {
-    deError(0, "Array addition not yet supported in generators");
+    deError(0, "Array addition not yet supported in transformers");
   } else if (type == DE_TYPE_STRING) {
     char *leftString = deStringGetCstr(deValueGetStringVal(left));
     char *rightString = deStringGetCstr(deValueGetStringVal(right));
@@ -236,7 +236,7 @@ static deValue evaluateNegateExpression(deBlock scopeBlock, deExpression express
 //   func $class_Create()  // For example, myclassCreate
 //
 // If an identifier of the same name already existed before running the current
-// generator, the identifier is uniquified by appending a number, such as
+// transformer, the identifier is uniquified by appending a number, such as
 // child, if child already exists.
 static char *expandText(deBlock scopeBlock, char *oldText, deLine line) {
   char *buf = utAllocString(oldText);
@@ -392,9 +392,9 @@ deValue deEvaluateExpression(deBlock scopeBlock, deExpression expression, deBigi
 }
 
 // Evaluate parameter variables to the given types, in order.
-static void evaluateGeneratorParameters(deBlock moduleBlock, deBlock generatorBlock,
+static void evaluateTransformerParameters(deBlock moduleBlock, deBlock transformerBlock,
     deExpression parameters, deLine line) {
-  deVariable variable = deBlockGetFirstVariable(generatorBlock);
+  deVariable variable = deBlockGetFirstVariable(transformerBlock);
   deExpression parameter = deExpressionGetFirstExpression(parameters);
   while (variable != deVariableNull && deVariableGetType(variable) == DE_VAR_PARAMETER) {
     deValue value;
@@ -409,7 +409,7 @@ static void evaluateGeneratorParameters(deBlock moduleBlock, deBlock generatorBl
     variable = deVariableGetNextBlockVariable(variable);
   }
   if (parameter != deExpressionNull) {
-    deError(line, "Too many parameters passed to generator");
+    deError(line, "Too many parameters passed to transformer");
   }
 }
 
@@ -587,7 +587,7 @@ static void executeIfStatement(deBlock scopeBlock, deStatement statement) {
   }
 }
 
-// Execute an assignment statement.  Generators may only assign to local
+// Execute an assignment statement.  Transformers may only assign to local
 // variables in the current scope block.
 static void executeAssignmentStatement(deBlock scopeBlock, deStatement statement) {
   deExpression expression = deStatementGetExpression(statement);
@@ -595,10 +595,10 @@ static void executeAssignmentStatement(deBlock scopeBlock, deStatement statement
   deExpression valueExpr = deExpressionGetNextExpression(targetExpr);
   deLine line = deStatementGetLine(statement);
   if (deExpressionGetType(expression) != DE_EXPR_EQUALS) {
-    deError(line, "Generators do not yet support op= statements");
+    deError(line, "Transformers do not yet support op= statements");
   }
   if (deExpressionGetType(targetExpr) != DE_EXPR_IDENT) {
-    deError(line, "Generators only allow assignments to local variables");
+    deError(line, "Transformers only allow assignments to local variables");
   }
   deValue value = deEvaluateExpression(scopeBlock, valueExpr, deBigintNull);
   utSym name = deExpressionGetName(targetExpr);
@@ -608,7 +608,7 @@ static void executeAssignmentStatement(deBlock scopeBlock, deStatement statement
   }
   if (deIdentGetBlock(ident) != scopeBlock ||
       deIdentGetType(ident) != DE_IDENT_VARIABLE) {
-    deError(line, "Generators only allow assignments to local variables");
+    deError(line, "Transformers only allow assignments to local variables");
   }
   deVariable variable = deIdentGetVariable(ident);
   setVariableValue(variable, value);
@@ -634,7 +634,7 @@ static void executeStatement(deBlock scopeBlock, deStatement statement) {
       break;
     default:
       deError(deStatementGetLine(statement),
-              "Unsupported statement type in generator");
+              "Unsupported statement type in transformer");
   }
   deCurrentStatement = savedStatement;
 }
@@ -650,12 +650,12 @@ static void executeBlockStatements(deBlock scopeBlock, deBlock block) {
   } deEndBlockStatement;
 }
 
-// Execute the generator with the parameters.
-static void executeGenerator(deBlock moduleBlock, deGenerator generator,
+// Execute the transformer with the parameters.
+static void executeTransformer(deBlock moduleBlock, deTransformer transformer,
     deExpression parameters, deLine line) {
   utAssert(!deGenerating);
   deGenerating = true;
-  deBlock block = deGeneratorGetSubBlock(generator);
+  deBlock block = deTransformerGetSubBlock(transformer);
   executeBlockStatements(block, block);
   deGenerating = false;
 }
@@ -695,8 +695,8 @@ static deFunction getValueTemplate(deValue value) {
 
 // Build a Relation edge between the two templates.  The first three parameters
 // MUST be parent template, child template, and bool cascade.
-static deRelation buildRelation(deGenerator generator) {
-  deBlock block = deGeneratorGetSubBlock(generator);
+static deRelation buildRelation(deTransformer transformer) {
+  deBlock block = deTransformerGetSubBlock(transformer);
   deVariable parent = deBlockGetFirstVariable(block);
   deVariable child = deVariableGetNextBlockVariable(parent);
   deVariable cascade = deVariableGetNextBlockVariable(child);
@@ -715,7 +715,7 @@ static deRelation buildRelation(deGenerator generator) {
   deTemplate parentTemplate = deFunctionGetTemplate(parentFunc);
   deTemplate childTemplate = deFunctionGetTemplate(childFunc);
   importChildClassIntoParentModule(parentFunc, childFunc);
-  return deRelationCreate(generator, parentTemplate, parentLabelString, childTemplate,
+  return deRelationCreate(transformer, parentTemplate, parentLabelString, childTemplate,
       childLabelString, cascadeDelete);
 }
 
@@ -731,18 +731,18 @@ void deExecuteRelationStatement(deStatement statement) {
   deExpression parameters = deExpressionGetNextExpression(path);
   utAssert(deInstantiating);
   deInstantiating = false;
-  deGenerator generator = findGenerator(moduleBlock, path);
+  deTransformer transformer = findTransformer(moduleBlock, path);
   deLine line = deStatementGetLine(statement);
-  if (generator == deGeneratorNull) {
-    deError(line, "Generator not found");
+  if (transformer == deTransformerNull) {
+    deError(line, "Transformer not found");
   }
-  deBlock block = deGeneratorGetSubBlock(generator);
-  evaluateGeneratorParameters(moduleBlock, block, parameters, line);
+  deBlock block = deTransformerGetSubBlock(transformer);
+  evaluateTransformerParameters(moduleBlock, block, parameters, line);
   deCurrentRelation = deRelationNull;
   if (deStatementGetType(statement) == DE_STATEMENT_RELATION) {
-    deCurrentRelation = buildRelation(generator);
+    deCurrentRelation = buildRelation(transformer);
   }
-  executeGenerator(moduleBlock, generator, parameters, line);
+  executeTransformer(moduleBlock, transformer, parameters, line);
   deCurrentRelation = deRelationNull;
   deStatementSetExecuted(statement, true);
   deInstantiating = true;

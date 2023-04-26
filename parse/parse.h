@@ -37,7 +37,7 @@ extern uint32 deCommentDepth;
 extern int32 deParenDepth, deBracketDepth;
 extern bool deReachedEndOfFile;
 extern deFilepath deCurrentFilepath;
-extern bool deInGenerator;
+extern bool deInTransformer;
 extern bool deParsingMainModule;
 
 #endif  // THIRD_PARTY_RUNE_PARSE_PARSE_H_

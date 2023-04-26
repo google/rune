@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-generator OneToOne(A: Class, B: Class, cascadeDelete:bool = false,
+transformer OneToOne(A: Class, B: Class, cascadeDelete:bool = false,
     labelA: string = "", labelB: string = "") {
   prependcode A {
     self.$labelB$B = null(B)

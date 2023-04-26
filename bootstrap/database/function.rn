@@ -35,7 +35,7 @@ enum FuncType {
   Final
   Struct
   Enum
-  Generator
+  Transformer
   Unittest
 }
 
@@ -64,7 +64,7 @@ func getFuncTypeName(type: FuncType) -> string {
     FuncType.Final => return "final"
     FuncType.Struct => return "struct"
     FuncType.Enum => return "enum"
-    FuncType.Generator => return "generator"
+    FuncType.Transformer => return "transformer"
   }
 }
 

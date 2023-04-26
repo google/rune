@@ -4256,7 +4256,7 @@ static utSym generateStatement(deStatement statement, utSym label) {
       generateRefOrUnrefStatement(statement);
       break;
     case DE_STATEMENT_RELATION:
-    case DE_STATEMENT_GENERATE:
+    case DE_STATEMENT_TRANSFORM:
     case DE_STATEMENT_APPENDCODE:
     case DE_STATEMENT_PREPENDCODE:
     case DE_STATEMENT_USE:

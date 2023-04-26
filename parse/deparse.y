@@ -256,8 +256,8 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %token <lineVal> KWFOR
 %token <lineVal> KWFUNC
 %token <lineVal> KWGE
-%token <lineVal> KWGENERATE
-%token <lineVal> KWGENERATOR
+%token <lineVal> KWTRANSFORM
+%token <lineVal> KWTRANSFORMER
 %token <lineVal> KWIF
 %token <lineVal> KWIMPORT
 %token <lineVal> KWIMPORTLIB
@@ -345,7 +345,7 @@ goal: initialize optNewlines runeFile
 initialize: // Empty
 {
   deSavedBlock = deBlockNull;
-  deInGenerator = false;
+  deInTransformer = false;
   deInIterator = false;
   deSkippedCodeNestedDepth = 0;
 }
@@ -367,8 +367,8 @@ statement: appendCode
 | foreachStatement
 | forStatement
 | function
-| generateStatement
-| generatorStatement
+| transformStatement
+| transformerStatement
 | ifStatement
 | import
 | prependCode
@@ -518,7 +518,7 @@ exportStructHeader: KWEXPORT KWSTRUCT IDENT  // Means the constructor is in pack
 
 appendCode: appendCodeHeader block
 {
-  if (deInGenerator) {
+  if (deInTransformer) {
     finishBlockStatement(deExpressionNull);
     deGenerating = false;
   } else {
@@ -529,7 +529,7 @@ appendCode: appendCodeHeader block
 
 appendCodeHeader: KWAPPENDCODE pathExpression
 {
-  if (deInGenerator) {
+  if (deInTransformer) {
     if (deGenerating) {
       deError($1, "Cannot appendcode inside another appendcode statement");
     }
@@ -553,7 +553,7 @@ appendCodeHeader: KWAPPENDCODE pathExpression
 }
 | KWAPPENDCODE  // Append to module block.
 {
-  if (deInGenerator) {
+  if (deInTransformer) {
     if (deGenerating) {
       deError($1, "Cannot appendcode inside another appendcode statement");
     }
@@ -571,7 +571,7 @@ appendCodeHeader: KWAPPENDCODE pathExpression
 prependCode: prependCodeHeader block
 {
   moveNewStatementsToBlockStart();
-  if (deInGenerator) {
+  if (deInTransformer) {
     finishBlockStatement(deExpressionNull);
     deGenerating = false;
   } else {
@@ -582,7 +582,7 @@ prependCode: prependCodeHeader block
 
 prependCodeHeader: KWPREPENDCODE pathExpression
 {
-  if (deInGenerator) {
+  if (deInTransformer) {
     if (deGenerating) {
       deError($1, "Cannot prependcode inside another prependcode statement");
     }
@@ -608,7 +608,7 @@ prependCodeHeader: KWPREPENDCODE pathExpression
 }
 | KWPREPENDCODE
 {
-  if (deInGenerator) {
+  if (deInTransformer) {
     if (deGenerating) {
       deError($1, "Cannot prependcode inside another prependcode statement");
     }
@@ -1485,27 +1485,27 @@ returnStatement: KWRETURN newlines
   deFunctionSetReturnsValue(function, true);
 }
 
-generatorStatement: generatorHeader '(' parameters ')' block
+transformerStatement: transformerHeader '(' parameters ')' block
 {
-  deInGenerator = false;
+  deInTransformer = false;
   deCurrentBlock = deBlockGetOwningBlock(deCurrentBlock);
 }
 
-generatorHeader: KWGENERATOR IDENT
+transformerHeader: KWTRANSFORMER IDENT
 {
-  if (deInGenerator) {
+  if (deInTransformer) {
     deError($1, "Cannot embed a generator inside another generator");
   }
   checkTopBlock("Generator");
-  deGenerator generator = deGeneratorCreate(deCurrentBlock, $2, $1);
-  deCurrentBlock = deGeneratorGetSubBlock(generator);
-  deInGenerator = true;
+  deTransformer transformer = deTransformerCreate(deCurrentBlock, $2, $1);
+  deCurrentBlock = deTransformerGetSubBlock(transformer);
+  deInTransformer = true;
 }
 
-generateStatement: KWGENERATE pathExpression '(' expressionList ')' newlines
+transformStatement: KWTRANSFORM pathExpression '(' expressionList ')' newlines
 {
-  checkTopBlock("Generate");
-  deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_GENERATE, $1);
+  checkTopBlock("Transform");
+  deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_TRANSFORM, $1);
   deExpression callExpr = deBinaryExpressionCreate(DE_EXPR_CALL, $2, $4, $1);
   deStatementInsertExpression(statement, callExpr);
 }

@@ -942,7 +942,7 @@ static void bindNotExpression(deBlock scopeBlock, deExpression expression) {
 // can also cast a string to a [u8] array and vise-versa.  Object references
 // can be cast to their underlying integer type and back, e.g  <u32>Point(1,2),
 // or <Point(u64, u64)>1u32.  Object-to-integer casts are dangerous and we
-// should probably restrict its use to code generators.
+// should probably restrict its use to code transformers and unsafe code.
 static void verifyCast(deExpression expression, deDatatype leftDatatype,
     deDatatype rightDatatype, deLine line) {
   if (leftDatatype == rightDatatype) {

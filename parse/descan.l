@@ -196,10 +196,10 @@ static deString unescape(char *string) {
   return text;
 }
 
-// If the identifier contains characters used only in generators, report an error.
+// If the identifier contains characters used only in transformers, report an error.
 // TODO Trojan Source attacks (IdStart IdContinue+, normalized only, no marks, UTX39)
 static inline void checkIdentifierChars(char *text) {
-  if (deInGenerator || deGenerating || deInIterator) {
+  if (deInTransformer || deGenerating || deInIterator) {
     return;
   }
   char *p = text;
@@ -210,9 +210,9 @@ static inline void checkIdentifierChars(char *text) {
   while (*p != '\0') {
     char c = *p++;
     if (c == '_') {
-      deerror("Underscores are not permitted except in code generators");
+      deerror("Underscores are not permitted except in code transformers");
     } else if (c == '$') {
-      deerror("Dollar signs are not permitted except in code generators");
+      deerror("Dollar signs are not permitted except in code transformers");
     }
   }
 }
@@ -312,8 +312,8 @@ static void logMsg(char *format, ...) {
 <INITIAL>"final"                { retToken(KWFINAL); }
 <INITIAL>"for"                  { retToken(KWFOR); }
 <INITIAL>"func"                 { retToken(KWFUNC); }
-<INITIAL>"generate"             { retToken(KWGENERATE); }
-<INITIAL>"generator"            { retToken(KWGENERATOR); }
+<INITIAL>"transform"            { retToken(KWTRANSFORM); }
+<INITIAL>"transformer"          { retToken(KWTRANSFORMER); }
 <INITIAL>"if"                   { retToken(KWIF); }
 <INITIAL>"import"               { retToken(KWIMPORT); }
 <INITIAL>"importlib"            { retToken(KWIMPORTLIB); }

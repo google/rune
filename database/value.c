@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Values are used during execution of generators.  They are bound to variables
+// Values are used during execution of transformers.  They are bound to variables
 // and computed from expressions.
 #include "de.h"
 

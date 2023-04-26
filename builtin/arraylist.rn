@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-generator ArrayList(A: Class, B: Class, cascadeDelete:bool = false,
+transformer ArrayList(A: Class, B: Class, cascadeDelete:bool = false,
     labelA: string = "", labelB: string = "", pluralB = "") {
   if pluralB == "" {
     pluralB = "$B_s"

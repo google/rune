@@ -15,8 +15,8 @@
 use function
 use root
 
-class Generator(self, function: Function) {
-  function.insertGenerator(self)
+class Transformer(self, function: Function) {
+  function.insertTransformer(self)
 }
 
-relation OneToOne Function Generator cascade
+relation OneToOne Function Transformer cascade
