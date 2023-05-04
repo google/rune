@@ -143,6 +143,7 @@ uint64_t io_file_fopenInternal(runtime_array *fileName, runtime_array *mode);
 bool io_file_fcloseInternal(uint64_t ptr);
 uint64_t io_file_freadInternal(uint64_t ptr, runtime_array *buf);
 bool io_file_fwriteInternal(uint64_t ptr, runtime_array *buf);
+bool io_file_ferrorInternal(uint64_t ptr);
 void runtime_puts(const runtime_array *string);
 void runtime_putsCstr(const char *string);
 void runtime_sprintf(runtime_array *array, const runtime_array *format, ...);
@@ -310,5 +311,13 @@ void runtime_bigintCondCopy(runtime_bool doCopy, runtime_array *dest, const runt
 #define runtime_setJmp() (runtime_jmpBufSet = true, setjmp(runtime_jmpBuf))
 extern jmp_buf runtime_jmpBuf;
 extern bool runtime_jmpBufSet;
+
+// Used for exception handling.
+struct jmpbuf_wrapped {
+  jmp_buf buf;
+  struct jmpbuf_wrapped* wrapped_buf;
+};
+extern struct jmpbuf_wrapped *runtime_firstSetjmpBuffer;
+extern runtime_array runtime_errorMessage;
 
 #endif  // EXPERIMENTAL_WAYWARDGEEK_RUNE_RUNTIME_RUNE_RUNTIME_H_

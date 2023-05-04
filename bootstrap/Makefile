@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+RUNE=../rune
 SRC=\
 rune.rn \
 database/expr.rn \
@@ -21,7 +22,10 @@ database/line.stdout \
 database/root.rn
 
 rune: $(SRC)
-	rune -g rune.rn
+	$(RUNE) -g rune.rn
+
+test: $(SRCS)
+	$(RUNE) -g -t rune.rn
 
 clean:
 	rm -f rune rune.ll rune.log

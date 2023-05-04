@@ -30,6 +30,7 @@
 static deBlock deSavedBlock;
 static deStatement deLastStatement;
 static uint32 deSkippedCodeNestedDepth;
+static bool deInUnitTest;
 
 // Provide yyerror function capability.
 void deerror(char *message, ...) {
@@ -50,11 +51,11 @@ void deerror(char *message, ...) {
 }
 
 // Create a new block statement and set the sub-block current.
-static deStatement createBlockStatement(deStatementType type) {
-  deStatement statement = deStatementCreate(deCurrentBlock, type, deCurrentLine);
-  deBlock subBlock = deBlockCreate(deCurrentFilepath, DE_BLOCK_STATEMENT, deCurrentLine);
+static deStatement createBlockStatement(deStatementType type, deLine line) {
+  deStatement statement = deStatementCreate(deCurrentBlock, type, line);
+  deBlock subBlock = deBlockCreate(deCurrentFilepath, DE_BLOCK_STATEMENT, line);
   deStatementInsertSubBlock(statement, subBlock);
-  deBlockSetLine(subBlock, deCurrentLine);
+  deBlockSetLine(subBlock, line);
   deCurrentBlock = subBlock;
   return statement;
 }
@@ -299,6 +300,8 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %token <lineVal> KWSUBTRUNC
 %token <lineVal> KWSUBTRUNCEQUALS
 %token <lineVal> KWSWITCH
+%token <lineVal> KWTRY
+%token <lineVal> KWCATCH
 %token <lineVal> KWTHROW
 %token <lineVal> KWTYPEOF
 %token <lineVal> KWTYPESWITCH
@@ -348,6 +351,7 @@ initialize: // Empty
   deInTransformer = false;
   deInIterator = false;
   deSkippedCodeNestedDepth = 0;
+  deInUnitTest = false;
 }
 
 runeFile: statements
@@ -368,7 +372,7 @@ statement: appendCode
 | forStatement
 | function
 | transformStatement
-| transformerStatement
+| transformer
 | ifStatement
 | import
 | prependCode
@@ -380,8 +384,10 @@ statement: appendCode
 | struct
 | switchStatement
 | typeswitchStatement
+| tryCatchStatements
+| catchStatement
 | throwStatement
-| unitTestStatement
+| unitTest
 | unrefStatement
 | whileStatement
 | yield
@@ -428,6 +434,7 @@ classHeader: KWCLASS IDENT optWidth
 {
   deFunction constructor = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_CONSTRUCTOR, $2, DE_LINK_MODULE, $1);
+  deFunctionSetInUnitTest(constructor, deInUnitTest);
   deTemplateCreate(constructor, $3, $1);
   deCurrentBlock = deFunctionGetSubBlock(constructor);
 }
@@ -448,6 +455,7 @@ exportClassHeader: KWEXPORT KWCLASS IDENT optWidth  // Means the constructor is 
 {
   deFunction constructor = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_CONSTRUCTOR, $3, DE_LINK_PACKAGE, $1);
+  deFunctionSetInUnitTest(constructor, deInUnitTest);
   deTemplateCreate(constructor, $4, $1);
   deCurrentBlock = deFunctionGetSubBlock(constructor);
 }
@@ -455,6 +463,7 @@ exportClassHeader: KWEXPORT KWCLASS IDENT optWidth  // Means the constructor is 
 {
   deFunction constructor = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_CONSTRUCTOR, $3, DE_LINK_LIBCALL, $1);
+  deFunctionSetInUnitTest(constructor, deInUnitTest);
   deTemplateCreate(constructor, $4, $1);
   deCurrentBlock = deFunctionGetSubBlock(constructor);
 }
@@ -462,6 +471,7 @@ exportClassHeader: KWEXPORT KWCLASS IDENT optWidth  // Means the constructor is 
 {
   deFunction constructor = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_CONSTRUCTOR, $3, DE_LINK_RPC, $1);
+  deFunctionSetInUnitTest(constructor, deInUnitTest);
   deTemplateCreate(constructor, $4, $1);
   deCurrentBlock = deFunctionGetSubBlock(constructor);
 }
@@ -479,6 +489,7 @@ structHeader: KWSTRUCT IDENT
 {
   deFunction theStruct = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_STRUCT, $2, DE_LINK_MODULE, $1);
+  deFunctionSetInUnitTest(theStruct, deInUnitTest);
   deCurrentBlock = deFunctionGetSubBlock(theStruct);
 }
 
@@ -507,12 +518,14 @@ exportStructHeader: KWEXPORT KWSTRUCT IDENT  // Means the constructor is in pack
 {
   deFunction theStruct = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_STRUCT, $3, DE_LINK_PACKAGE, $1);
+  deFunctionSetInUnitTest(theStruct, deInUnitTest);
   deCurrentBlock = deFunctionGetSubBlock(theStruct);
 }
 | KWEXPORTLIB KWSTRUCT IDENT  // Means the struct can be passed to/freom a libcall.
 {
   deFunction theStruct = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_STRUCT, $3, DE_LINK_LIBCALL, $1);
+  deFunctionSetInUnitTest(theStruct, deInUnitTest);
   deCurrentBlock = deFunctionGetSubBlock(theStruct);
 }
 
@@ -534,7 +547,7 @@ appendCodeHeader: KWAPPENDCODE pathExpression
       deError($1, "Cannot appendcode inside another appendcode statement");
     }
     deGenerating = true;
-    deStatement statement = createBlockStatement(DE_STATEMENT_APPENDCODE);
+    deStatement statement = createBlockStatement(DE_STATEMENT_APPENDCODE, $1);
     deStatementSetExpression(statement, $2);
   } else {
     if (deSavedBlock != deBlockNull) {
@@ -558,7 +571,7 @@ appendCodeHeader: KWAPPENDCODE pathExpression
       deError($1, "Cannot appendcode inside another appendcode statement");
     }
     deGenerating = true;
-    createBlockStatement(DE_STATEMENT_APPENDCODE);
+    createBlockStatement(DE_STATEMENT_APPENDCODE, $1);
   } else {
     if (deSavedBlock != deBlockNull) {
       deError( $1, "Cannot append code inside another append/prepend statement");
@@ -587,7 +600,7 @@ prependCodeHeader: KWPREPENDCODE pathExpression
       deError($1, "Cannot prependcode inside another prependcode statement");
     }
     deGenerating = true;
-    deStatement statement = createBlockStatement(DE_STATEMENT_PREPENDCODE);
+    deStatement statement = createBlockStatement(DE_STATEMENT_PREPENDCODE, $1);
     deStatementSetExpression(statement, $2);
   } else {
     if (deSavedBlock != deBlockNull) {
@@ -613,7 +626,7 @@ prependCodeHeader: KWPREPENDCODE pathExpression
       deError($1, "Cannot prependcode inside another prependcode statement");
     }
     deGenerating = true;
-    createBlockStatement(DE_STATEMENT_PREPENDCODE);
+    createBlockStatement(DE_STATEMENT_PREPENDCODE, $1);
   } else {
     if (deSavedBlock != deBlockNull) {
       deError( $1, "Cannot prepend code inside another append/prepend statement");
@@ -665,18 +678,21 @@ functionHeader: KWFUNC IDENT
 {
   deFunction function = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_PLAIN, $2, DE_LINK_MODULE, $1);
+  deFunctionSetInUnitTest(function, deInUnitTest);
   deCurrentBlock = deFunctionGetSubBlock(function);
 }
 | KWITERATOR IDENT
 {
   deFunction function = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_ITERATOR, $2, DE_LINK_MODULE, $1);
+  deFunctionSetInUnitTest(function, deInUnitTest);
   deCurrentBlock = deFunctionGetSubBlock(function);
   deInIterator = true;
 }
 | KWOPERATOR operator
 {
   deFunction operator = deOperatorFunctionCreate(deCurrentBlock, $2, $1);
+  deFunctionSetInUnitTest(operator, deInUnitTest);
   deCurrentBlock = deFunctionGetSubBlock(operator);
 }
 
@@ -805,18 +821,21 @@ exportFunctionHeader: KWEXPORT KWFUNC IDENT
 {
   deFunction function = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_PLAIN, $3, DE_LINK_PACKAGE, $1);
+  deFunctionSetInUnitTest(function, deInUnitTest);
   deCurrentBlock = deFunctionGetSubBlock(function);
 }
 | KWEXPORT KWITERATOR IDENT
 {
   deFunction function = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_ITERATOR, $3, DE_LINK_PACKAGE, $1);
+  deFunctionSetInUnitTest(function, deInUnitTest);
   deCurrentBlock = deFunctionGetSubBlock(function);
 }
 | KWEXPORTLIB KWFUNC IDENT
 {
   deFunction function = deFunctionCreate(deCurrentFilepath, deCurrentBlock, DE_FUNC_PLAIN, $3,
       DE_LINK_LIBCALL, $1);
+  deFunctionSetInUnitTest(function, deInUnitTest);
   deCurrentBlock = deFunctionGetSubBlock(function);
 }
 
@@ -901,6 +920,7 @@ rpcHeader: KWRPC IDENT
 {
   deFunction function = deFunctionCreate(deCurrentFilepath, deCurrentBlock, DE_FUNC_PLAIN, $2,
       DE_LINK_RPC, $1);
+  deFunctionSetInUnitTest(function, deInUnitTest);
   deCurrentBlock = deFunctionGetSubBlock(function);
 }
 
@@ -913,7 +933,7 @@ ifPart: ifStatementHeader expression block
 
 ifStatementHeader: KWIF
 {
-  createBlockStatement(DE_STATEMENT_IF);
+  createBlockStatement(DE_STATEMENT_IF, $1);
 }
 
 elseIfParts: // Empty
@@ -926,7 +946,7 @@ elseIfPart: elseIfStatementHeader expression block
 
 elseIfStatementHeader: KWELSE KWIF
 {
-  createBlockStatement(DE_STATEMENT_ELSEIF);
+  createBlockStatement(DE_STATEMENT_ELSEIF, $1);
 }
 
 optElsePart: // Empty
@@ -939,7 +959,7 @@ elsePart: elseStatementHeader block
 
 elseStatementHeader: KWELSE
 {
-  createBlockStatement(DE_STATEMENT_ELSE);
+  createBlockStatement(DE_STATEMENT_ELSE, $1);
 }
 
 switchStatement: switchStatementHeader expression switchBlock
@@ -954,12 +974,12 @@ typeswitchStatement: typeswitchStatementHeader expression typeswitchBlock
 
 switchStatementHeader: KWSWITCH
 {
-  createBlockStatement(DE_STATEMENT_SWITCH);
+  createBlockStatement(DE_STATEMENT_SWITCH, $1);
 }
 
 typeswitchStatementHeader: KWTYPESWITCH
 {
-  createBlockStatement(DE_STATEMENT_TYPESWITCH);
+  createBlockStatement(DE_STATEMENT_TYPESWITCH, $1);
 }
 
 switchBlock: '{' newlines switchCases optDefaultCase '}' optNewlines
@@ -992,7 +1012,8 @@ typeswitchCase: typeswitchCaseHeaders block
 
 switchCaseHeaders: expression
 {
-  deStatement statement = createBlockStatement(DE_STATEMENT_CASE);
+  deLine line = deExpressionGetLine($1);
+  deStatement statement = createBlockStatement(DE_STATEMENT_CASE, line);
   $$ = deExpressionCreate(DE_EXPR_LIST, deExpressionGetLine($1));
   deStatementInsertExpression(statement, $$);
   deExpressionAppendExpression($$, $1);
@@ -1005,7 +1026,8 @@ switchCaseHeaders: expression
 
 typeswitchCaseHeaders: typeExpression
 {
-  deStatement statement = createBlockStatement(DE_STATEMENT_CASE);
+  deLine line = deExpressionGetLine($1);
+  deStatement statement = createBlockStatement(DE_STATEMENT_CASE, line);
   $$ = deExpressionCreate(DE_EXPR_LIST, deExpressionGetLine($1));
   deStatementInsertExpression(statement, $$);
   deExpressionAppendExpression($$, $1);
@@ -1019,7 +1041,7 @@ typeswitchCaseHeaders: typeExpression
 optDefaultCase: // Empty
 {
   // If default is missing, add one with a throw statement.
-  createBlockStatement(DE_STATEMENT_DEFAULT);
+  createBlockStatement(DE_STATEMENT_DEFAULT, deCurrentLine);
   deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_THROW, deCurrentLine);
   deExpression expression = deExpressionCreate(DE_EXPR_LIST, deCurrentLine);
   deExpression message = deStringExpressionCreate(
@@ -1039,7 +1061,7 @@ optDefaultCase: // Empty
 
 defaultCaseHeader: KWDEFAULT
 {
-  createBlockStatement(DE_STATEMENT_DEFAULT);
+  createBlockStatement(DE_STATEMENT_DEFAULT, $1);
 }
 
 whileStatement: optDoStatement whileStatementHeader expression newlines
@@ -1055,7 +1077,7 @@ whileStatement: optDoStatement whileStatementHeader expression newlines
 
 whileStatementHeader: KWWHILE
 {
-  createBlockStatement(DE_STATEMENT_WHILE);
+  createBlockStatement(DE_STATEMENT_WHILE, $1);
 }
 
 optDoStatement: // Empty
@@ -1068,7 +1090,7 @@ doStatement: doStatementHeader block
 
 doStatementHeader: KWDO
 {
-  createBlockStatement(DE_STATEMENT_DO);
+  createBlockStatement(DE_STATEMENT_DO, $1);
 }
 
 forStatement: forStatementHeader assignmentExpression ',' optNewlines expression ','
@@ -1085,7 +1107,7 @@ forStatement: forStatementHeader assignmentExpression ',' optNewlines expression
 forStatementHeader: KWFOR
 {
   // Also used to start foreach statements.
-  createBlockStatement(DE_STATEMENT_FOR);
+  createBlockStatement(DE_STATEMENT_FOR, $1);
 }
 
 assignmentStatement: assignmentExpression newlines
@@ -1450,6 +1472,34 @@ printlnStatement: KWPRINTLN expressionList newlines
   deStatementInsertExpression(statement, expression);
 }
 
+tryCatchStatements: tryStatement catchStatement
+
+tryStatement: tryHeader block
+{
+  finishBlockStatement(deExpressionNull);
+}
+
+tryHeader: KWTRY
+{
+  createBlockStatement(DE_STATEMENT_TRY, $1);
+}
+
+catchStatement: catchHeader block
+{
+  finishBlockStatement(deExpressionNull);
+}
+
+catchHeader: KWCATCH IDENT
+{
+  createBlockStatement(DE_STATEMENT_CATCH, $1);
+  // Capture the global runtime_errorMessage in variable IDENT.
+  deExpression identExpr = deIdentExpressionCreate($2, $1);
+  deExpression errorMessageExpr = deIdentExpressionCreate(utSymCreate("runtime_errorMessage"), $1);
+  deExpression expr = deBinaryExpressionCreate(DE_EXPR_EQUALS, identExpr, errorMessageExpr, $1);
+  deStatement assignStatement = deStatementCreate(deCurrentBlock, DE_STATEMENT_ASSIGN, $1);
+  deStatementInsertExpression(assignStatement, expr);
+}
+
 throwStatement: KWTHROW expressionList newlines
 {
   deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_THROW, $1);
@@ -1458,7 +1508,7 @@ throwStatement: KWTHROW expressionList newlines
 
 assertStatement: KWASSERT expressionList newlines
 {
-  deStatement ifStatement = createBlockStatement(DE_STATEMENT_IF);
+  deStatement ifStatement = createBlockStatement(DE_STATEMENT_IF, $1);
   deBlock subBlock = deStatementGetSubBlock(ifStatement);
   deStatement statement = deStatementCreate(subBlock, DE_STATEMENT_THROW, $1);
   deStatementInsertExpression(statement, $2);
@@ -1485,7 +1535,7 @@ returnStatement: KWRETURN newlines
   deFunctionSetReturnsValue(function, true);
 }
 
-transformerStatement: transformerHeader '(' parameters ')' block
+transformer: transformerHeader '(' parameters ')' block
 {
   deInTransformer = false;
   deCurrentBlock = deBlockGetOwningBlock(deCurrentBlock);
@@ -1554,7 +1604,7 @@ yield: KWYIELD expression newlines
   deStatementSetExpression(statement, $2);
 }
 
-unitTestStatement: namedUnitTestHeader block
+unitTest: namedUnitTestHeader block
 {
   deFunction function = deBlockGetOwningFunction(deCurrentBlock);
   deCurrentBlock = deFunctionGetBlock(function);
@@ -1572,6 +1622,7 @@ unitTestStatement: namedUnitTestHeader block
     deStatementInsertExpression(statement, callExpr);
   }
   deInIterator = false;
+  deInUnitTest = false;
 }
 | unnamedUnitTestHeader block
 {
@@ -1580,6 +1631,7 @@ unitTestStatement: namedUnitTestHeader block
     deCurrentBlock = deStatementGetBlock(statement);
     deStatementDestroy(statement);
     deSkippedCodeNestedDepth--;
+    deInUnitTest = false;
   }
 }
 
@@ -1587,7 +1639,9 @@ namedUnitTestHeader: KWUNITTEST IDENT
 {
   deFunction function = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_UNITTEST, $2, DE_LINK_MODULE, $1);
+  deFunctionSetInUnitTest(function, true);
   deCurrentBlock = deFunctionGetSubBlock(function);
+  deInUnitTest = true;
 }
 
 unnamedUnitTestHeader: KWUNITTEST
@@ -1595,7 +1649,9 @@ unnamedUnitTestHeader: KWUNITTEST
   if (!deTestMode && !deParsingMainModule) {
     deSkippedCodeNestedDepth++;
     // Statements in this block will be destroyed above.
-    createBlockStatement(DE_STATEMENT_DO);
+    createBlockStatement(DE_STATEMENT_DO, $1);
+  } else {
+    deInUnitTest = true;
   }
 }
 
@@ -1614,7 +1670,7 @@ debugHeader: KWDEBUG
 {
   if (!deDebugMode) {
     deSkippedCodeNestedDepth++;
-    createBlockStatement(DE_STATEMENT_DO);
+    createBlockStatement(DE_STATEMENT_DO, $1);
   }
 }
 
@@ -1628,6 +1684,7 @@ enumHeader: KWENUM IDENT
 {
   deFunction enumFunc = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_ENUM, $2, DE_LINK_MODULE, $1);
+  deFunctionSetInUnitTest(enumFunc, deInUnitTest);
   deCurrentBlock = deFunctionGetSubBlock(enumFunc);
 }
 
@@ -1678,6 +1735,7 @@ finalHeader: KWFINAL
   deTemplateSetHasFinalMethod(templ, true);
   deFunction function = deFunctionCreate(deCurrentFilepath, deCurrentBlock,
       DE_FUNC_PLAIN, utSymCreate("final"), DE_LINK_MODULE, $1);
+  deFunctionSetInUnitTest(function, deInUnitTest);
   deCurrentBlock = deFunctionGetSubBlock(function);
 }
 

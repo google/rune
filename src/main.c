@@ -28,7 +28,7 @@ static int runClangCompiler(char *llvmFileName, bool debugMode, bool optimized) 
     char *outFileName = utReplaceSuffix(llvmFileName, "");
   char *optFlag = optimized? "-O3" : "";
   if (debugMode) {
-    optFlag = "-g";
+    optFlag = "-g -O0";
   }
   char *command = utSprintf("%s %s -fPIC -o %s %s %s/librune.a %s/libcttk.a",
       deClangPath, optFlag, outFileName, llvmFileName, deLibDir, deLibDir);
@@ -45,7 +45,8 @@ static void usage(void) {
          "    -L        - Log tokens parsed to rune.log.\n"
          "    -n        - No clang.  Don't compile the resulting .ll output.\n"
          "    -O        - Optimized build.  Passes -O3 to clang.\n"
-         "    -p <dir>  - Use <dir> as the root directory for packages.\n"
+         "    -p <dir>  - Use <dir> as the root directory for Rune's builtin packages.\n"
+         "    -r <dir>  - Use <dir> as the root directory for the project's packages.\n"
          "    -t        - Execute unit tests for all modules.\n"
          "    -U        - Unsafe mode.  Don't generate bounds checking, overflow\n"
          "                detection, and destroyed object access detection.\n"
@@ -62,7 +63,8 @@ int main(int argc, char** argv) {
   deInvertReturnCode = false;
   deTestMode = false;
   deUnsafeMode = false;
-  dePackageDir = NULL;
+  deRunePackageDir = NULL;
+  deProjectPackageDir = NULL;
   bool noClang = false;
   bool optimized = false;
   deLLVMFileName = NULL;
@@ -94,7 +96,13 @@ int main(int argc, char** argv) {
         printf("-p requires a path to the root package directory");
         return 1;
       }
-      dePackageDir = argv[xArg];
+      deRunePackageDir = argv[xArg];
+    } else if (!strcmp(argv[xArg], "-r")) {
+      if (++xArg == argc) {
+        printf("-p requires a path to the root package directory");
+        return 1;
+      }
+      deProjectPackageDir = argv[xArg];
     } else if (!strcmp(argv[xArg], "-clang")) {
       if (++xArg == argc) {
         printf("-C requires a path argument to the clang executable");
@@ -118,7 +126,7 @@ int main(int argc, char** argv) {
       deParseBuiltinFunctions();
     }
     deBlock rootBlock = deRootGetBlock(deTheRoot);
-    deParseModule(fileName, rootBlock, true);
+    deParseModule(fileName, rootBlock, true, deLineNull);
     deCallFinalInDestructors();
     deCreateLocalAndGlobalVariables();
     deBind();

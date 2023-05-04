@@ -17,6 +17,7 @@
 #include "runtime.h"
 #include <ctype.h>
 #include <math.h>
+#include <setjmp.h>
 
 #define LL_TMPVARS_STRING ".tmpvars."
 
@@ -56,6 +57,8 @@ static deLine llCurrentLine;
 static utSym llLimitCheckFailedLabel;
 static utSym llBoundsCheckFailedLabel;
 static utSym llPrevLabel;  // Most recently printed label: used in phi instructions.
+// This is the number of setjmp buffers that need to be popped before a return.
+static uint32 llSetjmpDepth;
 
 typedef struct {
   deDatatype datatype;
@@ -755,6 +758,7 @@ static void printFunctionHeader(deBlock block, deSignature signature) {
   }
   llVarNum = 0;
   llTmpVarNum = 0;
+  llSetjmpDepth = 0;
   llPuts(")");
   llPrevLabel = utSymCreate("0");
   if (llDebugMode) {
@@ -4105,6 +4109,77 @@ static void callPuts(llElement string) {
       llGetTypeString(llElementGetDatatype(string), false), llElementGetName(string));
 }
 
+// Push the setjmp buffer onto the linked list.
+static void pushSetjmpBuffer(uint32 setjmpBuffer) {
+  uint32 firstSetjmpBuffer = printNewValue();
+  llPrintf("load %%struct.jmpbuf_wrapped*, %%struct.jmpbuf_wrapped** @runtime_firstSetjmpBuffer\n");
+  uint32 nextPtrAddr = printNewValue();
+  llPrintf("getelementptr inbounds %%struct.jmpbuf_wrapped, %%struct.jmpbuf_wrapped* %%.tmp%u, i32 0, i32 1\n", setjmpBuffer);
+  llPrintf("  store %%struct.jmpbuf_wrapped* %%%u, %%struct.jmpbuf_wrapped** %%%u\n", firstSetjmpBuffer, nextPtrAddr);
+  llPrintf("  store %%struct.jmpbuf_wrapped* %%.tmp%u, %%struct.jmpbuf_wrapped** @runtime_firstSetjmpBuffer\n", setjmpBuffer);
+}
+
+// Pop the setjmp buffer off of the linked list.
+static void popSetjmpBuffer() {
+  uint32 firstSetjmpBuffer = printNewValue();
+  llPrintf("load %%struct.jmpbuf_wrapped*, %%struct.jmpbuf_wrapped** @runtime_firstSetjmpBuffer\n");
+  uint32 nextPtrAddr = printNewValue();
+  llPrintf("getelementptr inbounds %%struct.jmpbuf_wrapped, %%struct.jmpbuf_wrapped* %%%u, i32 0, i32 1\n", firstSetjmpBuffer);
+  uint32 nextPtr = printNewValue();
+  llPrintf("load %%struct.jmpbuf_wrapped*, %%struct.jmpbuf_wrapped** %%%u\n", nextPtrAddr);
+  llPrintf("  store %%struct.jmpbuf_wrapped* %%%u, %%struct.jmpbuf_wrapped** @runtime_firstSetjmpBuffer\n", nextPtr);
+}
+
+// Pop any setjmp buffers that were created in this function which surround this
+// return statement.
+static void popSetjmpBuffers() {
+  for (uint32 i = 0; i < llSetjmpDepth; i++) {
+    popSetjmpBuffer();
+  }
+}
+
+// Generate a try statement.  For now, just generate if (runtime_setjmp()).
+static utSym generateTryStatement(deStatement tryStatement, utSym startLabel) {
+  printLabel(startLabel);
+  uint32 setjmpBuffer = printNewTmpValue();
+  llTmpPrintf("alloca %%struct.jmpbuf_wrapped\n");
+  pushSetjmpBuffer(setjmpBuffer);
+  uint32 jmpbufTag = printNewValue();
+  llPrintf("getelementptr inbounds %%struct.jmpbuf_wrapped, %%struct.jmpbuf_wrapped* %%.tmp%u, i32 0, i32 0\n",
+       setjmpBuffer);
+  uint32 setjmpResult = printNewValue();
+  llPrintf("call i32 @_setjmp(%%struct.__jmp_buf_tag* %%%u)\n", jmpbufTag);
+  llElement setjmpElem = createValueElement(deUintDatatypeCreate(32), setjmpResult, false);
+  llElement zero = createSmallInteger(0, 32, false);
+  generateComparison(setjmpElem, zero, "icmp eq");
+  llElement condition = popElement(true);
+  utSym tryLabel = newLabel("try");
+  utSym catchLabel = newLabel("catch");
+  utSym catchDoneLabel = newLabel("catchDone");
+  llPrintf("  br i1 %s, label %%%s, label %%%s%s\n",
+      llElementGetName(condition), utSymGetName(tryLabel),
+      utSymGetName(catchLabel), locationInfo());
+  deBlock subBlock = deStatementGetSubBlock(tryStatement);
+  llSetjmpDepth++;
+  utSym blockEndLabel = generateBlockStatements(subBlock, tryLabel);
+  llSetjmpDepth--;
+  if (!blockEndsInReturn(subBlock)) {
+    printLabel(blockEndLabel);
+    popSetjmpBuffer();
+    jumpTo(catchDoneLabel);
+  }
+  printLabel(catchLabel);
+  popSetjmpBuffer();
+  deStatement catchStatement = deStatementGetNextBlockStatement(tryStatement);
+  subBlock = deStatementGetSubBlock(catchStatement);
+  blockEndLabel = generateBlockStatements(subBlock, utSymNull);
+  if (!blockEndsInReturn(subBlock)) {
+    printLabel(blockEndLabel);
+    jumpTo(catchDoneLabel);
+  }
+  return catchDoneLabel;
+}
+
 // Generate a print or throw statement.
 static void generatePrintOrThrowStatement(deStatement statement, bool isPrint) {
   deExpression expression = deStatementGetExpression(statement);
@@ -4132,6 +4207,7 @@ static void generateReturnStatement(deStatement statement) {
   if (funcType == DE_FUNC_CONSTRUCTOR) {
     // This is a constructor.  Return self.
     freeElements(true);
+    popSetjmpBuffers();
     deVariable self = deBlockGetFirstVariable(llCurrentScopeBlock);
     deDatatype selfType = deVariableGetDatatype(self);
     utAssert(deDatatypeGetType(selfType) == DE_TYPE_CLASS);
@@ -4140,6 +4216,7 @@ static void generateReturnStatement(deStatement statement) {
     llPrintf("  ret i%u %s%s\n", deClassGetRefWidth(theClass), llGetVariableName(self), location);
   } else if (expression == deExpressionNull) {
     freeElements(true);
+    popSetjmpBuffers();
     char *location = locationInfo();
     llPrintf("  ret void%s\n", location);
   } else {
@@ -4150,6 +4227,7 @@ static void generateReturnStatement(deStatement statement) {
       llElement retVal = createElement(returnType, "%.retVal", true);
       copyOrMoveElement(retVal, *elementPtr, false);
       freeElements(true);
+      popSetjmpBuffers();
       llPrintf("  ret void%s\n", locationInfo());
     } else {
       llElement element = popElement(true);
@@ -4158,6 +4236,7 @@ static void generateReturnStatement(deStatement statement) {
         refObject(element);
       }
       freeElements(true);
+      popSetjmpBuffers();
       llPrintf("  ret %s %s%s\n", llGetTypeString(returnType, false),
           llElementGetName(element), locationInfo());
     }
@@ -4234,6 +4313,12 @@ static utSym generateStatement(deStatement statement, utSym label) {
       printLabel(label);
       label = utSymNull;
       generatePrintOrThrowStatement(statement, true);
+      break;
+    case DE_STATEMENT_TRY:
+      label = generateTryStatement(statement, label);
+      break;
+    case DE_STATEMENT_CATCH:
+      // Nothing to do.  This is generated by the try statement.
       break;
     case DE_STATEMENT_THROW:
       printLabel(label);
@@ -4351,6 +4436,12 @@ static void printHeader(void) {
       "%%struct.runtime_array = type {i64*, i64}\n",
       triple);
   fputs("%struct.runtime_bool = type { i32 }\n", llAsmFile);
+  fputs("%struct.__jmp_buf_tag = type { [8 x i64], i32, %struct.__sigset_t }\n", llAsmFile);
+  fputs("%struct.__sigset_t = type { [16 x i64] }\n", llAsmFile);
+  fputs("declare i32 @_setjmp(%struct.__jmp_buf_tag* noundef)\n", llAsmFile);
+  fputs("declare void @longjmp(%struct.__jmp_buf_tag* noundef, i32 noundef)\n", llAsmFile);
+  fputs("%struct.jmpbuf_wrapped = type {%struct.__jmp_buf_tag, %struct.jmpbuf_wrapped*}\n", llAsmFile);
+  fputs("@runtime_firstSetjmpBuffer = dso_local global %struct.jmpbuf_wrapped* zeroinitializer\n", llAsmFile);
 }
 
 // Generate LLVM assembly code.

@@ -90,6 +90,11 @@ bool io_file_fwriteInternal(uint64_t ptr, runtime_array *buf) {
   return bytesWritten == len;
 }
 
+// Return true if the file has been flagged as in an error condition.
+bool io_file_ferrorInternal(uint64_t ptr) {
+  return ferror((FILE*)(uintptr_t)ptr) != 0;
+}
+
 // Return one byte from stdin.
 uint8_t readByte() {
   return getchar();
@@ -190,19 +195,23 @@ void runtime_putsCstr(const char *string) {
 
 // Throw an exception.  For now, just print the message and exit.
 void runtime_throwException(const runtime_array *format, ...) {
+  va_list ap;
+  va_start(ap, format);
+  runtime_freeArray(&runtime_errorMessage);
+  runtime_errorMessage = runtime_makeEmptyArray();
+  runtime_vsprintf(&runtime_errorMessage, format, ap);
+  va_end(ap);
+  if (runtime_firstSetjmpBuffer != NULL) {
+    longjmp(runtime_firstSetjmpBuffer->buf, 1);
+  }
   if (runtime_jmpBufSet) {
     printf("Expected ");
   }
   runtime_putsCstr("******************** Exception: ");
-  va_list ap;
-  va_start(ap, format);
-  runtime_array buf = runtime_makeEmptyArray();
-  runtime_vsprintf(&buf, format, ap);
-  va_end(ap);
   runtime_putsCstr("Exception: ");
-  runtime_puts(&buf);
+  runtime_puts(&runtime_errorMessage);
   runtime_putsCstr("\n");
-  runtime_freeArray(&buf);
+  runtime_freeArray(&runtime_errorMessage);
   exitOrLongjmp();
 }
 

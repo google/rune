@@ -337,6 +337,8 @@ static void logMsg(char *format, ...) {
 <INITIAL>("struct"|"message")   { retToken(KWSTRUCT); }
 <INITIAL>"switch"               { retToken(KWSWITCH); }
 <INITIAL>"typeswitch"           { retToken(KWTYPESWITCH); }
+<INITIAL>"try"                  { retToken(KWTRY); }
+<INITIAL>"catch"                { retToken(KWCATCH); }
 <INITIAL>"throw"                { retToken(KWTHROW); }
 <INITIAL>"true"                 { delval.boolVal = true; logMsg("true\n"); return BOOL; }
 <INITIAL>"typeof"               { retToken(KWTYPEOF); }

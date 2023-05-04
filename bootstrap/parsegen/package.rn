@@ -12,13 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use sym
-
-use parser
-
-class Keyword(self, parser, name: string) {
-  self.sym = Sym.new(name)
-  parser.insertKeyword(self)
-}
-
-relation Hashed Parser Keyword cascade ("sym")
+use char

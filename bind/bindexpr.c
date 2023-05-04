@@ -1952,6 +1952,12 @@ static void postProcessBoundStatement(deBlock scopeBlock, deBinding binding) {
     selectMatchingCase(scopeBlock, binding);
   } else if (type == DE_STATEMENT_PRINT || type == DE_STATEMENT_THROW) {
     dePostProcessPrintStatement(statement);
+  } else if (type == DE_STATEMENT_IF) {
+    deExpression expression = deStatementGetExpression(statement);
+    deDatatype datatype = deExpressionGetDatatype(expression);
+    if (datatype == deDatatypeNull || deDatatypeGetType(datatype) != DE_TYPE_BOOL) {
+      deExprError(expression, "If statement requires a boolean condition");
+    }
   }
 }
 

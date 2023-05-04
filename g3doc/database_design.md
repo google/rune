@@ -15,11 +15,12 @@
 
 Classes are either parents or children of relationships. For example `Block`
 (that is, a block consists of multiple statements) is the parent in the
-`DoublyLinked relation from`Block`to`Statement`, and`Statement`is the parent in
-the`Statement:Owning`->`Block:Sub` `OneToOne`relation For instance,
-an`if-else`statement is represented with two consecutive`Statement`s on
-their`parentBlock`, and each have one`subBlock`. By convention, we use
-Owning/Sub for one-to-one relations and Parent/Child for one-to-many.
+`DoublyLinked` relation from `Block` to `Statement`, and `Statement` is the
+parent in the `Statement:Owning` -> `Block:Sub` `OneToOne` relation For
+instance, an `if-else` statement is represented with two consecutive
+`Statement`s on their `parentBlock`, and each have one `subBlock`. By
+convention, we use Owning/Sub for one-to-one relations and Parent/Child for
+one-to-many.
 
 Rune's High-level IR database is the engine the powers the compiler, between
 lowering the AST to HIR, and generating LLVM IR. Its design is meant to minimize
@@ -220,7 +221,7 @@ enums and even unit tests.
 identifiers live on Block). Ident objects are in a hash table owned by
 `Function`s. The top level object in Rune's HIR is a singleton `Root` instance,
 and the top level `Function` is found by calling `getRootFunc()`. The top
-level`Ffunction` is called "main", and is the auto-generated function that calls
+level `Function` is called "main", and is the auto-generated function that calls
 all of the modules in the reverse order of when they were imported. `Function`s
 are also created for each Rune module (`.rn` file).
 

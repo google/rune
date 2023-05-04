@@ -13,8 +13,9 @@
 # limitations under the License.
 
 RUNE=../../rune
+RNFLAGS=-g -r ..
 
-RUNE_TESTS=parser char lexer
+RUNE_TESTS=char lexer parser token keytab
 
 all: runtests parsergen
 
@@ -22,17 +23,22 @@ runtests: $(RUNE_TESTS)
 	for test in $(RUNE_TESTS); do "./$$test"; done
 
 parsergen: parsergen.rn
-	$(RUNE) -g parsergen.rn
+	$(RUNE) $(RNFLAGS) parsergen.rn
 
 parser: parser.rn lexer.rn char.rn
-	$(RUNE) -g parser.rn
+	$(RUNE) $(RNFLAGS) parser.rn
 
 char: char.rn
-	$(RUNE) -g char.rn
+	$(RUNE) $(RNFLAGS) char.rn
 
 lexer: lexer.rn char.rn
-	$(RUNE) -g lexer.rn
+	$(RUNE) $(RNFLAGS) lexer.rn
 
-clean:
+token: token.rn
+	$(RUNE) $(RNFLAGS) token.rn
+
+keytab: keytab.rn
+	$(RUNE) -g keytab.rn
+
 clean:
 	rm -f $(RUNE_TESTS) *.ll parsergen

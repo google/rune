@@ -22,6 +22,7 @@ use root
 class Filepath(self, path: string, parent: Filepath?, isPackage: bool) {
   self.sym = Sym.new(path)
   self.isPackage = isPackage
+  self.text = ""  // Call the readFile() method to initialize this.
   getRoot().insertFilepath(self)
   if !isnull(parent) {
     parent!.appendChildFilepath(self)
@@ -53,7 +54,24 @@ class Filepath(self, path: string, parent: Filepath?, isPackage: bool) {
     }
     return path[pos:path.length()]
   }
+
+  // Read the text of the filepath into self.text.
+  // Throws an error if there are any problems.
+  func readFile(self) {
+    file = io.open(self.sym.name, "r")
+    if isnull(file) {
+      throw "Unable to read file ", self.sym.name
+    }
+    self.text = file!.read()
+  }
 }
 
 relation Hashed Root Filepath cascade ("sym")
 relation DoublyLinked Filepath:"Parent" Filepath:"Child" cascade
+
+unittest constructorTest {
+  rootFilepath = Filepath("rootdir", null(Filepath), false)
+  childFilepath = Filepath("test", rootFilepath, true)
+  rootFilepath.destroy()
+  println "passed"
+}

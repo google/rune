@@ -44,6 +44,7 @@ class Value(self: Value, value: string | bool | Int | Uint | Bigint | Float | Sy
   self.intVal = null(Bigint)
   self.floatVal = 0.0f64
   self.symVal = null(Sym)
+  // We need a tagged union here, but for now we'll just bloat this class.
   typeswitch value {
     string => self.stringVal = value
     bool => self.boolVal = value

@@ -28,6 +28,8 @@ enum StatementType
   DE_STATEMENT_ASSIGN
   DE_STATEMENT_CALL
   DE_STATEMENT_PRINT  // print "Hello, World!\n"
+  DE_STATEMENT_TRY
+  DE_STATEMENT_CATCH
   DE_STATEMENT_THROW
   DE_STATEMENT_RETURN
   DE_STATEMENT_TRANSFORM
@@ -311,6 +313,7 @@ class Function
   BuiltinFuncType builtinType
   uint32 numSignatures
   bool Extern  // Provided by an external library or RPC.
+  bool inUnitTest  // We don't export functions in unit tests.
   ExpressionType opType  // For functions that overload operators.
 
 // A code transformer definition.

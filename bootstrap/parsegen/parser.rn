@@ -14,33 +14,24 @@
 
 import io
 
+import database.filepath as fp
 use char
+use keytab
+use lexer
 use mtoken
 use rule
 
-enum TokenType {
-  Nonterm
-  Colon
-  Eof
-}
-
-struct Lexval {
-  type: TokenType
-  pos: u32  // Position the lexical value occurs in the text.
-  len: u32
-}
-
 // Parse the file of grammar rules and return a Parser for it.
 func parseRules(fileName: string) -> Parser {
-  text = io.open(fileName).read()
-  parser = Parser(text)
-  parser.parseRules(parser)
+  parser = Parser(fileName)
+  parser.parseRules()
 }
 
-class Parser(self, text: string) {
-  self.text = text
-  self.pos = 0
-  self.lineNum = 1
+class Parser(self, fileName: string) {
+  keytab = buildKeywordTable()
+  filepath = fp.Filepath("test/path", null(fp.Filepath), false)
+  lexer = Lexer(filepath, keytab)
+  self.insertLexer(lexer)
 
   // Parse rules from text, and build
   func parseRules(self: Parser) {
@@ -56,28 +47,14 @@ class Parser(self, text: string) {
 
   // Parse a rule header: NONTERM ':'.
   func parseRuleHeader(self: Parser) {
-    lexval = self.parseToken()
+    lexval = self.lexer.parseToken()
     self.expectToken(lexval, TokenType.Nonterm)
-    lexVal = self.parseToken()
+    lexVal = self.lexer.parseToken()
     self.expectToken(lexval, TokenType.Colon)
   }
 
-  // Parse productionos for a rule.
+  // Parse productions for a rule.
   func parseProductions(parser: Parser) {
-  }
-
-  func parseToken(self:Parser) -> Lexval {
-    self.skipSpace()
-    if self.eof() {
-      return Lexval(TokenType.Eof, self.pos, 0)
-    }
-    c = self.text[self.pos]
-    // Note: For now, the syntax parser does not support UTF-8.
-    if isalpha(c) {
-      do {
-        self.pos += 1
-      } while !self.eof() && isalnum(c)
-    }
   }
 
   // Skip space in the input.
@@ -101,3 +78,13 @@ class Parser(self, text: string) {
     throw "Syntax error at ", self.lineNum, ": ", text
   }
 }
+
+func buildKeywordTable() -> Keytab {
+  keytab = Keytab()
+  Keyword(keytab, ":")
+  Keyword(keytab, "|")
+  Keyword(keytab, ";")
+  return keytab
+}
+
+relation OneToOne Parser Lexer cascade

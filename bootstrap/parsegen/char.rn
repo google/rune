@@ -16,67 +16,67 @@
 struct Char {
   pos: u32
   len: u8
-  valid: bool
+  valid: bool  // Set to false when we have an invalid UTF-8 encoding.
 }
 
-func isapha(c: Char) {
-  if c.len != 1 {
-    return false
-  }
-  return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
-}
-
-func readChar(text: string, pos: u32) -> Char {
+func getChar(text: string, pos: u32) -> Char {
   if pos >= <pos>text.length() {
     return Char(pos, 0u8, false)
   }
   if isAscii(text, pos) {
-    if isValidAscii(text, pos) {
+    if isValidAsciiInRuneFile(text, pos) {
       return Char(pos, 1u8, true)
     }
     return Char(pos, 1u8, false)
   }
   return readUTF8Char(text, pos)
+
+  // A non-ASCII UTF-8 character will match [\xc0-\xf7][\x80-\xbf]*.
+  // See https://en.wikipedia.org/wiki/UTF-8 for the format details.
+  func readUTF8Char(text: string, pos: u32) -> Char {
+    textlen = <u32>text.length()
+    c = text[pos]
+    if c & 0x20 == 0 {
+      len = 2u8
+    } else if c & 0x10 == 0 {
+      len = 3u8
+    } else if c & 0x08 == 0 {
+      len = 4u8
+    } else {
+      return Char(pos, 1u8, false)
+    }
+    if pos + <pos>len > textlen {
+      return Char(pos, <u8>(textlen - pos), false)
+    }
+    for i in range(1u8, len) {
+      if text[pos + <pos>i] & 0xC0 != 0x80 {
+        return Char(pos, <u8>(i + 1), false)
+      }
+    }
+    if encodingIsOverlong(text, pos, len) || isTrojanSourceChar(text, pos, len) {
+      return Char(pos, len, false)
+    }
+    return Char(pos, len, true)
+  }
+
+  func isValidAsciiInRuneFile(text: string, pos: u32) {
+    c = text[pos]
+    if c >= ' ' && c <= '~' {
+      return true
+    }
+    return c == '\n' || c == '\r' || c == '\t'
+  }
 }
 
 func isAscii(text: string, pos:u32) {
   return text[pos] < 128
 }
 
-func isValidAscii(text: string, pos: u32) {
-  c = text[pos]
-  if c >= ' ' && c <= '~' {
-    return true
+func isAsciiAlpha(c: Char) {
+  if c.len != 1 {
+    return false
   }
-  return c == '\n' || c == '\r' || c == '\t'
-}
-
-// A non-ASCII UTF-8 character will match [\xc0-\xf7][\x80-\xbf]*.
-// See https://en.wikipedia.org/wiki/UTF-8 for the format details.
-func readUTF8Char(text: string, pos: u32) {
-  textlen = <u32>text.length()
-  c = text[pos]
-  if c & 0x20 == 0 {
-    len = 2u8
-  } else if c & 0x10 == 0 {
-    len = 3u8
-  } else if c & 0x08 == 0 {
-    len = 4u8
-  } else {
-    return Char(pos, 1u8, false)
-  }
-  if pos + <pos>len > textlen {
-    return Char(pos, <u8>(textlen - pos), false)
-  }
-  for i in range(1u8, len) {
-    if text[pos + <pos>i] & 0xC0 != 0x80 {
-      return Char(pos, <u8>(i + 1), false)
-    }
-  }
-  if encodingIsOverlong(text, pos, len) || isTrojanSourceChar(text, pos, len) {
-    return Char(pos, len, false)
-  }
-  return Char(pos, len, true)
+  return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
 // Determine if the encoding is overly long.  All valid encodings are the
@@ -84,14 +84,14 @@ func readUTF8Char(text: string, pos: u32) {
 // extra byte adds 4 new bits, and after that each adds 5 bits.
 func encodingIsOverlong(text: string, pos: u32, len: u8) {
   if len == 2 {
-    // See if the leading 4 bits are zero.
+    // See if the leading 4 bits post-decode would be zero
     return text[pos] & 0x1E == 0
   }
   if len == 3 {
-    // See if the leading 5 bits are zero.
+    // See if the leading 5 bits post-decode would be zero
     return text[pos] & 0x0F == 0 && text[pos + 1] & 0x20 == 0
   }
-  // See if the leading 5 bits are zero.
+  // See if the leading 5 bits post-decode would be zero
   return text[pos] & 0x07 == 0 && text[pos + 1] & 0x30 == 0
 }
 
@@ -151,7 +151,7 @@ func isTrojanSourceChar(text: string, pos: u32, len: u8) {
 
 unittest readAscii {
   for val in range(32u8) {
-    c = readChar(chr(val), 0u32)
+    c = getChar(chr(val), 0u32)
     if val == '\n' || val == '\r' || val == '\t' {
       assert c.valid
     } else {
@@ -159,21 +159,21 @@ unittest readAscii {
     }
   }
   for val in range(32u8, 127u8) {
-    c = readChar(chr(val), 0u32)
+    c = getChar(chr(val), 0u32)
     assert c.valid
   }
-  c = readChar(chr(127u8), 0u32)
+  c = getChar(chr(127u8), 0u32)
   assert !c.valid  // 128 is the DEL character.
 }
 
 unittest readUTF8 {
-  char = readChar("€", 0u32)
+  char = getChar("€", 0u32)
   assert char.pos == 0 && char.len == 3
   schön = "Ἀφροδίτη"
-  println schön 
+  println schön
   pos = 0u32
   while pos < <pos>schön.length() {
-    char = readChar(schön, pos)
+    char = getChar(schön, pos)
     assert char.valid
     println "'", schön[pos:pos + <u32>char.len], "'"
     pos += <pos>char.len
@@ -182,13 +182,13 @@ unittest readUTF8 {
 
 unittest overlong {
   // Overlong encoding of '\0'
-  char = readChar("\xc0\x80", 0u32)
+  char = getChar("\xc0\x80", 0u32)
   assert !char.valid
   // An even longer overlong encoding of '\0'
-  char = readChar("\xe0\x80\x80", 0u32)
+  char = getChar("\xe0\x80\x80", 0u32)
   assert !char.valid
   // Overlong encoding of €.
-  char = readChar("\xf0\82\82\ac", 0u32)
+  char = getChar("\xf0\82\82\ac", 0u32)
   assert !char.valid
 }
 
@@ -206,7 +206,7 @@ unittest trojanSource {
   ]
   for l in table {
     s = <string>l
-    char = readChar(s, 0u32)
+    char = getChar(s, 0u32)
     assert !char.valid
   }
 }

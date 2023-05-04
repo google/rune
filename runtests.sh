@@ -23,11 +23,16 @@ for outFile in tests/*.stdout; do
   test=$(echo "$outFile" | sed 's/stdout$/rn/')
   resFile=$(echo "$outFile" | sed 's/stdout$/result/')
   inputFile=$(echo "$outFile" | sed 's/stdout$/stdin/')
+  argsFile=$(echo "$outFile" | sed 's/stdout$/args/')
   executable=$(echo "$test" | sed 's/\.rn$//')
+  args="-g"
+  if [ -e "$argsFile" ]; then
+    args=`cat $argsFile`
+  fi
   if [ -e "$inputFile" ]; then
-    ./rune -g "$test" && "./$executable"  > "$resFile" < "$inputFile"
+    ./rune "$args" "$test" && "./$executable"  > "$resFile" < "$inputFile"
   else
-    ./rune -g "$test" && "./$executable"  > "$resFile"
+    ./rune "$args" "$test" && "./$executable"  > "$resFile"
   fi
   sed 's/\r$//' -i "$outFile"
   sed 's/\r$//' -i "$resFile"

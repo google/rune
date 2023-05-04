@@ -579,7 +579,7 @@ static deFunction findMethod(deBlock module, char *method) {
 // Read the proto.rn file and find the method.  Return  the sub-block for the
 // method's function.
 static deFunction findMethodFunction(char *protoFileName, char *method) {
-  deBlock module = deParseModule(protoFileName, deRootGetBlock(deTheRoot), true);
+  deBlock module = deParseModule(protoFileName, deRootGetBlock(deTheRoot), true, deLineNull);
   deBind();
   deBindRPCs();
   deFunction function = findMethod(module, method);

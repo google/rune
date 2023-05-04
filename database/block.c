@@ -262,6 +262,9 @@ static void updateReachability(deStatement statement, bool* canContinue, bool* c
     case DE_STATEMENT_DO:
       *canContinue &= subBlockCanContinue;
       break;
+    case DE_STATEMENT_TRY:
+    case DE_STATEMENT_CATCH:
+      break;
     case DE_STATEMENT_THROW:
       *canContinue = false;
       break;

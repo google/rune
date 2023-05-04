@@ -39,6 +39,19 @@ static void buildArgvArray(void) {
   deVariableSetInstantiated(argv, true);
 }
 
+// Build the runtime_errorMessage global array.
+static void buildRuntimeErrorMessage(void) {
+  deBlock rootBlock = deRootGetBlock(deTheRoot);
+  utSym errorMessageSym = utSymCreate("runtime_errorMessage");
+  char text[] = "runtime_errorMessage = \"\"\n";
+  deLine line = deLineCreate(deBlockGetFilepath(rootBlock), text, sizeof(text), 0);
+  deVariable errorMessage = deVariableCreate(rootBlock, DE_VAR_LOCAL, true, errorMessageSym,
+      deExpressionNull, false, line);
+  deDatatype errorMessageType = deStringDatatypeCreate();
+  deVariableSetDatatype(errorMessage, errorMessageType);
+  deVariableSetInstantiated(errorMessage, true);
+}
+
 // Initialize all modules.
 void deStart(char *fileName) {
   // TODO: Load a precompiled binary database for the standard library.
@@ -58,20 +71,20 @@ void deStart(char *fileName) {
   deExeName[len] = '\0';
 #endif
   char *commonDir = utDirName(deExeName);
-  if (dePackageDir != NULL) {
+  if (deRunePackageDir != NULL) {
     // Allocate this so we can call utFree on them later.
-    dePackageDir = utAllocString(utFullPath(dePackageDir));
+    deRunePackageDir = utAllocString(utFullPath(deRunePackageDir));
   }
   if (!strcmp(utBaseName(commonDir), "bin")) {
     commonDir = utDirName(commonDir);
     deLibDir = utAllocString(utCatStrings(commonDir, "/lib/rune"));
-    if (dePackageDir == NULL) {
-      dePackageDir = utAllocString(utCatStrings(commonDir, "/lib/rune"));
+    if (deRunePackageDir == NULL) {
+      deRunePackageDir = utAllocString(utCatStrings(commonDir, "/lib/rune"));
     }
   } else {
     deLibDir = utAllocString(utCatStrings(commonDir, "/lib"));
-    if (dePackageDir == NULL) {
-      dePackageDir = utAllocString(commonDir);
+    if (deRunePackageDir == NULL) {
+      deRunePackageDir = utAllocString(commonDir);
     }
   }
   deDatabaseStart();
@@ -91,12 +104,13 @@ void deStart(char *fileName) {
   deClassStart();
   deUtilStart();
   buildArgvArray();
+  buildRuntimeErrorMessage();
 }
 
 // Clean up after all modules.
 void deStop(void) {
-  utFree(dePackageDir);
-  dePackageDir = NULL;
+  utFree(deRunePackageDir);
+  deRunePackageDir = NULL;
   utFree(deExeName);
   utFree(deLibDir);
   deUtilStop();

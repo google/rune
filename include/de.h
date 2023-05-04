@@ -35,7 +35,8 @@ deValue deEvaluateExpression(deBlock scopeBlock, deExpression expression, deBigi
 void deAddMemoryManagement(void);
 void deCallFinalInDestructors(void);
 void deParseBuiltinFunctions(void);
-deBlock deParseModule(char *fileName, deBlock destPackageBlock, bool isMainModule);
+deBlock deParseModule(char *fileName, deBlock destPackageBlock,
+                      bool isMainModule, deLine importLine);
 void deParseString(char *string, deBlock currentBlock);
 deStatement deInlineIterator(deBlock scopeBlock, deStatement statement);
 void deConstantPropagation(deBlock scopeBlock, deBlock block);
@@ -546,7 +547,8 @@ extern uint32 deDumpIndentLevel;
 // Additional globals.
 extern char *deExeName;
 extern char *deLibDir;
-extern char *dePackageDir;
+extern char *deRunePackageDir;
+extern char *deProjectPackageDir;
 extern bool deUnsafeMode;
 extern bool deDebugMode;
 extern bool deLogTokens;

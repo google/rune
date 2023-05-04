@@ -12,20 +12,67 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use mtoken
-use production
+import database.value as va
+import database.location as loc
+
+use keytab
 
 enum TokenType {
   Nonterm
-  Ident
   Keyword
+  Ident
+  Integer
+  Float
+  Bool
+  String
+  Eof
+  RandInt
+  IntType
+  UintType
 }
 
-class Token(self, type: TokenType, mterm: Mterm, production: Production) {
+class Token(self, type: TokenType, location: loc.Location, keyword: Keyword? = null(Keyword),
+    value: va.Value? = null(va.Value)) {
   self.type = type
-  mterm.appendToken(self)
-  production.appendToken(self)
+  self.location = location
+  // We should use a tagged union here.
+  self.keyword = keyword
+  self.value = value
+
+  // Pass in the text from the lexer.
+  func dump(self) {
+    self.location.dump()
+  }
+
+  // Return true if this is the eof token.
+  func eof(self) {
+    return self.type == TokenType.eof
+  }
 }
 
-relation ArrayList Production Token cascade
-relation DoublyLinked Mtoken Token cascade
+unittest dumpTest {
+  filepath = fp.Filepath.new("test_filepath", null(fp.Filepath), false)
+  filepath.text = "first line\nsecond line"
+  token1 = Token(TokenType.Ident, loc.Location(filepath, 0u32, 5u32, 1u32))
+  token2 = Token(TokenType.Ident, loc.Location(filepath, 6u32, 4u32, 1u32))
+  newline = Token(TokenType.Keyword, loc.Location(filepath, 10u32, 1u32, 1u32))
+  token3 = Token(TokenType.Ident, loc.Location(filepath, 11u32, 6u32, 2u32))
+  token4 = Token(TokenType.Ident, loc.Location(filepath, 18u32, 4u32, 2u32))
+  token1.dump()
+  token2.dump()
+  newline.dump()
+  token3.dump()
+  token4.dump()
+}
+
+unittest {
+  // Unnamed unit tests declare stuff common to all unit tests in the file.
+  import database.filepath as fp
+}
+
+unittest eofTest {
+  text = ""
+  filepath = fp.Filepath.new("test_filepath", null(fp.Filepath), false)
+  token = Token(TokenType.Eof, loc.Location(filepath, 0u32, 0u32, 1u32))
+  assert token.type == TokenType.Eof
+}

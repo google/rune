@@ -6,7 +6,8 @@ SRC= \
 array.c \
 bigint.c \
 io.c \
-random.c
+random.c \
+runtime.c
 
 HDRS= \
 runtime.h \

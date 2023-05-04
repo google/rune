@@ -12,98 +12,114 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// This will likely become the Rune lexer.  For now, it is only lexing syntax files.
+
 import io
 use sym
 
+import database.filepath as fp
+import database.location as loc
 use char
-use mtoken
-use rule
+use keytab
+use token
 
-enum TokenType {
-  Ident
-  Keyword
-  Eof
-}
-
-// This is all the info needed to be able to point out exactly where the token
-// occurs when reporting errors.
-struct Lexval {
-  type: TokenType
-  pos: u32  // Position the lexical value occurs in the text.
-  len: u32
-  line: u32
-}
-
-class Keytab(self) {
-}
-
-class Keyword(self, keytab: Keytab, name: string) {
-  self.sym = Sym.new(name)
-  keytab.insertKeyword(self)
-}
-
-relation Hashed Keytab Keyword cascade ("sym")
-
-// Type hint.
-if false {
-  dummyKeytab = Keytab()
-  dummyKeyword = Keyword(dummyKeytab, "dummy")
-}
-
-class Lexer(self, fileName: string, keytab: Keytab, text: string) {
-  file = io.open(fileName)
-  if isnu(file) {
-    self.error(0, "Unable to open file " + fileName)
+class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) {
+  filepath.appendLexer(self)
+  if filepath.text.length() == 0 {
+    if readFile {
+      filepath.readFile()
+    }
   }
-  self.text = file!.read()
-  self.pos = 0
-  self.len = self.text.length()
-  self.lineNum = 1
+  self.pos = 0u32
+  self.len = <u32>self.filepath!.text.length()
+  self.line = 1u32
+  self.startPos = 0u32
+  self.keytab = keytab
 
-  func parseToken(self:Parser) -> Lexval {
+  func parseToken(self) -> Token {
     self.skipSpace()
     if self.eof() {
       return self.eofToken()
     }
-    c = self.readChar()
-    if isalpha(c) {
-      do {
-        self.pos += 1
-      } while !self.eof() && isalnum(c)
+    self.startPos = self.pos
+    char = self.readChar()
+    if !char.valid {
+      self.error("Invalid character")
+    }
+    c = self.filepath!.text[char.pos]
+    if c == '"' {
+      return self.parseString()
+    } else if c >= '0' && c <= '9' {
+      return self.parseNumber()
+    } else if c == '\' {
+      return self.parseEscapedIdent()
+    } else if isalpha(c) || char.len > 1 {
+      self.readIdentOrKeyword(char)
+    }
+    return self.parseNonAlphaKeyword(char)
+
+    func isalpha(c) -> bool {
+      return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
     }
   }
 
-  // Skip space in the input.
+  // Skip space and comments in the input.
   func skipSpace(self) {
-    while !self.eof() && self.text[pos] < ' ' {
+    while !self.eof() && self.filepath!.text[self.pos] < ' ' {
       self.pos += 1
     }
   }
 
   func eof(self) {
-    return self.pos >= self.text.length()
+    return self.pos >= self.len
   }
 
   // A non-ASCII UTF-8 character will match ([\xc0-\xff][\x80-\xbf]*).
   func readChar(self) -> Char {
-    if self.isAscii() {
-      if isInvalidAsciiChar() {
-        self.error(1, "Invalid ASCII character")
-      }
-    }
+    return getChar(self.filepath!.text, self.pos)
   }
 
   func eofToken(self) {
-    return Lexval(TokenType.Eof, self.pos, 0)
+    assert self.eof()
+    return Token(TokenType.Eof, loc.Location(self.filepath!, self.len, 0u32, self.line))
   }
 
-  func expectToken(self, lexval: Lexval, value: string) {
-    if self.pos + value.length() > self.text.length() {
-      self.error("Input too short: expecting " + value)
-    }
+  func error(self, msg: string) {
+    location = loc.Location(self.filepath!, self.startPos, self.pos - self.startPos, self.line)
+    location.error(msg)
+    throw
   }
 
-  func error(self, text) {
-    throw "Syntax error at ", self.lineNum, ": ", text
+  func parseString(self) -> Token {
+    return self.eofToken()  // TODO: Write me.
   }
+
+  func parseNumber(self) -> Token {
+    return self.eofToken()  // TODO: Write me.
+  }
+
+  func parseEscapedIdent(self) -> Token {
+    return self.eofToken()  // TODO: Write me.
+  }
+
+  func readIdentOrKeyword(self, char: Char) -> Token {
+    return self.eofToken()  // TODO: Write me.
+  }
+
+  func parseNonAlphaKeyword(self, char: Char) -> Token {
+    return self.eofToken()  // TODO: Write me.
+  }
+}
+
+relation DoublyLinked fp.Filepath Lexer cascade
+
+unittest emptyTest {
+  filepath = fp.Filepath("testdata/empty", null(fp.Filepath), false)
+  keytab = Keytab()
+  lexer = Lexer(filepath, keytab, false)
+  assert lexer.len == 0
+  assert lexer.eof()
+  token = lexer.parseToken()
+  assert token.type == TokenType.Eof
+  println "Passed empty test"
 }

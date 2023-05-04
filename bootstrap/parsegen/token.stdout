@@ -1,0 +1,15 @@
+File test_filepath, line 1:
+first line
+^^^^^
+File test_filepath, line 1:
+first line
+      ^^^^
+File test_filepath, line 1:
+first line
+          ^
+File test_filepath, line 2:
+second line
+^^^^^^
+File test_filepath, line 2:
+second line
+       ^^^^

@@ -23,7 +23,11 @@ class FilePtr(self: FilePtr, fileName: string, ptr: u64) {
     if size > 0 {
       data.resize(size)
       len = freadInternal(self.ptr, data)
+      // Only happens at EOF or error.
       if len < size {
+        if ferrorInternal(self.ptr) {
+          throw "Error reading from ", self.fileName
+        }
         data.resize(len)
       }
       return data
@@ -33,12 +37,15 @@ class FilePtr(self: FilePtr, fileName: string, ptr: u64) {
     entireFile = ""
     do {
       len = freadInternal(self.ptr, data)
-    } while (len > 0) {
-      if len < chunkSize {
-        // Only happens at EOF.
-        data.resize(len)
-      }
+    } while (len == chunkSize) {
       entireFile.concat(data)
+    }
+    if len > 0 {
+      data.resize(len)
+      entireFile.concat(data)
+    }
+    if ferrorInternal(self.ptr) {
+      throw "Error reading from ", self.fileName
     }
     return entireFile
   }
@@ -68,3 +75,4 @@ extern "C" func fopenInternal(fileName: string, mode: string) -> u64
 extern "C" func fcloseInternal(ptr: u64) -> bool
 extern "C" func freadInternal(ptr:u64, buf: string) -> u64
 extern "C" func fwriteInternal(ptr:u64, buf: string) -> bool
+extern "C" func ferrorInternal(ptr:u64) -> bool

@@ -598,8 +598,8 @@ static void reportEvent(deEvent event) {
   }
   deIdent undefinedIdent = deEventGetUndefinedIdent(event);
   utAssert(undefinedIdent != deIdentNull);
-  deReportError(deExpressionGetLine(deIdentGetFirstExpression(undefinedIdent)),
-     "Undefined identifier %s", deIdentGetName(undefinedIdent));
+  deExpression expression = deBindingGetFirstExpression(binding);
+  deExprError(expression, "Undefined identifier %s", deIdentGetName(undefinedIdent));
 }
 
 // Report errors for any undefined or unbound identifiers that remain, and

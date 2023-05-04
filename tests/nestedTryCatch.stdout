@@ -1,0 +1,24 @@
+Trying err1
+Caght err1: Throwing err1
+Trying err2
+Caght err1: Throwing err1
+Caught err2: Throing err2
+Trying err3
+Caght err1: Throwing err1
+Caught err2: Throing err2
+Caught err3: Throing err3
+Trying return err1
+Returning from nested err1
+Trying return err2
+Caght err1: Throwing err1
+Returnning from err2
+Trying return err3
+Caght err1: Throwing err1
+Caught err2: Throing err2
+Returnning from err3
+Trying return err3
+Caght err1: Throwing err1
+Caught err2: Throing err2
+Caught err3: Throing err3
+Returning after catching err3: Throing err3
+Final error

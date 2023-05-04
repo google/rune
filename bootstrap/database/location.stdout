@@ -1,0 +1,6 @@
+File testdata/hello, line 1:
+Hello, World!
+^^^^^
+File testdata/hello, line 1:
+Hello, World!
+       ^^^^^^

@@ -1,0 +1,85 @@
+//  Copyright 2023 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+func nestedTryCatch(err1: bool, err2: bool, err3: bool, testReturn: bool) {
+  try {
+    try {
+      if err1 {
+        throw "Throwing err1"
+      }
+      if testReturn {
+        println "Returning from nested err1"
+        return
+      }
+    } catch e {
+      println "Caght err1: ", e
+      try {
+        if err2 {
+          throw "Throing err2"
+        }
+        if testReturn {
+          println "Returnning from err2"
+          return
+        }
+      } catch e {
+        println "Caught err2: ", e
+        try {
+          if err3 {
+            throw "Throing err3"
+          }
+          if testReturn {
+            println "Returnning from err3"
+            return
+          }
+        } catch e {
+          println "Caught err3: ", e
+          if testReturn {
+            println "Returning after catching err3: ", e
+            return
+          }
+        }
+      }
+      if testReturn {
+        println "Returning after catching err1: ", e
+        return
+      }
+    }
+  } catch e {
+    println "Caught exception: ", e
+  }
+}
+
+func tryAllCombos() {
+  println "Trying err1"
+  nestedTryCatch(true, false, false, false)
+  println "Trying err2"
+  nestedTryCatch(true, true, false, false)
+  println "Trying err3"
+  nestedTryCatch(true, true, true, false)
+  println "Trying return err1"
+  nestedTryCatch(false, false, false, true)
+  println "Trying return err2"
+  nestedTryCatch(true, false, false, true)
+  println "Trying return err3"
+  nestedTryCatch(true, true, false, true)
+  println "Trying return err3"
+  nestedTryCatch(true, true, true, true)
+  throw "Final error"
+}
+
+try {
+  tryAllCombos()
+} catch e {
+  println e
+}

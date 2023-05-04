@@ -1259,7 +1259,7 @@ void deGenCCRpcCode(char *rpcDefFile, char *headerFile, char *clientFile, char *
   deStart(rpcDefFile);
   rpcDatabaseStart();
   if (!utSetjmp()) {
-    deParseModule(rpcDefFile, deRootGetBlock(deTheRoot), true);
+    deParseModule(rpcDefFile, deRootGetBlock(deTheRoot), true, deLineNull);
     deBind();
     deBindRPCs();
     genCCRpcCode(rpcDefFile, headerFile, clientFile, serverFile);

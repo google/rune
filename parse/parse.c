@@ -33,7 +33,8 @@ char *deLLVMFileName;
 bool deTestMode;
 char *deExeName;
 char *deLibDir;
-char *dePackageDir;
+char *deRunePackageDir;
+char *deProjectPackageDir;
 uint32 deLineNum;
 // The current line we've just read in.
 deLine deCurrentLine;
@@ -79,12 +80,21 @@ static void importIdentifier(deBlock destBlock, deBlock sourceBlock,
   }
 }
 
+// Determine if the identifier is for a function created in a unit test.
+static bool identInUnitTest(deIdent ident) {
+  if (deIdentGetType(ident) != DE_IDENT_FUNCTION) {
+    return false;
+  }
+  deFunction function = deIdentGetFunction(ident);
+  return deFunctionInUnitTest(function);
+}
+
 // Import the identifiers of |sourceBlock| into |destBlock|.  Both blocks are
 // in the same package, so conflicts can be resolved manually.
 static void importModuleIdentifiers(deBlock destBlock, deBlock sourceBlock, deLine line) {
   deIdent ident;
   deForeachBlockIdent(sourceBlock, ident) {
-    if (!deIdentImported(ident)) {
+    if (!deIdentImported(ident) && !identInUnitTest(ident)) {
       // Don't import identifiers that the module imported from other modules.
       importIdentifier(destBlock, sourceBlock, ident, line);
     }
@@ -125,17 +135,18 @@ static void loadUseStatement(deStatement statement, deBlock packageBlock) {
   deExpression pathExpr = deStatementGetExpression(statement);
   deBlock functionBlock = deStatementGetBlock(statement);
   deBlock moduleBlock = findExistingModule(packageBlock, pathExpr);
+  deLine line = deStatementGetLine(statement);
   if (moduleBlock == deBlockNull) {
     deFilepath filepath = deBlockGetFilepath(functionBlock);
     char *fileName = utSprintf("%s/%s.rn", utDirName(deFilepathGetName(filepath)),
         utSymGetName(deExpressionGetName(pathExpr)));
     if (utFileExists(fileName)) {
-      moduleBlock = deParseModule(fileName, packageBlock, false);
+      moduleBlock = deParseModule(fileName, packageBlock, false, line);
     } else {
       // Try looking in the std module.
-      char *fileName = utSprintf("%s/std/%s.rn", dePackageDir,
+      char *fileName = utSprintf("%s/std/%s.rn", deRunePackageDir,
           utSymGetName(deExpressionGetName(pathExpr)));
-      moduleBlock = deParseModule(fileName, deRootGetBlock(deTheRoot), false);
+      moduleBlock = deParseModule(fileName, deRootGetBlock(deTheRoot), false, line);
     }
   }
   importModuleIdentifiers(functionBlock, moduleBlock, deStatementGetLine(statement));
@@ -190,7 +201,7 @@ static char *findPathExpressionPath(deExpression pathExpr) {
 // Find the module file.  First, look relative to the current module's package,
 // which is |packageBlock|.  If we can't find it there, look relative to the
 // top-level rune file, which is found on the filepath on the root block.  If
-// still not found, look in the system package path, pointed to by dePackageDir.
+// still not found, look in the system package path, pointed to by deRunePackageDir.
 // Set |isPackageDir| to true if we found a module/package.rn file.
 static char *findModuleFile(deBlock packageBlock, deExpression pathExpr, bool *isPackageDir) {
   char *commonPath = utAllocString(findPathExpressionPath(pathExpr));
@@ -202,14 +213,18 @@ static char *findModuleFile(deBlock packageBlock, deExpression pathExpr, bool *i
     return utAllocString(path);
   }
   // Check relative to top-level package.
-  path = findPathUnderFilepath(deFilepathGetName(
-      deBlockGetFilepath(deRootGetBlock(deTheRoot))), commonPath, isPackageDir);
+  if (deProjectPackageDir != NULL) {
+    path = findPathUnderFilepath(deProjectPackageDir, commonPath, isPackageDir);
+  } else {
+    path = findPathUnderFilepath(deFilepathGetName(
+        deBlockGetFilepath(deRootGetBlock(deTheRoot))), commonPath, isPackageDir);
+  }
   if (path  != NULL) {
     utFree(commonPath);
     return utAllocString(path);
   }
-  // Check in the shared package directory in dePackageDir.
-  path = findPathUnderFilepath(dePackageDir, commonPath, isPackageDir);
+  // Check in the shared package directory in deRunePackageDir.
+  path = findPathUnderFilepath(deRunePackageDir, commonPath, isPackageDir);
   if (path  != NULL) {
     utFree(commonPath);
     return utAllocString(path);
@@ -248,8 +263,8 @@ static deBlock findOrCreatePackageBlock(deBlock parentPackage, deExpression iden
 
 // Create package blocks corresponding to pathExpression.  Return the lowest
 // level package block, corresponding to the end of the path if |isPackageDir|
-// is true, otherwise the second to last part of the path when.  This will be
-// the package in which the module should be loaded.
+// is true, otherwise the second to last part of the path.  This will be the
+// package in which the module should be loaded.
 static deBlock createPackagePath(deExpression pathExpr, bool isPackageDir) {
   if (deExpressionGetType(pathExpr) == DE_EXPR_IDENT) {
     // Base case.
@@ -262,7 +277,7 @@ static deBlock createPackagePath(deExpression pathExpr, bool isPackageDir) {
   utAssert(deExpressionGetType(pathExpr) == DE_EXPR_DOT);
   deExpression prefixPathExpr = deExpressionGetFirstExpression(pathExpr);
   deExpression identExpr = deExpressionGetNextExpression(prefixPathExpr);
-  deBlock parentPackage = createPackagePath(prefixPathExpr, isPackageDir);
+  deBlock parentPackage = createPackagePath(prefixPathExpr, true);
   if (isPackageDir) {
     return findOrCreatePackageBlock(parentPackage, identExpr);
   }
@@ -306,13 +321,14 @@ static char *createPackagePathToModule(deBlock packageBlock,
 
 // Handle a use statement.
 static void loadImportStatement(deStatement statement, deBlock packageBlock) {
+  deLine importLine = deStatementGetLine(statement);
   deExpression pathExpr;
   utSym alias = getPathExpressionAndAlias(deStatementGetExpression(statement), &pathExpr);
   deBlock moduleBlock = findExistingModule(packageBlock, pathExpr);
   if (moduleBlock == deBlockNull) {
     deBlock destPackageBlock;
     char *fileName = createPackagePathToModule(packageBlock, pathExpr, &destPackageBlock);
-    moduleBlock = deParseModule(fileName, destPackageBlock, false);
+    moduleBlock = deParseModule(fileName, destPackageBlock, false, importLine);
     utFree(fileName);
   }
   // Now import just one identifier.
@@ -377,7 +393,7 @@ static void executeModuleRelations(deBlock moduleBlock) {
 
 // Parse the Rune file into a module.  |currentBlock| should be the package
 // initializer function that will call this module's initializer function.
-deBlock deParseModule(char *fileName, deBlock packageBlock, bool isMainModule) {
+deBlock deParseModule(char *fileName, deBlock packageBlock, bool isMainModule, deLine importLine) {
   fileName = utConvertDirSepChars(fileName);
   char *fullName = utAllocString(utFullPath(fileName));
   if (fullName == NULL) {
@@ -389,10 +405,10 @@ deBlock deParseModule(char *fileName, deBlock packageBlock, bool isMainModule) {
   deCurrentFilepath = filepath;
   utSym moduleName = utSymCreate(utReplaceSuffix(utBaseName(fileName), ""));
   if (!deIsLegalIdentifier(utSymGetName(moduleName))) {
-    deError(deLineNull, "Module %s has an invalid name", utSymGetName(moduleName));
+    deError(importLine, "Module %s has an invalid name", utSymGetName(moduleName));
   }
   if (deBlockFindIdent(packageBlock, moduleName) != deIdentNull) {
-    deError(deLineNull, "Module name %s already in use in this scope", utSymGetName(moduleName));
+    deError(importLine, "Module name %s already in use in this scope", utSymGetName(moduleName));
   }
   char *text = utSprintf("Auto-generated function %s()", utSymGetName(moduleName));
   deLine line = deLineCreate(filepath, text, strlen(text), 0);
@@ -470,7 +486,7 @@ void utForeachDirectoryFile(char *dirName, void (*func)(char *dirName, char *fil
 
 // Parse the built-in functions in the standard library.
 void deParseBuiltinFunctions(void) {
-  char *builtinDir = utAllocString(utSprintf("%s/builtin", dePackageDir));
+  char *builtinDir = utAllocString(utSprintf("%s/builtin", deRunePackageDir));
   deParsedBuilinFile = false;
   utForeachDirectoryFile(builtinDir, parseBuiltinFile);
   if (!deParsedBuilinFile) {
