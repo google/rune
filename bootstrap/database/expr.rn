@@ -15,7 +15,7 @@
 use sym
 
 use filepath
-use line
+use location
 use value
 use bigint
 use datatype
@@ -184,9 +184,9 @@ func getExprTypeName(type: ExprType) -> string {
 }
 
 // The expression class represents all expression trees in Rune.
-class Expr(self, type: ExprType, line: Line) {
+class Expr(self, type: ExprType, location: Location) {
   self.type = type
-  self.line = line
+  self.location = location
   self.isType = false
   self.isConst = false
   self.autocast = false  // Set on integer constants without a type suffix.
@@ -195,27 +195,27 @@ class Expr(self, type: ExprType, line: Line) {
   // self.datatype = null(Datatype)
   self.val = null(Value(0u32))
 
-  func newConstant(value: Value, line: Line) -> Expr {
-    expr = Expr(ExprType.Constant, line)
+  func newConstant(value: Value, location: Location) -> Expr {
+    expr = Expr(ExprType.Constant, location)
     expr.val = value
     return expr
   }
 
-  func newBinary(type: ExprType, left: Expr, right: Expr, line: Line) -> Expr {
-    expr = Expr(type, line)
+  func newBinary(type: ExprType, left: Expr, right: Expr, location: Location) -> Expr {
+    expr = Expr(type, location)
     expr.appendChildExpr(left)
     expr.appendChildExpr(right)
     return expr
   }
 
-  func newUnary(type: ExprType, child: Expr, line: Line) -> Expr {
-    expr = Expr(type, line)
+  func newUnary(type: ExprType, child: Expr, location: Location) -> Expr {
+    expr = Expr(type, location)
     expr.appendChildExpr(child)
     return expr
   }
 
-  func newIdent(sym: Sym, line: Line) -> Expr {
-    expr = Expr(ExprType.Ident, line)
+  func newIdent(sym: Sym, location: Location) -> Expr {
+    expr = Expr(ExprType.Ident, location)
     expr.val = Value(sym)
     return expr
   }
@@ -513,7 +513,7 @@ class Expr(self, type: ExprType, line: Line) {
 
   // Make a deep copy of the expression.
   func copy(self: Expr) -> Expr {
-    newExpr = Expr(self.type, self.line)
+    newExpr = Expr(self.type, self.location)
     // TODO: Comment in when we port datatype to Rune.
     // newExpr.datatype = expr.datatype
     newExpr.isType = self.isType
@@ -539,14 +539,14 @@ relation OneToOne Function:"Type" Expr:"Type" cascade
 
 unittest {
   filepath = Filepath.new("test_filepath", null(Filepath), false)
-  line = Line(filepath, "Not a real line", 1u32)
+  location = Location(filepath, 0u32, 0u32, 0u32)
 
   func createBinaryExpr() -> Expr {
-    left = Expr.newConstant(Value("Hello"), line)
+    left = Expr.newConstant(Value("Hello"), location)
     assert left.getPrecedence() == getPrecedence(ExprType.Constant)
-    right = Expr.newConstant(Value("World"), line)
+    right = Expr.newConstant(Value("World"), location)
     assert right.getPrecedence() == getPrecedence(ExprType.Constant)
-    return Expr.newBinary(ExprType.Lt, left, right, line)
+    return Expr.newBinary(ExprType.Lt, left, right, location)
   }
 }
 
@@ -559,11 +559,11 @@ unittest destroyTest {
   use block
 
   filepath = Filepath.new("test_filepath", null(Filepath), false)
-  line = Line(filepath, "Not a real line", 1u32)
-  block = Block(line)
-  statement =  Statement(block, StateType.Print, line)
+  location = Location(filepath, 0u32, 0u32, 0u32)
+  block = Block(location)
+  statement =  Statement(block, StateType.Print, location)
   i = Bigint(0xdeadbeefu32, 256u32)
-  expr = Expr.newConstant(Value(i), line)
+  expr = Expr.newConstant(Value(i), location)
   statement.insertExpr(expr)
   expr.destroy()
   assert isnull(statement.expr)
@@ -578,13 +578,13 @@ unittest copyTest {
 }
 
 unittest unaryTest {
-  valueExpr = Expr.newConstant(Value(123u32), line)
-  expr = Expr.newUnary(ExprType.Negate, valueExpr, line)
+  valueExpr = Expr.newConstant(Value(123u32), location)
+  expr = Expr.newUnary(ExprType.Negate, valueExpr, location)
   expr.dump()
 }
 
 unittest newIdentTest {
-  expr = Expr.newIdent(Sym.new("test"), line)
+  expr = Expr.newIdent(Sym.new("test"), location)
   expr.dump()
 }
 

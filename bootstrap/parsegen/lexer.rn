@@ -1,6 +1,6 @@
 //  Copyright 2023 Google LLC.
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
+// Licensed under the Apache License, Version 2.0 (the "License")
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
@@ -17,24 +17,26 @@
 import io
 use sym
 
+import database.datatype as dt
 import database.filepath as fp
 import database.location as loc
+import database.value as val
 use char
 use keytab
 use token
 
 class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) {
-  filepath.appendLexer(self)
   if filepath.text.length() == 0 {
     if readFile {
       filepath.readFile()
     }
   }
   self.pos = 0u32
-  self.len = <u32>self.filepath!.text.length()
+  self.len = <u32>filepath.text.length()
   self.line = 1u32
   self.startPos = 0u32
   self.keytab = keytab
+  filepath.insertLexer(self)
 
   func parseToken(self) -> Token {
     self.skipSpace()
@@ -49,6 +51,8 @@ class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) 
     c = self.filepath!.text[char.pos]
     if c == '"' {
       return self.parseString()
+    } else if c == '\'' {
+      return self.parseAsciiChar()
     } else if c >= '0' && c <= '9' {
       return self.parseNumber()
     } else if c == '\' {
@@ -65,7 +69,12 @@ class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) 
 
   // Skip space and comments in the input.
   func skipSpace(self) {
-    while !self.eof() && self.filepath!.text[self.pos] < ' ' {
+    do {
+      if self.eof() {
+        return
+      }
+      c = self.filepath!.text[self.pos]
+    } while c == ' ' || c == '\r' || c == '\t' {
       self.pos += 1
     }
   }
@@ -76,7 +85,9 @@ class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) 
 
   // A non-ASCII UTF-8 character will match ([\xc0-\xff][\x80-\xbf]*).
   func readChar(self) -> Char {
-    return getChar(self.filepath!.text, self.pos)
+    char = getChar(self.filepath!.text, self.pos)
+    self.pos += <u32>char.len
+    return char
   }
 
   func eofToken(self) {
@@ -91,6 +102,72 @@ class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) 
   }
 
   func parseString(self) -> Token {
+    s = ""
+    do {
+      self.checkNotEof("in string")
+      char = self.readChar()
+      c = self.filepath!.text[char.pos]
+    } while c != '"' {
+      if c == '\\' {
+        s.append(self.readEscapedChar())
+      } else {
+        for i in range(char.pos, char.pos + <u32>char.len) {
+          s.append(self.filepath!.text[i])
+        }
+      }
+    }
+    location = loc.Location(self.filepath!, self.startPos, self.pos - self.startPos, self.line)
+    return Token(TokenType.String, location, value = val.Value(s))
+  }
+
+  func readEscapedChar(self) {
+    self.checkNotEof("in character escape sequence")
+    char = self.readChar()
+    c = self.filepath!.text[char.pos]
+    if c == 'a' {
+      return '\a'
+    } else if c == 'b' {
+      return '\b'
+    } else if c == 'e' {
+      return '\e'
+    } else if c == 'f' {
+      return '\f'
+    } else if c == 'n' {
+      return '\n'
+    } else if c == 'r' {
+      return '\r'
+    } else if c == 't' {
+      return '\t'
+    } else if c == 'v' {
+      return '\v'
+    } else if c == '"' {
+      return '"'
+    } else if c == '0' {
+      return '\0'
+    } else if c == 'x' {
+      self.checkNotEof("in hexadecimal escape sequence")
+      char = self.readChar()
+      hi = self.filepath!.text[char.pos]
+      self.checkNotEof("in hexadecimal escape sequence")
+      char = self.readChar()
+      lo = self.filepath!.text[char.pos]
+      if !isxdigit(hi) || !isxdigit(lo) {
+        self.error("Non-hex digit in hexadecimal escape sequence")
+      }
+      return hexToChar(hi, lo)
+    }
+    self.startPos = char.pos
+    self.error("Invalid escape sequence")
+    return '\0'  // Dummy return.
+  }
+
+  func checkNotEof(self, desc: string) {
+    if self.eof() {
+      self.error("Unexpected end of file " + desc)
+    }
+  }
+
+  func parseAsciiChar(self) {
     return self.eofToken()  // TODO: Write me.
   }
 
@@ -111,7 +188,7 @@ class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) 
   }
 }
 
-relation DoublyLinked fp.Filepath Lexer cascade
+relation OneToOne fp.Filepath Lexer cascade
 
 unittest emptyTest {
   filepath = fp.Filepath("testdata/empty", null(fp.Filepath), false)
@@ -122,4 +199,69 @@ unittest emptyTest {
   token = lexer.parseToken()
   assert token.type == TokenType.Eof
   println "Passed empty test"
+}
+
+unittest {
+  func newLexer(text: string) {
+    filepath = fp.Filepath("testdata/empty", null(fp.Filepath), false)
+    filepath.text = text
+    keytab = Keytab()
+    return Lexer(filepath, keytab, false)
+  }
+}
+
+unittest parseEscapedCharsTest {
+  lexer = newLexer("\"\\a\\b\\e\\f\\n\\r\\t\\v\\\"\\0\"")
+  token = lexer.parseToken()
+  assert token.type == TokenType.String
+  value = token.value!
+  assert value.type == dt.Datatype.String
+  s = value.stringVal
+  println "s len = ", s.length()
+  assert s[0] == '\x07'  // Bell.
+  assert s[1] == '\x08'  // Backspace.
+  assert s[2] == '\x1b'  // Escape.
+  assert s[3] == '\x0c'  // Formfeed.
+  assert s[4] == '\x0a'  // Newline.
+  assert s[5] == '\x0d'  // Return.
+  assert s[6] == '\x09'  // Tab.
+  assert s[7] == '\x0b'  // Vertical ab.
+  assert s[8] == '"'
+  assert s[9] == '\x00'
+  println "Passed escaped chars test"
+}
+
+unittest badInputTest {
+  lexer = newLexer("\a")  // Bell character.
+  try {
+    lexer.parseToken()
+    throw "Failed invalid character test"
+  } catch e {
+    println "Caught invalid character"
+  }
+  lexer.destroy()
+  lexer = newLexer("\"\\x0g\"")
+  try {
+    lexer.parseToken()
+    panic "Failed invalid hex escape test"
+  } catch e {
+    println "Caught invalid hex escape"
+  }
+  lexer.destroy()
+  lexer = newLexer("\"\\z\"")
+  try {
+    lexer.parseToken()
+    panic "Failed invalid escape sequence"
+  } catch e {
+    println "Caught invalid escape sequence"
+  }
+  lexer.destroy()
+  lexer = newLexer("\"no end quote")
+  try {
+    lexer.parseToken()
+    panic "Failed to catch unexpeced end of file"
+  } catch e {
+    println "Caught unexpected end of file"
+  }
+  println "Passed bad input test"
 }

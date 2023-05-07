@@ -174,6 +174,9 @@ static deString unescape(char *string) {
       } else if (*string == 'v') {
         *p++ = '\x0b';
         string++;
+      } else if (*string == '0') {
+        *p++ = '\x00';
+        string++;
       } else if (*string == 'x') {
         string++;
         if (!isxdigit(string[0]) || !isxdigit(string[1])) {
@@ -192,7 +195,9 @@ static deString unescape(char *string) {
     }
   }
   *--p = '\0'; // Overwrite terminating "
-  deString text = deMutableCStringCreate(buffer);
+  deString text = deMutableStringCreate();
+  uint32 len = p - buffer;
+  deStringAppend(text, buffer, len);
   return text;
 }
 
@@ -340,6 +345,7 @@ static void logMsg(char *format, ...) {
 <INITIAL>"try"                  { retToken(KWTRY); }
 <INITIAL>"catch"                { retToken(KWCATCH); }
 <INITIAL>"throw"                { retToken(KWTHROW); }
+<INITIAL>"panic"                { retToken(KWPANIC); }
 <INITIAL>"true"                 { delval.boolVal = true; logMsg("true\n"); return BOOL; }
 <INITIAL>"typeof"               { retToken(KWTYPEOF); }
 <INITIAL>"unittest"             { retToken(KWUNITTEST); }
@@ -400,6 +406,14 @@ static void logMsg(char *format, ...) {
 <INITIAL>"'\\r'"  { delval.bigintVal = deUint8BigintCreate(0xd); logMsg("'\\r'\n"); return INTEGER; }
 <INITIAL>"'\\t'"  { delval.bigintVal = deUint8BigintCreate(0x9); logMsg("'\\t'\n"); return INTEGER; }
 <INITIAL>"'\\v'"  { delval.bigintVal = deUint8BigintCreate(0xb); logMsg("'\\v'\n"); return INTEGER; }
+<INITIAL>"'\\0'"  { delval.bigintVal = deUint8BigintCreate(0); logMsg("'\\0'\n"); return INTEGER; }
+<INITIAL>"'\\''"  { delval.bigintVal = deUint8BigintCreate('\''); logMsg("'\\''\n"); return INTEGER; }
+<INITIAL>"'\\\\'"  { delval.bigintVal = deUint8BigintCreate('\\'); logMsg("'\\\\'\n"); return INTEGER; }
+<INITIAL>"'"\\x[0-9a-fA-F][0-9a-fA-F]"'"  {
+                    uint8 hexVal = hexToChar(detext[3], detext[4]);
+                    delval.bigintVal = deUint8BigintCreate(hexVal);
+                    logMsg("hex char"); return INTEGER;
+                  }
 
 <INITIAL>[0-9]+"e"("-")?[0-9]+"f32" { delval.floatVal = deFloatCreate(DE_FLOAT_SINGLE, safeAtof(detext, 32));
                                   logMsg("%s\n", detext);

@@ -1,4 +1,4 @@
-//  Copyright 2021 Google LLC.
+//  Copyright 2023 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,11 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use location
-
-func Error(text: string, location: Location) {
-  path = location.filepath!.getRelativePath()
-  println "File %s:%u: %s" % (path, location.line, text)
-  location.dump()
-  throw "Exiting due to errors"
-}
+panic "calling panic..."

@@ -401,6 +401,14 @@ void deStringPuts(deString string, char *text) {
   deStringSetUsed(string, used + len);
 }
 
+// Append text to the end of a deString object.
+void deStringAppend(deString string, char *text, uint32 len) {
+  uint32 used = deStringGetUsed(string);
+  resizeStringIfNeeded(string, len);
+  memcpy(deStringGetTexts(string) + used, text, len);
+  deStringSetUsed(string, used + len);
+}
+
 // Sprint to the end of the deString object.
 void deStringSprintf(deString string, char *format, ...) {
   char buf[1];

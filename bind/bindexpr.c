@@ -1950,7 +1950,7 @@ static void postProcessBoundStatement(deBlock scopeBlock, deBinding binding) {
     updateSignatureReturnType(deBindingGetSignature(binding), datatype);
   } else if (type == DE_STATEMENT_TYPESWITCH) {
     selectMatchingCase(scopeBlock, binding);
-  } else if (type == DE_STATEMENT_PRINT || type == DE_STATEMENT_THROW) {
+  } else if (type == DE_STATEMENT_PRINT || type == DE_STATEMENT_THROW || type == DE_STATEMENT_PANIC) {
     dePostProcessPrintStatement(statement);
   } else if (type == DE_STATEMENT_IF) {
     deExpression expression = deStatementGetExpression(statement);

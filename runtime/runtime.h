@@ -125,8 +125,6 @@ void runtime_printBigint(runtime_array *val);
 void runtime_printHexBigint(runtime_array *val);
 void runtime_verifyHeap(void);
 
-void runtime_panicCstr(const char *format, ...);
-
 static inline runtime_heapHeader *runtime_getArrayHeader(const runtime_array *array) {
   return ((runtime_heapHeader*)(array->data)) - 1;
 }
@@ -153,6 +151,7 @@ void runtime_throwException(const runtime_array *format, ...);
 void runtime_throwExceptionCstr(const char *format, ...);
 void runtime_throwOverflow();
 void runtime_panic(const runtime_array *format, ...);
+void runtime_panicCstr(const char *format, ...);
 void runtime_nativeIntToString(runtime_array *string, uint64_t value, uint32_t base, bool isSigned);
 void runtime_bigintToString(runtime_array *string, runtime_array *bigint, uint32_t base);
 void runtime_stringToHex(runtime_array *destHexString, const runtime_array *sourceBinString);
@@ -315,7 +314,7 @@ extern bool runtime_jmpBufSet;
 // Used for exception handling.
 struct jmpbuf_wrapped {
   jmp_buf buf;
-  struct jmpbuf_wrapped* wrapped_buf;
+  struct jmpbuf_wrapped *wrapped_buf;
 };
 extern struct jmpbuf_wrapped *runtime_firstSetjmpBuffer;
 extern runtime_array runtime_errorMessage;

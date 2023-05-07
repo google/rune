@@ -266,6 +266,7 @@ static void updateReachability(deStatement statement, bool* canContinue, bool* c
     case DE_STATEMENT_CATCH:
       break;
     case DE_STATEMENT_THROW:
+    case DE_STATEMENT_PANIC:
       *canContinue = false;
       break;
     case DE_STATEMENT_RETURN:

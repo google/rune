@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This should replace the Line class in the database.  For now, it is local to
+// This should replace the Location class in the database.  For now, it is local to
 // the parser generator.
 
 use filepath
@@ -23,7 +23,7 @@ class Location(self, filepath: Filepath, pos:u32, len: u32, line: u32) {
   self.line = line
   filepath.appendLocation(self)
 
-  // Write the line to stdout, with a filename and line number prefix.
+  // Write the location to stdout, with a filename and location number prefix.
   func dump(self) {
     filepath = self.filepath
     assert !isnull(filepath)
@@ -32,7 +32,7 @@ class Location(self, filepath: Filepath, pos:u32, len: u32, line: u32) {
       println "File %s, line %u:" % (path, self.line)
     }
     if filepath!.text.length() > 0 {
-      self.printLineAndCarots()
+      self.printLocationAndCarots()
     }
   }
 
@@ -45,13 +45,13 @@ class Location(self, filepath: Filepath, pos:u32, len: u32, line: u32) {
       println "File %s, line %u: %s" % (path, self.line, msg)
     }
     if filepath!.text.length() > 0 {
-      self.printLineAndCarots()
+      self.printLocationAndCarots()
     }
   }
 
-  func printLineAndCarots(self) {
-    start = self.findLineStart()
-    end = self.findLineEnd()
+  func printLocationAndCarots(self) {
+    start = self.findLocationStart()
+    end = self.findLocationEnd()
     println self.filepath!.text[start:end]
     for i in range(self.pos - start) {
       print " "
@@ -62,7 +62,7 @@ class Location(self, filepath: Filepath, pos:u32, len: u32, line: u32) {
     println
   }
 
-  func findLineStart(self) -> u32 {
+  func findLocationStart(self) -> u32 {
     pos = self.pos
     while pos != 0 {
       pos -= 1
@@ -74,7 +74,7 @@ class Location(self, filepath: Filepath, pos:u32, len: u32, line: u32) {
     return 0u32
   }
 
-  func findLineEnd(self) -> u32 {
+  func findLocationEnd(self) -> u32 {
     pos = self.pos
     while pos < <pos>self.filepath!.text.length() {
       if self.filepath!.text[pos] == '\n' {

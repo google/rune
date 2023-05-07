@@ -244,15 +244,17 @@ void runtime_panic(const runtime_array *format, ...) {
   runtime_array buf = runtime_makeEmptyArray();
   runtime_vsprintf(&buf, format, ap);
   va_end(ap);
-  runtime_putsCstr("Fatal error: ");
+  runtime_putsCstr("Panic: ");
   runtime_puts(&buf);
   runtime_putsCstr("\n");
   fflush(stdout);
   runtime_freeArray(&buf);
 #ifdef RN_DEBUG
-  // Generate a core file.
-  uint8_t *p = NULL;
-  *p = 1;
+  if (!runtime_jmpBufSet) {
+    // Generate a core file.
+    uint8_t *p = NULL;
+    *p = 1;
+  }
 #endif
   exitOrLongjmp();
 }
@@ -261,7 +263,7 @@ void runtime_panic(const runtime_array *format, ...) {
 void runtime_panicCstr(const char *format, ...) {
   va_list ap;
   va_start(ap, format);
-  printf("Fatal error: ");
+  printf("Panic: ");
   vprintf(format, ap);
   printf("\n");
   va_end(ap);

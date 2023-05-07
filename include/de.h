@@ -518,6 +518,7 @@ char *deAppendToBuffer(char *buf, uint32 *len, uint32 *pos, char *text);
 char *deAppendCharToBuffer(char *buf, uint32 *len, uint32 *pos, char c);
 // These append to deString objects.  Use with deStringAlloc and deStringFree.
 void deStringPuts(deString string, char *text);
+void deStringAppend(deString string, char *text, uint32 len);
 void deStringSprintf(deString string, char *format, ...);
 bool deWriteStringToFile(FILE *file, deString string);
 // Formatting functions.

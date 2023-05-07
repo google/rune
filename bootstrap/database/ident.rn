@@ -14,7 +14,7 @@
 
 use sym
 
-use line
+use location
 use filepath
 use expr
 use block
@@ -23,7 +23,7 @@ use variable
 use datatype
 use util
 
-class Ident(self, function: Function, object: Function | Variable, sym: Sym, objLine: Line) {
+class Ident(self, function: Function, object: Function | Variable, sym: Sym, objLocation: Location) {
   self.exported = false
   imported = false
   self.sym = sym
@@ -36,7 +36,7 @@ class Ident(self, function: Function, object: Function | Variable, sym: Sym, obj
     oldIdent = function.findIdent(sym)
     if !isnull(oldIdent) {
       Error("Tried to create an identifier '%s' that already exists in the function" % sym.name,
-          objLine)
+          objLocation)
     }
     function.insertIdent(self)
   }
@@ -60,12 +60,12 @@ class Ident(self, function: Function, object: Function | Variable, sym: Sym, obj
     if !isnull(ident) {
       return ident
     }
-    line = scopeFunc.line
-    if isnull(line) {
-      // Builtin classes have no line.
+    location = scopeFunc.location
+    if isnull(location) {
+      // Builtin classes have no location.
       return null(Ident)
     }
-    filepath = line.filepath
+    filepath = location.filepath
     moduleFunc = filepath.moduleFunc
     ident = moduleFunc.findIdent(name)
     if !isnull(ident) {
@@ -97,12 +97,12 @@ class Ident(self, function: Function, object: Function | Variable, sym: Sym, obj
     return deBlockNull
   }
 
-  // Return the line of the identifier.
-  func line(self) -> Line {
+  // Return the location of the identifier.
+  func location(self) -> Location {
     if !isnull(self.function) {
-      return self.function!.line
+      return self.function!.location
     }
-    return self.variable!.line!
+    return self.variable!.location!
   }
 
   // Find an identifier from the path Expr.
@@ -153,16 +153,16 @@ class Ident(self, function: Function, object: Function | Variable, sym: Sym, obj
 
   // Return a path Expr to the function.
   func createPathExpr(self) -> Expr {
-    identExpr = Expr.newIdent(self.sym!, self.line())
+    identExpr = Expr.newIdent(self.sym!, self.location())
     function = self.function!
     prefixExpr = function.createPathExpr()
-    return Expr.newBinary(ExprType.Dot, prefixExpr, identExpr, self.line())
+    return Expr.newBinary(ExprType.Dot, prefixExpr, identExpr, self.location())
   }
 
   // Copy the identifier to the |destFunc|.  The caller must ensure
   // the identifier does not already exist on |destFunc|.
   func copy(self, destFunc: Function) -> Ident {
-    newIdent = Ident(destFunction, type, self.sym, self.line)
+    newIdent = Ident(destFunction, type, self.sym, self.location)
     if !isnull(self.function) {
       self.function.appendIdent(newIdent)
     } else {

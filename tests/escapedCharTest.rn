@@ -1,4 +1,4 @@
-//  Copyright 2021 Google LLC.
+//  Copyright 2023 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,11 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use location
-
-func Error(text: string, location: Location) {
-  path = location.filepath!.getRelativePath()
-  println "File %s:%u: %s" % (path, location.line, text)
-  location.dump()
-  throw "Exiting due to errors"
-}
+s = "\a\b\e\f\n\r\t\v\"\0"
+assert s.length() == 10
+assert s[0] == '\x07'  // Bell.
+assert s[1] == '\x08'  // Backspace.
+assert s[2] == '\x1b'  // Escape.
+assert s[3] == '\x0c'  // Formfeed.
+assert s[4] == '\x0a'  // Newline.
+assert s[5] == '\x0d'  // Return.
+assert s[6] == '\x09'  // Tab.
+assert s[7] == '\x0b'  // Vertical ab.
+assert s[8] == '"'
+assert s[9] == '\x00'
+println "Passed escaped chars test"

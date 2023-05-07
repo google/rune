@@ -47,6 +47,7 @@ void deerror(char *message, ...) {
     utError("%s:%d: token \"%s\": %s", deCurrentFileName, lineNum, detext, buff);
   }
   printf("%s:%d: token \"%s\": %s\n", deCurrentFileName, lineNum, detext, buff);
+  printf("Exiting due to error...\n");
   deGenerateDummyLLFileAndExit();
 }
 
@@ -303,6 +304,7 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %token <lineVal> KWTRY
 %token <lineVal> KWCATCH
 %token <lineVal> KWTHROW
+%token <lineVal> KWPANIC
 %token <lineVal> KWTYPEOF
 %token <lineVal> KWTYPESWITCH
 %token <lineVal> KWUNITTEST
@@ -387,6 +389,7 @@ statement: appendCode
 | tryCatchStatements
 | catchStatement
 | throwStatement
+| panicStatement
 | unitTest
 | unrefStatement
 | whileStatement
@@ -1042,7 +1045,7 @@ optDefaultCase: // Empty
 {
   // If default is missing, add one with a throw statement.
   createBlockStatement(DE_STATEMENT_DEFAULT, deCurrentLine);
-  deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_THROW, deCurrentLine);
+  deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_PANIC, deCurrentLine);
   deExpression expression = deExpressionCreate(DE_EXPR_LIST, deCurrentLine);
   deExpression message = deStringExpressionCreate(
       deMutableCStringCreate("No case matched switch expression"), deCurrentLine);
@@ -1505,12 +1508,18 @@ throwStatement: KWTHROW expressionList newlines
   deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_THROW, $1);
   deStatementInsertExpression(statement, $2);
 }
+panicStatement: KWPANIC expressionList newlines
+{
+  deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_PANIC, $1);
+  deStatementInsertExpression(statement, $2);
+}
+
 
 assertStatement: KWASSERT expressionList newlines
 {
   deStatement ifStatement = createBlockStatement(DE_STATEMENT_IF, $1);
   deBlock subBlock = deStatementGetSubBlock(ifStatement);
-  deStatement statement = deStatementCreate(subBlock, DE_STATEMENT_THROW, $1);
+  deStatement statement = deStatementCreate(subBlock, DE_STATEMENT_PANIC, $1);
   deStatementInsertExpression(statement, $2);
   deExpression condition = deExpressionGetFirstExpression($2);
   deExpressionRemoveExpression($2, condition);

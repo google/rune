@@ -79,6 +79,28 @@ func isAsciiAlpha(c: Char) {
   return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
+func lower(c: u8) -> u8 {
+  if c >= 'A' && c <= 'Z' {
+    return c - 'A' + 'a'
+  }
+  return c
+}
+
+func upper(c: u8) -> u8 {
+  if c >= 'a' && c <= 'z' {
+    return c - 'a' + 'Z'
+  }
+  return c
+}
+
+func isxdigit(c: u8) -> bool {
+  return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
+}
+
+func hexToChar(hi: u8, lo: u8) -> u8 {
+  return hi << 4 | lo
+}
+
 // Determine if the encoding is overly long.  All valid encodings are the
 // shortest possible.  E.g. 0xC041 encodes 'A', but is 2 bytes.  The first
 // extra byte adds 4 new bits, and after that each adds 5 bits.

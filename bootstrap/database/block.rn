@@ -17,12 +17,12 @@ use sym
 use root
 use filepath
 use function
-use line
+use location
 use statement
 
 // A liternal block statement.  All statements exist within a block.
-class Block(self, line: Line) {
-  self.line = line
+class Block(self, location: Location) {
+  self.location = location
   // For dead code analysis.
   self.canReturn = false
   self.canContinue = false
@@ -82,7 +82,7 @@ class Block(self, line: Line) {
 
   // Make a copy of the block, without sub-blocks.
   func copy(self) -> Block {
-    newBlock = Block(self.line)
+    newBlock = Block(self.location)
     for statement in self.statements() {
       statement.appendCopy(newBlock)
     }
@@ -106,27 +106,27 @@ unittest {
   use expr
 
   mainFunc = getMainFunc()
-  rootLine = mainFunc.line!
-  rootFilepath = rootLine.filepath!
+  rootLocation = mainFunc.location!
+  rootFilepath = rootLocation.filepath!
 
   func createEmptyBlock() -> Block {
-    line = Line(rootFilepath, "Create empty block", 0u32)
-    return Block(line)
+    location = Location(rootFilepath, 0u32, 0u32, 0u32)
+    return Block(location)
   }
 
   func createPrintlnBlock(text: string) -> Block {
     block = createEmptyBlock()
-    line = Line(rootFilepath, "println \"" + text + "\"", 1u32)
-    statement = Statement(block, StateType.Println, line)
+    location = Location(rootFilepath, 0u32, 0u32, 0u32)
+    statement = Statement(block, StateType.Println, location)
     constString = Value(text)
-    expr = Expr.newConstant(constString, line)
+    expr = Expr.newConstant(constString, location)
     statement.insertExpr(expr)
     return block
   }
 
   func createPrintlnFunction(owningFunc: Function?, name: string, text: string) -> Function {
     block = createPrintlnBlock(text)
-    function = Function(owningFunction, FuncType.Plain, Sym.new(name), Linkage.Module, rootLine)
+    function = Function(owningFunction, FuncType.Plain, Sym.new(name), Linkage.Module, rootLocation)
     function.insertSubBlock(block)
     return function
   }

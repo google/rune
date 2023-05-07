@@ -15,14 +15,14 @@
 use sym
 
 use root
-use line
+use location
 use value
 use function
 use datatype
 use expr
 
 class Variable(self, function: Function, isParam: bool, isConst: bool, sym: Sym,
-    initializer: Expr?, typeExpr: Expr?, generated: bool, line: Line) {
+    initializer: Expr?, typeExpr: Expr?, generated: bool, location: Location) {
   self.isParam = isParam  // Otherwise, it is a local variable.
   self.isConst = isConst
   self.sym = sym
@@ -33,7 +33,7 @@ class Variable(self, function: Function, isParam: bool, isConst: bool, sym: Sym,
     self.insertTypeExpr(typeExpr!)
   }
   self.instantiated = false  // Some variables hold types, not values.
-  self.line = line
+  self.location = location
   self.inClassSignature = false
   // TODO: Comment this in when we port Datatype.
   // self.datatype = null(Datatype)
@@ -52,7 +52,7 @@ class Variable(self, function: Function, isParam: bool, isConst: bool, sym: Sym,
   // TODO: Comment this in when we port Datatype
   // self.savedDatatype = null(Datatype)  // Used in matching overloaded operators.
   function.appendVariable(self)
-  Ident(function, self, sym, line)
+  Ident(function, self, sym, location)
 
   // Dump the variable to a string for debugging purposes.
   func dumpToString(self, var text: string) {
@@ -89,7 +89,7 @@ class Variable(self, function: Function, isParam: bool, isConst: bool, sym: Sym,
       type = self.typeExpr!.copy()
     }
     newVariable = Variable(destFunc, self.isParam, self.isConst, self.sym,
-        initializer, type, self.generated, self.line)
+        initializer, type, self.generated, self.location)
     return newVariable
   }
 

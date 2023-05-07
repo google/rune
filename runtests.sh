@@ -46,7 +46,11 @@ for outFile in tests/*.stdout; do
 done
 
 for test in errortests/*.rn; do
-  result=$(./runl "$test" | egrep "(Exiting due to error|Exception)")
+  executable=$(echo "$test" | sed 's/\.rn$//')
+  result=$(./rune "$args" -x "$test" | grep "Exiting due to error")
+  if [[ "$result" == "" ]]; then
+    result=$("./$executable" | egrep "(Exception|Panic)")
+  fi
   if [[ "$result" != "" ]]; then
     echo "$test passed"
     numPassed=$((numPassed + 1))

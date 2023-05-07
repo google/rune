@@ -1,1 +1,20 @@
 Passed empty test
+s len = 10
+Passed escaped chars test
+File testdata/empty, line 1: Invalid character
+
+^
+Caught invalid character
+File testdata/empty, line 1: Non-hex digit in hexadecimal escape sequence
+"\x0g"
+^^^^^
+Caught invalid hex escape
+File testdata/empty, line 1: Invalid escape sequence
+"\z"
+  ^
+Caught invalid escape sequence
+File testdata/empty, line 1: Unexpected end of file in string
+"no end quote
+^^^^^^^^^^^^^
+Caught unexpected end of file
+Passed bad input test
