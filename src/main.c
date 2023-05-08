@@ -39,7 +39,7 @@ static int runClangCompiler(char *llvmFileName, bool debugMode, bool optimized) 
 // Print usage and exit.
 static void usage(void) {
   printf("Usage: rune [options] file\n"
-         "    -b        - Don't load bulitin Rune files.\n"
+         "    -b        - Don't load builtin Rune files.\n"
          "    -g        - Include debug information for gdb.  Implies -l.\n"
          "    -l <llvmfile> - Write LLVM IR to <llvmfile>.\n"
          "    -L        - Log tokens parsed to rune.log.\n"
