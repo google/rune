@@ -15,7 +15,7 @@
 use prp
 
 if argv.length() != 3 {
-  throw "Usage: block_decrypt password ciphertext"
+  raise Status.InvalidArgument, "Usage: block_decrypt password ciphertext"
 }
 password = argv[1]
 ciphertextHex = secret(argv[2])

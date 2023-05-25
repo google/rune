@@ -15,13 +15,13 @@
 if (max(3, 4) != 4 ||
     min(3, 4) != 3 ||
     abs(-3i32) != 3i32) {
-  throw "failed"
+  raise Exception.Internal, "failed"
 }
 if chr(ord("\"")) != "\"" {
-  throw "failed"
+  raise Exception.Internal, "failed"
 }
 if ord(' ') != 32u8 || ord(" ") != 32u8 {
-  throw "failed"
+  raise Exception.Internal, "failed"
 }
 println "passed"
 

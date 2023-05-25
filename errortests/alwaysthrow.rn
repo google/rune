@@ -16,7 +16,7 @@ func numToString(num) {
   switch (num) {
     1 => return "one";
     2 => return "two"
-    default => throw
+    default => raise Exception.Internal
   }
   return "We should never get here"
 }

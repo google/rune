@@ -286,7 +286,11 @@ void deQueueStatement(deSignature signature, deStatement statement, bool instant
   // Bind return statements even if they have no expression.
   binding = deBindingCreate(signature, statement, instantiating);
   if (expression != deExpressionNull) {
-    deQueueExpression(binding, expression, instantiating, false);
+    if (deStatementGetType(statement) == DE_STATEMENT_TYPESWITCH) {
+      deQueueExpression(binding, expression, false, false);
+    } else {
+      deQueueExpression(binding, expression, instantiating, false);
+    }
   }
   deBlock subBlock = deStatementGetSubBlock(statement);
   if (deStatementGetType(statement) == DE_STATEMENT_TYPESWITCH) {

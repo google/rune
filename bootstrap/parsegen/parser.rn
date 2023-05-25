@@ -75,7 +75,7 @@ class Parser(self, fileName: string) {
   }
 
   func error(self, text) {
-    throw "Syntax error at ", self.lineNum, ": ", text
+    raise Status.InvalidArgument, "Syntax error at ", self.lineNum, ": ", text
   }
 }
 

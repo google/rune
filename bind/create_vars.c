@@ -22,8 +22,11 @@ static void createVariableIfMissing(deBlock scopeBlock, deExpression expr) {
     return;
   }
   deStatement statement = deFindExpressionStatement(expr);
-  deVariableCreate(scopeBlock, DE_VAR_LOCAL, false, name, deExpressionNull,
+  deVariable var = deVariableCreate(scopeBlock, DE_VAR_LOCAL, false, name, deExpressionNull,
       deStatementGenerated(statement), deExpressionGetLine(expr));
+  if (deRootGetBlock(deTheRoot) == scopeBlock) {
+    deVariableSetInstantiated(var, true);
+  }
 }
 
 // Create variables when we find assignment expressions that assign to an identifier.

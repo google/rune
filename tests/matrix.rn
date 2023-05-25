@@ -19,7 +19,7 @@ class Matrix(self, <m>) {
 
   operator + (a: Matrix, b: typeof(a)) -> Matrix {
     if a.rows != b.rows || a.cols != b.cols {
-      throw "Tried to add matricies of different sizes"
+      raise Status.InvalidArgument, "Tried to add matricies of different sizes"
     }
     m = a.m
     result = Matrix(m)

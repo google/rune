@@ -39,19 +39,6 @@ static void buildArgvArray(void) {
   deVariableSetInstantiated(argv, true);
 }
 
-// Build the runtime_errorMessage global array.
-static void buildRuntimeErrorMessage(void) {
-  deBlock rootBlock = deRootGetBlock(deTheRoot);
-  utSym errorMessageSym = utSymCreate("runtime_errorMessage");
-  char text[] = "runtime_errorMessage = \"\"\n";
-  deLine line = deLineCreate(deBlockGetFilepath(rootBlock), text, sizeof(text), 0);
-  deVariable errorMessage = deVariableCreate(rootBlock, DE_VAR_LOCAL, true, errorMessageSym,
-      deExpressionNull, false, line);
-  deDatatype errorMessageType = deStringDatatypeCreate();
-  deVariableSetDatatype(errorMessage, errorMessageType);
-  deVariableSetInstantiated(errorMessage, true);
-}
-
 // Initialize all modules.
 void deStart(char *fileName) {
   // TODO: Load a precompiled binary database for the standard library.
@@ -104,7 +91,6 @@ void deStart(char *fileName) {
   deClassStart();
   deUtilStart();
   buildArgvArray();
-  buildRuntimeErrorMessage();
 }
 
 // Clean up after all modules.

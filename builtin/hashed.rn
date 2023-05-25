@@ -39,7 +39,7 @@ func hashString(value: string) -> u64 {
 func hashInteger(value: Uint | Int) -> u64 {
   typeswitch value {
     u1 ... u64 | i1 ... i64 => return hashValues(0u64, <u64>value)
-    default {
+    default => {
       remaining = value
       hash = 0u64
       do {
@@ -56,7 +56,7 @@ func hashValue(value) -> u64 {
   typeswitch value {
     String => return hashString(value)
     Uint, Int => return hashInteger(value)
-    Array {
+    Array => {
       hash = 0u64
       for i in range(value.length) {
         element = value[i]
@@ -66,7 +66,7 @@ func hashValue(value) -> u64 {
     }
     // The hash value is just the object index itself.
     Class => return <u64><u32>value
-    default {
+    default => {
       error = 0  // This will cause a ccompile-time error.
       error = "hashValue: I don't know how to hash this type"
       return error
@@ -119,7 +119,7 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
           hash = hashValue(entry!.$keyField) & mask
           if i != hash {
             println "Hash table check failed for ", entry!
-            throw "i = ", i, ", hash = ", hash
+            raise Exception.Internal, "i = ", i, ", hash = ", hash
           }
           entry = entry!.nextHashed$A$labelB$B
         }
@@ -197,7 +197,7 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
         prev = entry!
         entry = entry!.nextHashed$A$labelB$B
       }
-      throw "Entry not found in map"
+      raise Exception.Internal, "Entry not found in map"
     }
 
     iterator $labelB$pluralB(self) {

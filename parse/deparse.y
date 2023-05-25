@@ -185,12 +185,14 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %type <exprVal> exponentiateExpression
 %type <exprVal> expression
 %type <exprVal> expressionList
+%type <exprVal> raiseExpressionList
 %type <exprVal> inExpression
 %type <exprVal> modExpression
 %type <exprVal> mulExpression
 %type <exprVal> oneOrMoreExpressions
 %type <exprVal> oneOrMoreCallParameters
 %type <exprVal> oneOrMoreTypeExpressions
+%type <exprVal> oneOrMorePathExpressions
 %type <exprVal> optCascade
 %type <uint16Val> optWidth
 %type <exprVal> optCallParameterList
@@ -213,6 +215,7 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %type <exprVal> shiftExpression
 %type <exprVal> switchCaseHeaders
 %type <exprVal> typeswitchCaseHeaders
+%type <exprVal> exceptCaseHeaders
 %type <exprVal> tokenExpression
 %type <exprVal> returnsTokenExpression
 %type <exprVal> tupleExpression
@@ -302,8 +305,9 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %token <lineVal> KWSUBTRUNCEQUALS
 %token <lineVal> KWSWITCH
 %token <lineVal> KWTRY
-%token <lineVal> KWCATCH
-%token <lineVal> KWTHROW
+%token <lineVal> KWEXCEPT
+%token <lineVal> KWRAISE
+%token <lineVal> KWRAISES
 %token <lineVal> KWPANIC
 %token <lineVal> KWTYPEOF
 %token <lineVal> KWTYPESWITCH
@@ -386,9 +390,9 @@ statement: appendCode
 | struct
 | switchStatement
 | typeswitchStatement
-| tryCatchStatements
-| catchStatement
-| throwStatement
+| tryExceptStatements
+| exceptStatement
+| raiseStatement
 | panicStatement
 | unitTest
 | unrefStatement
@@ -422,11 +426,11 @@ import: KWIMPORT pathExpressionWithAlias newlines
   deStatementSetExpression(statement, deIdentExpressionCreate($2, $1));
 }
 
-class: classHeader '(' oneOrMoreParameters ')' block
+class: classHeader '(' oneOrMoreParameters ')' optRaises block
 {
   deCurrentBlock = deBlockGetOwningBlock(deCurrentBlock);
 }
-| exportClassHeader '(' oneOrMoreParameters ')' block
+| exportClassHeader '(' oneOrMoreParameters ')' optRaises block
 {
   deFunction constructor = deBlockGetOwningFunction(deCurrentBlock);
   deCreateFullySpecifiedSignature(constructor);
@@ -642,7 +646,7 @@ prependCodeHeader: KWPREPENDCODE pathExpression
 
 block: '{' newlines statements '}' optNewlines
 
-function: functionHeader '(' parameters ')' optFuncTypeExpression block
+function: functionHeader '(' parameters ')' optFuncTypeExpression optRaises block
 {
   deFunction function = deBlockGetOwningFunction(deCurrentBlock);
   if ($5 != deExpressionNull) {
@@ -654,7 +658,7 @@ function: functionHeader '(' parameters ')' optFuncTypeExpression block
   deCurrentBlock = deFunctionGetBlock(function);
   deInIterator = false;
 }
-| exportFunctionHeader '(' parameters ')' optFuncTypeExpression block
+| exportFunctionHeader '(' parameters ')' optFuncTypeExpression optRaises block
 {
   deFunction function = deBlockGetOwningFunction(deCurrentBlock);
   if ($5 != deExpressionNull) {
@@ -667,7 +671,7 @@ function: functionHeader '(' parameters ')' optFuncTypeExpression block
   deCurrentBlock = deFunctionGetBlock(function);
   deInIterator = false;
 }
-| rpcHeader '(' parameters ')' optFuncTypeExpression block
+| rpcHeader '(' parameters ')' optFuncTypeExpression optRaises block
 {
   deFunction function = deBlockGetOwningFunction(deCurrentBlock);
   if ($5 != deExpressionNull) {
@@ -989,13 +993,18 @@ switchBlock: '{' newlines switchCases optDefaultCase '}' optNewlines
 
 typeswitchBlock: '{' newlines typeswitchCases optDefaultCase '}' optNewlines
 
+exceptBlock: '{' newlines exceptCases optDefaultCase '}' optNewlines
+
 switchCases:  // Empty
 | switchCases switchCase
 
 typeswitchCases:  // Empty
 | typeswitchCases typeswitchCase
 
-switchCase: switchCaseHeaders block
+exceptCases:  // Empty
+| exceptCases exceptCase
+
+switchCase: switchCaseHeaders KWIMPLIES block
 {
   finishBlockStatement(deExpressionNull);
 }
@@ -1004,11 +1013,20 @@ switchCase: switchCaseHeaders block
   finishBlockStatement(deExpressionNull);
 }
 
-typeswitchCase: typeswitchCaseHeaders block
+typeswitchCase: typeswitchCaseHeaders KWIMPLIES block
 {
   finishBlockStatement(deExpressionNull);
 }
 | typeswitchCaseHeaders KWIMPLIES statement
+{
+  finishBlockStatement(deExpressionNull);
+}
+
+exceptCase: exceptCaseHeaders KWIMPLIES block
+{
+  finishBlockStatement(deExpressionNull);
+}
+| exceptCaseHeaders KWIMPLIES statement
 {
   finishBlockStatement(deExpressionNull);
 }
@@ -1041,19 +1059,38 @@ typeswitchCaseHeaders: typeExpression
   $$ = $1;
 }
 
+exceptCaseHeaders: pathExpression
+{
+  deLine line = deExpressionGetLine($1);
+  deStatement statement = createBlockStatement(DE_STATEMENT_CASE, line);
+  $$ = deExpressionCreate(DE_EXPR_LIST, deExpressionGetLine($1));
+  deStatementInsertExpression(statement, $$);
+  deExpressionAppendExpression($$, $1);
+}
+| exceptCaseHeaders ',' optNewlines pathExpression
+{
+  deExpressionAppendExpression($1, $4);
+  $$ = $1;
+}
+
 optDefaultCase: // Empty
 {
-  // If default is missing, add one with a throw statement.
+  // If default is missing, add one with a raise statement.
   createBlockStatement(DE_STATEMENT_DEFAULT, deCurrentLine);
-  deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_PANIC, deCurrentLine);
+  deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_RAISE, deCurrentLine);
   deExpression expression = deExpressionCreate(DE_EXPR_LIST, deCurrentLine);
+  deExpression exceptionEnum = deIdentExpressionCreate(utSymCreate("Exception"), deCurrentLine);
+  deExpression enumVal = deIdentExpressionCreate(utSymCreate("NoMatchFound"), deCurrentLine);
+  deExpression dotExpr = deBinaryExpressionCreate(DE_EXPR_DOT,
+      exceptionEnum, enumVal, deCurrentLine);
+  deExpressionAppendExpression(expression, dotExpr);
   deExpression message = deStringExpressionCreate(
       deMutableCStringCreate("No case matched switch expression"), deCurrentLine);
   deExpressionAppendExpression(expression, message);
   deStatementInsertExpression(statement, expression);
   finishBlockStatement(deExpressionNull);
 }
-| defaultCaseHeader block
+| defaultCaseHeader KWIMPLIES block
 {
   finishBlockStatement(deExpressionNull);
 }
@@ -1475,7 +1512,7 @@ printlnStatement: KWPRINTLN expressionList newlines
   deStatementInsertExpression(statement, expression);
 }
 
-tryCatchStatements: tryStatement catchStatement
+tryExceptStatements: tryStatement exceptStatement
 
 tryStatement: tryHeader block
 {
@@ -1487,30 +1524,45 @@ tryHeader: KWTRY
   createBlockStatement(DE_STATEMENT_TRY, $1);
 }
 
-catchStatement: catchHeader block
+exceptStatement: exceptHeader IDENT exceptBlock
 {
-  finishBlockStatement(deExpressionNull);
+  deLine line = deBlockGetLine(deCurrentBlock);
+  deExpression identExpr = deIdentExpressionCreate($2, line);
+  // Capture the global runtimeException in variable IDENT.
+  deExpression errorExpr = deIdentExpressionCreate(utSymCreate("runtimeException"), line);
+  deExpression assignExpr = deBinaryExpressionCreate(DE_EXPR_EQUALS, identExpr, errorExpr, line);
+  finishBlockStatement(assignExpr);
 }
 
-catchHeader: KWCATCH IDENT
+exceptHeader: KWEXCEPT
 {
-  createBlockStatement(DE_STATEMENT_CATCH, $1);
-  // Capture the global runtime_errorMessage in variable IDENT.
-  deExpression identExpr = deIdentExpressionCreate($2, $1);
-  deExpression errorMessageExpr = deIdentExpressionCreate(utSymCreate("runtime_errorMessage"), $1);
-  deExpression expr = deBinaryExpressionCreate(DE_EXPR_EQUALS, identExpr, errorMessageExpr, $1);
-  deStatement assignStatement = deStatementCreate(deCurrentBlock, DE_STATEMENT_ASSIGN, $1);
-  deStatementInsertExpression(assignStatement, expr);
+  createBlockStatement(DE_STATEMENT_EXCEPT, $1);
 }
 
-throwStatement: KWTHROW expressionList newlines
+raiseStatement: KWRAISE raiseExpressionList newlines
 {
-  deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_THROW, $1);
+  deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_RAISE, $1);
   deStatementInsertExpression(statement, $2);
 }
+
+raiseExpressionList: pathExpression
+{
+  $$ = deExpressionCreate(DE_EXPR_LIST, deExpressionGetLine($1));
+  deExpressionAppendExpression($$, $1);
+}
+| raiseExpressionList ',' optNewlines expression
+{
+  deExpressionAppendExpression($1, $4);
+  $$ = $1;
+}
+
 panicStatement: KWPANIC expressionList newlines
 {
-  deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_PANIC, $1);
+  deStatement statement = deStatementCreate(deCurrentBlock, DE_STATEMENT_RAISE, $1);
+  deExpression enumNameExpr = deIdentExpressionCreate(utSymCreate("Exception"), $1);
+  deExpression enumValueExpr = deIdentExpressionCreate(utSymCreate("Panic"), $1);
+  deExpression enumExpr = deBinaryExpressionCreate(DE_EXPR_DOT, enumNameExpr, enumValueExpr, $1);
+  deExpressionInsertExpression($2, enumExpr);
   deStatementInsertExpression(statement, $2);
 }
 
@@ -1519,7 +1571,7 @@ assertStatement: KWASSERT expressionList newlines
 {
   deStatement ifStatement = createBlockStatement(DE_STATEMENT_IF, $1);
   deBlock subBlock = deStatementGetSubBlock(ifStatement);
-  deStatement statement = deStatementCreate(subBlock, DE_STATEMENT_PANIC, $1);
+  deStatement statement = deStatementCreate(subBlock, DE_STATEMENT_RAISE, $1);
   deStatementInsertExpression(statement, $2);
   deExpression condition = deExpressionGetFirstExpression($2);
   deExpressionRemoveExpression($2, condition);
@@ -1527,6 +1579,11 @@ assertStatement: KWASSERT expressionList newlines
     deFilepathGetRelativePath(deCurrentFilepath),
     deLineGetLineNum($1), deLineGetText($1)));
   deExpressionInsertExpression($2, deStringExpressionCreate(text, $1));
+  deExpression enumNameExpr = deIdentExpressionCreate(utSymCreate("Exception"), $1);
+  deExpression enumValueExpr = deIdentExpressionCreate(utSymCreate("AssertionFailure"), $1);
+  deExpression enumExpr = deBinaryExpressionCreate(DE_EXPR_DOT, enumNameExpr, enumValueExpr, $1);
+  deExpressionInsertExpression($2, enumExpr);
+  deStatementInsertExpression(statement, $2);
   condition = deUnaryExpressionCreate(DE_EXPR_NOT, condition, $1);
   finishBlockStatement(condition);
 }
@@ -1724,7 +1781,7 @@ foreachStatement: forStatementHeader IDENT KWIN expression block
   finishBlockStatement(expr);
 }
 
-finalFunction: finalHeader '(' parameter ')' block
+finalFunction: finalHeader '(' parameter ')' optRaises block
 {
   deFunction function = deBlockGetOwningFunction(deCurrentBlock);
   deCurrentBlock = deFunctionGetBlock(function);
@@ -1746,6 +1803,20 @@ finalHeader: KWFINAL
       DE_FUNC_PLAIN, utSymCreate("final"), DE_LINK_MODULE, $1);
   deFunctionSetInUnitTest(function, deInUnitTest);
   deCurrentBlock = deFunctionGetSubBlock(function);
+}
+
+optRaises:  // Empty
+| KWRAISES oneOrMorePathExpressions
+
+oneOrMorePathExpressions: pathExpression
+{
+  $$ = deExpressionCreate(DE_EXPR_LIST, deExpressionGetLine($1));
+  deExpressionAppendExpression($$, $1);
+}
+| oneOrMorePathExpressions ',' optNewlines pathExpression
+{
+  deExpressionAppendExpression($1, $4);
+  $$ = $1;
 }
 
 refStatement: KWREF expression newlines

@@ -1,9 +1,8 @@
 Passed empty test
-s len = 10
 Passed escaped chars test
 File testdata/empty, line 1: Invalid character
-
-^
+À€
+^^
 Caught invalid character
 File testdata/empty, line 1: Non-hex digit in hexadecimal escape sequence
 "\x0g"
@@ -18,3 +17,22 @@ File testdata/empty, line 1: Unexpected end of file in string
 ^^^^^^^^^^^^^
 Caught unexpected end of file
 Passed bad input test
+Passed escaped chars test
+token value = 0u64
+expected    = 0u64
+token value = 1u2
+expected    = 1u2
+token value = 3i3
+expected    = 3i3
+token value = 57896044618658097711785492504343953926634992332820282019728792003956564819949u256
+expected    = 57896044618658097711785492504343953926634992332820282019728792003956564819949u256
+Passed parse integer test
+token value = 0u64
+expected    = 0u64
+token value = au4
+expected    = au4
+token value = 3i3
+expected    = 3i3
+token value = 7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffedu256
+expected    = 7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffedu256
+Passed parse integer test

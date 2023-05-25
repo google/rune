@@ -20,7 +20,7 @@ transformer OneToOne(A: Class, B: Class, cascadeDelete:bool = false,
     func insert$labelB$B(self, child: B) {
       debug {
         if !isnull(child.$labelA$A) {
-          throw "insert$labelB$B: Object is already in a relation"
+          raise Exception.Internal, "insert$labelB$B: Object is already in a relation"
         }
       }
       self.$labelB$B = child
@@ -31,7 +31,7 @@ transformer OneToOne(A: Class, B: Class, cascadeDelete:bool = false,
     func remove$labelB$B(self, child: B) {
       debug {
         if child.$labelA$A != self {
-          throw "remove$labelB$B: Object not owned by me"
+          raise Exception.Internal, "remove$labelB$B: Object not owned by me"
         }
       }
       self.$labelB$B = null(child)

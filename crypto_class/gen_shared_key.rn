@@ -15,7 +15,8 @@
 use kdf
 
 if argv.length() != 4 {
-  throw "Usage: gen_shared_key <theirPubkey(hex)> <yourPrivkey(hex)> <prime(hex)>"
+  raise Status.InvalidArgument,
+      "Usage: gen_shared_key <theirPubkey(hex)> <yourPrivkey(hex)> <prime(hex)>"
 }
 theirPubkey = argv[1].fromHex().toUintBE(u2048)
 yourPrivkey = secret(argv[2]).fromHex().toUintBE(u2048)

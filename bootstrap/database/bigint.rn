@@ -56,9 +56,9 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   self.isSigned = false
   self.isSecret = false
   typeswitch value {
-    Int | Uint {
+    Int | Uint => {
       if widthof(value) > kMaxBigintWidth {
-        throw "Integer width too large.  Pass in BigintArray instead."
+        panic "Integer width too large.  Pass in BigintArray instead."
       }
       if width != 0 {
         self.width = width
@@ -76,9 +76,9 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
      self.bigint = runtime.integerToBigint(!<u64>value, self.width,
          self.isSigned, self.isSecret)
     }
-    runtime.BigintArray {
+    runtime.BigintArray => {
       if width != 0 {
-        throw "Can't change bigint width in Bigint constructor.  Use cast instead."
+        panic "Can't change bigint width in Bigint constructor.  Use cast instead."
       }
       self.isSigned = runtime.bigintSigned(value)
       self.width = runtime.bigintWidth(value)
@@ -103,15 +103,53 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
     return text
   }
 
+  // Return a string representation of the number Little-Endian.
+  func toStringLE(self) {
+    s = ""
+    runtime.bigintEncodeLittleEndian(s, self.bigint)
+    return s
+  }
+
+  // Convert a string Little-Endian representation to a Bigint.
+  func fromStringLE(s: string, width: u32, isSigned: bool = false, isSecret: bool = false) {
+    bigint = arrayof(u32)
+    runtime.bigintDecodeLittleEndian(bigint, s, width, isSigned, isSecret)
+    return Bigint(bigint)
+  }
+
+  // Return a string representation of the number Big-Endian.
+  func toStringBE(self) {
+    s = ""
+    runtime.bigintEncodeBigEndian(s, self.bigint)
+    return s
+  }
+
+  // Convert a string Big-Endian representation to a Bigint.
+  func fromStringBE(s: string, width: u32, isSigned: bool = false, isSecret: bool = false) {
+    bigint = arrayof(u32)
+    runtime.bigintDecodeBigEndian(bigint, s, width, isSigned, isSecret)
+    return Bigint(bigint)
+  }
+
   // Cast the bigint to a different width, sign, or even secret status.
-  export func cast(self, newWidth: u32, isSigned: bool, isSecret: bool, truncate: bool) {
+  func cast(self, newWidth: u32, isSigned: bool, isSecret: bool, truncate: bool = false) -> Bigint {
     return Bigint(runtime.bigintCast(self.bigint, newWidth, isSigned, isSecret, truncate))
+  }
+
+  // Resize the bigint to a different width.
+  func resize(self, newWidth: u32, truncate: bool = false) -> Bigint {
+    return self.cast(newWidth, self.isSigned, self.isSecret, truncate)
+  }
+
+  // Set to signed or unsinged.
+  func toSigned(self, isSigned: bool = true, truncate: bool = false) -> Bigint {
+    return self.cast(self.width, isSigned, self.isSecret, truncate)
   }
 
   // Overload the + operator.
   operator + (a: Bigint, b: Bigint) -> Bigint {
     if a.width != b.width || a.isSigned != b.isSigned {
-      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+      panic "Integers have different types: ", a.toString(), " and ", b.toString()
     }
     return Bigint(runtime.bigintAdd(a.bigint, b.bigint))
   }
@@ -119,7 +157,7 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   // Overload the !+ operator.
   operator !+ (a: Bigint, b: Bigint) -> Bigint {
     if a.width != b.width || a.isSigned != b.isSigned {
-      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+      panic "Integers have different types: ", a.toString(), " and ", b.toString()
     }
     return Bigint(runtime.bigintAddTrunc(a.bigint, b.bigint))
   }
@@ -127,7 +165,7 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   // Overload the - operator.
   operator - (a: Bigint, b: Bigint) -> Bigint {
     if a.width != b.width || a.isSigned != b.isSigned {
-      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+      panic "Integers have different types: ", a.toString(), " and ", b.toString()
     }
     return Bigint(runtime.bigintSub(a.bigint, b.bigint))
   }
@@ -135,7 +173,7 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   // Overload the !- operator.
   operator !- (a: Bigint, b: Bigint) -> Bigint {
     if a.width != b.width || a.isSigned != b.isSigned {
-      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+      panic "Integers have different types: ", a.toString(), " and ", b.toString()
     }
     return Bigint(runtime.bigintSubTrunc(a.bigint, b.bigint))
   }
@@ -143,7 +181,7 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   // Overload the * operator.
   operator * (a: Bigint, b: Bigint) -> Bigint {
     if a.width != b.width || a.isSigned != b.isSigned {
-      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+      panic "Integers have different types: ", a.toString(), " and ", b.toString()
     }
     return Bigint(runtime.bigintMul(a.bigint, b.bigint))
   }
@@ -151,7 +189,7 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   // Overload the !* operator.
   operator !* (a: Bigint, b: Bigint) -> Bigint {
     if a.width != b.width || a.isSigned != b.isSigned {
-      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+      panic "Integers have different types: ", a.toString(), " and ", b.toString()
     }
     return Bigint(runtime.bigintMulTrunc(a.bigint, b.bigint))
   }
@@ -159,7 +197,7 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   // Overload the / operator.
   operator / (a: Bigint, b: Bigint) -> Bigint {
     if a.width != b.width || a.isSigned != b.isSigned {
-      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+      panic "Integers have different types: ", a.toString(), " and ", b.toString()
     }
     return Bigint(runtime.bigintDiv(a.bigint, b.bigint))
   }
@@ -167,7 +205,7 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   // Overload the % operator.
   operator % (a: Bigint, b: Bigint) -> Bigint {
     if a.width != b.width || a.isSigned != b.isSigned {
-      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+      panic "Integers have different types: ", a.toString(), " and ", b.toString()
     }
     return Bigint(runtime.bigintMod(a.bigint, b.bigint))
   }
@@ -175,7 +213,7 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   // Overload the == operator.
   operator == (a: Bigint, b: Bigint) -> bool {
     if a.width != b.width || a.isSigned != b.isSigned {
-      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+      panic "Integers have different types: ", a.toString(), " and ", b.toString()
     }
     return runtime.compareBigints(runtime.ComparisonType.Equal, a.bigint, b.bigint)
   }
@@ -183,7 +221,7 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   // Overload the != operator.
   operator != (a: Bigint, b: Bigint) -> bool {
     if a.width != b.width || a.isSigned != b.isSigned {
-      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+      panic "Integers have different types: ", a.toString(), " and ", b.toString()
     }
     return runtime.compareBigints(runtime.ComparisonType.NotEqual, a.bigint, b.bigint)
   }
@@ -191,7 +229,7 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   // Overload the < operator.
   operator < (a: Bigint, b: Bigint) -> bool {
     if a.width != b.width || a.isSigned != b.isSigned {
-      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+      panic "Integers have different types: ", a.toString(), " and ", b.toString()
     }
     return runtime.compareBigints(runtime.ComparisonType.Lt, a.bigint, b.bigint)
   }
@@ -199,7 +237,7 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   // Overload the <= operator.
   operator <= (a: Bigint, b: Bigint) -> bool {
     if a.width != b.width || a.isSigned != b.isSigned {
-      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+      panic "Integers have different types: ", a.toString(), " and ", b.toString()
     }
     return runtime.compareBigints(runtime.ComparisonType.Le, a.bigint, b.bigint)
   }
@@ -207,7 +245,7 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   // Overload the > operator.
   operator > (a: Bigint, b: Bigint) -> bool {
     if a.width != b.width || a.isSigned != b.isSigned {
-      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+      panic "Integers have different types: ", a.toString(), " and ", b.toString()
     }
     return runtime.compareBigints(runtime.ComparisonType.Gt, a.bigint, b.bigint)
   }
@@ -215,7 +253,7 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   // Overload the >= operator.
   operator >= (a: Bigint, b: Bigint) -> bool {
     if a.width != b.width || a.isSigned != b.isSigned {
-      throw "Integers have different types: ", a.toString(), " and ", b.toString()
+      panic "Integers have different types: ", a.toString(), " and ", b.toString()
     }
     return runtime.compareBigints(runtime.ComparisonType.Ge, a.bigint, b.bigint)
   }
@@ -274,6 +312,34 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
   operator ^ (a: Bigint, b: Bigint) -> Bigint {
     return Bigint(runtime.bigintBitwiseXor(a.bigint, b.bigint))
   }
+
+  // Overload the cast operator.
+  operator <> (a: Bigint | Int | Uint, b: Bigint | Int | Uint) -> Bigint | Int | Uint {
+    typeswitch a {
+      Bigint => {
+        typeswitch b {
+          Int | Uint => return Bigint(b, a.width)
+          Bigint => return b.cast(a.width, a.isSigned, b.isSecret, false)
+        }
+      }
+      Int | Uint => {
+        // b must be a Bigint
+        val = b.resize(widthof(a), true)
+        if val.resize(b.width) != b {
+          panic "Bigint does not fit in ", widthof(a), " bits"
+        }
+        typeswitch a {
+          Uint => {
+          }
+          Int => {
+            val = val.toSigned()
+          }
+        }
+        s = val.toStringLE()
+        return s.toUintLE(typeof(a))
+      }
+    }
+  }
 }
 
 // Test printing and addition.
@@ -299,6 +365,12 @@ unittest testCasting {
   c = b + Bigint(1i32, 256u32)
   assert c.width == 256u32
   println c
+  d = <c>123
+  println "d = ", d
+  e = <typeof(null(d))>0u32  // This dangerous cast converts 0 to null(Bigint).
+  assert isnull(e)
+  f = <b>a + b
+  println "f = ", f
 }
 
 // Test comparison operators.
@@ -385,4 +457,34 @@ unittest testBitwiseOperators {
   assert a & (b >> 1u32) == Bigint(0x80u16)
   assert a | b == Bigint(0xffffu16)
   assert a ^ (b >> 1u32) == Bigint(0x7f7fu16)
+}
+
+unittest testResize {
+  a = Bigint(123)
+  a.resize(32u32)
+  println a
+}
+
+unittest testToFromEncodedStrings {
+  m1 = Bigint(2, 256u32) ** 255u32 - Bigint(19, 256u32)
+  println "m1 = ", m1
+  mStr = m1.toStringLE()
+  m2 = Bigint.fromStringLE(mStr, 256u32, false)
+  println "m2 = ", m2
+  assert m1 == m2
+  m3 = Bigint(-123i100)
+  println "m3 = ", m3
+  mStr = m3.toStringBE()
+  m4 = Bigint.fromStringBE(mStr, 100u32, true)
+  println "m4 = ", m4
+  assert m3 == m4
+}
+
+unittest testToSigned {
+  val = Bigint(1, 2u32)
+  println val
+  signedVal = val.toSigned()
+  signedVal = -signedVal
+  println signedVal
+  assert (-signedVal).toSigned(false) == val
 }

@@ -160,7 +160,7 @@ static size_t *allocArrayBuffer(size_t numWords, bool hasSubArrays) {
     return NULL;
   }
   if (isOutOfRange(numWords)) {
-    runtime_throwExceptionCstr("Out of memory");
+    runtime_raiseExceptionCstr("Out of memory");
   }
   // We need space for the header.
   // Allocate data with calloc.
@@ -330,7 +330,7 @@ void runtime_arrayStart(void) {
   // Just to ensure there is enough room for a header.  Otherwise, we might get
   // underflow in memory size computations.
   if (runtime_totalRam < sizeof(runtime_heapHeader)) {
-    runtime_throwExceptionCstr("Not enough memory to allocate arrays");
+    runtime_raiseExceptionCstr("Not enough memory to allocate arrays");
   }
   runtime_totalRam -= sizeof(runtime_heapHeader);
 }
@@ -353,7 +353,7 @@ static void arrayResize(runtime_array *array, size_t numElements, size_t element
   runtime_heapHeader *header = runtime_getArrayHeader(array);
   size_t allocatedBytes = runtime_multCheckForOverflow(numElements, elementSize);
   if (allocatedBytes > runtime_totalRam) {
-    runtime_throwExceptionCstr("Out of memory");
+    runtime_raiseExceptionCstr("Out of memory");
   }
   size_t oldAllocatedWords = header->allocatedWords;
   size_t allocatedWords = runtime_bytesToWords(allocatedBytes);
@@ -448,10 +448,10 @@ void runtime_sliceArray(runtime_array *dest, runtime_array *source, size_t lower
     return;  // Empty slice.
   }
   if (lower > upper) {
-    runtime_throwExceptionCstr("Left index of slice is greater than right index");
+    runtime_raiseExceptionCstr("Left index of slice is greater than right index");
   }
   if (upper > source->numElements) {
-    runtime_throwExceptionCstr("Attempting to index beyond end of array in slice operation");
+    runtime_raiseExceptionCstr("Attempting to index beyond end of array in slice operation");
   }
   size_t sliceElements = upper - lower;
   size_t numBytes = sliceElements * elementSize;

@@ -40,13 +40,13 @@ class Point(self, <curve>: EdwardsCurve, x: typeof(curve.m), y: typeof(curve.m))
   self.x = x
   self.y = y
   if !curve.pointOnCurve(self) {
-    throw "The point is not on the curve"
+    raise Status.InvalidArgument, "The point is not on the curve"
   }
 
   operator + (a: Point, b: Point) -> Point {
     curve = a.curve
     if curve != b.curve {
-      throw "Points are on different curves"
+      raise Status.InvalidArgument, "Points are on different curves"
     }
     d = curve.d
     m = curve.m
@@ -91,7 +91,7 @@ unittest edwardsTest {
   println "Alice's secret = %x" % aliceSecret.x
   println "Bob's secret = %x" % bobSecret.x
   if aliceSecret.x != bobSecret.x {
-    throw "Failed"
+    raise Exception.Internal, "Failed"
   }
   println "Passed"
 }

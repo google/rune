@@ -27,6 +27,12 @@ class Keyword(self, keytab: Keytab, name: string) {
 
 relation Hashed Keytab Keyword cascade ("sym")
 
+// Type hint.
+if false {
+  keytab = Keytab()
+  Keyword(keytab, ":")
+}
+
 unittest constructorTest {
   keytab = Keytab()
   Keyword(keytab, ":")

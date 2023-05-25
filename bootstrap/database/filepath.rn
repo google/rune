@@ -60,7 +60,7 @@ class Filepath(self, path: string, parent: Filepath?, isPackage: bool) {
   func readFile(self) {
     file = io.open(self.sym.name, "r")
     if isnull(file) {
-      throw "Unable to read file ", self.sym.name
+      raise Status.NotFound, "Unable to read file ", self.sym.name
     }
     self.text = file!.read()
   }

@@ -83,9 +83,7 @@ unittest msqrtTest {
       } else {
         println "a = ", a, ", r = ", r, ", r**2 = ", r**2 mod p
         if r != <p>0 {
-          if r**2 != a mod p {
-            throw "Error: %u100**2 != %u100 mod %u100\n" % (r, a, p)
-          }
+          assert r**2 == a mod p
         }
       }
     }

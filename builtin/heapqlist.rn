@@ -130,7 +130,7 @@ transformer HeapqList(A: Class, B: Class, cascadeDelete:bool = false,
     func remove$labelB$B(self, child) {
       debug {
         if child.$labelA$A != self {
-          throw "remove$labelB$B: Object not owned by me"
+          raise Exception.Internal, "remove$labelB$B: Object not owned by me"
         }
       }
       self._pop$labelB$B(child.$labelA$A_Index)

@@ -40,7 +40,7 @@ func scalarMultiply(k, P, d, m) {
 func verifyPoint(p, d, m) {
   x = p[0]; y = p[1]
   if -x**2 + y**2 != 1 + d*x**2*y**2 mod m {
-    throw "Point not on curve"
+    raise Status.InvalidArgument, "Point not on curve"
   }
 }
 

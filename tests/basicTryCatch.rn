@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-func throwString() {
-  throw "Test exception"
+func throwString() raises Status {
+  raise Status.Ok, "Test exception"  // We can raise Ok.
 }
 
 try {
   throwString()
-} catch e {
-  println "Caught exception: ", e
+} except e {
+  default => println "Caught exception: ", e.errorMessage
 }

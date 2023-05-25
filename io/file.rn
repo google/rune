@@ -26,7 +26,7 @@ class FilePtr(self: FilePtr, fileName: string, ptr: u64) {
       // Only happens at EOF or error.
       if len < size {
         if ferrorInternal(self.ptr) {
-          throw "Error reading from ", self.fileName
+          raise Status.NotFound, "Error reading from ", self.fileName
         }
         data.resize(len)
       }
@@ -45,20 +45,20 @@ class FilePtr(self: FilePtr, fileName: string, ptr: u64) {
       entireFile.concat(data)
     }
     if ferrorInternal(self.ptr) {
-      throw "Error reading from ", self.fileName
+      raise Status.NotFound, "Error reading from ", self.fileName
     }
     return entireFile
   }
 
   func write(self, data: string) {
     if !fwriteInternal(self.ptr, data) {
-      throw "Unable to write to file ", self.fileName
+      raise Status.NotFound, "Unable to write to file ", self.fileName
     }
   }
 
   final(self: FilePtr) {
     if (!fcloseInternal(self.ptr)) {
-      throw "Could not close file ", self.fileName
+      raise Status.NotFound, "Could not close file ", self.fileName
     }
   }
 }

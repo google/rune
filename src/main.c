@@ -124,6 +124,7 @@ int main(int argc, char** argv) {
   if (!utSetjmp()) {
     if (parseBuiltinFunctions) {
       deParseBuiltinFunctions();
+    } else {
     }
     deBlock rootBlock = deRootGetBlock(deTheRoot);
     deParseModule(fileName, rootBlock, true, deLineNull);

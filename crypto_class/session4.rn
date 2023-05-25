@@ -47,5 +47,5 @@ println "bobSharedKey = ", reveal(bobSharedKey.toHex())
 if reveal(bobSharedKey == aliceSharedKey) {
   println "Alice and Bob successfully computed a shared secret."
 } else {
-  throw "Math no longer works!"
+  raise Exception.Internal, "Math no longer works!"
 }

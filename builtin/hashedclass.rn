@@ -60,7 +60,7 @@ transformer HashedClass(A: Class, B: Class, cascadeDelete: bool = false,
           hash = entry!.hash() & mask
           if i != hash {
             println "Hash table check failed for ", entry!
-            throw "i = ", i, ", hash = ", hash
+            raise Exception.Internal, "i = ", i, ", hash = ", hash
           }
           entry = entry!.nextHashed$A$labelB$B
         }
@@ -138,7 +138,7 @@ transformer HashedClass(A: Class, B: Class, cascadeDelete: bool = false,
         prev = entry!
         entry = entry!.nextHashed$A$labelB$B
       }
-      throw "Entry not found in map"
+      raise Exception.Internal, "Entry not found in map"
     }
 
     iterator $labelB$pluralB(self) {

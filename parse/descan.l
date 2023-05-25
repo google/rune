@@ -343,8 +343,9 @@ static void logMsg(char *format, ...) {
 <INITIAL>"switch"               { retToken(KWSWITCH); }
 <INITIAL>"typeswitch"           { retToken(KWTYPESWITCH); }
 <INITIAL>"try"                  { retToken(KWTRY); }
-<INITIAL>"catch"                { retToken(KWCATCH); }
-<INITIAL>"throw"                { retToken(KWTHROW); }
+<INITIAL>"except"               { retToken(KWEXCEPT); }
+<INITIAL>"raise"                { retToken(KWRAISE); }
+<INITIAL>"raises"                { retToken(KWRAISES); }
 <INITIAL>"panic"                { retToken(KWPANIC); }
 <INITIAL>"true"                 { delval.boolVal = true; logMsg("true\n"); return BOOL; }
 <INITIAL>"typeof"               { retToken(KWTYPEOF); }

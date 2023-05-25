@@ -24,7 +24,7 @@ transformer DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
     func insert$labelB$B(self, child: B) {
       debug {
         if !isnull(child.$labelA$A) {
-          throw "Object is already in a relation"
+          raise Exception.Internal, "Object is already in a relation"
         }
       }
       first = self.first$labelB$B
@@ -42,7 +42,7 @@ transformer DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
     func insertAfter$labelB$B(self, prevChild: B?, child: B) {
       debug {
         if !isnull(child.$labelA$A) {
-          throw "Object is already in a relation"
+          raise Exception.Internal, "Object is already in a relation"
         }
       }
       if isnull(prevChild) {
@@ -65,7 +65,7 @@ transformer DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
     func append$labelB$B(self, child: B) {
       debug {
         if !isnull(child.$labelA$A) {
-          throw "Object is already in a relation"
+          raise Exception.Internal, "Object is already in a relation"
         }
       }
       last = self.last$labelB$B
@@ -83,7 +83,7 @@ transformer DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
     func remove$labelB$B(self, child: B) {
       debug {
         if child.$labelA$A != self {
-          throw "remove$labelB$B: Object not owned by me"
+          raise Exception.Internal, "remove$labelB$B: Object not owned by me"
         }
       }
       next = child.next$A$labelB$B

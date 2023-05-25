@@ -1,4 +1,4 @@
-//  Copyright 2021 Google LLC.
+//  Copyright 2023 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,13 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use encrypt
-
-if argv.length() != 4 {
-  raise Status.InvalidArgument, "Usage: aead_encrypt password info message"
+enum Status {
+  Ok = 0u32
+  Cancelled = 1u32
+  Unknown = 2u32
+  InvalidArgument = 3u32
+  DeadlineExceeded = 4u32
+  NotFound = 5u32
+  AlreadyExists = 6u32
+  PermissionDenied = 7u32
+  ResourceExhausted = 8u32
+  FailedPrecondition = 9u32
+  Aborted = 10u32
+  OutOfRange = 11u32
+  Unimplemented = 12u32
+  Internal = 13u32
+  Unavailable = 14u32
+  DataLoss = 15u32
+  Unauthenticated = 16u32
 }
-password = secret(argv[1])
-info = argv[2]
-plaintext = argv[3]
-ciphertext = reveal(encrypt(password, info, plaintext))
-println ciphertext.toHex()

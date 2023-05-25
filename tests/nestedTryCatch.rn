@@ -12,51 +12,57 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-func nestedTryCatch(err1: bool, err2: bool, err3: bool, testReturn: bool) {
+func nestedTryCatch(err1: bool, err2: bool, err3: bool, testReturn: bool) raises Status.Ok {
   try {
     try {
       if err1 {
-        throw "Throwing err1"
+        raise Status.Ok, "Throwing err1"
       }
       if testReturn {
         println "Returning from nested err1"
         return
       }
-    } catch e {
-      println "Caght err1: ", e
-      try {
-        if err2 {
-          throw "Throing err2"
+    } except e {
+      default => {
+        println "Caght err1: ", e.errorMessage
+        try {
+          if err2 {
+            raise Status.Ok, "Throing err2"
+          }
+          if testReturn {
+            println "Returnning from err2"
+            return
+          }
+        } except e {
+          default => {
+            println "Caught err2: ", e.errorMessage
+            try {
+              if err3 {
+                raise Status.Ok, "Throing err3"
+              }
+              if testReturn {
+                println "Returnning from err3"
+                return
+              }
+            } except e {
+              default => {
+                println "Caught err3: ", e.errorMessage
+                if testReturn {
+                  println "Returning after catching err3: ", e.errorMessage
+                  return
+                }
+              }
+            }
+          }
         }
         if testReturn {
-          println "Returnning from err2"
+          println "Returning after catching err1: ", e.errorMessage
           return
         }
-      } catch e {
-        println "Caught err2: ", e
-        try {
-          if err3 {
-            throw "Throing err3"
-          }
-          if testReturn {
-            println "Returnning from err3"
-            return
-          }
-        } catch e {
-          println "Caught err3: ", e
-          if testReturn {
-            println "Returning after catching err3: ", e
-            return
-          }
-        }
-      }
-      if testReturn {
-        println "Returning after catching err1: ", e
-        return
       }
     }
-  } catch e {
-    println "Caught exception: ", e
+  } except e {
+    default => println "Caught exception: ", e.errorMessage
   }
 }
 
@@ -75,11 +81,11 @@ func tryAllCombos() {
   nestedTryCatch(true, true, false, true)
   println "Trying return err3"
   nestedTryCatch(true, true, true, true)
-  throw "Final error"
+  raise Status.Ok, "Final error"
 }
 
 try {
   tryAllCombos()
-} catch e {
-  println e
+} except e {
+  default => println e.errorMessage
 }

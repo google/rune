@@ -53,7 +53,7 @@ static uint32 llLabelNum;
 static deBlock llCurrentScopeBlock;
 static deStatement llCurrentStatement;
 static deLine llCurrentLine;
-// Helps us generate only one call the runtime_throwException for bounds checking per function.
+// Helps us generate only one call the runtime_raiseException for bounds checking per function.
 static utSym llLimitCheckFailedLabel;
 static utSym llBoundsCheckFailedLabel;
 static utSym llPrevLabel;  // Most recently printed label: used in phi instructions.
@@ -460,7 +460,7 @@ static inline void freeRecentElements(uint32 pos) {
   llNeedsFreePos = pos;
 }
 
-// Reset the llNeedsFree list.  This is only sensible when calling throw.
+// Reset the llNeedsFree list.  This is only sensible when calling raise.
 static void resetNeedsFreeList(void) {
   llNeedsFreePos = 0;
 }
@@ -1382,7 +1382,7 @@ static void printLabel(utSym label) {
   freeElements(false);
 }
 
-// Generate code for a binary expression which can throw an overflow exception.
+// Generate code for a binary expression which can raise an overflow exception.
 static void generateBinaryExpressionWithOverflow(deExpression expression) {
   deSignature signature = deExpressionGetSignature(expression);
   if (signature != deSignatureNull) {
@@ -1420,8 +1420,8 @@ static void generateBinaryExpressionWithOverflow(deExpression expression) {
   llPrintf("  br i1 %%%u, label %%%s, label %%%s\n",
       overflowValue, utSymGetName(failed), utSymGetName(passed));
   printLabel(failed);
-  llDeclareRuntimeFunction("runtime_throwOverflow");
-  llPrintf("  call void @runtime_throwOverflow()\n  unreachable\n");
+  llDeclareRuntimeFunction("runtime_raiseOverflow");
+  llPrintf("  call void @runtime_raiseOverflow()\n  unreachable\n");
   printLabel(passed);
   pushValue(datatype, resValue, false);
 }
@@ -1572,7 +1572,7 @@ static llElement storeElementAndReturnRef(llElement element) {
 static llElement resizeSmallInteger(llElement element, uint32 newWidth,
     bool isSigned, bool truncate);
 
-// Check that truncation won't change the value of the integer.  Thrown an
+// Check that truncation won't change the value of the integer.  Raise an
 // overflow exception if the value would change.
 static void checkTruncation(llElement element, llElement result,
     uint32 oldWidth, uint32 newWidth, bool isSigned) {
@@ -1584,8 +1584,8 @@ static void checkTruncation(llElement element, llElement result,
   llPrintf("  br i1 %s, label %%%s, label %%%s\n",
       llElementGetName(condition), utSymGetName(passedLabel), utSymGetName(failedLabel));
   printLabel(failedLabel);
-  llDeclareRuntimeFunction("runtime_throwOverflow");
-  llPuts("  call void @runtime_throwOverflow()\n  unreachable\n");
+  llDeclareRuntimeFunction("runtime_raiseOverflow");
+  llPuts("  call void @runtime_raiseOverflow()\n  unreachable\n");
   printLabel(passedLabel);
 }
 
@@ -1703,9 +1703,9 @@ static llElement generateString(deString text) {
   return element;
 }
 
-// Call runtime_sprintf given the format and the expression or tuple.
-static void callSprintfOrThrow(llElement destArray, llElement format, deExpression argument,
-    bool isPrint, bool isPanic, bool skipStrings) {
+// Push the variable arguments for the format onto he element stack.  Return the number of
+// elements pushed.
+static uint32 evalFormatParams(llElement format, deExpression argument, bool skipStrings) {
   bool isTuple = false;
   deExpressionType argType = deExpressionGetType(argument);
   if (argType == DE_EXPR_TUPLE || argType == DE_EXPR_LIST) {
@@ -1732,37 +1732,31 @@ static void callSprintfOrThrow(llElement destArray, llElement format, deExpressi
       argument = deExpressionNull;
     }
   }
-  if (isPrint) {
-    llDeclareRuntimeFunction("runtime_sprintf");
-    llPrintf(
-        "  call void (%%struct.runtime_array*, %%struct.runtime_array*, ...) "
-        "@runtime_sprintf(%%struct.runtime_array* %s, %s %s",
-        llElementGetName(destArray),
-        llGetTypeString(llElementGetDatatype(format), false),
-        llElementGetName(format));
-  } else {
-    char *name = NULL;
-    if (isPanic) {
-      llDeclareRuntimeFunction("runtime_panic");
-      name = "panic";
-    } else {
-      llDeclareRuntimeFunction("runtime_throwException");
-      name = "throwException";
-    }
-    llPrintf("  call void (%%struct.runtime_array*, ...) @runtime_%s(%s %s",
-        name, llGetTypeString(llElementGetDatatype(format), false),
-        llElementGetName(format));
-  }
+  return numArguments;
+}
+
+// Push the variable arguments for the format onto he element stack.
+static void printFormatParams(uint32 numArguments) {
   for (uint32 i = 0; i < numArguments; i++) {
     llElement element = popElement(false);
     llPrintf(", %s %s", getElementTypeString(element),
              llElementGetName(element));
   }
   llPrintf(")%s\n", locationInfo());
-  if (!isPrint) {
-    resetNeedsFreeList();
-    llPrintf("  unreachable\n");
-  }
+}
+
+// Call runtime_sprintf.
+static void callSprintf(llElement result, llElement format,
+    deExpression argument, bool skipStrings) {
+  uint32 numArguments = evalFormatParams(format, argument, skipStrings);
+  llDeclareRuntimeFunction("runtime_sprintf");
+  llPrintf(
+      "  call void (%%struct.runtime_array*, %%struct.runtime_array*, ...) "
+      "@runtime_sprintf(%%struct.runtime_array* %s, %s %s",
+      llElementGetName(result),
+      llGetTypeString(llElementGetDatatype(format), false),
+      llElementGetName(format));
+  printFormatParams(numArguments);
 }
 
 // A mod expression can be either uint % uint, or a string % expression/tuple.
@@ -1778,7 +1772,8 @@ static void generateModExpression(deExpression expression) {
   generateExpression(formatExpression);
   llElement format = popElement(false);  // Pop the format element.
   llElement result = allocateTempValue(deStringDatatypeCreate());
-  callSprintfOrThrow(result, format, argument, true, false, false);
+  // result will still be on the stack after callSprintf.
+  callSprintf(result, format, argument, false);
 }
 
 // Generate a select instruction.
@@ -2066,7 +2061,7 @@ static void generateBuiltinMethod(deExpression expression) {
       break;
   case DE_BUILTINFUNC_ENUMTOSTRING: {
     char *name = deFunctionGetName(deDatatypeGetFunction(llElementGetDatatype(access)));
-    generateString(deStringCreate(name, strlen(name)));
+    pushElement(generateString(deStringCreate(name, strlen(name))), false);
     break;
   }
   }
@@ -2195,10 +2190,12 @@ static void copyElement(llElement access, llElement element, bool freeDest);
 static void copyTuple(llElement dest, llElement source, bool freeDest) {
   utAssert(llElementIsRef(dest));
   deDatatype datatype = llElementGetDatatype(source);
-  if (deDatatypeGetType(datatype) == DE_TYPE_STRUCT) {
-    datatype = deGetStructTupleDatatype(datatype);
-  }
-  utAssert(deDatatypeGetType(datatype) == DE_TYPE_TUPLE);
+// temp
+//  if (deDatatypeGetType(datatype) == DE_TYPE_STRUCT) {
+//    datatype = deGetStructTupleDatatype(datatype);
+//  }
+  deDatatypeType type = deDatatypeGetType(datatype);
+  utAssert(type == DE_TYPE_TUPLE || type == DE_TYPE_STRUCT);
   for (uint32 i = 0; i < deDatatypeGetNumTypeList(datatype); i++) {
     llElement subSourceElement = indexTuple(source, i, false);
     llElement subDestElement = indexTuple(dest, i, true);
@@ -2312,8 +2309,10 @@ static void generateTupleExpression(deExpression expression) {
 // Generate a struct constructor.  This leaves a tuple on the stack.
 static void generateStructConstructor(deExpression expression) {
   deDatatype datatype = deExpressionGetDatatype(expression);
-  deDatatype tupleType = deGetStructTupleDatatype(datatype);
-  llElement tuple = allocateTempValue(tupleType);
+// temp
+//   deDatatype tupleType = deGetStructTupleDatatype(datatype);
+//  llElement tuple = allocateTempValue(tupleType);
+  llElement tuple = allocateTempValue(datatype);
   uint32 savedStackPos = llStackPos;
   deExpression accessExpression = deExpressionGetFirstExpression(expression);
   deExpression parameters = deExpressionGetNextExpression(accessExpression);
@@ -2406,7 +2405,7 @@ static void generateCallExpression(deExpression expression) {
 }
 
 // Generate code to bounds check a value.  The message will be passed to
-// runtime_throwException if the bounds check fails.
+// runtime_raiseException if the bounds check fails.
 static void limitCheck(llElement index, llElement limit) {
   if (deUnsafeMode || (!llDebugMode && deStatementGenerated(llCurrentStatement))) {
     return;
@@ -2431,8 +2430,8 @@ static void limitCheck(llElement index, llElement limit) {
       utSymGetName(llLimitCheckFailedLabel), locationInfo());
   if (!generatedFailBlock) {
     llPrintf("%s:\n", utSymGetName(llLimitCheckFailedLabel));
-    llDeclareRuntimeFunction("runtime_throwException");
-    llPrintf("  call void (%%struct.runtime_array*, ...) @runtime_throwException(%%struct.runtime_array* %s)%s\n",
+    llDeclareRuntimeFunction("runtime_panic");
+    llPrintf("  call void (%%struct.runtime_array*, ...) @runtime_panic(%%struct.runtime_array* %s)%s\n",
         llElementGetName(string), locationInfo());
     llPrintf("  unreachable\n");
   }
@@ -2459,8 +2458,8 @@ static void nullCheck(llElement index) {
       utSymGetName(llBoundsCheckFailedLabel), locationInfo());
   if (!generatedFailBlock) {
     llPrintf("%s:\n", utSymGetName(llBoundsCheckFailedLabel));
-    llDeclareRuntimeFunction("runtime_throwException");
-    llPrintf("  call void (%%struct.runtime_array*, ...) @runtime_throwException(%%struct.runtime_array* %s)%s\n",
+    llDeclareRuntimeFunction("runtime_panic");
+    llPrintf("  call void (%%struct.runtime_array*, ...) @runtime_panic(%%struct.runtime_array* %s)%s\n",
         llElementGetName(string), locationInfo());
     llPrintf("  unreachable\n");
   }
@@ -2493,8 +2492,8 @@ static void boundsCheck(llElement array, llElement index, char *message) {
       utSymGetName(llBoundsCheckFailedLabel), locationInfo());
   if (!generatedFailBlock) {
     llPrintf("%s:\n", utSymGetName(llBoundsCheckFailedLabel));
-    llDeclareRuntimeFunction("runtime_throwException");
-    llPrintf("  call void (%%struct.runtime_array*, ...) @runtime_throwException(%%struct.runtime_array* %s)%s\n",
+    llDeclareRuntimeFunction("runtime_panic");
+    llPrintf("  call void (%%struct.runtime_array*, ...) @runtime_panic(%%struct.runtime_array* %s)%s\n",
         llElementGetName(string), locationInfo());
     llPrintf("  unreachable\n");
   }
@@ -3137,8 +3136,8 @@ static void generateNegateExpression(deExpression expression) {
     llPrintf("  br i1 %%%u, label %%%s, label %%%s\n",
         overflowValue, utSymGetName(failed), utSymGetName(passed));
     printLabel(failed);
-    llDeclareRuntimeFunction("runtime_throwOverflow");
-    llPrintf("  call void @runtime_throwOverflow()\n  unreachable\n");
+    llDeclareRuntimeFunction("runtime_raiseOverflow");
+    llPrintf("  call void @runtime_raiseOverflow()\n  unreachable\n");
     printLabel(passed);
     pushValue(datatype, value, false);
   } else {
@@ -3494,7 +3493,7 @@ static void generateExpressionAndFreeTempElements(deExpression expression) {
 // Generate a logical AND expression.  If the result is secret, evaluate both
 // operands.  If they result is not secret, evaluate the second only if the
 // first is true.
-static void generateLogicalAndExpression( deExpression expression) {
+static void generateLogicalAndExpression(deExpression expression) {
   deSignature signature = deExpressionGetSignature(expression);
   if (signature != deSignatureNull) {
     generateOperatorOverloadCall(expression, signature);
@@ -3905,7 +3904,7 @@ static bool blockEndsInReturn(deBlock subBlock) {
     return false;
   }
   deStatementType type = deStatementGetType(lastStatement);
-  return type == DE_STATEMENT_RETURN || type == DE_STATEMENT_THROW || type == DE_STATEMENT_PANIC;
+  return type == DE_STATEMENT_RETURN || type == DE_STATEMENT_RAISE;
 }
 
 // Generate instructions for the if statement.
@@ -4144,6 +4143,107 @@ static void popSetjmpBuffers() {
   }
 }
 
+// Get a field of the Error struct.
+static llElement getErrorField(llElement target, uint32 field) {
+  uint32 fieldPtr = printNewValue();
+  llPrintf("getelementptr inbounds %%struct.Error, "
+    "%%struct.Error* @runtimeException, i32 0, i32 %u\n", field);
+  deDatatype datatype = llElementGetDatatype(target);
+  deDatatype fieldDatatype = deDatatypeGetiTypeList(datatype, field);
+  return createValueElement(fieldDatatype, fieldPtr, false);
+}
+
+// Generate an exception case comparison.  The case will be either an Enum type
+// or a enum value.  In either case, compare the name of the enum type to the
+// Error.enumClassName string.  If that fails push false and return.  If the
+// case is an enum value, then also compare the value name to
+// Error.enumValueName.
+static void generateExceptCaseComparison(llElement target, deExpression caseExpression) {
+  deDatatype datatype = deExpressionGetDatatype(caseExpression);
+  deDatatypeType type = deDatatypeGetType(datatype);
+  utAssert(type == DE_TYPE_ENUM || type == DE_TYPE_ENUMCLASS);
+  deFunction function = deDatatypeGetFunction(datatype);
+  char* path = deGetBlockPath(deFunctionGetSubBlock(function), false);
+  deString enumString = deCStringCreate(path);
+  llElement enumElem = generateString(enumString);
+  llElement targetEnumElem = getErrorField(target, 0);
+  generateArrayComparison(targetEnumElem, enumElem, RN_EQUAL);
+  if (type == DE_TYPE_ENUM) {
+    llElement result1 = popElement(false);
+    utAssert(deExpressionGetType(caseExpression) == DE_EXPR_DOT);
+    deExpression valueExpr = deExpressionGetLastExpression(caseExpression);
+    utAssert(deExpressionGetType(valueExpr) == DE_EXPR_IDENT);
+    deString valueString = deCStringCreate(utSymGetName(deExpressionGetName(valueExpr)));
+    llElement enumValueElem = generateString(valueString);
+    llElement targetValueElem = getErrorField(target, 1);
+    generateArrayComparison(targetValueElem, enumValueElem, RN_EQUAL);
+    llElement result2 = popElement(false);
+    uint32 res = printNewValue();
+    llPrintf("and i1 %s, %s\n", llElementGetName(result1), llElementGetName(result2));
+    pushValue(deBoolDatatypeCreate(), res, false);
+    deStringDestroy(valueString);
+  }
+  deStringDestroy(enumString);
+}
+
+// Generate instructions for the except statement.
+static void generateExceptStatement(deStatement statement, utSym exceptDoneLabel) {
+  deExpression assignExpr = deStatementGetExpression(statement);
+  generateExpression(assignExpr);
+  deExpression identExpr = deExpressionGetFirstExpression(assignExpr);
+  generateExpression(identExpr);
+  llElement target = popElement(false);
+  utSym defaultLabel = newLabel("default");
+  utSym nextCaseLabel = utSymNull;
+  deBlock subBlock = deStatementGetSubBlock(statement);
+  deStatement caseStatement;
+  deForeachBlockStatement(subBlock, caseStatement) {
+    if (deStatementInstantiated(caseStatement)) {
+      utSym caseBodyLabel;
+      if (deStatementGetType(caseStatement) == DE_STATEMENT_DEFAULT) {
+        caseBodyLabel = defaultLabel;
+      } else {
+        caseBodyLabel = newLabel("caseBody");
+      }
+      deExpression expression = deStatementGetExpression(caseStatement);
+      bool endedInBranch = false;
+      if (expression != deExpressionNull) {
+        deStatement nextStatement = deStatementGetNextBlockStatement(caseStatement);
+        deExpression caseExpression;
+        deForeachExpressionExpression(expression, caseExpression) {
+          printLabel(nextCaseLabel);
+          if (deExpressionGetNextExpression(caseExpression) != deExpressionNull) {
+            nextCaseLabel = newLabel("case");
+          } else if (deStatementGetNextBlockStatement(caseStatement) != deStatementNull) {
+            if (deStatementGetType(nextStatement) == DE_STATEMENT_DEFAULT) {
+              nextCaseLabel = defaultLabel;
+            } else {
+              nextCaseLabel = newLabel("case");
+            }
+          } else {
+            nextCaseLabel = exceptDoneLabel;
+          }
+          generateExceptCaseComparison(target, caseExpression);
+          llElement result = popElement(true);
+          llPrintf("  br i1 %s, label %%%s, label %%%s\n",
+              llElementGetName(result), utSymGetName(caseBodyLabel), utSymGetName(nextCaseLabel));
+          endedInBranch = true;
+        } deEndExpressionExpression;
+      }
+      if (!endedInBranch) {
+        jumpTo(caseBodyLabel);
+      }
+      printLabel(caseBodyLabel);
+      deBlock caseBlock = deStatementGetSubBlock(caseStatement);
+      utSym blockEndLabel = generateBlockStatements(caseBlock, utSymNull);
+      if (!blockEndsInReturn(caseBlock)) {
+        printLabel(blockEndLabel);
+        jumpTo(exceptDoneLabel);
+      }
+    }
+  } deEndBlockStatement;
+}
+
 // Generate a try statement.  For now, just generate if (runtime_setjmp()).
 static utSym generateTryStatement(deStatement tryStatement, utSym startLabel) {
   printLabel(startLabel);
@@ -4160,11 +4260,11 @@ static utSym generateTryStatement(deStatement tryStatement, utSym startLabel) {
   generateComparison(setjmpElem, zero, "icmp eq");
   llElement condition = popElement(true);
   utSym tryLabel = newLabel("try");
-  utSym catchLabel = newLabel("catch");
-  utSym catchDoneLabel = newLabel("catchDone");
+  utSym exceptLabel = newLabel("except");
+  utSym exceptDoneLabel = newLabel("exceptDone");
   llPrintf("  br i1 %s, label %%%s, label %%%s%s\n",
       llElementGetName(condition), utSymGetName(tryLabel),
-      utSymGetName(catchLabel), locationInfo());
+      utSymGetName(exceptLabel), locationInfo());
   deBlock subBlock = deStatementGetSubBlock(tryStatement);
   llSetjmpDepth++;
   utSym blockEndLabel = generateBlockStatements(subBlock, tryLabel);
@@ -4172,36 +4272,63 @@ static utSym generateTryStatement(deStatement tryStatement, utSym startLabel) {
   if (!blockEndsInReturn(subBlock)) {
     printLabel(blockEndLabel);
     popSetjmpBuffer();
-    jumpTo(catchDoneLabel);
+    jumpTo(exceptDoneLabel);
   }
-  printLabel(catchLabel);
+  printLabel(exceptLabel);
   popSetjmpBuffer();
-  deStatement catchStatement = deStatementGetNextBlockStatement(tryStatement);
-  subBlock = deStatementGetSubBlock(catchStatement);
-  blockEndLabel = generateBlockStatements(subBlock, utSymNull);
-  if (!blockEndsInReturn(subBlock)) {
-    printLabel(blockEndLabel);
-    jumpTo(catchDoneLabel);
-  }
-  return catchDoneLabel;
+  deStatement exceptStatement = deStatementGetNextBlockStatement(tryStatement);
+  subBlock = deStatementGetSubBlock(exceptStatement);
+  generateExceptStatement(exceptStatement, exceptDoneLabel);
+  return exceptDoneLabel;
 }
 
-// Generate a print or throw statement.
-static void generatePrintPanicOrThrowStatement(deStatement statement, bool isPrint) {
+// Generate a print statement.
+static void generatePrintStatement(deStatement statement) {
   deExpression expression = deStatementGetExpression(statement);
   deString formatString = deFindPrintFormat(expression);
   llElement format = generateString(formatString);
-  // Just initialize array element.  It is not used when throwing an exception.
-  llElement array = format;
-  if (isPrint) {
-    array = allocateTempValue(deStringDatatypeCreate());
-  }
-  bool isPanic = deStatementGetType(statement) == DE_STATEMENT_PANIC;
-  callSprintfOrThrow(array, format, expression, isPrint, isPanic, true);
-  if (isPrint) {
-    llElement string = popElement(false);
-    callPuts(string);
-  }
+  llElement array = allocateTempValue(deStringDatatypeCreate());
+  popElement(false);
+  callSprintf(array, format, expression, true);
+  callPuts(array);
+}
+
+// Generate a raise statement.
+static void generateRaiseStatement(deStatement statement) {
+  deExpression expression = deStatementGetExpression(statement);
+  deExpression enumExpr = deExpressionGetFirstExpression(expression);
+  // Remove the enum expression temporarily so we can call deFindPrintFormat.
+  deExpressionRemoveExpression(expression, enumExpr);
+  deString formatString = deFindPrintFormat(expression);
+  llElement format = generateString(formatString);
+  deDatatype datatype = deExpressionGetDatatype(enumExpr);
+  utAssert(deDatatypeGetType(datatype) == DE_TYPE_ENUM);
+  deFunction function = deDatatypeGetFunction(datatype);
+  char* path = deGetBlockPath(deFunctionGetSubBlock(function), false);
+  deString enumClassNameString = deCStringCreate(path);
+  llElement enumClassElem = generateString(enumClassNameString);
+  utAssert(deExpressionGetType(enumExpr) == DE_EXPR_DOT);
+  deExpression identExpr = deExpressionGetLastExpression(enumExpr);
+  deString enumValueNameString = deCStringCreate(utSymGetName(deExpressionGetName(identExpr)));
+  llElement enumValueElem = generateString(enumValueNameString);
+  deLine line = deStatementGetLine(statement);
+  deFilepath filepath = deLineGetFilepath(line);
+  deString filePathString = deCStringCreate(utSymGetName(deFilepathGetSym(filepath)));
+  llElement filePathElem = generateString(filePathString);
+  uint32 numArguments = evalFormatParams(format, expression, true);
+  llDeclareRuntimeFunction("runtime_raiseException");
+  llPrintf("  call void (%%struct.runtime_array*, %%struct.runtime_array*, "
+      "%%struct.runtime_array*, i32, %%struct.runtime_array*, ...) "
+      "@runtime_raiseException(%%struct.runtime_array* %s, %%struct.runtime_array* %s, "
+      "%%struct.runtime_array* %s, i32 %u, %%struct.runtime_array* %s",
+      llElementGetName(enumClassElem), llElementGetName(enumValueElem),
+      llElementGetName(filePathElem), deLineGetLineNum(line),
+      llElementGetName(format));
+  printFormatParams(numArguments);
+  resetNeedsFreeList();
+  llPrintf("  unreachable\n");
+  // Restore he enum expression to the front of the list.
+  deExpressionInsertExpression(expression, enumExpr);
 }
 
 // Generate a return statement.
@@ -4319,19 +4446,18 @@ static utSym generateStatement(deStatement statement, utSym label) {
     case DE_STATEMENT_PRINT:
       printLabel(label);
       label = utSymNull;
-      generatePrintPanicOrThrowStatement(statement, true);
+      generatePrintStatement(statement);
       break;
     case DE_STATEMENT_TRY:
       label = generateTryStatement(statement, label);
       break;
-    case DE_STATEMENT_CATCH:
+    case DE_STATEMENT_EXCEPT:
       // Nothing to do.  This is generated by the try statement.
       break;
-    case DE_STATEMENT_THROW:
-    case DE_STATEMENT_PANIC:
+    case DE_STATEMENT_RAISE:
       printLabel(label);
       label = utSymNull;
-      generatePrintPanicOrThrowStatement(statement, false);
+      generateRaiseStatement(statement);
       break;
     case DE_STATEMENT_RETURN:
       printLabel(label);

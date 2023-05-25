@@ -360,15 +360,48 @@ Rune uses C-like comments:
 
 ## Literals
 
+The following subsections detail the syntax of lexical tokens corresponding
+to elements of the given type.
+
 ### Identifiers
+
+An _identifier_ is either an alphanumeric, consisting of a single alphanumeric token consisting of UTF8 characters, letters, digits, underscores and `$` symbols,
+not beginning with a digit.
+
+ <em>c</em> ::= [_a-zA-Z$] | UTF8_CHAR
+
+ <em>ID</em> ::= c(c | [0-9])*
 
 ### Strings
 
+A string is any sequence of ASCII or UTF8 characters between two `"` characters:
+
+STRING ::= \\\"([^"] | \\.)*\\\"
+
 ### Integers
+
+INTEGER ::= "'"[ -~]"'"
+    | '\\a'" | "'\\b'" | '\\e'" | "'\\f'" | "'\\n'" | "'\\r'" | "'\\t'" | "'\\v'"
+    | [0-9]+(("u"|"i")[0-9]+)?
+    | "0x"[0-9a-fA-F]+(("u"|"i")[0-9]+)?
+
+
+INTTYPE ::= "i"[0-9]+
+
+UINTTYPE ::= "u"[0-9]+
 
 ### Floating point
 
+FLOAT ::= [0-9]+"e"("-")?[0-9]+"f32"
+    | [0-9]+"."("e"("-")?[0-9]+)?"f32"
+    | [0-9]*"."[0-9]+("e"("-")?[0-9]+)?"f32"
+    | [0-9]+"e"("-")?[0-9]+("f64")?
+    | [0-9]+"."("e"("-")?[0-9]+)?("f64")?
+    | [0-9]*"."[0-9]+("e"("-")?[0-9]+)?("f64")?
+
 ### Random values
+
+RANDUINT ::= "rand"[0-9]+
 
 ## Keywords
 
@@ -624,7 +657,7 @@ Shift Right (`>>`)
 
 Rotate Right (`>>>`)
 : `e1 >>> e2` evaluates to the result of rotating the bits of `e1` to the right `e2` places.  High-order bits that would overflow and be lost when shifting right are copied instead to the high-order bits that have been vacated.
-: This is only valid when `e1` is a signed or unsigned int and  `e2` is an unsigned int. 
+: This is only valid when `e1` is a signed or unsigned int and  `e2` is an unsigned int.
 : `e1` and `e2` may have different integral types, but `e2` must be unsigned.
 
 #### Arithmetic
@@ -850,343 +883,144 @@ Examples of cool capabilities transformers enable include:
 * Adding runtime reflection APIs similar to Java's.
 * Generating optimized code for a parameterized algorithm, such as FFTs.
 
-## Grammar
-
-```
-runeFile ::= statement*
-
-statement ::=
-      appendCodeStatement
-    | assertStatement
-    | assignmentStatement
-    | callStatement
-    | classStatement
-    | debugStatement
-    | enumStatement
-    | externFunction
-    | finalFunction
-    | foreachStatement
-    | forStatement
-    | functionStatement
-    | transformStatement
-    | transformerStatement
-    | ifStatement
-    | importStatement
-    | prependCodeStatement
-    | printlnStatement
-    | printStatement
-    | refStatement
-    | relationStatement
-    | returnStatement
-    | structStatement
-    | switchStatement
-    | throwStatement
-    | unitTestStatement
-    | unrefStatement
-    | whileStatement
-    | yieldStatement
-
-importStatement ::=
-      "import" pathExpressionWithAlias newlines
-    | "importlib" pathExpressionWithAlias newlines
-    | "importrpc" pathExpressionWithAlias newlines
-    | "use" IDENT newlines
-
-classStatement ::=
-      classHeader '(' oneOrMoreParameters ')' block
-    | exportClassHeader '(' oneOrMoreParameters ')' block
-
-classHeader ::= "class" IDENT optWidth
-
-optWidth ::= UINTTYPE?
-
-exportClassHeader ::=
-      "export" "class" IDENT optWidth
-    | "exportlib" "class" IDENT optWidth
-    | "rpc" "class" IDENT optWidth
-
-structStatement ::=
-      ("struct"|"message") IDENT '{' newlines structMembers '}' newlines
-    | "export" ("struct"|"message") IDENT block
-
-structMembers ::=  (structMember newlines)*
-
-structMember ::=  IDENT optTypeExpression ('=' expression)?
-
-appendCodeStatement ::=  "appendcode" pathExpression? block
-
-prependCodeStatement ::=  "prependcode" pathExpression? block
-
-block ::=  '{' newlines statement* '}' optNewlines
-
-functionStatement ::=  functionHeader '(' parameters ')' optFuncTypeExpression block
-    | exportFunctionHeader '(' parameters ')' optFuncTypeExpression block
-    | rpcHeader '(' parameters ')' optFuncTypeExpression block
-
-functionHeader ::=  "func" IDENT
-    | "iterator" IDENT
-    | "operator" operator
-
-operator ::=  '+' | '-' | '*' | '/' | '%' | "&&" | "||" | "^^" | '&' | '|' | '^' | '**' | "<<" | ">>"
-    | "<<<" | ">>>" | "!+" | "!-" | "!*" | '~' | '<' | "<=" | '>' | ">=" | "==" | "!=" | '!'
-    | '[' ']' | "in" | "mod"
-
-exportFunctionHeader ::=
-      "export" "func" IDENT
-    | "export" "iterator" IDENT
-    | "exportlib" "func" IDENT
-
-parameters ::= oneOrMoreParameters?
-
-oneOrMoreParameters ::=  parameter (',' optNewlines parameter)*
-
-parameter ::=  optVar IDENT optTypeExpression
-    | optVar '<' IDENT '>' optTypeExpression
-    | initializedParameter
-
-optVar ::= "var"?
-
-initializedParameter ::=  optVar IDENT optTypeExpression '=' expression
-    | optVar '<' IDENT '>' optTypeExpression '=' expression
-
-externFunction ::=  "extern" STRING functionHeader '(' parameters ')' optFuncTypeExpression newlines
-    | rpcHeader '(' parameters ')' optFuncTypeExpression newlines
-
-rpcHeader ::=  "rpc" IDENT
-
-ifStatement ::=  ifPart elseIfPart* elsePart?
-
-ifPart ::=  "if" expression block
-
-elseIfPart ::=  "else" "if" expression block
-
-elsePart ::=  "else" block
-
-switchStatement ::=  "switch" expression switchBlock
-
-switchBlock ::=  '{' newlines switchCase* defaultCase? '}' optNewlines
-
-switchCase ::=  "case" expression (',' optNewlines expression)* block
-
-defaultCase ::=  "default" block
-
-whileStatement ::=  doStatement? whileStatementHeader expression newlines
-    | doStatement? "while" expression block
-
-doStatement ::=  "do" block
-
-forStatement ::=  "for" assignmentExpression ',' optNewlines expression ',' optNewlines
-    assignmentExpression block
-
-assignmentStatement ::=  assignmentExpression newlines
-
-assignmentExpression ::=  accessExpression optTypeExpression assignmentOp expression
-
-assignmentOp ::=  '=' | "+=" | "-=" | "*=" | "/=" | "mod"EQUALS | "KWBITANDEQUALS=" | "|=" | "^="
-    | "&&=" | "||=" | "^^=" | "**=" | "<<=" | ">>=" | "<<<=" | ">>>=" | "!+=" | "!-=" | "!*="
-
-optTypeExpression ::= expression?
-
-optFuncTypeExpression ::= ("->" expression)?
-
-accessExpression ::=  tokenExpression
-    | accessExpression '(' callParameterList ')'
-    | accessExpression '.' IDENT
-    | accessExpression '[' expression ']'
-    | accessExpression '[' expression ':' expression ']'
-
-callStatement ::=  accessExpression '(' callParameterList ')' newlines
-
-callParameterList ::= (oneOrMoreCallParameters optComma)?
-
-oneOrMoreCallParameters ::=  callParameter (',' optNewlines callParameter)*
-
-callParameter ::=  expression
-    | IDENT '=' expression
-
-optComma ::=  ','?
-
-printStatement ::=  "print" expressionList newlines
-
-printlnStatement ::=  "println" expressionList newlines
-
-throwStatement ::=  "throw" expressionList newlines
-
-assertStatement ::=  "assert" expressionList newlines
-
-returnStatement ::=  "return" newlines
-    | "return" expression newlines
-
-transformerStatement ::=  "transformer" IDENT '(' parameters ')' block
-
-transformStatement ::=  "transform" pathExpression '(' expressionList ')' newlines
-
-relationStatement ::=  "relation" pathExpression pathExpression optLabel pathExpression optLabel
-    optCascade optExpressionList newlines
-
-optLabel ::= (':' STRING)?
-
-optCascade ::= "cascade"?
-
-optExpressionList ::= ('(' expressionList ')')?
-
-yieldStatement ::=  "yield" expression newlines
-
-unitTestStatement ::=  "unittest" IDENT? block
-
-debugStatement ::=  "debug" block
-
-enumStatement ::=  "enum" IDENT '{' newlines entry* '}' newlines
-
-entry ::=  IDENT ('=' INTEGER)? newlines
-
-foreachStatement ::=  "for" IDENT "in" expression block
-
-finalFunction ::= "final" '(' parameter ')' block
-
-refStatement ::=  "ref" expression newlines
-
-unrefStatement ::=  "unref" expression newlines
-
-expressionList ::= oneOrMoreExpressions?
-
-oneOrMoreExpressions ::=  expression (',' expression)*
-
-twoOrMoreExpressions ::=  expression ',' optNewlines expression (',' optNewlines expression)*
-
-expression ::=  dotDotDotExpression
-
-dotDotDotExpression ::=  selectExpression "..." selectExpression
-    | selectExpression
-
-selectExpression ::=  orExpression
-    | orExpression '?' orExpression ':' orExpression
-
-orExpression ::=  xorExpression
-    | orExpression "||" xorExpression
-
-xorExpression ::=  andExpression
-    | xorExpression "^^" andExpression
-
-andExpression ::=  inExpression
-    | andExpression "&&" inExpression
-
-inExpression ::=  modExpression
-    | modExpression "in" modExpression
-
-modExpression ::=  relationExpression
-    | relationExpression "%" bitorExpression
-
-relationExpression ::=  bitorExpression
-    | bitorExpression '<' bitorExpression
-    | bitorExpression "<=" bitorExpression
-    | bitorExpression '>' bitorExpression
-    | bitorExpression ">=" bitorExpression
-    | bitorExpression "==" bitorExpression
-    | bitorExpression "!=" bitorExpression
-
-bitorExpression ::=  bitxorExpression
-    | bitorExpression '|' bitxorExpression
-
-bitxorExpression ::=  bitandExpression
-    | bitxorExpression '^' bitandExpression
-
-bitandExpression ::=  shiftExpression
-    | bitandExpression '&' shiftExpression
-
-shiftExpression ::=  addExpression
-    | addExpression "<<" addExpression
-    | addExpression ">>" addExpression
-    | addExpression "<<<" addExpression
-    | addExpression ">>>" addExpression
-
-addExpression ::=  mulExpression
-    | addExpression '+' mulExpression
-    | addExpression '-' mulExpression
-    | "!-" mulExpression
-    | addExpression "!+" mulExpression
-    | addExpression "!-" mulExpression
-
-mulExpression ::=  prefixExpression
-    | mulExpression '*' prefixExpression
-    | mulExpression '/' prefixExpression
-    | mulExpression '%' prefixExpression
-    | mulExpression "!*" prefixExpression
-
-prefixExpression ::=  exponentiateExpression
-    | '!' prefixExpression
-    | '~' prefixExpression
-    | '-' prefixExpression
-    | '<' prefixExpression '>' prefixExpression
-    | "!<" prefixExpression '>' prefixExpression
-
-exponentiateExpression ::=  postfixExpression
-    | postfixExpression '**' exponentiateExpression
-
-postfixExpression ::=  accessExpression
-    | '&' pathExpression '(' expressionList ')'
-
-tokenExpression ::=  IDENT
+## Abstract Syntax
+
+The following is a cut-down grammar that ignores all issues related to parsing,
+disambiguation and precedence. It corresponds to the abstract syntax tree
+built by the compiler after parsing.
+
+In the following, we use a form of EBNF with the following conventions:
+
+* Italicized words are nonterminals.
+* Bold words and symbols are lexical tokens, for example keywords.
+* The postfix asterisk ('e*') indicates zero or more occurrences of 'e'
+* The postfix question mark ('e?') indicates zero or one occurrences of 'e'
+* The bar 'e_1 | e_2' indicates the presence of either 'e_1' or 'e_2'
+* Brackets '(' and ')' are for grouping complex expressions
+* Capitalized words, like STRING, represents a constant value literal of the named type.  We do not describe them further (see above for more details).
+
+
+<pre>
+<em>runeFile</em> ::= <em>statement</em>*
+
+<em>statement</em> ::=
+      <b>appendcode</b> <em><em>pathexp</em></em>? <em>block</em>
+    | <b>assert</b> <em><em>explist</em></em>
+    | <em>assignment</em>
+    | <em>call</em>
+    | (<b>rpc</b> | <b>export</b> | <b>exportlib</b>)? <b>class</b> <em>ID</em> UINTTYPE? <b>(</b> <em>params</em> <b>)</b> <em>block</em>
+    | <b>debug</b> <em>block</em>
+    | <b>do</b> <em>block</em> <b>while</b> <em>exp</em>
+    | <b>enum</b> <em>ID</em> <b>{</b> (<em>ID</em> (<b>=</b> INTEGER)?)* <b>}</b>
+    | <b>export</b> <b>func</b> <em>ID</em> <em>proto</em> </em>block</em>
+    | <b>export</b> <b>iterator</b> <em>ID</em> <em>proto</em> </em>block</em>
+    | <b>export</b>? (<b>struct</b>| <b>message</b>) <em>ID</em> <b>{</b> (<em>ID</em> tyexp? (<b>=</b> <em>exp</em>)?)* <b>}</b>
+    | <b>exportlib</b> <b>func</b> <em>ID</em> <em>proto</em> </em>block</em>
+    | <b>extern</b> STRING <b>func</b> <em>ID</em> <em>proto</em>
+    | <b>extern</b> STRING <b>iterator</b> <em>ID</em> <em>proto</em>
+    | <b>extern</b> STRING <b>operator</b> (<em>binop</em>|<em>unop</em>|<em>assignop</em>) <em>proto</em>
+    | <b>final</b> <b>(</b> parameter <b>)</b> <em>block</em>
+    | <b>for</b> <em>ID</em>  <b>in</b> <em>exp</em> <em>block</em>
+    | <b>for</b> <em>assignment</em> <b>,</b> <em>exp</em> <b>,</b> <em>assignment</em> <em>block</em>
+    | <b>func</b> <em>ID</em> <em>proto</em> </em>block</em>
+    | <b>if</b> <em>exp</em> <em>block</em> (<b>else</b> <b>if</b> <em>exp</em> <em>block</em>)* (<b>else</b> <em>block</em>)?
+    | <b>import</b> <em>pathexp</em> (<b>as</b> <em>ID</em>)?
+    | <b>importlib</b> <em>pathexp</em> (<b>as</b> <em>ID</em>)?
+    | <b>importrpc</b> <em>pathexp</em> (<b>as</b> <em>ID</em>)?
+    | <b>iterator</b> <em>ID</em> <em>proto</em> </em>block</em>
+    | <b>operator</b> (<em>binop</em>|<em>unop</em>|<em>assignop</em>) <em>proto</em> </em>block</em>
+    | <b>prependcode</b> <em>pathexp</em>? <em>block</em>
+    | <b>println</b> <em>explist</em>
+    | <b>print</b> <em>explist</em>
+    | <b>raise</b> <em>explist</em>
+    | <b>ref</b> <em>exp</em>
+    | <b>relation</b> <em>pathexp</em> <em>pathexp</em> <em>label</em>? <em>pathexp</em> <em>label</em>? <b>cascade</b>? (<b>(</b> <em>explist</em> <b>)</b>)?
+    | <b>return</b> <em>exp</em>?
+    | <b>rpc</b> <em>ID</em> <em>funcdec</em>
+    | <b>switch</b> <em>exp</em> <b>{</b> (<b>case</b> <em>exp</em> (<b>,</b> <em>exp</em>)* <em>block</em>)* (<b>default</b> <em>block</em>)? <b>}</b>
+    | <b>transform</b> <em>pathexp</em> <b>(</b> <em>explist</em> <b>)</b>
+    | <b>transformer</b> <em>ID</em> <b>(</b> <em>params</em> <b>)</b> <em>block</em>
+    | <b>unittest</b> <em>ID</em>? <em>block</em>
+    | <b>unref</b> <em>exp</em>
+    | <b>use</b> <em>ID</em>
+    | <b>while</b> <em>exp</em> <em>block</em>
+    | <b>yield</b> <em>exp</em>
+
+<em>assignment</em> := <em>lhs</em> <em>tyexp</em>? <em>assignop</em> <em>exp</em>
+
+<em>call</em> ::= <em>lhs</em> <b>(</b> <em><em>args</em></em> <b>)</b>
+
+<em>lhs</em> ::=
+      <em>lhs</em> <b>(</b> <em>args</em> <b>)</b>
+    | <em>lhs</em> <b>.</b> <em>ID</em>
+    | <em>lhs</em> <b>[</b> <em>exp</em> <b>]</b>
+    | <em>lhs</em> <b>[</b> <em>exp</em> <b>:</b> <em>exp</em> <b>]</b>
+
+<em>label</em> ::=<b>:</b> STRING
+
+<em>block</em> ::=  <b>{</b> <em>statement</em>* <b>}</b>
+
+<em>proto</em> ::= <em>params</em> (<b>-></b><em>tyexp</em>)?
+
+<em>params</em>::=  <b>(</b> <em>parm</em> (<b>,</b> <em>parm</em>)* <b>)</b>
+
+<em>parm</em> ::=
+      <b>var</b>? <em>ID</em> <em>tyexp</em>? (<b>=</b> <em>exp</em>)?
+    | <b>var</b>? <b><</b> <em>ID</em> <b>></b> <em>tyexp</em>? (<b>=</b> <em>exp</em>)?
+
+<em>explist</em> ::= <em>exp</em> (<b>,</b> <em>exp</em>)*
+exp ::=
+      <em>exp</em> <em>binop</em> <em>exp</em>
+    | <em>exp</em> <b>?</b> <em>exp</em> <b>:</b> <em>exp</em>
+    | <em>unop</em> <em>exp</em>
+    | <b><</b> <em>exp</em> <b>></b> <em>exp</em>
+    | <b>!<</b> <em>exp</em> <b>></b> <em>exp</em>
+    | <b>&</b> <em>exp</em> <b>(</b> <em>explist</em> <b>)</b>
+    | <em>ID</em>
     | STRING
     | INTEGER
     | FLOAT
     | RANDUINT
-    | ("true" | "false")
-    | '[' expression (',' expression)* ']'
-    | '(' expression ')'
-    | tupleExpression
-    | typeLiteral
-    | "secret" '(' expression ')'
-    | "reveal" '(' expression ')'
-    | "arrayof" '(' expression ')'
-    | "typeof" '(' expression ')'
-    | "unsigned" '(' expression ')'
-    | "signed" '(' expression ')'
-    | "widthof" '(' expression ')'
-    | "null" '(' expression ')'
-    | "isnull" '(' expression ')'
-    | "notnull" '(' expression ')'
+    | <b>true</b>
+    | <b>false</b>
+    | <em>lhs</em>
+    | <b>[</b> <em>exp</em> (<b>,</b> <em>exp</em>)* <b>]</b>
+    | <b>(</b> <em>exp</em> <b>)</b>
+    | <em>tupleexp</em>
+    | <em>tyexp</em>
+    | <b>secret</b> <b>(</b> <em>exp</em> <b>)</b>
+    | <b>reveal</b> <b>(</b> <em>exp</em> <b>)</b>
+    | <b>arrayof</b> <b>(</b> <em>exp</em> <b>)</b>
+    | <b>typeof</b> <b>(</b> <em>exp</em> <b>)</b>
+    | <b>unsigned</b> <b>(</b> <em>exp</em> <b>)</b>
+    | <b>signed</b> <b>(</b> <em>exp</em> <b>)</b>
+    | <b>widthof</b> <b>(</b> <em>exp</em> <b>)</b>
+    | <b>null</b> <b>(</b> <em>exp</em> <b>)</b>
+    | <b>isnull</b> <b>(</b> <em>exp</em> <b>)</b>
+    | <b>notnull</b> <b>(</b> <em>exp</em> <b>)</b>
 
-typeLiteral ::=  UINTTYPE | INTTYPE | "string" | "bool" | "f32" | "f64"
+<em>args</em> ::= (<em>ID</em> <b>=</b>)? <em>exp</em> (<b>,</b> (<em>ID</em> <b>=</b>)? <em>exp</em>)*
 
-pathExpression ::=  IDENT ('.' IDENT)*
+<em>tyexp</em> ::= UINTTYPE | INTTYPE | <b>string</b> | <b>bool</b> | <b>f32</b> | <b>f64</b>
 
-pathExpressionWithAlias ::=  pathExpression
-    | pathExpression "as" IDENT
+<em>pathexp</em> ::= <em>ID</em> (<b>.</b> <em>ID</em>)*
 
-tupleExpression ::=  '(' expression ',' expression (',' expression)* ','? ')'
-    | '(' expression ',' ')'
-    | '(' ')'
+<em>tupleexp</em> ::=
+      <b>(</b> <b>)</b>
+    | <b>(</b> <em>exp</em> <b>,</b> <b>)</b>
+    | <b>(</b> <em>exp</em> (<b>,</b> <em>exp</em>)* <b>,</b>? <b>)</b>
 
-optNewlines ::= '\n'*
+<em>unop</em> ::= <b>!</b> | <b>~</b> | <b>-</b>
 
-newlines ::=  '\n'
-    | ';'
-    | newlines '\n'
-    | newlines ';'
+<em>binop</em> ::=
+      <b>+</b> | <b>-</b> | <b>*</b> | <b>/</b> | <b>%</b> | <b>&&</b> | <b>||</b> | <b>^^</b> | <b>&</b> | <b>|</b> | <b>^</b> | <b>**</b> | <b><<</b> |  <b>>></b>
+    | <b><<<</b> | <b>>>></b> | <b>!+</b> | <b>!-</b> | <b>!*</b> | <b>~</b> | <b><</b> | <b><=</b> | <b>></b> | <b>>=</b> | <b>==</b> | <b>!=</b> | <b>!</b>
+    | <b>[</b> <b>]</b> | <b>in</b> | <b>mod</b>
 
-// These tokens are described with Lex syntax
-IDENT ::= ([_a-zA-Z$]|UTF8_CHAR)([a-zA-Z0-9_$]UTF8_CHAR)*
-    | \\[^ \t\n][^ \t\n]*
+<em>assignop</em> ::= <b>=</b> | <b>+=</b> | <b>-=</b> | <b>*=</b> | <b>/=</b> | <b>%=</b> | <b>&=</b> | <b>|=</b> | <b>^=</b>
+    | <b>&&=</b> | <b>||=</b> | <b>^^=</b> | <b>**=</b> | <b><<=</b> | <b>>>=</b> | <b><<<=</b> | <b>>>>=</b> | <b>!+=</b> | <b>!-=</b> | <b>!*=</b>
 
-STRING ::= \"([^"]|\\.)*\"
 
-INTEGER ::= "'"[ -~]"'"
-    | '\\a'" | "'\\b'" | '\\e'" | "'\\f'" | "'\\n'" | "'\\r'" | "'\\t'" | "'\\v'"
-    | [0-9]+(("u"|"i")[0-9]+)?
-    | "0x"[0-9a-fA-F]+(("u"|"i")[0-9]+)?
+</pre>
 
-RANDUINT ::= "rand"[0-9]+
 
-INTTYPE ::= "i"[0-9]+
-
-UINTTYPE ::= "u"[0-9]+
-
-FLOAT ::= [0-9]+"e"("-")?[0-9]+"f32"
-    | [0-9]+"."("e"("-")?[0-9]+)?"f32"
-    | [0-9]*"."[0-9]+("e"("-")?[0-9]+)?"f32"
-    | [0-9]+"e"("-")?[0-9]+("f64")?
-    | [0-9]+"."("e"("-")?[0-9]+)?("f64")?
-    | [0-9]*"."[0-9]+("e"("-")?[0-9]+)?("f64")? {
-
-```

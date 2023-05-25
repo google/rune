@@ -147,9 +147,12 @@ void runtime_putsCstr(const char *string);
 void runtime_sprintf(runtime_array *array, const runtime_array *format, ...);
 void runtime_printf(const char *format, ...);
 void runtime_vsprintf(runtime_array *array, const runtime_array *format, va_list ap);
-void runtime_throwException(const runtime_array *format, ...);
-void runtime_throwExceptionCstr(const char *format, ...);
-void runtime_throwOverflow();
+void runtime_raiseException(const runtime_array *enumClassName,
+                            const runtime_array *enumValueName,
+                            const runtime_array *filePath, uint32_t line,
+                            const runtime_array *format, ...);
+void runtime_raiseExceptionCstr(const char *format, ...);
+void runtime_raiseOverflow();
 void runtime_panic(const runtime_array *format, ...);
 void runtime_panicCstr(const char *format, ...);
 void runtime_nativeIntToString(runtime_array *string, uint64_t value, uint32_t base, bool isSigned);
@@ -198,7 +201,7 @@ static inline uint64_t runtime_multCheckForOverflow(size_t a, size_t b) {
     return res;
   }
   if (res / a != b) {
-    runtime_throwExceptionCstr("Integer overflow");
+    runtime_raiseExceptionCstr("Integer overflow");
   }
   return res;
 }
@@ -208,7 +211,7 @@ static inline uint64_t runtime_multCheckForOverflow(size_t a, size_t b) {
 static inline size_t runtime_addCheckForOverflow(size_t a, size_t b) {
   size_t sum = a + b;
   if (sum < a || sum < b) {
-    runtime_throwExceptionCstr("Integer overflow");
+    runtime_raiseExceptionCstr("Integer overflow");
   }
   return sum;
 }
@@ -317,6 +320,16 @@ struct jmpbuf_wrapped {
   struct jmpbuf_wrapped *wrapped_buf;
 };
 extern struct jmpbuf_wrapped *runtime_firstSetjmpBuffer;
-extern runtime_array runtime_errorMessage;
+
+// Declare the type of runtimeException so we can fill it out.
+struct ExceptionStruct {
+  runtime_array errorEnumName;
+  runtime_array errorValueName;
+  runtime_array errorMessage;
+  runtime_array filePath;
+  uint32_t line;
+};
+
+extern struct ExceptionStruct runtimeException;
 
 #endif  // EXPERIMENTAL_WAYWARDGEEK_RUNE_RUNTIME_RUNE_RUNTIME_H_

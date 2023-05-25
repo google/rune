@@ -15,7 +15,7 @@
 use prp
 
 if argv.length() != 3 {
-  throw "Usage: block_encrypt password message"
+  raise Status.InvalidArgument, "Usage: block_encrypt password message"
 }
 password = secret(argv[1])
 plaintext = secret(argv[2])

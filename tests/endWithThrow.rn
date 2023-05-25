@@ -13,7 +13,7 @@
 // limitations under the License.
 
 func test() {
-  throw "bye"
+  raise Status.Ok, "bye"
 }
 
 if false {

@@ -19,6 +19,7 @@ println randVal1 == randVal2
 randVal3 = reveal(rand256)
 randVal4 = reveal(rand256)
 if randVal3 == randVal4 {
-  throw "The randomness source is seriously borked!  Do not use it!!! REALLY!!!"
+  raise Exception.MemoryCorruption,
+      "The randomness source is seriously borked!  Do not use it!!! REALLY!!!"
 }
 println "passed"

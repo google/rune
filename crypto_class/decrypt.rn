@@ -21,7 +21,7 @@ func  decrypt(key: secret(string), info: string, ciphertext: string) -> string {
   mac = ciphertext[len - 16:len]
   encryptedText = ciphertext[16:len - 16]
   if !verifyMac(mac, key, nonce + info + encryptedText) {
-    throw "Failed MAC check: ciphertext is corrupt or password was incorrect"
+    raise Status.DataLoss, "Failed MAC check: ciphertext is corrupt or password was incorrect"
   }
   sponge = Sponge()
   sponge.absorb("AEAD encryption" + key)

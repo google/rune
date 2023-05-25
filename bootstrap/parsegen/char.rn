@@ -88,17 +88,30 @@ func lower(c: u8) -> u8 {
 
 func upper(c: u8) -> u8 {
   if c >= 'a' && c <= 'z' {
-    return c - 'a' + 'Z'
+    return c - 'a' + 'A'
   }
   return c
 }
 
-func isxdigit(c: u8) -> bool {
+func isHexDigit(c: u8) -> bool {
   return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
 }
 
 func hexToChar(hi: u8, lo: u8) -> u8 {
-  return hi << 4 | lo
+  return (hexDigit(hi) << 4) | hexDigit(lo)
+}
+
+func hexDigit(c: u8) -> u8 {
+  if c >= '0' && c <= '9' {
+    return c - '0'
+  }
+  if c >= 'a' && c <= 'z' {
+    return c - 'a' + 10
+  }
+  if c >= 'A' && c <= 'Z' {
+    return c - 'A' + 10
+  }
+  raise Status.InvalidArgument, "Invalid hex digit"
 }
 
 // Determine if the encoding is overly long.  All valid encodings are the
@@ -231,4 +244,23 @@ unittest trojanSource {
     char = getChar(s, 0u32)
     assert !char.valid
   }
+}
+
+unittest upperLowerTest {
+  assert upper('a') == 'A'
+  assert upper('n') == 'N'
+  assert upper('z') == 'Z'
+  assert upper(' ') == ' '
+  assert lower('A') == 'a'
+  assert lower('N') == 'n'
+  assert lower('Z') == 'z'
+  assert lower(' ') == ' '
+}
+
+unittest hexTest {
+  assert isHexDigit('a') && isHexDigit('A')
+  assert !isHexDigit('g') && !isHexDigit('G')
+  assert isHexDigit('0') && isHexDigit('9')
+  assert hexToChar('c', '5') == 0xc5
+  assert hexDigit('a') == 0xa && hexDigit('A') == 0xa
 }

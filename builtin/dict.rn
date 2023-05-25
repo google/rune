@@ -22,7 +22,7 @@ class Dict(self, <key>, <value>) {
 
   func insert(self, key, value) {
     if !isnull(self.findEntry(key)) {
-      throw "Key already exists in dictionary"
+      raise Status.AlreadyExists, "Key already exists in dictionary"
     }
     Dict.Entry(self, key, value)
   }
@@ -30,7 +30,7 @@ class Dict(self, <key>, <value>) {
   func remove(self, key) {
     entry = self.findEntry(key)
     if isnull(entry) {
-      throw "Key not found in dictionary"
+      raise Status.NotFound, "Key not found in dictionary"
     }
     self.removeEntry(entry!)
   }
@@ -38,7 +38,7 @@ class Dict(self, <key>, <value>) {
   func find(self, key) {
     entry = self.findEntry(key)
     if isnull(entry) {
-      throw "Key not found in dictionary"
+      raise Status.NotFound, "Key not found in dictionary"
     }
     return entry!.value
   }

@@ -23,7 +23,7 @@ func getDatatypeType(value) -> DatatypeType {
     bool => return DatatypeType.Bool
     Int => return DatatypeType.Int
     Uint => return DatatypeType.Uint
-    Bigint {
+    Bigint => {
       if value.isSigned {
         return DatatypeType.Int
       }
@@ -31,7 +31,7 @@ func getDatatypeType(value) -> DatatypeType {
     }
     Float => return DatatypeType.Float
     Sym => return DatatypeType.Sym
-    default => throw "Datatype not yet supported by the Value class"
+    default => raise Status.Unimplemented, "Datatype not yet supported by the Value class"
   }
 }
 
@@ -48,16 +48,16 @@ class Value(self: Value, value: string | bool | Int | Uint | Bigint | Float | Sy
   typeswitch value {
     string => self.stringVal = value
     bool => self.boolVal = value
-    Float {
+    Float => {
       // This must be the widest supported floating point type, currently f64.
       self.floatVal = <f64>value
       self.width = widthof(value)
     }
-    Int, Uint {
+    Int, Uint => {
       self.intVal = Bigint(value)
       self.width = widthof(value)
     }
-    Bigint {
+    Bigint => {
       self.intVal = value
       self.width = value.width
       }

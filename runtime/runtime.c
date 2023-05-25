@@ -15,5 +15,5 @@
 // Define global that normally are linked into the rune output .o file.
 #include "runtime.h"
 
-runtime_array runtime_errorMessage;
+struct ExceptionStruct runtimeException;
 struct jmpbuf_wrapped *runtime_firstSetjmpBuffer;

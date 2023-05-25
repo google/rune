@@ -15,7 +15,7 @@
 use decrypt
 
 if argv.length() != 4 {
-  throw "Usage: aead_decrypt password message"
+  raise Status.InvalidArgument, "Usage: aead_decrypt password message"
 }
 password = secret(argv[1])
 info = argv[2]

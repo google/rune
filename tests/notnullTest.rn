@@ -21,7 +21,7 @@ assert isnull(foo)
 foo = Foo("test")  // Nullable variables can hold non-null values.
 typeswitch foo {
   Foo => println "Should not match Foo"
-  Foo? {
+  Foo? => {
     typeswitch foo! {
       Foo => println "Passed"
       Foo? => println "Should not match Foo?"

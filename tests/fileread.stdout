@@ -17,7 +17,7 @@ import io
 func readFile(fileName: string, len: u64 = 0) -> string {
   file = io.open(fileName, "r")
   if isnull(file) {
-    throw "Unable to read file ", name
+    raise Status.NotFound, "Unable to read file ", name
   }
   return file!.read(len)
 }

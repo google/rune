@@ -30,7 +30,7 @@ class Heapq(self, <value>) {
   func pop(self) {
     element = self.popElement()
     if isnull(element) {
-      throw "Heapq underflow"
+      raise Exception.Underflow, "Heapq underflow"
     }
     return element!.value
   }

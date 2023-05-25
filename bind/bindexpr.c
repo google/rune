@@ -233,7 +233,7 @@ static deFunction findMatchingOperatorOverload(deBlock scopeBlock, deExpression 
   deDatatype selfType = deDatatypeArrayGetiDatatype(paramTypes, 0);
   deBlock block;
   utSym sym = deGetOperatorSym(opType, numParams == 1);
-  if (deDatatypeGetType(selfType) == DE_TYPE_CLASS) {
+  if (!deDatatypeNullable(selfType) && deDatatypeGetType(selfType) == DE_TYPE_CLASS) {
     block = deClassGetSubBlock(deDatatypeGetClass(selfType));
     deIdent ident = findIdentInBlock(block, sym);
     if (ident != deIdentNull) {
@@ -242,7 +242,7 @@ static deFunction findMatchingOperatorOverload(deBlock scopeBlock, deExpression 
   }
   if (numParams == 2) {
     selfType = deDatatypeArrayGetiDatatype(paramTypes, 1);
-    if (deDatatypeGetType(selfType) == DE_TYPE_CLASS) {
+    if (!deDatatypeNullable(selfType) && deDatatypeGetType(selfType) == DE_TYPE_CLASS) {
       block = deClassGetSubBlock(deDatatypeGetClass(selfType));
       deIdent ident = deBlockFindIdent(block, sym);
       if (ident != deIdentNull) {
@@ -1950,13 +1950,24 @@ static void postProcessBoundStatement(deBlock scopeBlock, deBinding binding) {
     updateSignatureReturnType(deBindingGetSignature(binding), datatype);
   } else if (type == DE_STATEMENT_TYPESWITCH) {
     selectMatchingCase(scopeBlock, binding);
-  } else if (type == DE_STATEMENT_PRINT || type == DE_STATEMENT_THROW || type == DE_STATEMENT_PANIC) {
+  } else if (type == DE_STATEMENT_PRINT || type == DE_STATEMENT_RAISE) {
     dePostProcessPrintStatement(statement);
+    if (type == DE_STATEMENT_RAISE) {
+      deExpression expression = deStatementGetExpression(statement);
+      deExpression enumExpr = deExpressionGetFirstExpression(expression);
+      if (enumExpr == deExpressionNull) {
+        deExprError(expression, "Raise statement requires an enum value first");
+      }
+      deDatatype datatype = deExpressionGetDatatype(enumExpr);
+      if (datatype == deDatatypeNull || deDatatypeGetType(datatype) != DE_TYPE_ENUM) {
+        deExprError(expression, "Raise statement requires an enum value first");
+      }
+    }
   } else if (type == DE_STATEMENT_IF) {
     deExpression expression = deStatementGetExpression(statement);
     deDatatype datatype = deExpressionGetDatatype(expression);
     if (datatype == deDatatypeNull || deDatatypeGetType(datatype) != DE_TYPE_BOOL) {
-      deExprError(expression, "If statement requires a boolean condition");
+      deExprError(expression, "If statement requires a Boolean condition");
     }
   }
 }
@@ -2021,7 +2032,8 @@ void deBindStatement(deBinding binding) {
       deExpression typeExpr = deFunctionGetTypeExpression(function);
       deDatatype datatype = deExpressionGetDatatype(typeExpr);
       deSignature signature = deBindingGetSignature(binding);
-      if (deDatatypeConcrete(datatype) && signature != deSignatureNull) {
+      if (datatype != deDatatypeNull && deDatatypeConcrete(datatype) &&
+          signature != deSignatureNull) {
         updateSignatureReturnType(deBindingGetSignature(binding), datatype);
       }
       if (deFunctionExtern(function)) {

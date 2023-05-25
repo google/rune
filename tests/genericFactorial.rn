@@ -27,7 +27,7 @@ class Foo(self, value: u100) {
     typeswitch other {
       Foo  => return other
       Int | Uint => return Foo(<u100> other)
-      default => throw "Can't convert ", other, " to Foo"
+      default => raise Status.InvalidArgument, "Can't convert ", other, " to Foo"
     }
   }
 

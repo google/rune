@@ -13,3 +13,11 @@ second line
 File test_filepath, line 2:
 second line
        ^^^^
+{type = 6, location = 7, value = 1}
+{type = 5, location = 7, value = 2}
+{type = 3, location = 7, value = 3}
+{type = 3, location = 7, value = 4}
+{type = 3, location = 7, value = 5}
+{type = 4, location = 7, value = 6}
+{type = 2, location = 7, value = 7}
+{type = 1, location = 7, value = 0}

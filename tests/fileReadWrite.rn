@@ -17,7 +17,7 @@ import io
 func readFile(fileName: string, len: u64 = 0) -> string {
   file = io.open(fileName, "r")
   if isnull(file) {
-    throw "Unable to read file ", fileName
+    raise Status.NotFound, "Unable to read file ", fileName
   }
   return file!.read(len)
 }
@@ -25,7 +25,7 @@ func readFile(fileName: string, len: u64 = 0) -> string {
 func writeFile(fileName: string, data: string) {
   file = io.open(fileName, "w")
   if isnull(file) {
-    throw "Unable to write file ", fileName
+    raise Status.NotFound, "Unable to write file ", fileName
   }
   file!.write(data)
 }
@@ -35,10 +35,10 @@ text = "This is a test.\nThis is a second line."
 writeFile(name, text)
 readText = readFile(name)
 if readText != text {
-  throw "Unable to read back text"
+  raise Status.NotFound, "Unable to read back text"
 }
 partialText = readFile(name, 15)
 if partialText != text[0:15] {
-  throw "Unable to read back text"
+  raise Status.NotFound, "Unable to read back text"
 }
 println "passed"

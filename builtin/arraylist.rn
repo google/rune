@@ -42,7 +42,7 @@ transformer ArrayList(A: Class, B: Class, cascadeDelete:bool = false,
     func append$labelB$B(self, child: B) {
       debug {
         if !isnull(child.$labelA$A) {
-          throw "append$labelB$B: Object is already in a relation"
+          raise Exception.Internal, "append$labelB$B: Object is already in a relation"
         }
       }
       child.$labelA$A_Index = <u32>self.$labelB$pluralB.length()
@@ -54,7 +54,7 @@ transformer ArrayList(A: Class, B: Class, cascadeDelete:bool = false,
     func remove$labelB$B(self, child: B) {
       debug {
         if child.$labelA$A != self {
-          throw "remove$labelB$B: Object not owned by me"
+          raise Exception.Internal, "remove$labelB$B: Object not owned by me"
         }
       }
       self.$labelB$pluralB[child.$labelA$A_Index] = null(child)

@@ -28,9 +28,8 @@ char* deStatementTypeGetKeyword(deStatementType type) {
     case DE_STATEMENT_CALL: return "call";
     case DE_STATEMENT_PRINT: return "print";
     case DE_STATEMENT_TRY: return "try";
-    case DE_STATEMENT_CATCH: return "catch";
-    case DE_STATEMENT_THROW: return "throw";
-    case DE_STATEMENT_PANIC: return "panic";
+    case DE_STATEMENT_RAISE: return "raise";
+    case DE_STATEMENT_EXCEPT: return "except";
     case DE_STATEMENT_RETURN: return "return";
     case DE_STATEMENT_SWITCH: return "switch";
     case DE_STATEMENT_TYPESWITCH: return "typeswitch";

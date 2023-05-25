@@ -76,7 +76,7 @@ bool io_file_fcloseInternal(uint64_t ptr) {
 uint64_t io_file_freadInternal(uint64_t ptr, runtime_array *buf) {
   uint64_t len = buf->numElements;
   if (len == 0) {
-    runtime_throwExceptionCstr("Tried to read from file into an empty string");
+    runtime_raiseExceptionCstr("Tried to read from file into an empty string");
   }
   FILE *file = (FILE*)(uintptr_t)ptr;
   uint64_t bytesRead = fread(buf->data, 1, len, file);
@@ -193,15 +193,22 @@ void runtime_putsCstr(const char *string) {
   }
 }
 
-// Throw an exception.  For now, just print the message and exit.
-void runtime_throwException(const runtime_array *format, ...) {
+// Throw an exception.  For now, just print the message and exit.  enumClassName
+// and enumValueName, as well as fileName are assumed to be constant arrays, so
+// we don't copy the arrays, and just copy the runtime_array structs.
+void runtime_raiseException(const runtime_array *enumClassName, const runtime_array *enumValueName,
+    const runtime_array *filePath, uint32_t line, const runtime_array *format, ...) {
   va_list ap;
   va_start(ap, format);
-  runtime_freeArray(&runtime_errorMessage);
-  runtime_errorMessage = runtime_makeEmptyArray();
-  runtime_vsprintf(&runtime_errorMessage, format, ap);
+  runtime_freeArray(&runtimeException.errorMessage);
+  runtimeException.errorMessage = runtime_makeEmptyArray();
+  runtime_vsprintf(&runtimeException.errorMessage, format, ap);
   va_end(ap);
   if (runtime_firstSetjmpBuffer != NULL) {
+    runtimeException.errorEnumName = *enumClassName;
+    runtimeException.errorValueName = *enumValueName;
+    runtimeException.filePath = *filePath;
+    runtimeException.line = line;
     longjmp(runtime_firstSetjmpBuffer->buf, 1);
   }
   if (runtime_jmpBufSet) {
@@ -209,14 +216,14 @@ void runtime_throwException(const runtime_array *format, ...) {
   }
   runtime_putsCstr("******************** Exception: ");
   runtime_putsCstr("Exception: ");
-  runtime_puts(&runtime_errorMessage);
+  runtime_puts(&runtimeException.errorMessage);
   runtime_putsCstr("\n");
-  runtime_freeArray(&runtime_errorMessage);
+  runtime_freeArray(&runtimeException.errorMessage);
   exitOrLongjmp();
 }
 
 // Throw an exception from C.  For now, just print the message and exit.
-void runtime_throwExceptionCstr(const char *format, ...) {
+void runtime_raiseExceptionCstr(const char *format, ...) {
   if (runtime_jmpBufSet) {
     printf("Expected ");
   }
@@ -232,7 +239,7 @@ void runtime_throwExceptionCstr(const char *format, ...) {
 }
 
 // Throw an overflow exception.
-void runtime_throwOverflow(void) {
+void runtime_raiseOverflow(void) {
   runtime_putsCstr("Exception: overflow\n");
   exitOrLongjmp();
 }
@@ -756,7 +763,7 @@ static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel
         value = *(double*)&floatVal;
       }
     } else {
-      runtime_throwExceptionCstr("Unsupported floating point width: %u", width);
+      runtime_raiseExceptionCstr("Unsupported floating point width: %u", width);
     }
     runtime_array buf = runtime_makeEmptyArray();
     doubleToString(&buf, value);
@@ -940,7 +947,7 @@ void runtime_bigintToString(runtime_array *string, runtime_array *bigint, uint32
     if (negative) {
       runtime_bigintNegate(&r, &r);
       if (runtime_rnBoolToBool(runtime_bigintNegative(&r))) {
-        runtime_throwExceptionCstr("Expected negative remainder");
+        runtime_raiseExceptionCstr("Expected negative remainder");
       }
     }
     uint32_t digit = runtime_bigintToU32(&r);
@@ -1004,7 +1011,7 @@ void runtime_hexToString(runtime_array *destBinString, const runtime_array *sour
   uint64_t numElements = sourceHexString->numElements;
   if (numElements & 1) {
     runtime_freeArray(destBinString);
-    runtime_throwExceptionCstr("Invalid hex string: should have even number of hex digits");
+    runtime_raiseExceptionCstr("Invalid hex string: should have even number of hex digits");
   }
   runtime_resizeArray(destBinString, numElements >> 1, sizeof(uint8_t), false);
   uint8_t *p = (uint8_t*)(destBinString->data);
@@ -1016,10 +1023,10 @@ void runtime_hexToString(runtime_array *destBinString, const runtime_array *sour
     }
     uint8_t lower = *q++;
     if (!isxdigit(lower)) {
-      runtime_throwExceptionCstr("Invalid hex digit: %c", lower);
+      runtime_raiseExceptionCstr("Invalid hex digit: %c", lower);
     }
     if (!isxdigit(upper) || !isxdigit(lower)) {
-      runtime_throwExceptionCstr("Invalid hex digit: ");
+      runtime_raiseExceptionCstr("Invalid hex digit: ");
     }
     *p++ = (fromHex(upper) << 4) | fromHex(lower);
   }

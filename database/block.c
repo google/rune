@@ -263,10 +263,9 @@ static void updateReachability(deStatement statement, bool* canContinue, bool* c
       *canContinue &= subBlockCanContinue;
       break;
     case DE_STATEMENT_TRY:
-    case DE_STATEMENT_CATCH:
+    case DE_STATEMENT_EXCEPT:
       break;
-    case DE_STATEMENT_THROW:
-    case DE_STATEMENT_PANIC:
+    case DE_STATEMENT_RAISE:
       *canContinue = false;
       break;
     case DE_STATEMENT_RETURN:
@@ -314,7 +313,8 @@ void deBlockComputeReachability(deBlock block) {
       deError(deStatementGetLine(statement), "Cannot reach statement");
     }
     deStatementType type = deStatementGetType(statement);
-    if (type == DE_STATEMENT_SWITCH || type == DE_STATEMENT_TYPESWITCH) {
+    if (type == DE_STATEMENT_SWITCH || type == DE_STATEMENT_TYPESWITCH ||
+        type == DE_STATEMENT_EXCEPT) {
       updateSwitchReachability(statement, &canContinue, &canReturn);
     } else {
       updateReachability(statement, &canContinue, &canReturn);

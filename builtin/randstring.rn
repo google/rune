@@ -36,7 +36,7 @@ func findUintMask(n: Uint) {
 
 func randRange(n: Uint) {
   if n == 0 {
-    throw "randRage passed 0"
+    raise Exception.Internal, "randRange passed 0"
   }
   mask = findUintMask(n)
   do {

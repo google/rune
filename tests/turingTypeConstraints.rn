@@ -14,11 +14,11 @@
 
 func countParens(x) -> Uint {
   typeswitch x {
-    () {
+    () => {
       println "x is the empty tuple: ", x
       return 1
     }
-    default {
+    default => {
       println "Recursing with ", x
       return countParens(x[0]) + 1
     }
@@ -68,10 +68,10 @@ func equalsParens(a, b) -> bool {
   }
   typeswitch (a, b) {
     ((), ()) => return true
-    default {
+    default => {
       typeswitch a {
         () => return false
-        default {
+        default => {
           typeswitch b {
             () => return false
             default => return equalsParens(decParens(a), decParens(b))

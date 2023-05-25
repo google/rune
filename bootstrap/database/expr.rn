@@ -179,7 +179,7 @@ func getExprTypeName(type: ExprType) -> string {
     ExprType.Dot => return "."
     ExprType.Index => return "[]"
     ExprType.In => return "in"
-    default => throw "Unexpected expression type"
+    default => raise Exception.Internal, "Unexpected expression type"
   }
 }
 
@@ -449,12 +449,12 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Nullself => text += "null"
       ExprType.Index, ExprType.Typeindex => self.dumpIndex(text)
       ExprType.Slice => self.dumpSlice(text)
-      ExprType.Secret {
+      ExprType.Secret => {
         text += "secret("
         self.firstChildExpr!.dumpToString(text)
         text += ")"
       }
-      ExprType.Reveal {
+      ExprType.Reveal => {
         text += "reveal("
         self.firstChildExpr!.dumpToString(text)
         text += ")"
@@ -490,7 +490,7 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.FloatType => text += "f%u" % self.width
       ExprType.StringType => text += "string"
       ExprType.BoolType => text += "bool"
-      ExprType.Namedparam {
+      ExprType.Namedparam => {
         text += self.firstChildExpr!.val!.symVal!.name + " = "
         self.lastChildExpr!.dumpToString(text)
       }

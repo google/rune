@@ -121,9 +121,22 @@ static char *getFuncptrTypeString(deDatatype datatype) {
   return utSprintf("%s)*", type);
 }
 
+// Return the name of the struct or tuple.
+static char *llGetTupleName(llTuple tuple) {
+  deDatatype datatype = llTupleGetDatatype(tuple);
+  deDatatypeType type = deDatatypeGetType(datatype);
+  if (type == DE_TYPE_STRUCT) {
+    deFunction function = deDatatypeGetFunction(datatype);
+    char *path = deGetBlockPath(deFunctionGetSubBlock(function), true);
+    return utSprintf("%%struct.%s%u", llEscapeIdentifier(path), llTupleGetNum(tuple));
+  }
+  utAssert(type == DE_TYPE_TUPLE);
+  return utSprintf("%%struct.runtime_tuple%u", llTupleGetNum(tuple));
+}
+
 // Write tuple declarations.
 static void writeTupleDecl(llTuple tuple) {
-  fprintf(llAsmFile, "%%struct.runtime_tuple%u = type {", llTupleGetNum(tuple));
+  fprintf(llAsmFile, "%s = type {", llGetTupleName(tuple));
   deDatatype datatype = llTupleGetDatatype(tuple);
   bool firstTime = true;
   deDatatype elementType;
@@ -165,13 +178,17 @@ void llDeclareNewTuples(void) {
 // Return a type string for the tuple.
 static char *getTupleTypeString(deDatatype datatype, bool isDefinition) {
   llTuple tuple = llRootFindTuple(deTheRoot, datatype);
-  if (deDatatypeGetType(datatype) == DE_TYPE_TUPLE) {
-    tuple = declareTuple(datatype);
-  }
+// temp
+//  if (deDatatypeGetType(datatype) == DE_TYPE_TUPLE) {
+//    tuple = declareTuple(datatype);
+//  }
+if (tuple == llTupleNull) {
+  tuple = declareTuple(datatype);
+}
   if (isDefinition) {
-    return utSprintf("%%struct.runtime_tuple%u", llTupleGetNum(tuple));
+    return llGetTupleName(tuple);
   }
-  return utSprintf("%%struct.runtime_tuple%u*", llTupleGetNum(tuple));
+  return utSprintf("%s*", llGetTupleName(tuple));
 }
 
 // This is a CTTK specific function to determine the number of 32-bit words
@@ -231,7 +248,9 @@ static char *getTypeString(deDatatype datatype, bool isDefinition) {
     case DE_TYPE_FUNCPTR:
       return getFuncptrTypeString(datatype);
     case DE_TYPE_STRUCT:
-      return getTupleTypeString(deGetStructTupleDatatype(datatype), isDefinition);
+// temp
+//      return getTupleTypeString(deGetStructTupleDatatype(datatype), isDefinition);
+      return getTupleTypeString(datatype, isDefinition);
     case DE_TYPE_ENUM:
       return utSprintf("i%u", deDatatypeGetWidth(datatype));
     case DE_TYPE_TUPLE:
@@ -334,9 +353,11 @@ static void declareRuntimeFunctions(void) {
       "declare dso_local i%s @runtime_stringFind(%%struct.runtime_array*, %%struct.runtime_array*, i%s)", llSize, llSize));
   createFuncDecl("runtime_stringRfind", utSprintf(
       "declare dso_local i%s @runtime_stringRfind(%%struct.runtime_array*, %%struct.runtime_array*, i%s)", llSize, llSize));
-  createFuncDecl("runtime_throwExceptionCstr", "declare dso_local void @runtime_throwExceptionCstr(i8*, ...) noreturn");
-  createFuncDecl("runtime_throwException", "declare dso_local void @runtime_throwException(%struct.runtime_array*, ...) noreturn");
-  createFuncDecl("runtime_throwOverflow", "declare dso_local void @runtime_throwOverflow() noreturn");
+  createFuncDecl("runtime_raiseExceptionCstr", "declare dso_local void @runtime_raiseExceptionCstr(i8*, ...) noreturn");
+  createFuncDecl("runtime_raiseException", "declare dso_local void @runtime_raiseException("
+    "%struct.runtime_array*, %struct.runtime_array*, %struct.runtime_array*, i32, "
+    "%struct.runtime_array*, ...) noreturn");
+  createFuncDecl("runtime_raiseOverflow", "declare dso_local void @runtime_raiseOverflow() noreturn");
   createFuncDecl("runtime_vsprintf", "declare dso_local void @runtime_vsprintf(%struct.runtime_array*, %struct.runtime_array*, %struct.__va_list_tag*)");
   createFuncDecl("runtime_sprintf", "declare dso_local void @runtime_sprintf(%struct.runtime_array*, %struct.runtime_array*, ...)");
   createFuncDecl("runtime_makeEmptyArray",

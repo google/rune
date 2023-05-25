@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import database.value as va
+import database.bigint as bi
 import database.location as loc
-
+import database.value as val
 use keytab
+use sym
 
 enum TokenType {
   Nonterm
@@ -32,11 +33,13 @@ enum TokenType {
 }
 
 class Token(self, type: TokenType, location: loc.Location, keyword: Keyword? = null(Keyword),
-    value: va.Value? = null(va.Value)) {
+    value: val.Value? = null(val.Value)) {
   self.type = type
   self.location = location
   // We should use a tagged union here.
-  self.keyword = keyword
+  if !isnull(keyword) {
+    keyword!.appendToken(self)
+  }
   self.value = value
 
   // Pass in the text from the lexer.
@@ -48,7 +51,23 @@ class Token(self, type: TokenType, location: loc.Location, keyword: Keyword? = n
   func eof(self) {
     return self.type == TokenType.eof
   }
+
+  // Create a new token from a value.  This works for values like 123u8, and
+  // also for identifiers which are parsed as Sym values, and keywords.
+  func newValueToken(value: string | bool | Int | Uint | bi.Bigint | Float | Sym | Keyword,
+      location: loc.Location) -> Token {
+    typeswitch value {
+      string => return Token(TokenType.String, location, value = val.Value(value))
+      bool => return Token(TokenType.Bool, location, value = val.Value(value))
+      Int, Uint, bi.Bigint => return Token(TokenType.Integer, location, value = val.Value(value))
+      Float => return Token(TokenType.Float, location, value = val.Value(value))
+      Sym  => return Token(TokenType.Ident, location, value = val.Value(value))
+      Keyword  => return Token(TokenType.Keyword, location, keyword = value)
+    }
+  }
 }
+
+relation DoublyLinked Keyword Token cascade
 
 unittest dumpTest {
   filepath = fp.Filepath.new("test_filepath", null(fp.Filepath), false)
@@ -71,8 +90,21 @@ unittest {
 }
 
 unittest eofTest {
-  text = ""
   filepath = fp.Filepath.new("test_filepath", null(fp.Filepath), false)
   token = Token(TokenType.Eof, loc.Location(filepath, 0u32, 0u32, 1u32))
   assert token.type == TokenType.Eof
+}
+
+unittest newValueTokenTest {
+  filepath = fp.Filepath.new("test_filepath", null(fp.Filepath), false)
+  location = loc.Location(filepath, 0u32, 0u32, 1u32)
+  println Token.newValueToken("string token", location)
+  println Token.newValueToken(true, location)
+  println Token.newValueToken(123i8, location)
+  println Token.newValueToken(123456789, location)
+  println Token.newValueToken(bi.Bigint(123), location)
+  println Token.newValueToken(3.14, location)
+  println Token.newValueToken(Sym.new("identifier"), location)
+  keytab = Keytab()
+  println Token.newValueToken(Keyword(keytab, "keyword"), location)
 }

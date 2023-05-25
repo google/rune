@@ -34,7 +34,8 @@ class Integer(self, value: Int | Uint, width = widthof(value)) {
 
   operator +(a: Integer, b: Integer) -> Integer {
     if a.width != b.width || a.isSigned != b.isSigned {
-      throw "Integers have different types: ", a.toHex(), " and ", b.toHex()
+      raise Status.InvalidArgument, "Integers have different types: ",
+          a.toHex(), " and ", b.toHex()
     }
     result = Integer(0u8, a.width)
     len = a.data.length()
@@ -51,11 +52,11 @@ class Integer(self, value: Int | Uint, width = widthof(value)) {
       aSign = a.data[len - 1] >> 7
       bSign = b.data[len - 1] >> 7
       if aSign == bSign && aSign != result.data[len - 1] >> 7 {
-        throw "Signed integer overflow"
+        raise Exception.Overflow, "Signed integer overflow"
       }
     } else if carry != 0u9 {
       // Overflow is just the carry out.
-      throw "Unsigned integer overflow"
+      raise Exception.Overflow, "Unsigned integer overflow"
     }
     return result
   }
