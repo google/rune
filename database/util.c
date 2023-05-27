@@ -116,8 +116,10 @@ void deExprError(deExpression expression, char* format, ...) {
   va_start(ap, format);
   buff = utVsprintf(format, ap);
   va_end(ap);
+  deString string = deStringAlloc();
+  deDumpExpressionStr(string, expression);
   deSetStackTraceGlobals(expression);
-  deError(deExpressionGetLine(expression), "%s", buff);
+  deError(deExpressionGetLine(expression), "%s at %s", buff, deStringGetCstr(string));
 }
 
 // Report an error at a given expression.

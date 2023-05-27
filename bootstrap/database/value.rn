@@ -80,11 +80,15 @@ class Value(self: Value, value: string | bool | Int | Uint | Bigint | Float | Sy
     }
     switch v1.type {
       DatatypeType.String => return v1.stringVal == v2.stringVal
-      DatatypeType.Bool => return v1.stringVal == v2.stringVal
+      DatatypeType.Bool => return v1.boolVal == v2.boolVal
       DatatypeType.Uint, DatatypeType.Int => return v1.intVal! == v2.intVal!
       DatatypeType.Float => return v1.floatVal == v2.floatVal
       DatatypeType.Sym => return v1.symVal == v2.symVal
     }
+  }
+
+  operator != (v1: Value, v2: Value) {
+    return !(v1 == v2)
   }
 }
 
@@ -116,4 +120,13 @@ unittest notEqualTest {
   v1 = Value(1)
   v2 = Value(2)
   println v1 == v2
+}
+
+unittest trueFalseTest {
+  assert Value(true) != Value(false)
+  assert Value(false) != Value(true)
+  assert !(Value(true) == Value(false))
+  assert !(Value(false) == Value(true))
+  assert Value(true) == Value(true)
+  assert Value(false) == Value(false)
 }

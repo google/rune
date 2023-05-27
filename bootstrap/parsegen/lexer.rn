@@ -17,16 +17,12 @@
 import io
 use sym
 
-import database.bigint as bi
-import database.datatype as dt
-import database.filepath as fp
-import database.location as loc
-import database.value as val
+import database as db
 use char
 use keytab
 use token
 
-class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) {
+class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) {
   if filepath.text.length() == 0 {
     if readFile {
       filepath.readFile()
@@ -40,10 +36,11 @@ class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) 
   filepath.insertLexer(self)
 
   func parseToken(self) -> Token {
-    self.skipSpace()
     if self.eof() {
       return self.eofToken()
     }
+    // No further checks for eof are needed because the file always ends in a newline.
+    self.skipSpace()
     self.startPos = self.pos
     char = self.readChar()
     self.checkCharValid(char)
@@ -52,7 +49,7 @@ class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) 
       return self.parseString()
     } else if c == '\'' {
       return self.parseAsciiChar()
-    } else if c >= '0' && c <= '9' {
+    } else if isDigit(c) {
       return self.parseNumber()
     } else if c == '\' {
       return self.parseEscapedIdent()
@@ -66,12 +63,9 @@ class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) 
     }
   }
 
-  // Skip space and comments in the input.
+  // Skip space and comments in the input.  Do not skip newlines.
   func skipSpace(self) {
     do {
-      if self.eof() {
-        return
-      }
       c = self.filepath!.text[self.pos]
     } while c == ' ' || c == '\r' || c == '\t' {
       self.pos += 1
@@ -91,19 +85,20 @@ class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) 
 
   func eofToken(self) {
     assert self.eof()
-    return Token(TokenType.Eof, loc.Location(self.filepath!, self.len, 0u32, self.line))
+    return Token(TokenType.Eof, db.Location(self.filepath!, self.len, 0u32, self.line))
   }
 
   func error(self, msg: string) {
-    location = loc.Location(self.filepath!, self.startPos, self.pos - self.startPos, self.line)
-    location.error(msg)
+    self.location().error(msg)
     raise Status.InvalidArgument
   }
 
   func parseString(self) -> Token {
     s = ""
     do {
-      self.checkNotEof("in string")
+      if self.eof() {
+        self.error("End of file while reading string")
+      }
       char = self.readChar()
       c = self.filepath!.text[char.pos]
     } while c != '"' {
@@ -115,14 +110,12 @@ class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) 
         }
       }
     }
-    location = loc.Location(self.filepath!, self.startPos, self.pos - self.startPos, self.line)
-    return Token.newValueToken(s, location)
+    return Token.newValueToken(s, self.location())
   }
 
   // Read an escaped character.  If in single quotes, escape single quotes,
   // otherwise escape double quotes.
   func readEscapedChar(self, singleQuotes: bool) -> u8 {
-    self.checkNotEof("in character escape sequence")
     char = self.readChar()
     c = self.filepath!.text[char.pos]
     if c == 'a' {
@@ -150,10 +143,8 @@ class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) 
     } else if c == '0' {
       return '\0'
     } else if c == 'x' {
-      self.checkNotEof("in hexadecimal escape sequence")
       char = self.readChar()
       hi = self.filepath!.text[char.pos]
-      self.checkNotEof("in hexadecimal escape sequence")
       char = self.readChar()
       lo = self.filepath!.text[char.pos]
       if !isHexDigit(hi) || !isHexDigit(lo) {
@@ -166,21 +157,14 @@ class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) 
     return '\0'  // Dummy return.
   }
 
-  func checkNotEof(self, desc: string) {
-    if self.eof() {
-      self.error("Unexpected end of file " + desc)
-    }
-  }
-
   func checkCharValid(self, char: Char) {
     if !char.valid {
       self.error("Invalid character")
     }
   }
 
-  // Returns a u8 integer token.
+  // Returns a single quoted char as a u8 integer token.
   func parseAsciiChar(self) -> Token {
-    self.checkNotEof("after single quote")
     char = self.readChar()
     self.checkCharValid(char)
     if char.len != 1 {
@@ -191,11 +175,10 @@ class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) 
       c = self.readEscapedChar(true)
     }
     self.expectChar('\'')
-    return Token.newValueToken(c, loc.Location(self.filepath!, char.pos, 1u32, self.line))
+    return Token.newValueToken(c, db.Location(self.filepath!, char.pos, 1u32, self.line))
   }
 
   func expectChar(self, expectedChar: u8) {
-    self.checkNotEof(", when expecting %s" % chr(expectedChar))
     char = self.readChar()
     c = self.filepath!.text[char.pos]
     if c != expectedChar {
@@ -206,13 +189,9 @@ class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) 
   func parseNumber(self) -> Token {
     self.pos -= 1  // Rewind to start.
     intVal = self.parseRawInteger()
-    if self.eof() {
-      location = loc.Location(self.filepath!, self.startPos, self.pos - self.startPos, self.line)
-      return Token.newValueToken(intVal, location)
-    }
     filepath = self.filepath!
     c = filepath.text[self.pos]
-    if c == '.' || c == 'f' {
+    if c == '.' || c == 'f' || c == 'e' {
       return self.parseFloat(intVal)
     }
     if c == 'x' && self.pos == self.startPos + 1 && filepath.text[self.startPos] == '0' {
@@ -222,13 +201,10 @@ class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) 
     return self.parseIntegerSuffix(intVal)
   }
 
-  func parseIntegerSuffix(self, var intVal: bi.Bigint) -> Token {
+  func parseIntegerSuffix(self, intVal: db.Bigint) -> Token {
     filepath = self.filepath!
-    width = bi.Bigint(64u32)
+    width = db.Bigint(64u32)
     c = filepath.text[self.pos]
-    if c == 'i' {
-      intVal = intVal.cast(intVal.width + 1, true, intVal.isSecret)
-    }
     if c == 'i' || c == 'u' {
       self.pos += 1
       width = self.parseWidthSpec()
@@ -236,20 +212,22 @@ class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) 
     intWidth = <u32>width
     if intVal.width > intWidth {
       newIntVal = intVal.resize(intWidth, true)
-      if newIntVal.resize(intVal.width) != intVal {
+      if newIntVal.resize(newIntVal.width) != intVal {
         self.error("Constant does not fit in integer width")
       }
-      intVal = newIntVal
     } else if intVal.width < intWidth {
-      intVal = intVal.resize(intWidth)
+      newIntVal = intVal.resize(intWidth)
+    } else {
+      newIntVal = intVal
     }
-    location = loc.Location(filepath, self.startPos, self.pos - self.startPos, self.line)
-    return Token.newValueToken(intVal, location)
+    if (c == 'i') {
+      newIntVal = newIntVal.cast(newIntVal.width, true, intVal.isSecret)
+    }
+    return Token.newValueToken(newIntVal, self.location())
   }
 
   func parseWidthSpec(self) {
     filepath = self.filepath!
-    self.checkNotEof("in integer width spec")
     c = filepath.text[self.pos]
     if c < '1' || c > '9' {
       self.error("Invalid integer width spec")
@@ -261,55 +239,115 @@ class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) 
     return newWidth.resize(32u32)
   }
 
+  // Parse a raw integer.  If the first character is not a digit,
+  // returns Bigint(0).  The width is set to the minimum width needed to
+  // fit the unsigned integer.
   func parseRawInteger(self) {
     filepath = self.filepath!
     width = 8u32
-    intVal = bi.Bigint(0u8)
-    while !self.eof() {
+    intVal = db.Bigint(0, width)
+    do {
       c = filepath.text[self.pos]
+    } while isDigit(c) || c == '_' {
       self.pos += 1
       if c != '_' {
-        if c < '0' || c > '9' {
-          self.pos -= 1  // Push the char back into the input steam.
-          return intVal
-        }
         if (intVal << 5u32) >> 5u32 != intVal {
-          width <<= 1
+          width += 8
           intVal = intVal.cast(width, intVal.isSigned, intVal.isSecret, false)
         }
         intVal = (intVal * <intVal>10) + <intVal>(c - '0')
       }
     }
-    return intVal
+    return intVal.shrinkToFit()
+  }
+
+  // Count the number of 0-9 digits in the input stream.
+  func countDigits(self) -> u32 {
+    filepath = self.filepath!
+    numDigits = 0u32
+    while isDigit(filepath.text[self.pos + numDigits]) {
+      numDigits += 1
+    }
+    return numDigits
   }
 
   func parseFloat(self, intVal) -> Token {
-    return self.eofToken()  // TODO: Write me.
+    fracVal = db.Bigint(0)
+    width = 64u32
+    exp = 0i32
+    fracDigits = 0u32
+    filepath = self.filepath!
+    c = filepath.text[self.pos]
+    if c == '.' {
+      self.pos += 1
+      fracDigits = self.countDigits()
+      fracVal = self.parseRawInteger()
+      c = filepath.text[self.pos]
+    }
+    if c == 'e' {
+      negateExp = false
+      if filepath.text[self.pos + 1] == '-' {
+        self.pos += 1
+        negateExp = true
+      }
+      if !isDigit(filepath.text[self.pos]) {
+        self.error("Missing exponent after 'e' in floating point number")
+      }
+      exp = <i32><u32>self.parseRawInteger()
+      if negateExp {
+        exp = -exp
+      }
+    }
+    if c == 'f' {
+      self.pos += 1
+      width = <u32>self.parseRawInteger()
+      if width != 32u32  && width != 64u32 {
+        self.error("Only 32 and 64 bit floating point numbers are currently supported.")
+      }
+    }
+    return self.buildFloatToken(intVal, fracVal, fracDigits, exp, width)
+  }
+
+  func buildFloatToken(self, intVal: db.Bigint, fracVal: db.Bigint, fracDigits: u32,
+      exp: i32, width: u32) {
+    val = <f64><u64>intVal + (<f64><u64>fracVal + 0.5f64) / pow(10.0f64, fracDigits)
+    val = val * pow(10.0f64, exp)
+    return Token.newValueToken(val, self.location())
+
+    // The Rune C compiler needs o be enhanced to support floating point exponentiation.
+    func pow(base, exp) {
+      result = <base>1
+      invert = exp < 0
+      for i in range(invert? -exp : exp) {
+        result *= base
+      }
+      if invert {
+        return 1.0f64 / result
+      }
+      return result
+    }
+  }
+
+  // Return the location from self.startPos to self.pos.
+  func location(self) {
+    return db.Location(self.filepath!, self.startPos, self.pos - self.startPos, self.line)
   }
 
   // Parse the hex chars, but don't parse the width spec.
-  func parseHexInteger(self) -> bi.Bigint {
+  func parseHexInteger(self) -> db.Bigint {
     filepath = self.filepath!
-    intVal = bi.Bigint(0u8)
-    while !self.eof() {
+    intVal = db.Bigint(0u1)
+    width = 0
+    do {
       c = filepath.text[self.pos]
+    } while isHexDigit(c) || c == '_' {
       if c != '_' {
-        if !isHexDigit(c) {
-          return intVal
-        }
-        newIntVal = intVal << 4u32
-        if newIntVal >> 4u32 != intVal {
-          newIntVal = intVal.resize(intVal.width << 1u32) << 4u32
-        }
-        intVal = newIntVal | bi.Bigint(hexDigit(c), newIntVal.width)
+        newIntVal = intVal.resize(intVal.width + 4) << 4u32
+        intVal = newIntVal | db.Bigint(hexDigit(c), newIntVal.width)
       }
       self.pos += 1
     }
-    return intVal
-  }
-
-  func readHex(self) {
-
+    return intVal.shrinkToFit()
   }
 
   func parseEscapedIdent(self) -> Token {
@@ -320,15 +358,38 @@ class Lexer(self, filepath: fp.Filepath, keytab: Keytab, readFile: bool = true) 
     return self.eofToken()  // TODO: Write me.
   }
 
+  // Read up to 3 characters to see if it matches a keyword.
+  // Try longest to shortest.
   func parseNonAlphaKeyword(self, char: Char) -> Token {
-    return self.eofToken()  // TODO: Write me.
+    for i in [3, 2, 1] {
+      keyword = self.tryNonAlphaKeyword(i)
+      if !isnull(keyword) {
+        return Token.newValueToken(keyword!, self.location())
+      }
+      self.pos = self.startPos
+    }
+    self.error("Parser error: keyword not found")
+    return self.eofToken()  // Dummy return.
+
+  }
+
+  // See if a `len` character keyword exists in the keyword table.
+  func tryNonAlphaKeyword(self, len: u64) -> Token {
+    for i in range(len) {
+      char = self.readChar()
+    }
+    text = self.filepath!.text[self.startPos : self.pos]
+// temp
+println "looking up ", text
+    keytab = self.keytab!
+    return keytab.lookup(text)
   }
 }
 
-relation OneToOne fp.Filepath Lexer cascade
+relation OneToOne db.Filepath Lexer cascade
 
 unittest emptyTest {
-  filepath = fp.Filepath("testdata/empty", null(fp.Filepath), false)
+  filepath = db.Filepath("testdata/empty", null(db.Filepath), false)
   keytab = Keytab()
   lexer = Lexer(filepath, keytab, false)
   assert lexer.len == 0
@@ -341,9 +402,10 @@ unittest emptyTest {
 
 unittest {
   func newLexer(text: string) {
-    filepath = fp.Filepath("testdata/empty", null(fp.Filepath), false)
-    filepath.text = text
+    filepath = db.Filepath("testdata/empty", null(db.Filepath), false)
+    filepath.text = text + "\n"
     keytab = Keytab()
+    Keyword(keytab, "\n")
     return Lexer(filepath, keytab, false)
   }
 }
@@ -353,7 +415,7 @@ unittest parseEscapedCharsTest {
   token = lexer.parseToken()
   assert token.type == TokenType.String
   value = token.value!
-  assert value.type == dt.Datatype.String
+  assert value.type == db.Datatype.String
   s = value.stringVal
   assert s[0] == '\x07'  // Bell.
   assert s[1] == '\x08'  // Backspace.
@@ -412,11 +474,9 @@ unittest parseEscapedSingleQuotedCharsTest {
   expRes = ['\x07' /* Bell */, '\x08' /* Backspace */, '\x1b' /* Escape */, '\x0c' /* Formfeed */,
       '\x0a' /* Newline */, '\x0d' /* Return */, '\x09' /* Tab */, '\x0b' /* Vertical tab */,
       '\\', '\'', '\0', '\xde', '\xad']
-  i = 0
-  while !lexer.eof() {
+  for i in range(expRes.length()) {
     token = lexer.parseToken()
-    assert token.type == TokenType.Integer && token.value!.intVal! == bi.Bigint(expRes[i])
-    i += 1
+    assert token.type == TokenType.Integer && token.value!.intVal! == db.Bigint(expRes[i])
   }
   println "Passed escaped chars test"
 }
@@ -425,8 +485,9 @@ unittest parseIntegerTest {
   lexer = newLexer("0 1u2 3i3 57896044618658097711785492504343953926634992332820282019728792003956564819949u256")
   expRes = ["0u64", "1u2", "3i3", "57896044618658097711785492504343953926634992332820282019728792003956564819949u256"]
   i = 0
-  while !lexer.eof() {
+  do {
     token = lexer.parseToken()
+  } while !token.isKeyword("\n") {
     println "token value = ", token.value!.intVal!.toString()
     println "expected    = ", expRes[i]
     assert token.type == TokenType.Integer && token.value!.intVal!.toString() == expRes[i]
@@ -438,14 +499,12 @@ unittest parseIntegerTest {
 unittest parseHexTest {
   lexer = newLexer("0x0 0xau4 0x3i3 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffedu256")
   expRes = ["0u64", "au4", "3i3", "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffedu256"]
-  i = 0
-  while !lexer.eof() {
+  for i in  range(expRes.length()) {
     token = lexer.parseToken()
     intValStr = token.value!.intVal!.toStringInBase(16u32)
     println "token value = ", intValStr
     println "expected    = ", expRes[i]
     assert token.type == TokenType.Integer && intValStr == expRes[i]
-    i += 1
   }
   println "Passed parse integer test"
 }

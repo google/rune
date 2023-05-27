@@ -93,6 +93,10 @@ func upper(c: u8) -> u8 {
   return c
 }
 
+func isDigit(c: u8) -> bool {
+  return c >= '0' && c <= '9'
+}
+
 func isHexDigit(c: u8) -> bool {
   return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
 }
@@ -255,6 +259,13 @@ unittest upperLowerTest {
   assert lower('N') == 'n'
   assert lower('Z') == 'z'
   assert lower(' ') == ' '
+}
+
+unittest digitTest {
+  assert !isDigit('a') && !isDigit('A')
+  assert !isDigit('g') && !isDigit('G')
+  assert isDigit('0') && isDigit('9')
+  assert !isDigit('0' - 1u8) && !isDigit('9' + 1u8)
 }
 
 unittest hexTest {

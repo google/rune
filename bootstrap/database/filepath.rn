@@ -63,6 +63,10 @@ class Filepath(self, path: string, parent: Filepath?, isPackage: bool) {
       raise Status.NotFound, "Unable to read file ", self.sym.name
     }
     self.text = file!.read()
+    // Append a newline at the end if missing.
+    if self.text.length() == 0 || self.text[self.text.length() - 1] != '\n' {
+      self.text.append('\n')
+    }
   }
 }
 

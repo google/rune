@@ -146,6 +146,21 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
     return self.cast(self.width, isSigned, self.isSecret, truncate)
   }
 
+  func shrinkToFit(self) {
+    intVal = self.copy()
+    if intVal == Bigint(0, intVal.width) {
+      return Bigint(0, 1u32)
+    }
+    while (intVal << 1u32) >> 1u32 == intVal {
+      intVal = intVal.cast(intVal.width - 1u32, intVal.isSigned, intVal.isSecret, false)
+    }
+    return intVal
+  }
+
+  func copy(self) {
+    return Bigint(self.bigint)
+  }
+
   // Overload the + operator.
   operator + (a: Bigint, b: Bigint) -> Bigint {
     if a.width != b.width || a.isSigned != b.isSigned {
@@ -329,14 +344,12 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
           panic "Bigint does not fit in ", widthof(a), " bits"
         }
         typeswitch a {
-          Uint => {
-          }
-          Int => {
-            val = val.toSigned()
-          }
+          Uint => val = val.toSigned(false)
+          Int => val = val.toSigned(true)
         }
         s = val.toStringLE()
-        return s.toUintLE(typeof(a))
+        result = s.toUintLE(typeof(unsigned(a)))
+        return !<a>result
       }
     }
   }
@@ -371,6 +384,8 @@ unittest testCasting {
   assert isnull(e)
   f = <b>a + b
   println "f = ", f
+  println "<i32>f = ", <i32>f
+  println "-<i32>f = ", -<i32>f
 }
 
 // Test comparison operators.
@@ -487,4 +502,10 @@ unittest testToSigned {
   signedVal = -signedVal
   println signedVal
   assert (-signedVal).toSigned(false) == val
+}
+
+unittest testShirnkToFit {
+  assert Bigint(0).shrinkToFit() == Bigint(0, 1u32)
+  assert Bigint(0x1ffu32).shrinkToFit() == Bigint(0x1ffu9)
+  assert Bigint(0x1ffu9).width == 9
 }

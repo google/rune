@@ -66,9 +66,9 @@ extern "C" func bigintModularDiv(a: BigintArray, b: BigintArray, modulus: Bigint
 extern "C" func bigintModularExp(base: BigintArray, exponent: BigintArray, modulus: BigintArray) -> BigintArray
 extern "C" func bigintModularNegate(a: BigintArray, modulus: BigintArray) -> BigintArray
 extern "C" func bigintModularInverse(var dest: BigintArray, source: BigintArray, modulus: BigintArray) -> bool
-extern "C" func bigintEncodeLittleEndian(var byteArray: string, source: BigintArray);
-extern "C" func bigintEncodeBigEndian(var byteArray: string, source: BigintArray);
+extern "C" func bigintEncodeLittleEndian(var byteArray: string, source: BigintArray)
+extern "C" func bigintEncodeBigEndian(var byteArray: string, source: BigintArray)
 extern "C" func bigintDecodeLittleEndian(var dest: BigintArray, byteArray: string,
-    width: u32, isSigned: bool, isSecret: bool);
+    width: u32, isSigned: bool, isSecret: bool)
 extern "C" func bigintDecodeBigEndian(var dest: BigintArray, byteArray: string,
-    width: u32, isSigned: bool, isSecret: bool);
+    width: u32, isSigned: bool, isSecret: bool)

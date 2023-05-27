@@ -14,7 +14,7 @@
 
 import io
 
-import database.filepath as fp
+import database as db
 use char
 use keytab
 use lexer
@@ -29,7 +29,7 @@ func parseRules(fileName: string) -> Parser {
 
 class Parser(self, fileName: string) {
   keytab = buildKeywordTable()
-  filepath = fp.Filepath("test/path", null(fp.Filepath), false)
+  filepath = db.Filepath("test/path", null(db.Filepath), false)
   lexer = Lexer(filepath, keytab)
   self.insertLexer(lexer)
 

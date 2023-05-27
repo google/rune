@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import database.bigint as bi
-import database.location as loc
-import database.value as val
+import database as db
 use keytab
 use sym
 
@@ -32,8 +30,8 @@ enum TokenType {
   UintType
 }
 
-class Token(self, type: TokenType, location: loc.Location, keyword: Keyword? = null(Keyword),
-    value: val.Value? = null(val.Value)) {
+class Token(self, type: TokenType, location: db.Location, keyword: Keyword? = null(Keyword),
+    value: db.Value? = null(db.Value)) {
   self.type = type
   self.location = location
   // We should use a tagged union here.
@@ -47,6 +45,21 @@ class Token(self, type: TokenType, location: loc.Location, keyword: Keyword? = n
     self.location.dump()
   }
 
+  func isValue(self, value: string | bool | Int | Uint | db.Bigint | Float | Sym) -> bool {
+    if isnull(self.value) {
+      return false
+    }
+    v = db.Value(value)
+    return v == self.value!
+  }
+
+  func isKeyword(self, name: string) -> bool {
+    if isnull(self.keyword) {
+      return false
+    }
+    return Sym.new(name) == self.keyword!.sym
+  }
+
   // Return true if this is the eof token.
   func eof(self) {
     return self.type == TokenType.eof
@@ -54,14 +67,14 @@ class Token(self, type: TokenType, location: loc.Location, keyword: Keyword? = n
 
   // Create a new token from a value.  This works for values like 123u8, and
   // also for identifiers which are parsed as Sym values, and keywords.
-  func newValueToken(value: string | bool | Int | Uint | bi.Bigint | Float | Sym | Keyword,
-      location: loc.Location) -> Token {
+  func newValueToken(value: string | bool | Int | Uint | db.Bigint | Float | Sym | Keyword,
+      location: db.Location) -> Token {
     typeswitch value {
-      string => return Token(TokenType.String, location, value = val.Value(value))
-      bool => return Token(TokenType.Bool, location, value = val.Value(value))
-      Int, Uint, bi.Bigint => return Token(TokenType.Integer, location, value = val.Value(value))
-      Float => return Token(TokenType.Float, location, value = val.Value(value))
-      Sym  => return Token(TokenType.Ident, location, value = val.Value(value))
+      string => return Token(TokenType.String, location, value = db.Value(value))
+      bool => return Token(TokenType.Bool, location, value = db.Value(value))
+      Int, Uint, db.Bigint => return Token(TokenType.Integer, location, value = db.Value(value))
+      Float => return Token(TokenType.Float, location, value = db.Value(value))
+      Sym  => return Token(TokenType.Ident, location, value = db.Value(value))
       Keyword  => return Token(TokenType.Keyword, location, keyword = value)
     }
   }
@@ -72,11 +85,11 @@ relation DoublyLinked Keyword Token cascade
 unittest dumpTest {
   filepath = fp.Filepath.new("test_filepath", null(fp.Filepath), false)
   filepath.text = "first line\nsecond line"
-  token1 = Token(TokenType.Ident, loc.Location(filepath, 0u32, 5u32, 1u32))
-  token2 = Token(TokenType.Ident, loc.Location(filepath, 6u32, 4u32, 1u32))
-  newline = Token(TokenType.Keyword, loc.Location(filepath, 10u32, 1u32, 1u32))
-  token3 = Token(TokenType.Ident, loc.Location(filepath, 11u32, 6u32, 2u32))
-  token4 = Token(TokenType.Ident, loc.Location(filepath, 18u32, 4u32, 2u32))
+  token1 = Token(TokenType.Ident, db.Location(filepath, 0u32, 5u32, 1u32))
+  token2 = Token(TokenType.Ident, db.Location(filepath, 6u32, 4u32, 1u32))
+  newline = Token(TokenType.Keyword, db.Location(filepath, 10u32, 1u32, 1u32))
+  token3 = Token(TokenType.Ident, db.Location(filepath, 11u32, 6u32, 2u32))
+  token4 = Token(TokenType.Ident, db.Location(filepath, 18u32, 4u32, 2u32))
   token1.dump()
   token2.dump()
   newline.dump()
@@ -91,20 +104,34 @@ unittest {
 
 unittest eofTest {
   filepath = fp.Filepath.new("test_filepath", null(fp.Filepath), false)
-  token = Token(TokenType.Eof, loc.Location(filepath, 0u32, 0u32, 1u32))
+  token = Token(TokenType.Eof, db.Location(filepath, 0u32, 0u32, 1u32))
   assert token.type == TokenType.Eof
 }
 
 unittest newValueTokenTest {
   filepath = fp.Filepath.new("test_filepath", null(fp.Filepath), false)
-  location = loc.Location(filepath, 0u32, 0u32, 1u32)
+  location = db.Location(filepath, 0u32, 0u32, 1u32)
   println Token.newValueToken("string token", location)
   println Token.newValueToken(true, location)
   println Token.newValueToken(123i8, location)
   println Token.newValueToken(123456789, location)
-  println Token.newValueToken(bi.Bigint(123), location)
+  println Token.newValueToken(db.Bigint(123), location)
   println Token.newValueToken(3.14, location)
   println Token.newValueToken(Sym.new("identifier"), location)
   keytab = Keytab()
   println Token.newValueToken(Keyword(keytab, "keyword"), location)
+}
+
+unittest isTest {
+  filepath = fp.Filepath.new("test_filepath", null(fp.Filepath), false)
+  location = db.Location(filepath, 0u32, 0u32, 1u32)
+  assert Token.newValueToken("string token", location).isValue("string token")
+  assert !Token.newValueToken("string token", location).isValue("bad token")
+  assert Token.newValueToken(true, location).isValue(true)
+  assert !Token.newValueToken(true, location).isValue(false)
+  assert Token.newValueToken(123i8, location).isValue(123i8)
+  assert Token.newValueToken(123456789, location).isValue(123456789)
+  assert Token.newValueToken(db.Bigint(123), location).isValue(db.Bigint(123))
+  assert Token.newValueToken(3.14, location).isValue(3.14)
+  assert Token.newValueToken(Sym.new("identifier"), location).isValue(Sym.new("identifier"))
 }
