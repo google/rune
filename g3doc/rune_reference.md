@@ -1001,8 +1001,6 @@ exp ::=
 
 <em>args</em> ::= (<em>ID</em> <b>=</b>)? <em>exp</em> (<b>,</b> (<em>ID</em> <b>=</b>)? <em>exp</em>)*
 
-<em>tyexp</em> ::= UINTTYPE | INTTYPE | <b>string</b> | <b>bool</b> | <b>f32</b> | <b>f64</b>
-
 <em>pathexp</em> ::= <em>ID</em> (<b>.</b> <em>ID</em>)*
 
 <em>tupleexp</em> ::=
@@ -1020,6 +1018,28 @@ exp ::=
 <em>assignop</em> ::= <b>=</b> | <b>+=</b> | <b>-=</b> | <b>*=</b> | <b>/=</b> | <b>%=</b> | <b>&=</b> | <b>|=</b> | <b>^=</b>
     | <b>&&=</b> | <b>||=</b> | <b>^^=</b> | <b>**=</b> | <b><<=</b> | <b>>>=</b> | <b><<<=</b> | <b>>>>=</b> | <b>!+=</b> | <b>!-=</b> | <b>!*=</b>
 
+<em>tyexp</em> ::=
+      <em>tyexp</em> <b>|</b> <em>tyexp</em>
+    | <em>typrim</em>
+      
+<em>tyexplist</em> ::= <em>tyexp</em> (<b>,</b> <em>tyexp</em>)*
+
+<em>typrim</em> ::=
+    | <em>tyliteral</em> <b>...</b> <em>tyliteral</em>
+    | <em>pathexp</em> (<b><</b> <em>tyexplist</em> <b>></b>)? (<b>?</b>)?
+    | <b>[</b> <em>typrimlist</em> <b>]</b>
+    | <b>(</b> <em>typrimlist</em> <b>)</b>
+    | <b>(</b> <b>)</b>
+    | <b>typeof</b> <b>(</b> <em>exp</em> <b>)</b>
+    | <b>unsigned</b> <b>(</b> <em>exp</em> <b>)</b>
+    | <b>signed</b> <b>(</b> <em>exp</em> <b>)</b>
+    | <b>secret</b> <b>(</b> <em>typrim</em> <b>)</b>
+    | <em>tyliteral</em>
+
+<em>typrimlist</em> ::= <em>typrim</em> (<b>,</b> <em>typrim</em>)*
+
+<em>tyliteral</em> ::=            
+    UINTTYPE | INTTYPE | <b>string</b> | <b>bool</b> | <b>f32</b> | <b>f64</b>
 
 </pre>
 

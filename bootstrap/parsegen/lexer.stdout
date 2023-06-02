@@ -12,9 +12,9 @@ File testdata/empty, line 1: Invalid escape sequence
 "\z"
   ^
 Caught invalid escape sequence
-File testdata/empty, line 1: Unexpected end of file in string
+File testdata/empty, line 1: End of file while reading string
 "no end quote
-^^^^^^^^^^^^^
+^^^^^^^^^^^^^^
 Caught unexpected end of file
 Passed bad input test
 Passed escaped chars test
@@ -36,3 +36,42 @@ expected    = 3i3
 token value = 7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffedu256
 expected    = 7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffedu256
 Passed parse integer test
+token value = 0.0
+expected    = 0.0
+token value = 3.14
+expected    = 3.14
+token value = 9.99e2
+expected    = 9.99e2
+token value = 2.4e-24
+expected    = 2.4e-24
+token value = 1.234568e8
+expected    = 1.234568e8
+Passed parse float test
+token value = if
+expected    = if
+token value = +
+expected    = +
+token value = test
+expected    = test
+Passed parse escaped ident test
+token value = schön
+expected    = schön
+token value = a123
+expected    = a123
+token value = test
+expected    = test
+Passed parse ident test
+token value = sch_ön
+expected    = sch_ön
+token value = a1_23
+expected    = a1_23
+token value = _test
+expected    = _test
+Passed parse enable underscores test
+token value = u32
+expected    = u32
+token value = i6
+expected    = i6
+token value = rand1024
+expected    = rand1024
+Passed u|i|rand test

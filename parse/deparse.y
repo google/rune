@@ -1874,145 +1874,145 @@ dotDotDotExpression: selectExpression KWDOTDOTDOT selectExpression
 | selectExpression
 
 selectExpression: orExpression
-| orExpression '?' orExpression ':' orExpression
+| orExpression '?' optNewlines orExpression ':' optNewlines orExpression
 {
   deExpression expr = deExpressionCreate(DE_EXPR_SELECT, $2);
   deExpressionAppendExpression(expr, $1);
-  deExpressionAppendExpression(expr, $3);
-  deExpressionAppendExpression(expr, $5);
+  deExpressionAppendExpression(expr, $4);
+  deExpressionAppendExpression(expr, $7);
   $$ = expr;
 }
 
 orExpression: xorExpression
-| orExpression KWOR xorExpression
+| orExpression KWOR optNewlines xorExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_OR, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_OR, $1, $4, $2);
 }
 
 xorExpression: andExpression
-| xorExpression KWXOR andExpression
+| xorExpression KWXOR optNewlines andExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_XOR, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_XOR, $1, $4, $2);
 }
 
 andExpression: inExpression
-| andExpression KWAND inExpression
+| andExpression KWAND optNewlines inExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_AND, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_AND, $1, $4, $2);
 }
 
 inExpression: modExpression
-| modExpression KWIN modExpression
+| modExpression KWIN optNewlines modExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_IN, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_IN, $1, $4, $2);
 }
 
 modExpression: relationExpression
-| relationExpression KWMOD bitorExpression
+| relationExpression KWMOD optNewlines bitorExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_MODINT, $1, $3, deExpressionGetLine($1));
+  $$ = deBinaryExpressionCreate(DE_EXPR_MODINT, $1, $4, deExpressionGetLine($1));
 }
 
 relationExpression: bitorExpression
-| bitorExpression '<' bitorExpression
+| bitorExpression '<' optNewlines bitorExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_LT, $1, $3, deExpressionGetLine($1));
+  $$ = deBinaryExpressionCreate(DE_EXPR_LT, $1, $4, deExpressionGetLine($1));
 }
-| bitorExpression KWLE bitorExpression
+| bitorExpression KWLE optNewlines bitorExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_LE, $1, $3, deExpressionGetLine($1));
+  $$ = deBinaryExpressionCreate(DE_EXPR_LE, $1, $4, deExpressionGetLine($1));
 }
-| bitorExpression '>' bitorExpression
+| bitorExpression '>' optNewlines bitorExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_GT, $1, $3, deExpressionGetLine($1));
+  $$ = deBinaryExpressionCreate(DE_EXPR_GT, $1, $4, deExpressionGetLine($1));
 }
-| bitorExpression KWGE bitorExpression
+| bitorExpression KWGE optNewlines bitorExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_GE, $1, $3, deExpressionGetLine($1));
+  $$ = deBinaryExpressionCreate(DE_EXPR_GE, $1, $4, deExpressionGetLine($1));
 }
-| bitorExpression KWEQUAL bitorExpression
+| bitorExpression KWEQUAL optNewlines bitorExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_EQUAL, $1, $3, deExpressionGetLine($1));
+  $$ = deBinaryExpressionCreate(DE_EXPR_EQUAL, $1, $4, deExpressionGetLine($1));
 }
-| bitorExpression KWNOTEQUAL bitorExpression
+| bitorExpression KWNOTEQUAL optNewlines bitorExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_NOTEQUAL, $1, $3, deExpressionGetLine($1));
+  $$ = deBinaryExpressionCreate(DE_EXPR_NOTEQUAL, $1, $4, deExpressionGetLine($1));
 }
 
 bitorExpression: bitxorExpression
-| bitorExpression '|' bitxorExpression
+| bitorExpression '|' optNewlines bitxorExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_BITOR, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_BITOR, $1, $4, $2);
 }
 
 bitxorExpression: bitandExpression
-| bitxorExpression '^' bitandExpression
+| bitxorExpression '^' optNewlines bitandExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_BITXOR, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_BITXOR, $1, $4, $2);
 }
 
 bitandExpression: shiftExpression
-| bitandExpression '&' shiftExpression
+| bitandExpression '&' optNewlines shiftExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_BITAND, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_BITAND, $1, $4, $2);
 }
 
 shiftExpression: addExpression
-| addExpression KWSHL addExpression
+| addExpression KWSHL optNewlines addExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_SHL, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_SHL, $1, $4, $2);
 }
-| addExpression KWSHR addExpression
+| addExpression KWSHR optNewlines addExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_SHR, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_SHR, $1, $4, $2);
 }
-| addExpression KWROTL addExpression
+| addExpression KWROTL optNewlines addExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_ROTL, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_ROTL, $1, $4, $2);
 }
-| addExpression KWROTR addExpression
+| addExpression KWROTR optNewlines addExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_ROTR, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_ROTR, $1, $4, $2);
 }
 
 addExpression: mulExpression
-| addExpression '+' mulExpression
+| addExpression '+' optNewlines mulExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_ADD, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_ADD, $1, $4, $2);
 }
-| addExpression '-' mulExpression
+| addExpression '-' optNewlines mulExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_SUB, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_SUB, $1, $4, $2);
 }
 | KWSUBTRUNC mulExpression
 {
   $$ = deUnaryExpressionCreate(DE_EXPR_NEGATETRUNC, $2, $1);
 }
-| addExpression KWADDTRUNC mulExpression
+| addExpression KWADDTRUNC optNewlines mulExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_ADDTRUNC, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_ADDTRUNC, $1, $4, $2);
 }
-| addExpression KWSUBTRUNC mulExpression
+| addExpression KWSUBTRUNC optNewlines mulExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_SUBTRUNC, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_SUBTRUNC, $1, $4, $2);
 }
 
 mulExpression: prefixExpression
-| mulExpression '*' prefixExpression
+| mulExpression '*' optNewlines prefixExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_MUL, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_MUL, $1, $4, $2);
 }
-| mulExpression '/' prefixExpression
+| mulExpression '/' optNewlines prefixExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_DIV, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_DIV, $1, $4, $2);
 }
-| mulExpression '%' prefixExpression
+| mulExpression '%' optNewlines prefixExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_MOD, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_MOD, $1, $4, $2);
 }
-| mulExpression KWMULTRUNC prefixExpression
+| mulExpression KWMULTRUNC optNewlines prefixExpression
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_MULTRUNC, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_MULTRUNC, $1, $4, $2);
 }
 
 prefixExpression: exponentiateExpression
@@ -2028,7 +2028,7 @@ prefixExpression: exponentiateExpression
 {
   $$ = deUnaryExpressionCreate(DE_EXPR_NEGATE, $2, $1);
 }
-| '<' typeExpression  '>' prefixExpression
+| '<' typeExpression '>' prefixExpression
 {
   $$ = deBinaryExpressionCreate(DE_EXPR_CAST, $2, $4, $1);
 }
@@ -2038,28 +2038,28 @@ prefixExpression: exponentiateExpression
 }
 
 exponentiateExpression: accessExpression
-| accessExpression KWEXP exponentiateExpression  // Binds right to left.
+| accessExpression KWEXP optNewlines exponentiateExpression  // Binds right to left.
 {
-  $$ = deBinaryExpressionCreate(DE_EXPR_EXP, $1, $3, $2);
+  $$ = deBinaryExpressionCreate(DE_EXPR_EXP, $1, $4, $2);
 }
 
 // These expresions are known to return integer or Boolean values,
 // and can be treated like tokens.
-returnsTokenExpression: KWUNSIGNED '(' expression ')'
+returnsTokenExpression: KWUNSIGNED '(' optNewlines expression ')'
 {
-  $$ = deUnaryExpressionCreate(DE_EXPR_UNSIGNED, $3, $1);
+  $$ = deUnaryExpressionCreate(DE_EXPR_UNSIGNED, $4, $1);
 }
-| KWSIGNED '(' expression ')'
+| KWSIGNED '(' optNewlines expression ')'
 {
-  $$ = deUnaryExpressionCreate(DE_EXPR_SIGNED, $3, $1);
+  $$ = deUnaryExpressionCreate(DE_EXPR_SIGNED, $4, $1);
 }
-| KWWIDTHOF '(' expression ')'
+| KWWIDTHOF '(' optNewlines expression ')'
 {
-  $$ = deUnaryExpressionCreate(DE_EXPR_WIDTHOF, $3, $1);
+  $$ = deUnaryExpressionCreate(DE_EXPR_WIDTHOF, $4, $1);
 }
-| KWISNULL '(' expression ')'
+| KWISNULL '(' optNewlines expression ')'
 {
-  $$ = deUnaryExpressionCreate(DE_EXPR_ISNULL, $3, $1);
+  $$ = deUnaryExpressionCreate(DE_EXPR_ISNULL, $4, $1);
 }
 
 typeLiteral: UINTTYPE

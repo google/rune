@@ -151,6 +151,9 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
     if intVal == Bigint(0, intVal.width) {
       return Bigint(0, 1u32)
     }
+    // TODO: Enhance CTTK to provide functions to make this more efficient,
+    // and plumb that to the runtime Rune package, and improve the efficiency
+    // of this loop.
     while (intVal << 1u32) >> 1u32 == intVal {
       intVal = intVal.cast(intVal.width - 1u32, intVal.isSigned, intVal.isSecret, false)
     }
@@ -343,13 +346,12 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
         if val.resize(b.width) != b {
           panic "Bigint does not fit in ", widthof(a), " bits"
         }
-        typeswitch a {
-          Uint => val = val.toSigned(false)
-          Int => val = val.toSigned(true)
-        }
         s = val.toStringLE()
-        result = s.toUintLE(typeof(unsigned(a)))
-        return !<a>result
+        unsignedVal = s.toUintLE(typeof(unsigned(a)))
+        typeswitch a {
+          Uint => return unsignedVal
+          Int => return signed(unsignedVal)
+        }
       }
     }
   }

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 // This is enough info to describe the position of one UTF-8 character.
+// TODO: When array slice refs are supported, have Char include a slice.
 struct Char {
   pos: u32
   len: u8
@@ -72,10 +73,11 @@ func isAscii(text: string, pos:u32) {
   return text[pos] < 128
 }
 
-func isAsciiAlpha(c: Char) {
-  if c.len != 1 {
+func isAsciiAlpha(text: string, char: Char) {
+  if char.len != 1 {
     return false
   }
+  c = text[char.pos]
   return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
@@ -91,6 +93,11 @@ func upper(c: u8) -> u8 {
     return c - 'a' + 'A'
   }
   return c
+}
+
+// Return true if `c` is a legal whitespace character in a Rune file.
+func isWhitespace(c) {
+  return c == ' ' || c == '\t' || c == '\r'
 }
 
 func isDigit(c: u8) -> bool {
@@ -274,4 +281,14 @@ unittest hexTest {
   assert isHexDigit('0') && isHexDigit('9')
   assert hexToChar('c', '5') == 0xc5
   assert hexDigit('a') == 0xa && hexDigit('A') == 0xa
+}
+
+unittest whitespaceTest {
+  assert !isWhitespace('\e')
+  assert !isWhitespace('\0')
+  assert !isWhitespace('_')
+  assert isWhitespace(' ')
+  assert !isWhitespace('\n')
+  assert isWhitespace('\r')
+  assert isWhitespace('\t')
 }
