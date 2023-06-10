@@ -411,7 +411,7 @@ static llElement indexTuple(llElement tuple, uint32 index, bool getRef) {
   llPrintf("getelementptr inbounds %s, %s* %s, i32 0, i32 %u\n",
       typeString, typeString, llElementGetName(tuple), index);
   llElement element = createValueElement(elementType, value, true);
-  if (!getRef && !llDatatypePassedByReference(datatype)) {
+  if (!getRef && !llDatatypePassedByReference(elementType)) {
     derefElement(&element);
   }
   return element;
@@ -1319,6 +1319,17 @@ static void generateOperatorOverloadCall(deExpression expression, deSignature si
   }
 }
 
+// Generate an LLVM instruction for a binary operation.
+static void generateBasicBinaryOp(char *op, llElement leftElement, llElement rightElement) {
+  deDatatype datatype = llElementGetDatatype(leftElement);
+  char *type = llGetTypeString(datatype, false);
+  uint32 value = printNewValue();
+  llPrintf("%s %s %s, %s%s\n", op, type,
+      llElementGetName(leftElement), llElementGetName(rightElement),
+      locationInfo());
+  pushValue(datatype, value, false);
+}
+
 // Generate code for a binary expression.
 static void generateBinaryExpression(deExpression expression, char *op) {
   deSignature signature = deExpressionGetSignature(expression);
@@ -1343,12 +1354,7 @@ static void generateBinaryExpression(deExpression expression, char *op) {
     generateXorStringsExpression(leftElement, rightElement);
     return;
   }
-  char *type = llGetTypeString(datatype, false);
-  uint32 value = printNewValue();
-  llPrintf("%s %s %s, %s%s\n", op, type,
-      llElementGetName(leftElement), llElementGetName(rightElement),
-      locationInfo());
-  pushValue(datatype, value, false);
+  generateBasicBinaryOp(op, leftElement, rightElement);
 }
 
 // Return the LLVM name for the trucating expression.
@@ -1500,52 +1506,151 @@ static void generateArrayComparison(llElement left, llElement right, runtime_com
   pushValue(deBoolDatatypeCreate(), value, false);
 }
 
-// Generate code to compare two arrays.
-static void generateArrayRelationalExpression(deExpression expression,
-    runtime_comparisonType compareType) {
-  deExpression left = deExpressionGetFirstExpression(expression);
-  deExpression right = deExpressionGetNextExpression(left);
-  generateExpression(left);
-  llElement leftElement = popElement(true);
-  generateExpression(right);
-  llElement rightElement = popElement(true);
-  generateArrayComparison(leftElement, rightElement, compareType);
+// Determine if the expression is comparing arrays.
+static bool isArrayComparison(llElement leftElement) {
+  return llDatatypeIsArray(llElementGetDatatype(leftElement));
 }
 
-// Determine if the expression is comparing arrays.
-static bool isArrayComparison(deExpression expression) {
-  deExpression left = deExpressionGetFirstExpression(expression);
-  return llDatatypeIsArray(deExpressionGetDatatype(left));
+// Compute the logical AND of two elements.
+static llElement computeLogicalAnd(llElement left, llElement right) {
+  generateBasicBinaryOp("and", left, right);
+  return popElement(true);
+}
+
+// Compute the logical OR of two elements.
+static llElement computeLogicalOr(llElement left, llElement right) {
+  generateBasicBinaryOp("or", left, right);
+  return popElement(true);
+}
+
+// Forward declaration for recursion.
+static void generateComparison(llElement leftElement, llElement rightElement,
+    runtime_comparisonType type);
+
+// Generate a tuple relational expression.  Compare elements one at a time.
+static void generateTupleComparison(llElement leftElement, llElement rightElement,
+    runtime_comparisonType type) {
+  deDatatype datatype = llElementGetDatatype(leftElement);
+  llElement finalResult = llMakeEmptyElement();
+  for (uint32 i = 0; i < deDatatypeGetNumTypeList(datatype); i++) {
+    llElement leftSubElement = indexTuple(leftElement, i, false);
+    llElement rightSubElement = indexTuple(rightElement, i, false);
+    generateComparison(leftSubElement, rightSubElement, type);
+    llElement result = popElement(true);
+    if (i == 0) {
+      finalResult = result;
+    } else  {
+      switch (type) {
+      case RN_LT:
+      case RN_LE:
+      case RN_GT:
+      case RN_GE:
+        utExit("Tuple comparison not yet implemented");
+      case RN_EQUAL:
+        // TODO: if secret generate an optimizer-safe version.
+        finalResult = computeLogicalAnd(finalResult, result);
+        break;
+      case RN_NOTEQUAL:
+        // TODO: if secret generate an optimizer-safe version.
+        finalResult = computeLogicalOr(finalResult, result);
+        break;
+      }
+    }
+  }
+  pushElement(finalResult, false);
+}
+
+// Determine if the expression is comparing tuples.
+static bool isTupleComparison(llElement leftElement) {
+  return deDatatypeGetType(llElementGetDatatype(leftElement)) == DE_TYPE_TUPLE;
+}
+
+// Find the LLVM instruction for the for the basic comparison.
+static char *findBasicComparisonInstruction(deDatatype datatype, runtime_comparisonType type) {
+  switch (type) {
+    case RN_LT:
+      if (deDatatypeIsFloat(datatype)) {
+        return "fcmp olt";
+      } else if (deDatatypeGetType(datatype) == DE_TYPE_INT) {
+        return "icmp slt";
+      }
+      return "icmp ult";
+    case RN_LE:
+      if (deDatatypeIsFloat(datatype)) {
+        return "fcmp ole";
+      } else if (deDatatypeGetType(datatype) == DE_TYPE_INT) {
+        return "icmp sle";
+      }
+      return "icmp ule";
+    case RN_GT:
+      if (deDatatypeIsFloat(datatype)) {
+        return "fcmp ogt";
+      } else if (deDatatypeGetType(datatype) == DE_TYPE_INT) {
+        return "icmp sgt";
+      }
+      return "icmp ugt";
+    case RN_GE:
+      if (deDatatypeIsFloat(datatype)) {
+        return "fcmp oge";
+      } else if (deDatatypeGetType(datatype) == DE_TYPE_INT) {
+        return "icmp sge";
+      }
+      return "icmp uge";
+    case RN_EQUAL:
+      if (deDatatypeIsFloat(datatype)) {
+        return "fcmp oeq";
+      }
+      return "icmp eq";
+    case RN_NOTEQUAL:
+      if (deDatatypeIsFloat(datatype)) {
+        return "fcmp one";
+      }
+      return "icmp ne";
+  }
+  return NULL;  // Dummy return.
 }
 
 // Generate code for a relational expression.
-static void generateComparison(llElement left, llElement right, char *op) {
+static void generateBasicComparison(llElement left, llElement right, runtime_comparisonType type) {
   deDatatype retDatatype = deBoolDatatypeCreate();
-  char *typeString = llGetTypeString(llElementGetDatatype(left), false);
+  deDatatype datatype = llElementGetDatatype(left);
+  char *typeString = llGetTypeString(datatype, false);
   uint32 value = printNewValue();
-  llPrintf("%s %s %s, %s%s\n", op, typeString,
+  char *instruction = findBasicComparisonInstruction(datatype, type);
+  llPrintf("%s %s %s, %s%s\n", instruction, typeString,
       llElementGetName(left), llElementGetName(right), locationInfo());
   pushValue(retDatatype, value, false);
 }
 
-// Generate code for a binary expression.
-static void generateRelationalExpression(deExpression expression, char *op) {
+// Generate a comparison for the two elements.
+static void generateComparison(llElement leftElement, llElement rightElement,
+    runtime_comparisonType type) {
+  if (isArrayComparison(leftElement)) {
+    generateArrayComparison(leftElement, rightElement, type);
+    return;
+  }
+  if (isTupleComparison(leftElement)) {
+    generateTupleComparison(leftElement, rightElement, type);
+    return;
+  }
+  generateBasicComparison(leftElement, rightElement, type);
+}
+
+// Generate code for a relational expression.
+static void generateRelationalExpression(deExpression expression) {
   deSignature signature = deExpressionGetSignature(expression);
   if (signature != deSignatureNull) {
     generateOperatorOverloadCall(expression, signature);
     return;
   }
-  if (isArrayComparison(expression)) {
-    generateArrayRelationalExpression(expression, findBigintComparisonType(expression));
-    return;
-  }
   deExpression left = deExpressionGetFirstExpression(expression);
   deExpression right = deExpressionGetNextExpression(left);
   generateExpression(left);
   llElement leftElement = popElement(true);
   generateExpression(right);
   llElement rightElement = popElement(true);
-  generateComparison(leftElement, rightElement, op);
+  runtime_comparisonType type = findBigintComparisonType(expression);
+  generateComparison(leftElement, rightElement, type);
 }
 
 // Cast the reference to the element to a uint*.  Return the new value.
@@ -1577,7 +1682,7 @@ static llElement resizeSmallInteger(llElement element, uint32 newWidth,
 static void checkTruncation(llElement element, llElement result,
     uint32 oldWidth, uint32 newWidth, bool isSigned) {
   llElement checkValue = resizeSmallInteger(result, oldWidth, isSigned, false);
-  generateComparison(element, checkValue, "icmp eq");
+  generateBasicComparison(element, checkValue, RN_EQUAL);
   llElement condition = popElement(true);
   utSym passedLabel = newLabel("truncCheckPassed");
   utSym failedLabel = newLabel("truncCheckFailed");
@@ -1919,6 +2024,10 @@ static void generateBuiltinMethod(deExpression expression) {
           "i%s %s, i1 zeroext %u, i1 zeroext %u)%s\n", llElementGetName(access), uint8Ptr, llSize,
           llElementGetName(sizeValue), llDatatypeIsArray(elementDatatype),
           arrayHasSubArrays(elementDatatype), location);
+      if (isRefCounted(elementDatatype)) {
+        derefAnyElement(&element);
+        refObject(element);
+      }
       break;
     }
     case DE_BUILTINFUNC_ARRAYCONCAT:
@@ -2084,7 +2193,7 @@ static bool isBuiltinCall(deExpression expression) {
 static void generateTupleIndexExpression(deExpression left, uint32 index) {
   generateExpression(left);
   llElement tuple = popElement(true);
-  llElement element = indexTuple(tuple, index, false);
+  llElement element = indexTuple(tuple, index, true);
   pushElement(element, false);
 }
 
@@ -2190,10 +2299,6 @@ static void copyElement(llElement access, llElement element, bool freeDest);
 static void copyTuple(llElement dest, llElement source, bool freeDest) {
   utAssert(llElementIsRef(dest));
   deDatatype datatype = llElementGetDatatype(source);
-// temp
-//  if (deDatatypeGetType(datatype) == DE_TYPE_STRUCT) {
-//    datatype = deGetStructTupleDatatype(datatype);
-//  }
   deDatatypeType type = deDatatypeGetType(datatype);
   utAssert(type == DE_TYPE_TUPLE || type == DE_TYPE_STRUCT);
   for (uint32 i = 0; i < deDatatypeGetNumTypeList(datatype); i++) {
@@ -2309,9 +2414,6 @@ static void generateTupleExpression(deExpression expression) {
 // Generate a struct constructor.  This leaves a tuple on the stack.
 static void generateStructConstructor(deExpression expression) {
   deDatatype datatype = deExpressionGetDatatype(expression);
-// temp
-//   deDatatype tupleType = deGetStructTupleDatatype(datatype);
-//  llElement tuple = allocateTempValue(tupleType);
   llElement tuple = allocateTempValue(datatype);
   uint32 savedStackPos = llStackPos;
   deExpression accessExpression = deExpressionGetFirstExpression(expression);
@@ -2418,7 +2520,7 @@ static void limitCheck(llElement index, llElement limit) {
   }
   index = resizeInteger(index, width, false, false);
   llElement string = generateString(deCStringCreate("Shift or rotate by more than integer width"));
-  generateComparison(index, limit, "icmp ult");
+  generateBasicComparison(index, limit, RN_LT);
   llElement condition = popElement(true);
   utSym passedLabel = newLabel("limitCheckPassed");
   bool generatedFailBlock = llLimitCheckFailedLabel != utSymNull;
@@ -2446,7 +2548,7 @@ static void nullCheck(llElement index) {
   }
   llElement string = generateString(deCStringCreate("Null indirection"));
   llElement nullElement = createElement(llElementGetDatatype(index), "0", false);
-  generateComparison(index, nullElement, "icmp ne");
+  generateBasicComparison(index, nullElement, RN_NOTEQUAL);
   llElement condition = popElement(true);
   utSym passedLabel = newLabel("nullCheckPassed");
   bool generatedFailBlock = llBoundsCheckFailedLabel != utSymNull;
@@ -2480,7 +2582,7 @@ static void boundsCheck(llElement array, llElement index, char *message) {
   derefElement(&numElements);
   index = resizeInteger(index, llSizeWidth, false, false);
   llElement string = generateString(deCStringCreate("Indexed passed the end of an array"));
-  generateComparison(index, numElements, "icmp ult");
+  generateBasicComparison(index, numElements, RN_LT);
   llElement condition = popElement(true);
   utSym passedLabel = newLabel("boundsCheckPassed");
   bool generatedFailBlock = llBoundsCheckFailedLabel != utSymNull;
@@ -3410,13 +3512,13 @@ static void generateModularEqualityExpression(deExpression expression, llElement
     runtime_comparisonType comparisonType = findBigintComparisonType(expression);
     generateBigintComparison(leftElement, rightElement, comparisonType);
   } else {
-    char *op;
+    runtime_comparisonType type;
     if (deExpressionGetType(expression) == DE_EXPR_EQUAL) {
-      op = "icmp eq";
+      type = RN_EQUAL;
     } else {
-      op = "icmp ne";
+      type = RN_NOTEQUAL;
     }
-    generateComparison(leftElement, rightElement, op);
+    generateBasicComparison(leftElement, rightElement, type);
   }
 }
 
@@ -3718,68 +3820,14 @@ static void generateExpression(deExpression expression) {
     case DE_EXPR_ROTR:
       generateShiftOrRotateExpression(expression);
       break;
-    case DE_EXPR_LT: {
-      deDatatype subType = deExpressionGetDatatype(deExpressionGetFirstExpression(expression));
-      if (deDatatypeIsFloat(subType)) {
-        generateRelationalExpression(expression, "fcmp olt");
-      } else if (deDatatypeGetType(subType) == DE_TYPE_INT) {
-        generateRelationalExpression(expression, "icmp slt");
-      } else {
-        generateRelationalExpression(expression, "icmp ult");
-      }
+    case DE_EXPR_LT:
+    case DE_EXPR_LE:
+    case DE_EXPR_GT:
+    case DE_EXPR_GE:
+    case DE_EXPR_EQUAL:
+    case DE_EXPR_NOTEQUAL:
+      generateRelationalExpression(expression);
       break;
-    }
-    case DE_EXPR_LE: {
-      deDatatype subType = deExpressionGetDatatype(deExpressionGetFirstExpression(expression));
-      if (deDatatypeIsFloat(subType)) {
-        generateRelationalExpression(expression, "fcmp ole");
-      } else if (deDatatypeGetType(subType) == DE_TYPE_INT) {
-        generateRelationalExpression(expression, "icmp sle");
-      } else {
-        generateRelationalExpression(expression, "icmp ule");
-      }
-      break;
-    }
-    case DE_EXPR_GT: {
-      deDatatype subType = deExpressionGetDatatype(deExpressionGetFirstExpression(expression));
-      if (deDatatypeIsFloat(subType)) {
-        generateRelationalExpression(expression, "fcmp ogt");
-      } else if (deDatatypeGetType(subType) == DE_TYPE_INT) {
-        generateRelationalExpression(expression, "icmp sgt");
-      } else {
-        generateRelationalExpression(expression, "icmp ugt");
-      }
-      break;
-    }
-    case DE_EXPR_GE: {
-      deDatatype subType = deExpressionGetDatatype(deExpressionGetFirstExpression(expression));
-      if (deDatatypeIsFloat(subType)) {
-        generateRelationalExpression(expression, "fcmp oge");
-      } else if (deDatatypeGetType(subType) == DE_TYPE_INT) {
-        generateRelationalExpression(expression, "icmp sge");
-      } else {
-        generateRelationalExpression(expression, "icmp uge");
-      }
-      break;
-    }
-    case DE_EXPR_EQUAL: {
-      deDatatype subType = deExpressionGetDatatype(deExpressionGetFirstExpression(expression));
-      if (deDatatypeIsFloat(subType)) {
-        generateRelationalExpression(expression, "fcmp oeq");
-      } else {
-        generateRelationalExpression(expression, "icmp eq");
-      }
-      break;
-    }
-    case DE_EXPR_NOTEQUAL: {
-      deDatatype subType = deExpressionGetDatatype(deExpressionGetFirstExpression(expression));
-      if (deDatatypeIsFloat(subType)) {
-        generateRelationalExpression(expression, "fcmp one");
-      } else {
-        generateRelationalExpression(expression, "icmp ne");
-      }
-      break;
-    }
     case DE_EXPR_NEGATE:
     case DE_EXPR_NEGATETRUNC:
       generateNegateExpression(expression);
@@ -4005,7 +4053,7 @@ static utSym generateSwitchStatement(deStatement statement, utSym startLabel) {
           if (llDatatypeIsArray(llElementGetDatatype(value))) {
             generateArrayComparison(target, value, RN_EQUAL);
           } else {
-            generateComparison(target, value, "icmp eq");
+            generateBasicComparison(target, value, RN_EQUAL);
           }
           // Only free temp variables created in the comparison, not the switch expression.
           freeElements(false);
@@ -4257,7 +4305,7 @@ static utSym generateTryStatement(deStatement tryStatement, utSym startLabel) {
   llPrintf("call i32 @_setjmp(%%struct.__jmp_buf_tag* %%%u)\n", jmpbufTag);
   llElement setjmpElem = createValueElement(deUintDatatypeCreate(32), setjmpResult, false);
   llElement zero = createSmallInteger(0, 32, false);
-  generateComparison(setjmpElem, zero, "icmp eq");
+  generateBasicComparison(setjmpElem, zero, RN_EQUAL);
   llElement condition = popElement(true);
   utSym tryLabel = newLabel("try");
   utSym exceptLabel = newLabel("except");

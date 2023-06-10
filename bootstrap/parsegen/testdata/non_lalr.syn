@@ -1,0 +1,3 @@
+goal: "a" E "c" | "a" F "d" | "b" F "c" | "b" E "d"
+E: "e"
+F: "e"

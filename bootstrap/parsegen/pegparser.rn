@@ -1,0 +1,851 @@
+//  Copyright 2023 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// This implements a PEG parser, conforming closely to the description on
+// http://wikipedia.org/wiki/Parsing_expression_grammar.  The only intentional
+// difference is using '|' like all grammar languages other than PEG, instead of
+// "/".  This parser uses the Rune lexer in lexer.rn to generate input tokens.
+// The Wikipedia page shows tokens being parsed by regular expressions, but we
+// have no regular expression library written in Rune, yet.
+
+import database as db
+use keytab
+use lexer
+use sym
+use token
+
+// This corresponds to the Peg definition at
+// https://en.wikipedia.org/wiki/Parsing_expression_grammar
+enum PexprType {
+  Nonterm
+  Term  // This corresponds to a TokenType.
+  Keyword
+  Empty
+  Sequence
+  Choice
+  ZeroOrMore
+  OneOrMore
+  Optional
+  And  // Called And-predicated on Wikipedia.
+  Not  // Called Not-predicated on Wikipedia.
+}
+
+class Rule(self, parser: Peg, sym: Sym, pexpr: Pexpr, location: db.Location) {
+  self.sym = sym
+  self.location = location
+  self.insertPexpr(pexpr)
+  // Indexed by the keyword number.
+  self.firstKeywords = arrayof(bool)
+  // Indexed by the token type.
+  self.firstTokens = arrayof(bool)
+  self.firstTokens.resize(<u32>TokenType.UintType + 1)
+  self.foundFirstSet = false
+  self.findingFirstSet = false  // Used for loop detection.
+  self.canBeEmpty = false
+  oldRule = parser.findRule(sym)
+  if isnull(oldRule) {
+    parser.insertRule(self)
+  } else {
+    location.error("Redefinition of rule " + sym.name)
+  }
+  parser.appendOrderedRule(self)
+
+  // Find the set of tokens that could be seen first for the rule.  Also detect
+  // and report left-recursion.  Return false if we found a loop.
+  func findFirstSet(self) -> bool {
+    self.firstKeywords.resize(self.peg!.numKeywords)
+    if self.findingFirstSet {
+      println "Left recursion detected:"
+      println "    ", self.sym.name
+      return false
+    }
+    self.findingFirstSet = true
+    passed = self.pexpr!.findFirstSet(self.firstKeywords, self.firstTokens)
+    if !passed {
+      println "    ", self.sym.name
+    }
+    self.foundFirstSet = true
+    self.findingFirstSet = false
+    self.canBeEmpty = self.pexpr!.canBeEmpty
+    return passed
+  }
+
+  func toString(self: Rule) -> string {
+    s = self.sym.name
+    s.concat(": ")
+    s.concat(self.pexpr!.toString())
+    return s
+  }
+
+  exportlib func dump(self: Rule) {
+    println self.toString()
+  }
+}
+
+// A parser expression.  Each rule has just one.
+class Pexpr(self, type: PexprType, location: db.Location) {
+  self.type = type
+  self.location = location
+  self.sym = null(Sym)  // Used for keywords in quotes, and nonterms.
+  self.TokenType = TokenType.Keyword  // Used for Term pexprs, like INTEGER.
+  self.hasParens = false
+  self.canBeEmpty = false
+  self.nextChoice = arrayof(Pexpr)
+
+  func findFirstSet(self: Pexpr, firstKeywords: [bool], firstTokens: [bool]) -> bool {
+    switch self.type {
+      PexprType.Nonterm => {
+        rule = self.nontermRule!
+        if !rule.foundFirstSet && !rule.findFirstSet() {
+          return false
+        }
+        for i in range(rule.firstKeywords.length()) {
+          firstKeywords[i] ||= rule.firstKeywords[i]
+        }
+        for i in range(rule.firstTokens.length()) {
+          firstTokens[i] ||= rule.firstTokens[i]
+        }
+        self.canBeEmpty = rule.canBeEmpty
+      }
+      PexprType.Term => firstTokens[<u32>self.tokenType] = true
+      PexprType.Keyword => firstKeywords[self.keyword!.num] = true
+      PexprType.Empty, PexprType.And, PexprType.Not => self.canBeEmpty = true
+      PexprType.Sequence => {
+        passed = true
+        for child in self.childPexprs() {
+          passed = child.findFirstSet(firstKeywords, firstTokens) && passed
+          if !child.canBeEmpty || !passed {
+            return passed
+          }
+        }
+        self.canBeEmpty = true
+      }
+      PexprType.Choice => {
+        for child in self.childPexprs() {
+          if !child.findFirstSet(firstKeywords, firstTokens) {
+            return false
+          }
+          if child.canBeEmpty {
+            self.canBeEmpty = true
+          }
+        }
+      }
+      PexprType.ZeroOrMore, PexprType.Optional => {
+        self.canBeEmpty = true
+        if !self.firstChildPexpr!.findFirstSet(firstKeywords, firstTokens) {
+          return false
+        }
+      }
+      PexprType.OneOrMore => {
+        child = self.firstChildPexpr!
+        if !child.findFirstSet(firstKeywords, firstTokens) {
+          return false
+        }
+        self.canBeEmpty = child.canBeEmpty
+      }
+    }
+    return true
+  }
+
+  func rawToString(self: Pexpr) -> string {
+    switch(self.type) {
+      PexprType.Nonterm => return self.sym!.name
+      PexprType.Term => return self.sym!.name
+      PexprType.Empty => return "EMPTY"
+      PexprType.Keyword => return "\"%s\"" % self.sym!.name
+      PexprType.Sequence => {
+        s = ""
+        firstTime = true
+        for child in self.childPexprs() {
+          if !firstTime {
+            s.append(' ')
+          }
+          firstTime = false
+          s.concat(child.toString())
+        }
+        return s
+      }
+      PexprType.Choice => {
+        s = ""
+        firstTime = true
+        for child in self.childPexprs() {
+          if !firstTime {
+            s.concat(" | ")
+          }
+          firstTime = false
+          s.concat(child.toString())
+        }
+        return s
+      }
+      PexprType.ZeroOrMore => return self.firstChildPexpr!.toString() + "*"
+      PexprType.OneOrMore => return self.firstChildPexpr!.toString() + "+"
+      PexprType.Optional => return self.firstChildPexpr!.toString() + "?"
+      PexprType.And => return "&" + self.firstChildPexpr!.toString()
+      PexprType.Not => return "!" + self.firstChildPexpr!.toString()
+      default => {
+        panic "Unexpected type = ", self.type
+      }
+    }
+  }
+
+  func toString(self: Pexpr) -> string {
+    s = self.rawToString()
+    if !self.hasParens {
+      return s
+    }
+    return "(" + s + ")"
+  }
+
+  exportlib func dump(self: Pexpr) {
+    println self.toString()
+  }
+}
+
+class Peg(self, fileName: string) {
+  // Keyword table for parsing syntax rules file.
+  self.pegKeytab = self.buildPegKeywordTable()
+  // Keyword table for parsing input file.
+  self.keytab = Keytab()
+  // Used to report the first token we cannot parse.  We keep track of the most
+  // progress made during parsing and report a syntax error at the first token
+  // that cannot be parsed by any rule.
+  self.maxTokenPos = 0u32
+  self.savedToken1 = null(Token)
+  self.savedToken2 = null(Token)
+  self.numKeywords = 0u32
+  filepath = db.Filepath(fileName, null(db.Filepath), false)
+  lexer = Lexer(filepath, self.pegKeytab)
+  self.lexer = lexer
+
+  // Parse a file using rules built by calling parseRules in the constructor.
+  // It either succeeds or exits with an error.
+  // TODO: Enhance this to return an AST rather than simply matching input.
+  func parse(self: Peg, fileName: string, allowUnderscores: bool = false) -> bool {
+    self.savedToken1 = null(Token)
+    self.savedToken2 = null(Token)
+    filepath = db.Filepath(fileName, null(db.Filepath), false)
+    lexer = Lexer(filepath, self.keytab)
+    lexer.enableIdentUnderscores(allowUnderscores)
+    self.lexer = lexer
+    self.tokenizeInput()
+    if debugMode {
+      println "Tokens:"
+      for token in self.lexer!.tokens {
+        token.dump()
+      }
+    }
+    self.addEOFToFirstRule()
+    result = self.parseUsingRule(self.firstOrderedRule!, 0u32)
+    if !result[0] {
+      token = self.lexer!.tokens[self.maxTokenPos]
+      token.location.error("Syntax error")
+      return false
+    }
+    lexer.destroy()
+    return true
+  }
+
+  // Reads all tokens up-front.
+  func tokenizeInput(self: Peg) {
+    do {
+      token = self.parseToken()
+    } while !token.eof()
+  }
+
+  // Add the EOF token tothe first rule.
+  func addEOFToFirstRule(self: Peg) {
+    goal = self.firstOrderedRule!
+    pexpr = goal.pexpr!
+    if pexpr.type != PexprType.Sequence {
+      goal.removePexpr(pexpr)
+      seqPexpr = Pexpr(PexprType.Sequence, pexpr.location)
+      seqPexpr.insertChildPexpr(pexpr)
+      goal.insertPexpr(seqPexpr)
+      pexpr = seqPexpr
+    }
+    eofPexpr = Pexpr(PexprType.Term, pexpr.location)
+    eofPexpr.tokenType = TokenType.Eof
+    eofPexpr.sym = self.kwEof.sym
+    pexpr.appendChildPexpr(eofPexpr);
+  }
+
+  // Parse input using the PEG rules.  Basically, use recursive decent.
+  // Return a position > `pos` on success, and `pos` on failure.
+  // TODO: Memoize this to achieve practical speeds.
+  func parseUsingRule(self: Peg, rule: Rule, pos: u32) -> (bool, u32) {
+    parseResult = rule.findParseResult(pos)
+    if !isnull(parseResult) {
+      if debugMode {
+        println "Using prior result for ", rule.sym.name
+      }
+      return parseResult!.result
+    }
+    token = self.lexer!.tokens[pos]
+    if token.type == TokenType.Keyword {
+      if !rule.firstKeywords[token.keyword!.num] {
+        // Don't bother caching this decision.
+        return (rule.canBeEmpty, pos)
+      }
+    } else if !rule.firstTokens[<u32>token.type] {
+      // Don't bother caching this decision.
+      return (rule.canBeEmpty, pos)
+    }
+    if debugMode {
+      println "Parse using rule ", rule.sym.name
+    }
+    result = self.parseUsingPexpr(rule.pexpr!, pos)
+    // Cache this decision.
+    ParseResult(rule, pos, result)
+    if debugMode {
+      println "Returning from rule ", rule.sym.name, " with ", result
+    }
+    return result
+  }
+
+  func parseUsingPexpr(self: Peg, pexpr: Pexpr, pos: u32) -> (bool, u32) {
+    if debugMode {
+      println "counter = ", counter, ", pos = ", pos
+    }
+    counter += 1
+    result = self.parseUsingPexprImpl(pexpr, pos)
+    if pos > self.maxTokenPos {
+      self.maxTokenPos = pos
+    }
+    if debugMode {
+      println "Result = ", result
+    }
+    return result
+  }
+
+  // Parse input from pos using this pexpr.
+  func parseUsingPexprImpl(self: Peg, pexpr: Pexpr, pos: u32) -> (bool, u32) {
+    token = self.lexer!.tokens[pos]
+    if debugMode {
+      token.location.dump()
+      println "Parsing above token using ", pexpr.toString()
+    }
+    switch pexpr.type {
+      PexprType.Nonterm => return self.parseUsingRule(pexpr.nontermRule!, pos)
+      PexprType.Term => {
+        if token.type != pexpr.tokenType {
+          return (false, pos)
+        }
+        return (true, pos + 1)
+      }
+      PexprType.Keyword => {
+        if token.type != TokenType.Keyword || token.keyword! != pexpr.keyword! {
+          return (false, pos)
+        }
+        return (true, pos + 1)
+      }
+      PexprType.Empty => return (true, pos)
+      PexprType.Sequence => return self.parseUsingSequencePexpr(pexpr, pos)
+      PexprType.Choice =>  return self.parseUsingChoicePexpr(pexpr, pos)
+      PexprType.ZeroOrMore => return self.parseUsingZeroOrMorePexpr(pexpr, pos)
+      PexprType.OneOrMore => return self.parseUsingOneOrMorePexpr(pexpr, pos)
+      PexprType.Optional => return self.parseUsingOptionalPexpr(pexpr, pos)
+      PexprType.And => return self.parseUsingAndPexpr(pexpr, pos)
+      PexprType.Not => return self.parseUsingNotPexpr(pexpr, pos)
+    }
+  }
+
+  func parseUsingSequencePexpr(self: Peg, pexpr, pos) -> (bool, u32) {
+    childPos = pos
+    for child in pexpr.childPexprs() {
+      result = self.parseUsingPexpr(child, childPos)
+      if !result[0] {
+        return (false, pos)
+      }
+      childPos = result[1]
+    }
+    return result
+  }
+
+  func parseUsingChoicePexpr(self: Peg, pexpr, pos) -> (bool, u32) {
+    for child in pexpr.childPexprs() {
+      result = self.parseUsingPexpr(child, pos)
+      if result[0] {
+        return result
+      }
+    }
+    return (false, pos)
+  }
+
+  func parseUsingZeroOrMorePexpr(self: Peg, pexpr, pos) -> (bool, u32) {
+    child = pexpr.firstChildPexpr!
+    lastResult = (true, pos)
+    do {
+      result = self.parseUsingPexpr(child, lastResult[1])
+    } while result[0] {
+      lastResult = result
+    }
+    return lastResult
+  }
+
+  func parseUsingOneOrMorePexpr(self: Peg, pexpr, pos) -> (bool, u32) {
+    child = pexpr.firstChildPexpr!
+    lastResult = (false, pos)
+    do {
+      result = self.parseUsingPexpr(child, lastResult[1])
+    } while result[0] {
+      lastResult = result
+    }
+    return lastResult
+  }
+
+  func parseUsingOptionalPexpr(self: Peg, pexpr, pos) -> (bool, u32) {
+    child = pexpr.firstChildPexpr!
+    result = self.parseUsingPexpr(child, pos)
+    if result[0] {
+      return result
+    }
+    return (true, pos)
+  }
+
+  func parseUsingAndPexpr(self: Peg, pexpr, pos) -> (bool, u32) {
+    child = pexpr.firstChildPexpr!
+    result = self.parseUsingPexpr(child, pos)
+    return (result[0], pos)
+  }
+
+  func parseUsingNotPexpr(self: Peg, pexpr, pos) -> (bool, u32) {
+    child = pexpr.firstChildPexpr!
+    result = self.parseUsingPexpr(child, pos)
+    return (!result[0], pos)
+  }
+
+  // Recursive decent parser for rules, using the `Lexer` class.
+  func parseRules(self: Peg) {
+    while !self.lexer.eof() {
+      self.parseRule()
+    }
+    self.numKeywords = self.keytab!.setKeywordNums()
+    passed = self.bindNonterms()
+    if !self.checkForUnusedRules() {
+      passed = false
+    }
+    if !self.findFirstSets() {
+      passed = false
+    }
+    if !passed {
+      raise Status.InvalidArgument, "Exiting due to errors..."
+    }
+  }
+
+  func parseRule(self: Peg) -> Rule {
+    identToken = self.parseIdent()
+    self.parseKeyword(self.kwColon)
+    pexpr = self.parsePexpr()
+    if !self.endOfRule() {
+      self.syntaxError()
+    }
+    return Rule(self, identToken.value!.symVal!, pexpr, identToken.location)
+  }
+
+  func parseIdent(self: Peg) -> Token {
+    token = self.parseToken()
+    if token.type != TokenType.Ident {
+      self.syntaxError()
+    }
+    return token
+  }
+
+  func parseKeyword(self: Peg, keyword: Keyword)  {
+    token = self.parseToken()
+    if token.type != TokenType.Keyword || token.keyword! != keyword {
+      self.syntaxError()
+    }
+  }
+
+  func parsePexpr(self: Peg) -> Pexpr {
+    return self.parseChoicePexpr()
+  }
+
+  func parseChoicePexpr(self: Peg) -> Pexpr {
+    choicePexpr = null(Pexpr)
+    do {
+      pexpr = self.parseSequencePexpr()
+      nextToken = self.peekToken()
+    } while nextToken.type == TokenType.Keyword && nextToken.keyword! == self.kwPipe {
+      if isnull(choicePexpr) {
+        choicePexpr = Pexpr(PexprType.Choice, pexpr.location)
+      }
+      choicePexpr!.appendChildPexpr(pexpr)
+      self.parseToken()
+    }
+    if isnull(choicePexpr) {
+      return pexpr
+    }
+    choicePexpr!.appendChildPexpr(pexpr)
+    return choicePexpr!
+  }
+
+  func parseSequencePexpr(self: Peg) -> Pexpr {
+    pexpr = self.parsePrefixPexpr()
+    if self.endOfRule() {
+      return pexpr
+    }
+    if self.endOfSequence() {
+      return pexpr
+    }
+    sequencePexpr = Pexpr(PexprType.Sequence, pexpr.location)
+    sequencePexpr.appendChildPexpr(pexpr)
+    while !self.endOfSequence() {
+      pexpr = self.parsePrefixPexpr()
+      sequencePexpr.appendChildPexpr(pexpr)
+    }
+    return sequencePexpr
+  }
+
+  func endOfSequence(self: Peg) -> bool {
+    if self.endOfRule() {
+      return true
+    }
+    token = self.peekToken()
+    switch token.type {
+      TokenType.Keyword => {
+        keyword = token.keyword!
+        return keyword == self.kwPipe || keyword == self.kwCloseParen
+      }
+      TokenType.Ident, TokenType.String => return false
+      TokenType.Eof => return true
+    }
+  }
+
+  func parsePrefixPexpr(self: Peg) -> Pexpr {
+    token = self.peekToken()
+    if token.type == TokenType.Keyword {
+      keyword = token.keyword!
+      if keyword == self.kwAnd || keyword == self.kwNot {
+        self.parseToken()
+        pexpr = self.parsePostfixPexpr()
+        if keyword == self.kwAnd {
+          return self.unaryPexpr(PexprType.And, pexpr, token.location)
+        }
+        return self.unaryPexpr(PexprType.Not, pexpr, token.location)
+      }
+    }
+    return self.parsePostfixPexpr()
+  }
+
+  func parsePostfixPexpr(self: Peg) -> Pexpr {
+    pexpr = self.parseBasicPexpr()
+    if self.endOfRule() {
+      return pexpr
+    }
+    token = self.peekToken()
+    if token.type == TokenType.Keyword {
+      keyword = token.keyword!
+      if keyword == self.kwQuestion {
+        self.parseToken()
+        return self.unaryPexpr(PexprType.Optional, pexpr, token.location)
+      } else if keyword == self.kwStar {
+        self.parseToken()
+        return self.unaryPexpr(PexprType.ZeroOrMore, pexpr, token.location)
+      } else if keyword == self.kwPlus {
+        self.parseToken()
+        return self.unaryPexpr(PexprType.OneOrMore, pexpr, token.location)
+      }
+    }
+    return pexpr
+  }
+
+  func parseBasicPexpr(self: Peg) -> Pexpr {
+    token = self.parseToken()
+    if token.type == TokenType.Ident {
+      pexpr = Pexpr(PexprType.Nonterm, token.location)
+      pexpr.sym = token.value!.symVal!
+      return pexpr
+    } else if token.type == TokenType.String {
+      pexpr = Pexpr(PexprType.Keyword, token.location)
+      name = token.value!.stringVal
+      pexpr.sym = Sym.new(name)
+      keyword = self.keytab.new(name)
+      keyword.appendPexpr(pexpr)
+      return pexpr
+    } else if token.type == TokenType.Keyword {
+      keyword = token.keyword!
+      if keyword == self.kwEmpty {
+        return Pexpr(PexprType.Empty, token.location)
+      } else if keyword == self.kwOpenParen {
+        return self.parseParenPexpr()
+      }
+      pexpr = Pexpr(PexprType.Term, token.location)
+      pexpr.tokenType = self.keywordToTokenType(keyword, token.location)
+      pexpr.sym = token.keyword!.sym
+      return pexpr
+    }
+    self.syntaxError()
+    panic "Can't get here"
+  }
+
+  func parseParenPexpr(self: Peg) -> Pexpr {
+    pexpr = self.parsePexpr()
+    token = self.parseToken()
+    if token.type != TokenType.Keyword || token.keyword! != self.kwCloseParen {
+      token.location.error("Expected ')'")
+    }
+    pexpr.hasParens = true
+    return pexpr
+  }
+
+  func unaryPexpr(self: Peg, type: PexprType, pexpr: Pexpr, location: db.Location) -> Pexpr {
+    parentPexpr = Pexpr(type, location)
+    parentPexpr.insertChildPexpr(pexpr)
+    return parentPexpr
+  }
+
+  func syntaxError(self: Peg) {
+    self.lexer.error("Syntax error")
+  }
+
+  func endOfRule(self: Peg) {
+    if self.lexer.eof() {
+      return true
+    }
+    token = self.peekToken(2)
+    return token.type == TokenType.Keyword && token.keyword! == self.kwColon
+  }
+
+  func parseToken(self: Peg) -> Token {
+    if !isnull(self.savedToken1) {
+      token = self.savedToken1!
+      self.savedToken1 = self.savedToken2
+      self.savedToken2 = null(Token)
+      return token
+    }
+    return self.rawParseToken()
+  }
+
+  func rawParseToken(self: Peg) -> Token {
+    do {
+      token = self.lexer.parseToken()
+    } while token.type == TokenType.Keyword && token.keyword! == self.kwNewline
+    return token
+  }
+
+  func peekToken(self: Peg, depth = 1) -> Token {
+    assert depth <= 2
+    if depth >= 1 && isnull(self.savedToken1) {
+      self.savedToken1 = self.rawParseToken()
+    }
+    if depth >= 2 && isnull(self.savedToken2) {
+      self.savedToken2 = self.rawParseToken()
+    }
+    return depth == 1? self.savedToken1! : self.savedToken2!
+  }
+
+  func buildPegKeywordTable(self: Peg) -> Keytab {
+    keytab = Keytab()
+    self.kwColon = Keyword(keytab, ":")
+    self.kwPipe = Keyword(keytab, "|")
+    self.kwOpenParen = Keyword(keytab, "(")
+    self.kwCloseParen = Keyword(keytab, ")")
+    self.kwStar = Keyword(keytab, "*")
+    self.kwPlus = Keyword(keytab, "+")
+    self.kwQuestion = Keyword(keytab, "?")
+    self.kwAnd = Keyword(keytab, "&")
+    self.kwNot = Keyword(keytab, "!")
+    self.kwNewline = Keyword(keytab, "\n")
+    self.kwEmpty = Keyword(keytab, "EMPTY")
+    self.kwEof = Keyword(keytab, "EOF")
+    self.kwIdent = Keyword(keytab, "IDENT")
+    self.kwInteger = Keyword(keytab, "INTEGER")
+    self.kwFloat = Keyword(keytab, "FLOAT")
+    self.kwString = Keyword(keytab, "STRING")
+    self.kwRandInt = Keyword(keytab, "RANDUINT")
+    self.kwIntType = Keyword(keytab, "INTTYPE")
+    self.kwUintType = Keyword(keytab, "UINTTYPE")
+    return keytab
+  }
+
+  func keywordToTokenType(self, keyword: Keyword, location: db.Location) -> TokenType {
+    switch keyword {
+      self.kwEof => return TokenType.Eof
+      self.kwIdent => return TokenType.Ident
+      self.kwInteger => return TokenType.Integer
+      self.kwFloat => return TokenType.Float
+      self.kwString => return TokenType.String
+      self.kwRandInt => return TokenType.RandUint
+      self.kwIntType => return TokenType.IntType
+      self.kwUintType => return TokenType.UintType
+      default => {
+        location.error("Syntax error")
+        raise Status.InvalidArgument
+      }
+    }
+  }
+
+  // Fill in Rule -> NontermPexpr relation.  This has to wait until afer
+  // parsing because the rule a nonterm refers to may not be declared before
+  // the nonterm.
+  func bindNonterms(self: Peg) -> bool{
+    passed = true
+    for rule in self.orderedRules() {
+      if !self.bindPexprNonterms(rule.pexpr!) {
+        passed = false
+      }
+    }
+    return passed
+  }
+
+  // Bind all the nonterms in the pexpr to their rule.
+  func bindPexprNonterms(self: Peg, pexpr: Pexpr) -> bool {
+    passed = true
+    if pexpr.type == PexprType.Nonterm {
+      rule = self.findRule(pexpr.sym!)
+      if isnull(rule) {
+         pexpr.location.error("Undefined rule " + pexpr.sym!.name)
+         passed = false
+      }
+      rule!.appendNontermPexpr(pexpr)
+    }
+    for child in pexpr.childPexprs() {
+      if !self.bindPexprNonterms(child) {
+        passed = false
+      }
+    }
+    return passed
+  }
+
+  // Find the set of tokens that could be seen first for the rule.  Also detect
+  // and report left-recursion.
+  func findFirstSets(self) -> bool {
+    passed = true
+    for rule in self.orderedRules() {
+      if !rule.findFirstSet() {
+        passed = false
+      }
+    }
+    return passed
+  }
+
+  func checkForUnusedRules(self) -> bool {
+    passed = true
+    firstTime = true
+    for rule in self.orderedRules() {
+      if !firstTime {
+        if isnull(rule.firstNontermPexpr) && !isnull(rule.peg)  {
+          rule.location.error("Unused rule " + rule.sym!.name)
+          passed = false
+        }
+      }
+      firstTime = false
+    }
+    return passed
+  }
+
+  func toString(self: Peg) -> string {
+    s = ""
+    for rule in self.orderedRules() {
+      s.concat(rule.toString())
+      s.append('\n')
+    }
+    return s
+  }
+
+  exportlib func dump(self: Peg) {
+    println self.toString()
+  }
+}
+
+class ParseResult (self, rule: Rule, pos: u32, result: (bool, u32)) {
+  self.pos = pos
+  self.result = result
+  rule.insertParseResult(self)
+}
+
+relation Hashed Peg Rule cascade ("sym")
+relation TailLinked Peg:"Ordered" Rule:"Ordered"
+relation OneToOne Rule Pexpr cascade
+relation TailLinked Keyword Pexpr cascade
+relation TailLinked Pexpr:"Parent" Pexpr:"Child" cascade
+relation TailLinked Rule:"Nonterm" Pexpr:"Nonterm"cascade
+relation Hashed Rule ParseResult cascade ("pos")
+
+counter = 0
+debugMode = false
+
+unittest {
+  import io
+
+  xArg = 1
+  if argv.length() >= 2 && argv[1] == "--debugParser" {
+    xArg += 1
+    debugMode = true
+  }
+
+  dataDir = io.getenv("TEST_SRCDIR")
+  if dataDir != "" {
+    if dataDir[dataDir.length() - 1] != '/' {
+      dataDir.append('/')
+    }
+    dataDir.concat("google3/third_party/rune/bootstrap/parsegen/")
+  }
+}
+
+// For manual testing of parsing Rune files listed in the command line.
+unittest parseFilesOnCommandLiineTest {
+  parsedAFile = false
+  if xArg < argv.length() {
+    parser = Peg(dataDir + "testdata/rune.syn")
+    parser.parseRules()
+    for i in range (xArg, argv.length()) {
+      println "Parsing ", argv[i]
+      assert parser.parse(argv[i], allowUnderscores = true)
+      parsedAFile = true
+    }
+  }
+  if parsedAFile {
+    // Don't bother continuing with the rest of the unit tests.
+    exit(0i32)
+  }
+}
+
+// Parse syntax files in testdata, and verify we can print them out and be
+// identical to what we read.
+unittest parseRulesTest {
+  tests = [
+      "testdata/non_lalr.syn",
+      "testdata/allOperators.syn"
+  ]
+  for test in tests {
+    parser = Peg(dataDir + test)
+    parser.parseRules()
+    s = parser.toString()
+    println s
+    assert s == parser.lexer.filepath!.text
+  }
+  println "passed parseExampleRulesTest"
+}
+
+unittest parseRuneRulesTest {
+  parser = Peg(dataDir + "testdata/rune.syn")
+  parser.parseRules()
+  println "passed parseRuneRulesTest"
+}
+
+unittest parseFactorialFunctionTest {
+  parser = Peg(dataDir + "testdata/rune.syn")
+  parser.parseRules()
+  assert parser.parse(dataDir + "testdata/factorial.rn")
+  println "passed parseFactorialFunctionTest"
+}
+
+unittest parseSyntaxErrorTest {
+  parser = Peg(dataDir + "testdata/rune.syn")
+  parser.parseRules()
+  assert !parser.parse(dataDir + "testdata/syntaxError.rn")
+  println "passed parseSyntaxErrorTest"
+}

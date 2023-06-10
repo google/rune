@@ -234,7 +234,7 @@ unittest overlong {
   char = getChar("\xe0\x80\x80", 0u32)
   assert !char.valid
   // Overlong encoding of €.
-  char = getChar("\xf0\82\82\ac", 0u32)
+  char = getChar("\xf0\x82\x82\xac", 0u32)
   assert !char.valid
 }
 

@@ -20,6 +20,7 @@ enum Exception {
   IndexOutOfBounds
   NullIndirection
   DivideByZero
+  NotANumber
   OutOfMemory
   MemoryCorruption
   AssertionFailure

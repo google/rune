@@ -76,15 +76,6 @@ transformer TailLinked(A: Class, B: Class, cascadeDelete:bool = false,
       ref child
     }
 
-    func findPrev$labelB$B(self, child: B) {
-      for prevChild in self.$labelB$pluralB() {
-        if prevChild.next$A$labelB$B == child {
-          return prevChild
-        }
-      }
-      return null(child)
-    }
-
     func remove$labelB$B(self, child: B) {
       debug {
         if child.$labelA$A != self {
@@ -92,7 +83,7 @@ transformer TailLinked(A: Class, B: Class, cascadeDelete:bool = false,
         }
       }
       next = child.next$A$labelB$B
-      prev = self.findPrev$labelB$B(child)
+      prev = self._findPrev$labelB$B(child)
       if !isnull(prev) {
         prev!.next$A$labelB$B = next
       } else if self.first$labelB$B == child {
@@ -104,6 +95,15 @@ transformer TailLinked(A: Class, B: Class, cascadeDelete:bool = false,
       child.next$A$labelB$B = null(child)
       child.$labelA$A = null(self)
       unref child
+    }
+
+    func _findPrev$labelB$B(self, child: B) {
+      for prevChild in self.$labelB$pluralB() {
+        if prevChild.next$A$labelB$B == child {
+          return prevChild
+        }
+      }
+      return null(child)
     }
 
     func count$labelB$pluralB(self) {

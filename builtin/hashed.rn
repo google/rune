@@ -100,6 +100,7 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
       entry = self.$labelB$B_Table[hash]
       while !isnull(entry) {
         if key == entry!.$keyField {
+          ref entry!
           return entry!
         }
         entry = entry!.nextHashed$A$labelB$B

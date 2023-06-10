@@ -14,10 +14,10 @@
 
 import database as db
 use keytab
+use lexer
 use sym
 
 enum TokenType {
-  Nonterm
   Keyword
   Ident
   Integer
@@ -25,12 +25,12 @@ enum TokenType {
   Bool
   String
   Eof
-  RandInt
+  RandUint
   IntType
-  UintType
+  UintType  // If this is not the last anymore, fix code that assumes this.
 }
 
-class Token(self, type: TokenType, location: db.Location, keyword: Keyword? = null(Keyword),
+class Token(self, lexer: Lexer, type: TokenType, location: db.Location, keyword: Keyword? = null(Keyword),
     value: db.Value? = null(db.Value)) {
   self.type = type
   self.location = location
@@ -39,6 +39,7 @@ class Token(self, type: TokenType, location: db.Location, keyword: Keyword? = nu
     keyword!.appendToken(self)
   }
   self.value = value
+  lexer.appendToken(self)
 
   // Pass in the text from the lexer.
   func dump(self) {
@@ -62,34 +63,44 @@ class Token(self, type: TokenType, location: db.Location, keyword: Keyword? = nu
 
   // Return true if this is the eof token.
   func eof(self) {
-    return self.type == TokenType.eof
+    return self.type == TokenType.Eof
   }
 
   // Create a new token from a value.  This works for values like 123u8, and
   // also for identifiers which are parsed as Sym values, and keywords.
-  func newValueToken(value: string | bool | Int | Uint | db.Bigint | Float | Sym | Keyword,
+  func newValueToken(lexer: Lexer,
+      value: string | bool | Int | Uint | db.Bigint | Float | Sym | Keyword,
       location: db.Location) -> Token {
     typeswitch value {
-      string => return Token(TokenType.String, location, value = db.Value(value))
-      bool => return Token(TokenType.Bool, location, value = db.Value(value))
-      Int, Uint, db.Bigint => return Token(TokenType.Integer, location, value = db.Value(value))
-      Float => return Token(TokenType.Float, location, value = db.Value(value))
-      Sym  => return Token(TokenType.Ident, location, value = db.Value(value))
-      Keyword  => return Token(TokenType.Keyword, location, keyword = value)
+      string => return Token(lexer, TokenType.String, location, value = db.Value(value))
+      bool => return Token(lexer, TokenType.Bool, location, value = db.Value(value))
+      Int, Uint, db.Bigint => return Token(lexer, TokenType.Integer, location,
+          value = db.Value(value))
+      Float => return Token(lexer, TokenType.Float, location, value = db.Value(value))
+      Sym  => return Token(lexer, TokenType.Ident, location, value = db.Value(value))
+      Keyword  => return Token(lexer, TokenType.Keyword, location, keyword = value)
     }
   }
 }
 
 relation DoublyLinked Keyword Token cascade
+relation ArrayList Lexer Token cascade
+
+unittest {
+  // Unnamed unit tests declare stuff common to all unit tests in the file.
+  import database.filepath as fp
+}
 
 unittest dumpTest {
   filepath = fp.Filepath.new("test_filepath", null(fp.Filepath), false)
   filepath.text = "first line\nsecond line"
-  token1 = Token(TokenType.Ident, db.Location(filepath, 0u32, 5u32, 1u32))
-  token2 = Token(TokenType.Ident, db.Location(filepath, 6u32, 4u32, 1u32))
-  newline = Token(TokenType.Keyword, db.Location(filepath, 10u32, 1u32, 1u32))
-  token3 = Token(TokenType.Ident, db.Location(filepath, 11u32, 6u32, 2u32))
-  token4 = Token(TokenType.Ident, db.Location(filepath, 18u32, 4u32, 2u32))
+  keytab = Keytab()
+  lexer = Lexer(filepath, keytab, false)
+  token1 = Token(lexer, TokenType.Ident, db.Location(filepath, 0u32, 5u32, 1u32))
+  token2 = Token(lexer, TokenType.Ident, db.Location(filepath, 6u32, 4u32, 1u32))
+  newline = Token(lexer, TokenType.Keyword, db.Location(filepath, 10u32, 1u32, 1u32))
+  token3 = Token(lexer, TokenType.Ident, db.Location(filepath, 11u32, 6u32, 2u32))
+  token4 = Token(lexer, TokenType.Ident, db.Location(filepath, 18u32, 4u32, 2u32))
   token1.dump()
   token2.dump()
   newline.dump()
@@ -97,41 +108,42 @@ unittest dumpTest {
   token4.dump()
 }
 
-unittest {
-  // Unnamed unit tests declare stuff common to all unit tests in the file.
-  import database.filepath as fp
-}
-
 unittest eofTest {
   filepath = fp.Filepath.new("test_filepath", null(fp.Filepath), false)
-  token = Token(TokenType.Eof, db.Location(filepath, 0u32, 0u32, 1u32))
+  keytab = Keytab()
+  lexer = Lexer(filepath, keytab, false)
+  token = Token(lexer, TokenType.Eof, db.Location(filepath, 0u32, 0u32, 1u32))
   assert token.type == TokenType.Eof
 }
 
 unittest newValueTokenTest {
   filepath = fp.Filepath.new("test_filepath", null(fp.Filepath), false)
-  location = db.Location(filepath, 0u32, 0u32, 1u32)
-  println Token.newValueToken("string token", location)
-  println Token.newValueToken(true, location)
-  println Token.newValueToken(123i8, location)
-  println Token.newValueToken(123456789, location)
-  println Token.newValueToken(db.Bigint(123), location)
-  println Token.newValueToken(3.14, location)
-  println Token.newValueToken(Sym.new("identifier"), location)
   keytab = Keytab()
-  println Token.newValueToken(Keyword(keytab, "keyword"), location)
+  lexer = Lexer(filepath, keytab, false)
+  location = db.Location(filepath, 0u32, 0u32, 1u32)
+  println Token.newValueToken(lexer, "string token", location)
+  println Token.newValueToken(lexer, true, location)
+  println Token.newValueToken(lexer, 123i8, location)
+  println Token.newValueToken(lexer, 123456789, location)
+  println Token.newValueToken(lexer, db.Bigint(123), location)
+  println Token.newValueToken(lexer, 3.14, location)
+  println Token.newValueToken(lexer, Sym.new("identifier"), location)
+  keytab = Keytab()
+  println Token.newValueToken(lexer, Keyword(keytab, "keyword"), location)
 }
 
 unittest isTest {
   filepath = fp.Filepath.new("test_filepath", null(fp.Filepath), false)
+  keytab = Keytab()
+  lexer = Lexer(filepath, keytab, false)
   location = db.Location(filepath, 0u32, 0u32, 1u32)
-  assert Token.newValueToken("string token", location).isValue("string token")
-  assert !Token.newValueToken("string token", location).isValue("bad token")
-  assert Token.newValueToken(true, location).isValue(true)
-  assert !Token.newValueToken(true, location).isValue(false)
-  assert Token.newValueToken(123i8, location).isValue(123i8)
-  assert Token.newValueToken(123456789, location).isValue(123456789)
-  assert Token.newValueToken(db.Bigint(123), location).isValue(db.Bigint(123))
-  assert Token.newValueToken(3.14, location).isValue(3.14)
-  assert Token.newValueToken(Sym.new("identifier"), location).isValue(Sym.new("identifier"))
+  assert Token.newValueToken(lexer, "string token", location).isValue("string token")
+  assert !Token.newValueToken(lexer, "string token", location).isValue("bad token")
+  assert Token.newValueToken(lexer, true, location).isValue(true)
+  assert !Token.newValueToken(lexer, true, location).isValue(false)
+  assert Token.newValueToken(lexer, 123i8, location).isValue(123i8)
+  assert Token.newValueToken(lexer, 123456789, location).isValue(123456789)
+  assert Token.newValueToken(lexer, db.Bigint(123), location).isValue(db.Bigint(123))
+  assert Token.newValueToken(lexer, 3.14, location).isValue(3.14)
+  assert Token.newValueToken(lexer, Sym.new("identifier"), location).isValue(Sym.new("identifier"))
 }

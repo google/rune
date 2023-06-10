@@ -1,4 +1,4 @@
-//  Copyright 2023 Google LLC.
+//  Copyright 2021 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,6 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-class Tset(self) {
-  self.hasEmpty = false
+func factorial(a) {
+  if a == 1 {
+    return a
+  }
+  return a*factorial(a - 1)
 }
+
+println factorial(57u256)

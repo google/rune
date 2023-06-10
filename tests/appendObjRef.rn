@@ -12,21 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-class Root(self) {
+class Foo(self, name) {
+  self.name = name
+
+  final(self) {
+    println "Destroying ", self.name
+  }
 }
 
-class Node(self, value) {
-  self.value = value
-}
-
-class Value(self, val) {
-  self.val = val
-  root.appendValue(self)
-}
-
-relation DoublyLinked Root Value cascade
-
-
-root = Root()
-node = Node(Value(123))
-println node
+l = arrayof(Foo)
+l.append(Foo("foo1"))
+println "got to 1"
+l.append(Foo("foo2"))
+println "got to 2"

@@ -32,15 +32,6 @@ transformer LinkedList(A: Class, B: Class, cascadeDelete:bool = false,
       ref child
     }
 
-    func findPrev$labelB$B(self, child: B) {
-      for prevChild in self.$labelB$pluralB() {
-        if prevChild.next$A$labelB$B == child {
-          return prevChild
-        }
-      }
-      return null(child)
-    }
-
     func insertAfter$labelB$B(self, prevChild: B?, child: B) {
       debug {
         if !isnull(child.$labelA$A) {
@@ -67,12 +58,21 @@ transformer LinkedList(A: Class, B: Class, cascadeDelete:bool = false,
       if self.first$labelB$B == child {
         self.first$labelB$B = next
       } else {
-        prevChild = self.findPrev$labelB$B(child)
+        prevChild = self._findPrev$labelB$B(child)
         prevChild.next$A$labelB$B = next
       }
       child.next$A$labelB$B = null(child)
       child.$labelA$A = null(self)
       unref child
+    }
+
+    func _findPrev$labelB$B(self, child: B) {
+      for prevChild in self.$labelB$pluralB() {
+        if prevChild.next$A$labelB$B == child {
+          return prevChild
+        }
+      }
+      return null(child)
     }
 
     func count$labelB$pluralB(self) {

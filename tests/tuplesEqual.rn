@@ -12,10 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use parser
-
-class Itemset(self, parser: Parser) {
-  parser.appendItemset(parser, self)
-}
-
-relation DoublyLinked Parser Itemset cascade
+t1 = (1, false)
+t2 = (1, false)
+println t1 == t2

@@ -128,7 +128,8 @@ static inline bool isNAN(const runtime_array *bigint) {
 // Restore the header, overriding the const qualifier on data.
 static inline void checkForNAN(const runtime_array *bigint) {
   if  (isNAN(bigint)) {
-    runtime_raiseExceptionCstr("Bigint was set to NaN");
+    runtime_raiseExceptionCstr("NotANumber", __FILE__, __LINE__,
+        "Bigint was set to NaN");
   }
 }
 
@@ -159,7 +160,7 @@ static inline void checkForUnderflow(runtime_array *bigint) {
     uint32_t *data = getBigintData(bigint);
     uint32_t highWord = data[bigint->numElements - 1];
     if ((highWord & 0x40000000u) != 0) {
-      runtime_raiseExceptionCstr("Unsigned integer underflow");
+      runtime_raiseExceptionCstr("Overflow", __FILE__, __LINE__, "Unsigned integer underflow");
     }
   }
 }
@@ -276,7 +277,7 @@ uint64_t runtime_bigintToInteger(const runtime_array *source) {
     result = (result << 31) | data[i];
   }
   if (isBad) {
-    runtime_raiseExceptionCstr("Bigint does not fit into uint64_t");
+    runtime_raiseExceptionCstr("Overflow", __FILE__, __LINE__, "Bigint does not fit into uint64_t");
   }
   return result;
 }
@@ -359,7 +360,8 @@ void runtime_bigintEncodeBigEndian(runtime_array *byteArray, runtime_array *sour
 uint32_t runtime_bigintToU32(const runtime_array *a) {
   uint64_t result = runtime_bigintToInteger(a);
   if ((uint32_t)result != result) {
-    runtime_raiseExceptionCstr("Bigint too large to fit into a u32");
+    runtime_raiseExceptionCstr("Overflow", __FILE__, __LINE__,
+        "Bigint too large to fit into a u32");
   }
   return (uint32_t)result;
 }
@@ -367,8 +369,10 @@ uint32_t runtime_bigintToU32(const runtime_array *a) {
 // Throw an exception if |a| and |b| have different size or if one is signed and
 // the other is not.
 static void checkBigintsHaveSameType(const runtime_array *a, const runtime_array *b) {
-  if (runtime_bigintWidth(a) != runtime_bigintWidth(b) || runtime_bigintSigned(a) != runtime_bigintSigned(b)) {
-    runtime_raiseExceptionCstr("Different bigint types in binary operation");
+  if (runtime_bigintWidth(a) != runtime_bigintWidth(b) ||
+      runtime_bigintSigned(a) != runtime_bigintSigned(b)) {
+    runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__,
+        "Different bigint types in binary operation");
   }
 }
 
@@ -506,7 +510,7 @@ static void unaryOperation(runtime_unaryBigintFunc func, runtime_array *dest, ru
 // max negative value.
 void runtime_bigintNegate(runtime_array *dest, runtime_array *a) {
   if (!runtime_bigintSigned(a)) {
-    runtime_raiseExceptionCstr("Negating an unsigned value");
+    runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__, "Negating an unsigned value");
   }
   unaryOperation(cti_neg, dest, a);
 }
@@ -514,7 +518,7 @@ void runtime_bigintNegate(runtime_array *dest, runtime_array *a) {
 // Negate a bigint.  Don't check for the signed bit or being max negative number.
 void runtime_bigintNegateTrunc(runtime_array *dest, runtime_array *a) {
   if (!runtime_bigintSigned(a)) {
-    runtime_raiseExceptionCstr("Negating an unsigned value");
+    runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__, "Negating an unsigned value");
   }
   unaryOperation(cti_neg_trunc, dest, a);
 }
@@ -527,13 +531,15 @@ void runtime_bigintComplement(runtime_array *dest, runtime_array *a) {
 
 // Execute a bigint rotation.  |source| must be unsigned.
 // included, since unsigned integers have 1 extra 0 bit.
-static void rotateBigint(runtime_array *dest, runtime_array *source, uint32_t dist, bool rotateLeft) {
+static void rotateBigint(runtime_array *dest, runtime_array *source, uint32_t dist,
+    bool rotateLeft) {
   uint32_t width = runtime_bigintWidth(source);
   if (dist > width) {
-    runtime_raiseExceptionCstr("Rotation by more than the bit width");
+    runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__,
+        "Rotation by more than the bit width");
   }
   if (runtime_bigintSigned(source)) {
-    runtime_raiseExceptionCstr("Cannot rotate signed integers");
+    runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__, "Cannot rotate signed integers");
   }
   if (!rotateLeft) {
     dist = width - dist;
@@ -563,7 +569,8 @@ typedef void (*runtime_shiftFunc)(uint32_t *destData, const uint32_t *sourceData
 // Shift a bigint left or right by |dist|.
 static void shiftBigint(runtime_array *dest, runtime_array *source, uint32_t dist, bool shiftLeft) {
   if (dist > runtime_bigintWidth(source)) {
-    runtime_raiseExceptionCstr("Tried to shift by the integer width or more");
+    runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__,
+        "Tried to shift by the integer width or more");
   }
   initBigint(dest, runtime_bigintWidth(source), runtime_bigintSigned(source),
       runtime_bigintSecret(source));
@@ -691,10 +698,10 @@ uint64_t runtime_smallnumModularNegate(uint64_t a, uint64_t modulus, bool secret
 // Constant time modular multiplication.
 void runtime_bigintModularMul(runtime_array *dest, runtime_array *a, runtime_array *b, runtime_array *modulus) {
   if (runtime_bigintSecret(modulus)) {
-    runtime_raiseExceptionCstr("Modulus cannot be secret");
+    runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__,"Modulus cannot be secret");
   }
   if (runtime_bigintSigned(modulus)) {
-    runtime_raiseExceptionCstr("Modulus must be unsigned");
+    runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__,"Modulus must be unsigned");
   }
   runtime_array bigA = runtime_makeEmptyArray();
   runtime_array bigB = runtime_makeEmptyArray();
@@ -722,10 +729,10 @@ void runtime_bigintModularMul(runtime_array *dest, runtime_array *a, runtime_arr
 // TODO: Make this constant time.
 bool runtime_bigintModularInverse(runtime_array *dest, runtime_array *source, runtime_array *modulus) {
   if (runtime_bigintSecret(modulus)) {
-    runtime_raiseExceptionCstr("Modulus cannot be secret");
+    runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__,"Modulus cannot be secret");
   }
   if (runtime_bigintSigned(modulus) || runtime_bigintSigned(source)) {
-    runtime_raiseExceptionCstr("Modular values must be unsigned");
+    runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__,"Modular values must be unsigned");
   }
   runtime_array signedModulus = runtime_makeEmptyArray();
   runtime_array a = runtime_makeEmptyArray();
@@ -810,7 +817,8 @@ static uint32_t widthToCTTKWords(uint32_t width) {
 // Modular exponentiation.  TODO: speed this up.
 void runtime_bigintModularExp(runtime_array *dest, runtime_array *base, runtime_array *exponent, runtime_array *modulus) {
   if (runtime_rnBoolToBool(runtime_bigintNegative(exponent))) {
-    runtime_raiseExceptionCstr("Tried to exponentiate with negative exponent");
+    runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__,
+        "Tried to exponentiate with negative exponent");
   }
   uint32_t baseWidth = getBigintWidth(getBigintData(modulus));
   uint32_t expWidth = getBigintWidth(getBigintData(exponent));
@@ -1046,7 +1054,8 @@ uint64_t runtime_selectUint32(runtime_bool select, uint64_t data1, uint64_t data
 // Conditionally copy a bigint in constant time.
 void runtime_bigintCondCopy(runtime_bool doCopy, runtime_array *dest, const runtime_array *source) {
   if (runtime_bigintWidth(dest) != runtime_bigintWidth(source)) {
-    runtime_raiseExceptionCstr("Tried to cond-copy to different size bigint");
+    runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__,
+        "Tried to cond-copy to different size bigint");
   }
   uint64_t len = source->numElements*sizeof(uint32_t);
   cttk_cond_copy(doCopy, dest->data, source->data, len);

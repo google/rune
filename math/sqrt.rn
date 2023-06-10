@@ -13,7 +13,7 @@
 // limitations under the License.
 
 func sqrt(squared: f64, tolerance: f64 = 0.00000000000003) {
-  guess = squared / .115f64
+  guess = squared / 0.115f64
   nextGuess = 0.5 * (guess + (squared / guess))
   while abs(nextGuess - guess) > tolerance {
     guess = nextGuess

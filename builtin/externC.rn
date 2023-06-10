@@ -19,3 +19,4 @@ extern "C" func writeByte(c: u8)
 extern "C" func readln(maxLen: u64 = 0u64) -> string
 extern "C" func readBytes(numBytes: u64) -> [u8]
 extern "C" func writeBytes(array: [u8], numBytes: u64 = 0, offset: u64 = 0)
+extern "C" func exit(code: i32)

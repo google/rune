@@ -1,0 +1,4 @@
+goal: emptyInitializer (operatorExample | builtin)*
+emptyInitializer: EMPTY
+builtin: IDENT | INTEGER | FLOAT | STRING | RANDUINT | INTTYPE | UINTTYPE
+operatorExample: "a"* "b" | "c"+ | "d" "e"? | "if" &"then" | "if" !"else"

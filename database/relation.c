@@ -124,10 +124,13 @@ void deAddClassMemberRelations(deClass parentClass) {
       deDatatype datatype = deVariableGetDatatype(var);
       if (deDatatypeGetType(datatype) == DE_TYPE_CLASS) {
         deClass childClass = deDatatypeGetClass(datatype);
+        // TODO: When persistent relations are supported, add this check.
+        /*
         if (!deTemplateRefCounted(deClassGetTemplate(childClass))) {
-          deError(deVariableGetLine(var), "Viariable %s instantiates a cascade-delete class",
+          deError(deVariableGetLine(var), "Variable %s instantiates a cascade-delete class",
               deVariableGetName(var));
         }
+        */
         memberRelCreate(var, parentClass, childClass);
       }
     }

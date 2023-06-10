@@ -1,0 +1,123 @@
+goal: newline*  statement*
+statement: appendCode | assertStatement | assignmentStatement | exprStatement | class
+    | debugStatement | enum | externFunction | finalFunction | foreachStatement | forStatement
+    | function | transformStatement | transformer | ifStatement | import | prependCode
+    | printStatement | printlnStatement | refStatement | relationStatement | returnStatement
+    | struct | switchStatement | typeswitchStatement | tryExceptStatement | raiseStatement
+    | panicStatement | unitTest | unrefStatement | whileStatement | yield
+import: "import" pathExprWithAlias newline+ | "importlib" pathExprWithAlias newline+
+    | "importrpc" pathExprWithAlias newline+ | "use" IDENT newline+
+class: exportFuncSpec? "class" IDENT (":" UINTTYPE)? "(" parameterList ")" raises? block
+exportFuncSpec: exportStructSpec | "rpc"
+exportStructSpec:  "export" | "exportlib"
+struct: exportStructSpec? ("struct" | "message") IDENT "{" newline+ (structMember newline+)* "}" newline+
+structMember: IDENT (":" typeExpr)? ("=" expr)?
+appendCode: "appendcode" pathExpr? block
+prependCode: "prependcode" pathExpr? block
+block: "{" newline+ statement* "}" newline*
+function: exportFuncSpec? functionHeader "(" parameters ")" ("->" typeExpr)? raises? block
+functionHeader: "func" IDENT | "iterator" IDENT | "operator" operator
+operator: "+" | "-" | "*" | "/" | "%" | "**" | "&&" | "||" | "^^" | "&" | "|" | "^" | "&&" | "<<"
+    | ">>" | "<<<" | ">>>" | "!+" | "!-" | "!*" | "~" | "<" | "<=" | ">"
+    | ">=" | "==" | "!=" | "!" | "[]" | "<>" | "in"
+parameterList: newline* parameter (comma parameter)* newline*
+parameters: (newline* parameter (comma parameter)*)? newline*
+comma: "," newline*
+parameter: "var"? (IDENT | "<" IDENT ">") (":" typeExpr)? ("=" expr)?
+externFunction: "extern" STRING functionHeader "(" parameters ")" ("->" typeExpr)? newline+
+    | "rpc" IDENT "(" parameters ")" ("->" typeExpr)? newline+
+ifStatement: ifPart elseIfPart* elsePart?
+ifPart:  "if" expr block
+elseIfPart: "else" "if" expr block
+elsePart:  "else" block
+switchStatement:  "switch" expr "{" newline+ switchCase* defaultCase? "}" newline+
+typeswitchStatement:  "typeswitch" expr "{" newline+ typeswitchCase* defaultCase? "}" newline+
+exceptBlock: "{" newline+ exceptCase* defaultCase? "}" newline+
+switchCase: exprList "=>" (block | statement)
+typeswitchCase: typeExprList "=>" (block | statement)
+exceptCase: pathExprList "=>" (block | statement)
+typeExprList: typeExpr (comma typeExpr)*
+pathExprList: pathExpr (comma pathExpr)*
+defaultCase: "default" "=>" (block | statement)
+whileStatement: ("do" block)? "while" expr (newline+ | block)
+forStatement:  "for" assignmentExpr comma expr comma assignmentExpr block
+assignmentStatement: assignmentExpr newline+
+assignmentExpr: expr (":" typeExpr)? assignmentOp expr
+assignmentOp: "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "&&=" | "||=" | "^="
+    | "**=" | "<<=" | ">>=" | "<<<=" | ">>>=" | "!+=" | "!-=" | "!*=" | "**="
+typeExpr: typeRangeExpr ("|" typeRangeExpr)*
+typeRangeExpr: typeLiteral "..." typeLiteral | compoundTypeExpr
+compoundTypeExpr: basicTypeExpr | arrayTypeExpr | tupleTypeExpr
+arrayTypeExpr: "[" newline* typeExpr (comma typeExpr)* comma? "]"
+tupleTypeExpr: "(" newline* typeExpr (comma typeExpr)+ comma? ")"
+    | "(" newline* typeExpr "," ")" | "(" ")"
+basicTypeExpr: typePathExpr "?"? | "typeof" "(" newline* expr ")" | "unsigned" "(" newline* expr ")"
+    | "signed" "(" newline* expr ")" | typeLiteral | "secret" "(" newline* typeRangeExpr ")"
+    | "(" typeExpr ")"
+typePathExpr: pathExpr ("<" typeExprList ">")?
+postfixExpr: basicExpr suffix*
+suffix: "." IDENT | "!" | "(" callParameters ")"  | "[" newline* expr newline* "]"
+    | "[" newline* expr ":" newline* expr newline* "]"
+basicExpr: IDENT | tokenExpr | "[" newline* exprList newline* "]"
+    | "(" newline* expr ")" | tupleExpr | "secret" "(" newline* expr ")"
+    | "reveal" "(" newline* expr ")" | "arrayof" "(" newline* typeExpr ")"
+    | "typeof" "(" newline* expr ")" | "null" "(" newline* expr ")"
+    | "&" pathExpr "(" newline* exprs ")" | "unsigned" "(" newline* expr ")"
+    | "signed" "(" newline* expr ")" | "widthof" "(" newline* expr ")"
+    | "isnull" "(" newline* expr ")"
+tokenExpr: INTEGER | FLOAT | STRING | RANDUINT | bool | typeLiteral
+bool: "true" | "false"
+exprStatement: expr newline+
+callParameters: newline* (callParameter (comma callParameter)*)? comma?
+callParameter: (IDENT "=")? expr
+printStatement: "print" exprs newline+
+printlnStatement: "println" exprs newline+
+tryExceptStatement: "try" block "except" IDENT exceptBlock
+raiseStatement: "raise" raiseExprList newline+
+raiseExprList: pathExpr (comma expr)*
+panicStatement: "panic" exprs newline+
+assertStatement: "assert" exprs newline+
+returnStatement: "return" expr? newline+
+transformer: "transformer" IDENT "(" parameters ")" block
+transformStatement: "transform" pathExpr "(" newline* exprs ")" newline+
+relationStatement: "relation" pathExpr typePathExpr label? typePathExpr label? "cascade"?
+    ("(" callParameters ")")?  newline+
+label: ":" STRING
+yield: "yield" expr newline+
+unitTest: "unittest" IDENT? block
+debugStatement: "debug" block
+enum: "enum" IDENT "{" newline+ entry* "}" newline+
+entry: IDENT ("=" INTEGER)? newline+
+foreachStatement: "for" IDENT "in" expr block
+finalFunction: "final" "(" parameter ")" raises? block
+raises: "raises" pathExprList
+refStatement: "ref" expr newline+
+unrefStatement: "unref" expr newline+
+exprs: exprList?
+exprList: expr (comma expr)*
+expr: selectExpr ("..." newline* selectExpr)?
+selectExpr: orExpr ("?" newline* orExpr ":" newline* orExpr)?
+orExpr: xorExpr ("||" newline* xorExpr)*
+xorExpr: andExpr ("^^" newline* andExpr)*
+andExpr: inExpr ("&&" newline* inExpr)*
+inExpr: modExpr ("in" newline* modExpr)*
+modExpr: relationExpr ("mod" newline* bitorExpr)?
+relationExpr: bitorExpr (relationOp newline* bitorExpr)*
+relationOp: "==" | "!=" | "<" | "<=" | ">" | ">="
+bitorExpr: bitxorExpr ("|" newline* bitxorExpr)*
+bitxorExpr: bitandExpr ("^" newline* bitandExpr)*
+bitandExpr: shiftExpr ("&" newline* shiftExpr)*
+shiftExpr: addExpr (shiftOp newline* addExpr)*
+shiftOp: ">>" | "<<" | ">>>" | "<<<"
+addExpr: mulExpr (addOp newline* mulExpr)*
+addOp: "+" | "-" | "!+" | "!-"
+mulExpr: prefixExpr (mulOp newline* prefixExpr)*
+mulOp: "*" | "/" | "%" | "!*"
+prefixExpr: exponentiateExpr | "!" prefixExpr | "~" prefixExpr | "-" prefixExpr
+    | "!-" prefixExpr | "<" typeExpr ">" prefixExpr | "!<" typeExpr ">" prefixExpr
+exponentiateExpr: postfixExpr ("**" newline* exponentiateExpr)*
+typeLiteral: UINTTYPE | INTTYPE | "string" | "bool" | "f32" | "f64"
+pathExpr: IDENT ("." IDENT)*
+pathExprWithAlias: pathExpr ("as" IDENT)?
+tupleExpr: "(" newline* expr (comma expr)+ comma? ")" | "(" newline* expr "," ")" | "(" ")"
+newline: "\n" | ";"

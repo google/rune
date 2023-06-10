@@ -44,7 +44,7 @@ class Sym(self, name: string) {
   }
 }
 
-relation HashedClass Symtab Sym
+relation HashedClass Symtab Sym cascade
 
 theSymbolTable = Symtab()
 if false {

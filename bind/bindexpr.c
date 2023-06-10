@@ -1631,6 +1631,9 @@ static void bindNamedParameter(deBlock scopeBlock, deExpression expression) {
   if (deVariableGetType(var) != DE_VAR_PARAMETER) {
     deExprError(expression, "Variable %s is a local variable, not a parameter", utSymGetName(paramName));
   }
+  if (ident != deIdentNull) {
+    deIdentRemoveExpression(ident, paramNameExpression);
+  }
   deIdentAppendExpression(ident, paramNameExpression);
 }
 

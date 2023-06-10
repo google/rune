@@ -21,7 +21,7 @@
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>  // For access to stdin and stdout.
-#include <stdlib.h>  // For exit.
+#include <stdlib.h>  // For exit and getenv.
 #include <unistd.h>  // For getcwd.
 
 // Used in Linux for testing purposes.
@@ -46,6 +46,22 @@ void io_getcwd(runtime_array *array) {
   runtime_allocArray(array, len, sizeof(uint8_t), false);
   memcpy(array->data, path, len);
   free(path);
+}
+
+// Get an environment variable's value.  Returns empty string if not found.
+void io_getenv(runtime_array *value, const runtime_array *name) {
+  // We need an array 1 bigger than name for the zero terminator.
+  runtime_array buf = runtime_makeEmptyArray();
+  runtime_allocArray(&buf, name->numElements + 1, sizeof(uint8_t), false);
+  memcpy(buf.data, name->data, name->numElements * sizeof(uint8_t));
+  ((char*)buf.data)[name->numElements] = '\0';
+  char *v = getenv((char*)buf.data);
+  if (v != NULL) {
+    size_t len = strlen(v);
+    runtime_allocArray(value, len, sizeof(uint8_t), false);
+    memcpy((char*)value->data, v, len);
+  }
+  runtime_freeArray(&buf);
 }
 
 // Call fopen.
@@ -76,7 +92,8 @@ bool io_file_fcloseInternal(uint64_t ptr) {
 uint64_t io_file_freadInternal(uint64_t ptr, runtime_array *buf) {
   uint64_t len = buf->numElements;
   if (len == 0) {
-    runtime_raiseExceptionCstr("Tried to read from file into an empty string");
+    runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__,
+        "Tried to read from file into an empty string");
   }
   FILE *file = (FILE*)(uintptr_t)ptr;
   uint64_t bytesRead = fread(buf->data, 1, len, file);
@@ -215,7 +232,6 @@ void runtime_raiseException(const runtime_array *enumClassName, const runtime_ar
     printf("Expected ");
   }
   runtime_putsCstr("******************** Exception: ");
-  runtime_putsCstr("Exception: ");
   runtime_puts(&runtimeException.errorMessage);
   runtime_putsCstr("\n");
   runtime_freeArray(&runtimeException.errorMessage);
@@ -223,7 +239,8 @@ void runtime_raiseException(const runtime_array *enumClassName, const runtime_ar
 }
 
 // Throw an exception from C.  For now, just print the message and exit.
-void runtime_raiseExceptionCstr(const char *format, ...) {
+void runtime_raiseExceptionCstr(const char *exceptionName, const char *fileName, uint32_t line,
+    const char *format, ...) {
   if (runtime_jmpBufSet) {
     printf("Expected ");
   }
@@ -232,6 +249,13 @@ void runtime_raiseExceptionCstr(const char *format, ...) {
   char buf[RN_MAX_CSTRING];
   vsnprintf(buf, RN_MAX_CSTRING, format, ap);
   va_end(ap);
+  if (runtime_firstSetjmpBuffer != NULL) {
+    runtime_arrayInitCstr(&runtimeException.errorEnumName, "Exception");
+    runtime_arrayInitCstr(&runtimeException.errorValueName, exceptionName);
+    runtime_arrayInitCstr(&runtimeException.filePath, fileName);
+    runtimeException.line = line;
+    longjmp(runtime_firstSetjmpBuffer->buf, 1);
+  }
   runtime_putsCstr("Exception: ");
   runtime_putsCstr(buf);
   runtime_putsCstr("\n");
@@ -763,7 +787,8 @@ static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel
         value = *(double*)&floatVal;
       }
     } else {
-      runtime_raiseExceptionCstr("Unsupported floating point width: %u", width);
+      runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__,
+          "Unsupported floating point width: %u", width);
     }
     runtime_array buf = runtime_makeEmptyArray();
     doubleToString(&buf, value);
@@ -941,13 +966,14 @@ void runtime_bigintToString(runtime_array *string, runtime_array *bigint, uint32
   runtime_array r = runtime_makeEmptyArray();
   runtime_array b = runtime_makeEmptyArray();
   runtime_copyBigint(&q, bigint);
-  runtime_integerToBigint(&b, base, runtime_bigintWidth(bigint), runtime_bigintSigned(bigint), false);
+  runtime_integerToBigint(&b, base, runtime_bigintWidth(bigint), runtime_bigintSigned(bigint),
+       false);
   while (!runtime_rnBoolToBool(runtime_bigintZero(&q))) {
     runtime_bigintDivRem(&q, &r, &q, &b);
     if (negative) {
       runtime_bigintNegate(&r, &r);
       if (runtime_rnBoolToBool(runtime_bigintNegative(&r))) {
-        runtime_raiseExceptionCstr("Expected negative remainder");
+        runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__, "Expected negative remainder");
       }
     }
     uint32_t digit = runtime_bigintToU32(&r);
@@ -1011,7 +1037,8 @@ void runtime_hexToString(runtime_array *destBinString, const runtime_array *sour
   uint64_t numElements = sourceHexString->numElements;
   if (numElements & 1) {
     runtime_freeArray(destBinString);
-    runtime_raiseExceptionCstr("Invalid hex string: should have even number of hex digits");
+    runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__,
+        "Invalid hex string: should have even number of hex digits");
   }
   runtime_resizeArray(destBinString, numElements >> 1, sizeof(uint8_t), false);
   uint8_t *p = (uint8_t*)(destBinString->data);
@@ -1023,10 +1050,11 @@ void runtime_hexToString(runtime_array *destBinString, const runtime_array *sour
     }
     uint8_t lower = *q++;
     if (!isxdigit(lower)) {
-      runtime_raiseExceptionCstr("Invalid hex digit: %c", lower);
+      runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__,
+          "Invalid hex digit: %c", lower);
     }
     if (!isxdigit(upper) || !isxdigit(lower)) {
-      runtime_raiseExceptionCstr("Invalid hex digit: ");
+      runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__, "Invalid hex digit: ");
     }
     *p++ = (fromHex(upper) << 4) | fromHex(lower);
   }

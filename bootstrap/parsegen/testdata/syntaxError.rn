@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-class Foo(self) {
-  const self.x = [(1, "test")]
+func factorial(a) {
+  if a == 1 {
+    return a
+ . }
+  return a*factorial(a - 1)
 }
 
-foo = Foo()
-foo.x[0][1] = "asdf"
-println foo.x[0]
+println factorial(57u256)

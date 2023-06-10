@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-func unsignedAdd(a, b): Uint {
+func unsignedAdd(a, b) -> Uint {
   return a + b
 }
 

@@ -442,7 +442,7 @@ unittest testUnaryOperators {
   assert -Bigint(123i256) == Bigint(-123i256)
   println -Bigint(12345i32)
   // Test truncating negation's one exceptional input.
-  assert !-Bigint(!-128i8) == Bigint(!-128i8)
+  assert !-Bigint(!<i8>128u8) == Bigint(!<i8>128u8)
   assert !-Bigint(-127i8) == Bigint(127i8)
   println (~Bigint(0x55aaau20)).toStringInBase(16u32)
   assert ~Bigint(0x55aaau20) == Bigint(0xaa555u20);
@@ -453,9 +453,9 @@ unittest testShiftOperators {
   a = Bigint(0xdeadbeefu32)
   assert a >> 16u32 == Bigint(0xdeadu32)
   assert a << 4u32 == Bigint(0xeadbeef0u32)
-  b = Bigint(0xdeadbeefi32)
-  assert b >> 16u32 == Bigint(0xffffdeadi32)
-  assert b << 4u32 == Bigint(0xeadbeef0i32)
+  b = Bigint(!<i32>0xdeadbeefu32)
+  assert b >> 16u32 == Bigint(!<i32>0xffffdeadu32)
+  assert b << 4u32 == Bigint(!<i32>0xeadbeef0u32)
 }
 
 // Test rotation operators.

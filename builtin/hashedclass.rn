@@ -41,6 +41,7 @@ transformer HashedClass(A: Class, B: Class, cascadeDelete: bool = false,
       while !isnull(entry) {
         // The B class must have an equals method.
         if entry!.equals($B) {
+          ref entry!
           return entry!
         }
         entry = entry!.nextHashed$A$labelB$B

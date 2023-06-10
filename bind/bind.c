@@ -628,6 +628,19 @@ void deReportEvents(void) {
   }
 }
 
+// Bind exportllib functions, even if they are not called internally.
+void createExportLibSignatures(void) {
+  deFunction function;
+  deForeachRootFunction(deTheRoot, function) {
+    if (deFunctionGetLinkage(function) == DE_LINK_LIBCALL  &&
+        deFunctionGetUniquifiedSignature(function) == deSignatureNull) {
+      deSignature signature = deCreateFullySpecifiedSignature(function);
+      deSignatureSetInstantiated(signature, true);
+      deQueueSignature(signature);
+    }
+  } deEndRootFunction;
+}
+
 // Bind expressions everywhere.
 void deBind(void) {
   deBlock rootBlock = deRootGetBlock(deTheRoot);
@@ -636,6 +649,7 @@ void deBind(void) {
       deDatatypeArrayAlloc(), deFunctionGetLine(mainFunc));
   deSignatureSetInstantiated(mainSignature, true);
   deQueueSignature(mainSignature);
+  createExportLibSignatures();
   deBindAllSignatures();
   destroyUnusedTemplateContents();
   deReportEvents();

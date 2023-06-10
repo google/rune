@@ -16,5 +16,5 @@ println 1e23f32
 println 1.e-23f32
 println 1e23f32
 println 123.f32
-println .123f32
+println 0.123f32
 println 123.456f32

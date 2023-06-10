@@ -16,3 +16,4 @@
 use file
 
 extern "C" func getcwd() -> string
+extern "C" func getenv(envVarName: string) -> string

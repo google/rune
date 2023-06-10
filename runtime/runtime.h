@@ -137,6 +137,7 @@ void readBytes(runtime_array *array, uint64_t numBytes);
 void writeBytes(const runtime_array *array, uint64_t numBytes, uint64_t offset);
 void readln(runtime_array *array, uint64_t maxBytes);
 void io_getcwd(runtime_array *array);
+void io_getenv(runtime_array *value, const runtime_array *name);
 uint64_t io_file_fopenInternal(runtime_array *fileName, runtime_array *mode);
 bool io_file_fcloseInternal(uint64_t ptr);
 uint64_t io_file_freadInternal(uint64_t ptr, runtime_array *buf);
@@ -151,7 +152,8 @@ void runtime_raiseException(const runtime_array *enumClassName,
                             const runtime_array *enumValueName,
                             const runtime_array *filePath, uint32_t line,
                             const runtime_array *format, ...);
-void runtime_raiseExceptionCstr(const char *format, ...);
+void runtime_raiseExceptionCstr(const char *exceptionName, const char *fileName, uint32_t line,
+    const char *format, ...);
 void runtime_raiseOverflow();
 void runtime_panic(const runtime_array *format, ...);
 void runtime_panicCstr(const char *format, ...);
@@ -201,7 +203,7 @@ static inline uint64_t runtime_multCheckForOverflow(size_t a, size_t b) {
     return res;
   }
   if (res / a != b) {
-    runtime_raiseExceptionCstr("Integer overflow");
+    runtime_raiseExceptionCstr("Overflow", __FILE__, __LINE__, "Integer overflow");
   }
   return res;
 }
@@ -211,7 +213,7 @@ static inline uint64_t runtime_multCheckForOverflow(size_t a, size_t b) {
 static inline size_t runtime_addCheckForOverflow(size_t a, size_t b) {
   size_t sum = a + b;
   if (sum < a || sum < b) {
-    runtime_raiseExceptionCstr("Integer overflow");
+    runtime_raiseExceptionCstr("Overflow", __FILE__, __LINE__, "Integer overflow");
   }
   return sum;
 }

@@ -17,7 +17,7 @@ println 1.e-23
 println 1e23f64
 println 123.
 println 123.f64
-println .123
-println .123f64
+println 0.123
+println 0.123f64
 println 123.456
 println 123.456f64

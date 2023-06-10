@@ -1,77 +1,66 @@
 Passed empty test
 Passed escaped chars test
-File testdata/empty, line 1: Invalid character
+testdata/empty:1: Invalid character
 ��
 ^^
 Caught invalid character
-File testdata/empty, line 1: Non-hex digit in hexadecimal escape sequence
+testdata/empty:1: Non-hex digit in hexadecimal escape sequence
 "\x0g"
 ^^^^^
 Caught invalid hex escape
-File testdata/empty, line 1: Invalid escape sequence
+testdata/empty:1: Invalid escape sequence
 "\z"
   ^
 Caught invalid escape sequence
-File testdata/empty, line 1: End of file while reading string
+testdata/empty:1: End of file while reading string
 "no end quote
 ^^^^^^^^^^^^^^
 Caught unexpected end of file
 Passed bad input test
 Passed escaped chars test
 token value = 0u64
-expected    = 0u64
 token value = 1u2
-expected    = 1u2
 token value = 3i3
-expected    = 3i3
 token value = 57896044618658097711785492504343953926634992332820282019728792003956564819949u256
-expected    = 57896044618658097711785492504343953926634992332820282019728792003956564819949u256
 Passed parse integer test
 token value = 0u64
-expected    = 0u64
 token value = au4
-expected    = au4
 token value = 3i3
-expected    = 3i3
 token value = 7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffedu256
-expected    = 7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffedu256
 Passed parse integer test
 token value = 0.0
-expected    = 0.0
 token value = 3.14
-expected    = 3.14
 token value = 9.99e2
-expected    = 9.99e2
 token value = 2.4e-24
-expected    = 2.4e-24
 token value = 1.234568e8
-expected    = 1.234568e8
 Passed parse float test
 token value = if
-expected    = if
 token value = +
-expected    = +
 token value = test
-expected    = test
 Passed parse escaped ident test
 token value = schön
-expected    = schön
 token value = a123
-expected    = a123
 token value = test
-expected    = test
 Passed parse ident test
-token value = sch_ön
-expected    = sch_ön
-token value = a1_23
-expected    = a1_23
+token value = $sch_ön
+token value = $a1_23
 token value = _test
-expected    = _test
 Passed parse enable underscores test
 token value = u32
-expected    = u32
 token value = i6
-expected    = i6
 token value = rand1024
-expected    = rand1024
 Passed u|i|rand test
+token value = \n
+token value = 1u64
+token value = 2u64
+token value = 3u64
+token value = \n
+token value = \n
+token value = 4u64
+token value = 5u64
+Passed signleLineCommentTest
+token value = 2u64
+token value = 3u64
+token value = \n
+token value = 5u64
+Passed blockCommentTest

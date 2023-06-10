@@ -1,0 +1,16 @@
+goal: "a" E "c" | "a" F "d" | "b" F "c" | "b" E "d"
+E: "e"
+F: "e"
+
+goal: emptyInitializer (operatorExample | builtin)*
+emptyInitializer: EMPTY
+builtin: IDENT | INTEGER | FLOAT | STRING | RANDUINT | INTTYPE | UINTTYPE
+operatorExample: "a"* "b" | "c"+ | "d" "e"? | "if" &"then" | "if" !"else"
+
+passed parseExampleRulesTest
+passed parseRuneRulesTest
+passed parseFactorialFunctionTest
+/third_party/rune/bootstrap/parsegen/testdata/syntaxError.rn:18: Syntax error
+ . }
+ ^
+passed parseSyntaxErrorTest

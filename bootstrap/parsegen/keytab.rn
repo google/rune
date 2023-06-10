@@ -18,10 +18,30 @@ class Keytab(self) {
   func lookup(self, name: string) -> Keyword? {
     return self.findKeyword(Sym.new(name))
   }
+
+  // Only build a new keyword if it does not yet exist.
+  func new(self:Keytab, name: string) -> Keyword {
+    sym = Sym.new(name)
+    oldKeyword = self.findKeyword(sym)
+    if !isnull(oldKeyword) {
+      return oldKeyword!
+    }
+    return Keyword(self, name)
+  }
+
+  func setKeywordNums(self) -> u32 {
+    num = 0u32
+    for keyword in self.keywords() {
+      keyword.num = num
+      num += 1
+    }
+    return num
+  }
 }
 
 class Keyword(self, keytab: Keytab, name: string) {
   self.sym = Sym.new(name)
+  self.num = 0u32  // Set after all rules are parsed.
   keytab.insertKeyword(self)
 }
 
