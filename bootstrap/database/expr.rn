@@ -117,7 +117,7 @@ enum ExprType {
   Namedparam  // Myclass(name = "me", profession = "hacker")
 }
 
-// Return the operator precedence.  This is similar to C, but fixes an acknowledge mistake:
+// Return the operator precedence.  This is similar to C, but fixes an acknowledged mistake:
 // bitwise operators should bind more tightly than relational operators.  By the time C's
 // authors realized this mistake, there was already too much C code that would break to fix it.
 // Example: "value & 1 == 0" should test that value is even, but in C the result is always 0.

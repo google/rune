@@ -52,7 +52,7 @@ func hashInteger(value: Uint | Int) -> u64 {
 }
 
 func hashValue(value) -> u64 {
-  // Only one of these cases will be instatiated per func instantiation.
+  // Only one of these cases will be instantiated per func instantiation.
   typeswitch value {
     String => return hashString(value)
     Uint, Int => return hashInteger(value)

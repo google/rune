@@ -201,7 +201,7 @@ would be 64 bits on a 64-bit machine. In Rune, only the string references are
 cache** during the traversal, improving memory load times, while simultaneously
 improving cache hit rates.
 
-This is why Rune's `binarytree.rn` code already runs faster than any other
+This is why Rune's `binary_trees.rn` code already runs faster than any other
 single-threaded result in the [Benchmark
 Games](https://benchmarksgame-team.pages.debian.net/benchmarksgame/index.html).
 (Rune is not yet multi-threaded). The only close competitor is C++, where the
