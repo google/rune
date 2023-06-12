@@ -124,7 +124,7 @@ static inline uint32 deBlockFindVariableIndex(deBlock block,
     i++;
   }
   deEndBlockVariable;
-  utExit("Varaible not found on block");
+  utExit("Variable not found on block");
   return 0;  // Dummy return.
 }
 
@@ -263,7 +263,7 @@ static inline deExpression deExpresssionIndexExpression(deExpression expression,
     }
     i++;
   } deEndExpressionExpression;
-  utExit("Indexed past end of expression list");
+  utExit("Index past end of expression list");
   return deExpressionNull;
 }
 

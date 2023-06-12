@@ -1,9 +1,9 @@
 # Heap queues
 The C++ std::priority_queue is currently ~3X faster at sorting integers.
-However, this is basically useless as heapsort is very slow compared to mergsort
+However, this is basically useless as heapsort is very slow compared to mergesort
 or qsort.  A more interesting case is a heapq of objects.  Rune was the same
-speed once C++ had in-place objects containging a std::string and a uint32_t
-cost.  Objects with more fields are slower in C++, and should in stead be
+speed once C++ had in-place objects containing a std::string and a uint32_t
+cost.  Objects with more fields are slower in C++, and should instead be
 inserted as unique pointers.
 
 In C++, std::priority_queue does not yet support unique pointers, so I was not

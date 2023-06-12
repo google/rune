@@ -1,13 +1,13 @@
 ## Short term
 Use concrete type constraints on variable assignments rather than "if false" type hints.
-In the bootstrap version of Rune, add support for autocasting return expresions
+In the bootstrap version of Rune, add support for autocasting return expressions
     to the type of other return expressions
 Add an option for generating SoA vs AoS memory layout so folks can do their own benchmarking.
 Write a C or C++ backend code generator for improved debugging of Rune, and so folks can benchmark with
     full front-end optimization of different C compilers for benchmarking.
 Enhance gdb pretty printer so that we don't have to generate show methods.
 Figure out when relationship transformers should run.  Right now it is in the order statements are bound so that module-level variables can be passed into the transformers, but we assume all transformers are run before binding a constructor, which is currently false.  Figure out the right thing and do it.
-Use concrete type constraints in binding.  This can help eleminate problems
+Use concrete type constraints in binding.  This can help eliminate problems
     in binding recursive functions, and also non-template classes.
 Don't allow generated fields to be written outside of generated code.
 Add an Object class that matches all types, so we can have case (Object, Object, Object).
@@ -18,7 +18,7 @@ Flesh out index overloading: write is not yet supported.
 Support Overloading method get/set methods.
 Improve safe mode:
     Throw error when destroying an object that has a reference on the stack.
-    Use overflow/underflow intrinsics in LLVM
+    Use overflow/underflow intrinsics in LLVM.
 Fix LLVM select for case when select bit is secret.
     Also, only evaluate one or the other when select is not secret.
 Add syntax for declaring volatile globals at specified addresses, so we can do memory-mapped I/O.  Consider using a global io array.
@@ -26,17 +26,17 @@ Add good support for interop with C++, which is a key requirement for a language
     syntax for declaring extern "C++" functions, and deal with name mangling.
     Add support for calling C++ constructors and methods.
     Add support for c++ unique pointers, which are often returned.
-Add support for C pointer types, which can be returned by C functions declared extern"C".
+Add support for C pointer types, which can be returned by C functions declared extern "C".
 Add "unsafe" blocks where it is legal to dereference or index into a C pointer.
 Write all the Benchmark Games benchmarks twice: one single threaded and
-    honest, one multi-threaded and using similar trickes used by the others to win.
+    honest, one multi-threaded and using similar tricks used by the others to win.
 Implement dynamic class extensions.
 Implement inheritance via composition, using exclusive relationships.
 Return error codes for each deError call, which error tests can expect.
 Write initial language reference manual.
 Add LLVM compiler hints and optmizations as described at
     https://llvm.org/docs/Frontend/PerformanceTips.html#adding-to-this-document.
-Support named parameters, like Python
+Support named parameters, like Python.
 
 ## Medium Term
 Write tests to verify that constant time processing of secrets is achieved.  E.g. if (issecret(foo)...
@@ -50,7 +50,7 @@ Support full co-routines in iterators in the LLVM backend.
 Support tuple unpacking.
 Support overloading modular operations, so we can support modular polynomials, etc.
 Add multi-threading support.
-Add schema-level reuse statements
+Add schema-level reuse statements.
 Write a schema generator for Rune similar to the dataview program for DataDraw schemas.
 Flush out transformers's Rune code interpreter.
 Finish transition to memory pools, and allocation of global arrays with mmap of the memory available on the machine so large arrays never move.
@@ -65,9 +65,9 @@ Tune floating point operations: For some reason, clang is running C/C++ floating
 Rewrite heap to be more efficient for small passed-by-value objects like i32's.  The back-pointer and
   index are not needed for heaps of values.
 Save memory on 32-bit targets using 32-bit lengths.
-LLVM: generate switch rather than a chain of br.
+LLVM: generate switch rather than a chain of branches.
 Support tail recursion.
 Use existing uint32 or int32 field for nextFree to save memory for non-ref-counted classes.
 Identify fields that are always accessed together and merge them into tuples.
-  Generate array-of-structures for these tuples
+  Generate array-of-structures for these tuples.
 Support unions, like DataDraw, where the field is selected by an enumerated type.
