@@ -1,0 +1,2 @@
+goal: expr '\n'
+expr: expr "+" INTEGER | INTEGER
