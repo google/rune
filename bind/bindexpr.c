@@ -1561,7 +1561,7 @@ static bool bindDotExpression(deBlock scopeBlock, deExpression expression) {
     if (deDatatypeNullable(datatype)) {
       deString string = deMutableStringCreate();
       deDumpExpressionStr(string, expression);
-      deExprError(expression, "Cannot use  dot operator on nullable type: %s.",
+      deExprError(expression, "Cannot use dot operator on nullable type: %s.",
           deStringGetCstr(string));
     }
     classBlock = deClassGetSubBlock(deDatatypeGetClass(datatype));

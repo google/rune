@@ -20,7 +20,7 @@ use function
 use location
 use statement
 
-// A liternal block statement.  All statements exist within a block.
+// A literal block statement.  All statements exist within a block.
 class Block(self, location: Location) {
   self.location = location
   // For dead code analysis.

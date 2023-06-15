@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // This is a one-to-many relation transformer that adds a hash table between
-// class A and B.  The hash table is always a power of 2, and dynamically grows
+// class A and B.  The hash table size is always a power of 2, and dynamically grows
 // as needed, when the number of hash table elements equals the size of the
 // table.  The child class B must have two methods: hash() -> u64, and
 // equals(other) which compares the two instances of class B and returns true
