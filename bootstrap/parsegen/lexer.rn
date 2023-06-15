@@ -32,6 +32,7 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
   self.len = <u32>filepath.text.length()
   self.line = 1u32
   self.allowIdentUnderscores = false
+  self.useWeakStrings = false
   self.startPos = 0u32
   self.keytab = keytab
   self.tokens = arrayof(Token)
@@ -39,6 +40,10 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
 
   func enableIdentUnderscores(self, value: bool) {
     self.allowIdentUnderscores = value
+  }
+
+  func enableWeakStrings(self, value: bool) {
+    self.useWeakStrings = value
   }
 
   func parseToken(self) -> Token {
@@ -53,8 +58,8 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
     self.checkCharValid(char)
     filepath = self.filepath!
     c = filepath.text[char.pos]
-    if c == '"' {
-      return self.parseString()
+    if c == '"' || self.useWeakStrings && c == '\'' {
+      return self.parseString(c)
     } else if c == '\'' {
       return self.parseAsciiChar()
     } else if isDigit(c) {
@@ -158,7 +163,7 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
     raise Status.InvalidArgument
   }
 
-  func parseString(self) -> Token {
+  func parseString(self, target) -> Token {
     s = ""
     do {
       if self.eof() {
@@ -166,16 +171,20 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
       }
       char = self.readChar()
       c = self.filepath!.text[char.pos]
-    } while c != '"' {
+    } while c != target {
       if c == '\\' {
-        s.append(self.readEscapedChar(false))
+        s.append(self.readEscapedChar(self.useWeakStrings))
       } else {
         for i in range(char.pos, char.pos + <u32>char.len) {
           s.append(self.filepath!.text[i])
         }
       }
     }
-    return Token.newValueToken(self, s, self.location())
+    token = Token.newValueToken(self, s, self.location())
+    if self.useWeakStrings && target == '\'' {
+      token.type = TokenType.WeakString
+    }
+    return token
   }
 
   // Read an escaped character.  If in single quotes, escape single quotes,

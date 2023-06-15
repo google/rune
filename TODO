@@ -1,4 +1,5 @@
 ## Short term
+Fix optimizer-unsafe potentially non-constant-time processing of struct comparison.
 Use concrete type constraints on variable assignments rather than "if false" type hints.
 In the bootstrap version of Rune, add support for autocasting return expresions
     to the type of other return expressions

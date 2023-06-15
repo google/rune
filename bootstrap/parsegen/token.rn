@@ -24,6 +24,7 @@ enum TokenType {
   Float
   Bool
   String
+  WeakString  // Only used in parsing PEG rules
   Eof
   RandUint
   IntType
@@ -44,6 +45,16 @@ class Token(self, lexer: Lexer, type: TokenType, location: db.Location, keyword:
   // Pass in the text from the lexer.
   func dump(self) {
     self.location.dump()
+  }
+
+  // Return the token's text.
+  func getName(self) {
+    if self.type == TokenType.Eof {
+      return "EOF"
+    }
+    location = self.location
+    filepath = self.lexer!.filepath!
+    return filepath.text[location.pos : location.pos + location.len]
   }
 
   func isValue(self, value: string | bool | Int | Uint | db.Bigint | Float | Sym) -> bool {

@@ -431,7 +431,7 @@ deBlock deParseModule(char *fileName, deBlock packageBlock, bool isMainModule, d
 // Parse the Rune string.
 void deParseString(char* string, deBlock currentBlock) {
   deCurrentBlock = currentBlock;
-  deCurrentFilepath = deBlockGetFilepath(currentBlock);
+  deCurrentFilepath = deFilepathNull;
   initParserGlobals();
   deInputString = string;
   deCurrentFileName = "INTERNAL";
@@ -439,7 +439,6 @@ void deParseString(char* string, deBlock currentBlock) {
     printf("Failed to parse input string\n");
     exit(1);
   }
-  deCurrentFilepath = deFilepathNull;
   deCurrentBlock = deBlockNull;
   deInputString = NULL;
   deInputStringPos = 0;
