@@ -90,12 +90,18 @@ transformer DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
       prev = child.prev$A$labelB$B
       if !isnull(prev) {
         prev!.next$A$labelB$B = next
-      } else if self.first$labelB$B == child {
+      } else {
+        debug {
+          assert self.first$labelB$B == child
+        }
         self.first$labelB$B = next
       }
       if !isnull(next) {
         next!.prev$A$labelB$B = prev
-      } else if self.last$labelB$B == child {
+      } else {
+        debug {
+          assert self.last$labelB$B == child
+        }
         self.last$labelB$B = prev
       }
       child.next$A$labelB$B = null(child)

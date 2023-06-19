@@ -52,7 +52,7 @@ static void checkExpressionIsPrintable(deExpression expression) {
 
 // Read a uint16 from the string.  Update the string pointer to point to first
 // non-digit.  Given an error if the value does not fit in a uint16.
-static uint16 readUint16(char **p, char *end, deLine line) {
+static uint16 readUint16(char **p, char *end, deExpression expression) {
   if (*p == end) {
     return 0;
   }
@@ -65,7 +65,7 @@ static uint16 readUint16(char **p, char *end, deLine line) {
   do {
     value = value * 10 + c - '0';
     if (value > UINT16_MAX) {
-      deError(line, "Integer width cannot exceed 2^16 - 1");
+      deExprError(expression, "Integer width cannot exceed 2^16 - 1");
     }
     c = *++q;
   } while (isdigit(c) && q != end);
@@ -74,8 +74,8 @@ static uint16 readUint16(char **p, char *end, deLine line) {
 }
 
 // Verify the format specifier matches the datatype.
-static char* verifyFormatSpecifier(char* p, char *end, deDatatype datatype, deLine line,
-    char **buf, uint32 *len, uint32 *pos) {
+static char* verifyFormatSpecifier(char* p, char *end, deDatatype datatype,
+    deExpression expression, char **buf, uint32 *len, uint32 *pos) {
   if (deDatatypeGetType(datatype) == DE_TYPE_ENUM) {
     deBlock enumBlock = deFunctionGetSubBlock(deDatatypeGetFunction(datatype));
     datatype = deFindEnumIntType(enumBlock);
@@ -89,65 +89,65 @@ static char* verifyFormatSpecifier(char* p, char *end, deDatatype datatype, deLi
   *buf = deAppendCharToBuffer(*buf, len, pos, c);
   if (c == 's') {
     if (type != DE_TYPE_STRING) {
-      deError(line, "Expected String argument");
+      deExprError(expression, "Expected String argument");
     }
   } else if (c == 'i' || c == 'u' || c == 'x' || c == 'f') {
     if ((c == 'i' && type != DE_TYPE_INT)) {
-      deError(line, "Expected Int argument");
+      deExprError(expression, "Expected Int argument");
     } else if ((c == 'u' && type != DE_TYPE_UINT)) {
-      deError(line, "Expected Uint argument");
+      deExprError(expression, "Expected Uint argument");
     } else if (c == 'x' && type != DE_TYPE_INT && type != DE_TYPE_UINT) {
-      deError(line, "Expected Int or Uint argument");
+      deExprError(expression, "Expected Int or Uint argument");
     } else if (c == 'f' && type != DE_TYPE_FLOAT) {
-      deError(line, "Expected Int or Uint argument");
+      deExprError(expression, "Expected Int or Uint argument");
     }
     uint32 width = deDatatypeGetWidth(datatype);
-    uint16 specWidth = readUint16(&p, end, line);
+    uint16 specWidth = readUint16(&p, end, expression);
     if (specWidth != 0 && width != specWidth) {
-      deError(line, "Specified width does not match argument");
+      deExprError(expression, "Specified width does not match argument");
     }
     *buf = deAppendToBuffer(*buf, len, pos, utSprintf("%u", width));
   } else if (c == 'f') {
     if (type != DE_TYPE_FLOAT) {
-      deError(line, "Expected float argument");
+      deExprError(expression, "Expected float argument");
     }
   } else if (c == 'b') {
     if (type != DE_TYPE_BOOL) {
-      deError(line, "Expected bool argument");
+      deExprError(expression, "Expected bool argument");
     }
   } else if (c == '[') {
     if (type != DE_TYPE_ARRAY) {
-      deError(line, "Expected array argument");
+      deExprError(expression, "Expected array argument");
     }
     deDatatype elementType = deDatatypeGetElementType(datatype);
-    p = verifyFormatSpecifier(p, end, elementType, line, buf, len, pos);
+    p = verifyFormatSpecifier(p, end, elementType, expression, buf, len, pos);
     c = *p++;
     *buf = deAppendCharToBuffer(*buf, len, pos, c);
     if (c != ']') {
-      deError(line, "Expected ']' to end array format specifier");
+      deExprError(expression, "Expected ']' to end array format specifier");
     }
   } else if (c == '(') {
-    if (type != DE_TYPE_TUPLE) {
-      deError(line, "Expected tuple argument");
+    if (type != DE_TYPE_TUPLE && type != DE_TYPE_STRUCT) {
+      deExprError(expression, "Expected tuple argument");
     }
     for (uint32 i = 0; i < deDatatypeGetNumTypeList(datatype); i++) {
       deDatatype elementType = deDatatypeGetiTypeList(datatype, i);
-      p = verifyFormatSpecifier(p, end, elementType, line, buf, len, pos);
+      p = verifyFormatSpecifier(p, end, elementType, expression, buf, len, pos);
       if (i + 1 != deDatatypeGetNumTypeList(datatype)) {
         c = *p++;
         *buf = deAppendCharToBuffer(*buf, len, pos, c);
         if (c != ',') {
-          deError(line, "Expected ',' between tuple element specifiers.");
+          deExprError(expression, "Expected ',' between tuple element specifiers.");
         }
       }
     }
     c = *p++;
     *buf = deAppendCharToBuffer(*buf, len, pos, c);
     if (c != ')') {
-      deError(line, "Expected ')' to end tuple format specifier");
+      deExprError(expression, "Expected ')' to end tuple format specifier");
     }
   } else {
-    deError(line, "Unsupported format specifier: %c", c);
+    deExprError(expression, "Unsupported format specifier: %c", c);
   }
   return p;
 }
@@ -174,7 +174,6 @@ void deVerifyPrintfParameters(deExpression expression) {
   uint32 len = 42;
   uint32 pos = 0;
   char *buf = utMakeString(len);
-  deLine line = deExpressionGetLine(expression);
   deExpression format = deExpressionGetFirstExpression(expression);
   deExpression argument = deExpressionGetNextExpression(format);
   bool isTuple = false;
@@ -183,7 +182,7 @@ void deVerifyPrintfParameters(deExpression expression) {
     argument = deExpressionGetFirstExpression(argument);
   }
   if (deDatatypeGetType(deExpressionGetDatatype(format)) != DE_TYPE_STRING) {
-    deError(line, "Format specifier must be a constant string.\n");
+    deExprError(expression, "Format specifier must be a constant string.\n");
   }
   deString string = deExpressionGetString(format);
   char *p = deStringGetText(string);
@@ -195,30 +194,30 @@ void deVerifyPrintfParameters(deExpression expression) {
       c = *p++;
       buf = deAppendCharToBuffer(buf, &len, &pos, c);
       if (p >= end) {
-        deError(line, "Incomplete escape sequence");
+        deExprError(expression, "Incomplete escape sequence");
       }
       if (c == 'x') {
         for (uint32 i = 0; i < 2; i++) {
           c = *p++;
           buf = deAppendCharToBuffer(buf, &len, &pos, c);
           if (p >= end) {
-            deError(line, "Incomplete escape sequence");
+            deExprError(expression, "Incomplete escape sequence");
           }
           if (!isxdigit(c)) {
-            deError(line, "Invalid hex escape: should be 2 hex digits");
+            deExprError(expression, "Invalid hex escape: should be 2 hex digits");
           }
         }
       } else if (c != '\\' && c != '"' && c != 'n' && c != 't' && c != 'a' &&
             c != 'b' && c != 'e' && c != 'f' && c != 'r' && c != 'v') {
-        deError(line, "Invalid escape sequence '\\%c'", c);
+        deExprError(expression, "Invalid escape sequence '\\%c'", c);
       }
     } else if (c == '%') {
       if (argument == deExpressionNull) {
-        deError(line, "Too few arguments for format");
+        deExprError(expression, "Too few arguments for format");
       }
       checkExpressionIsPrintable(argument);
       deDatatype datatype = deExpressionGetDatatype(argument);
-      p = verifyFormatSpecifier(p, end, datatype, line, &buf, &len, &pos);
+      p = verifyFormatSpecifier(p, end, datatype, expression, &buf, &len, &pos);
       if (isTuple) {
         argument = deExpressionGetNextExpression(argument);
       } else {
@@ -227,7 +226,7 @@ void deVerifyPrintfParameters(deExpression expression) {
     }
   }
   if (argument != deExpressionNull) {
-    deError(line, "Too many arguments for format");
+    deExprError(expression, "Too many arguments for format");
   }
   deExpressionSetAltString(format, deMutableCStringCreate(buf));
 }

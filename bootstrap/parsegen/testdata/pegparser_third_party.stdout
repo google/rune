@@ -14,18 +14,18 @@ passed parseFactorialFunctionTest
  . }
  ^
 passed parseSyntaxErrorTest
-
-exprStatement(exit "(" 1i32 ")")
+(
+  exprStatement(exit "(" 1i32 ")") EOF)
 passed reuseParseResultTest
-((1 "+" 2) "+" 3)
+(((1 "+" 2) "+" 3) EOF)
 passed testLeftRecursion
 (
-  assignmentStatement(x "=" ((a "||" b) "||" c)) 
-  assignmentStatement(x "=" ((a "^^" b) "^^" c)) 
-  assignmentStatement(x "=" ((a "&&" b) "&&" c)) 
-  assignmentStatement(x "=" ((a "|" b) "|" c)) 
-  assignmentStatement(x "=" ((a "+" b) "+" c)) 
-  assignmentStatement(x "=" ((a "*" b) "*" c)) 
-  assignmentStatement(x "=" (a "**" (b "**" c))) 
-  assignmentStatement(x "=" ((a "." b) "." c)))
+  assignmentStatement((x "=" ((a "||" b) "||" c)))
+  assignmentStatement((x "=" ((a "^^" b) "^^" c)))
+  assignmentStatement((x "=" ((a "&&" b) "&&" c)))
+  assignmentStatement((x "=" ((a "|" b) "|" c)))
+  assignmentStatement((x "=" ((a "+" b) "+" c)))
+  assignmentStatement((x "=" ((a "*" b) "*" c)))
+  assignmentStatement((x "=" (a "**" (b "**" c))))
+  assignmentStatement((x "=" ((a "." b) "." c))) EOF)
 passed testRuneLeftRecursion

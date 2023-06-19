@@ -1484,7 +1484,7 @@ static void checkAssignmentTypeConstraint(deBlock scopeBlock, deExpression expre
   deDatatype datatype = deExpressionGetDatatype(value);
   if (!deDatatypeMatchesTypeExpression(scopeBlock, datatype, constraint)) {
     deExprError(expression, "Violation of type constraint: %s",
-        deDatatypeGetDefaultValueString(datatype));
+        deDatatypeGetTypeString(datatype));
   }
 }
 

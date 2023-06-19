@@ -2,7 +2,7 @@ goal: nl*  statement*
 statement: appendCode | assertStatement | assignmentStatement | exprStatement
     | class | debugStatement | enum | externFunctionStatement | finalFunction
     | foreachStatement | forStatement | functionStatement | transformStatement
-    | transformer | ifStatement | importStatement | prependCode | printStatement
+    | transformer | ifElseStatement | importStatement | prependCode | printStatement
     | printlnStatement | refStatement | relationStatement | returnStatement
     | struct | switchStatement | typeswitchStatement | tryExceptStatement
     | raiseStatement | panicStatement | unitTest | unrefStatement
@@ -11,7 +11,7 @@ importStatement: import | importLib | importRpc | use
 import:= 'import' pathExprWithAlias nl+
 importLib:= 'importlib' pathExprWithAlias nl+
 importRpc:= 'importrpc' pathExprWithAlias nl+
-use: 'use' IDENT nl+
+use:= 'use' IDENT nl+
 class:= exportFuncSpec? 'class' IDENT (":" UINTTYPE)? '(' parameterList ')' raises? block
 exportFuncSpec: exportStructSpec
     | "rpc"
@@ -22,26 +22,26 @@ structOrMessage: 'struct' | 'message'
 structMember: IDENT (":" typeExpr)? ("=" expr)?
 appendCode:= 'appendcode' pathExpr? block
 prependCode:= 'prependcode' pathExpr? block
-block: '{' nl+ statement* '}' nl*
+block:= '{' nl+ statement* '}' nl*
 functionStatement: exportFuncSpec? (function | iterator | operator)
-function:= exportFuncSpec? 'func' IDENT "(" parameters ")" ('->' typeExpr)? raises? block
-iterator:= exportFuncSpec? 'iterator' IDENT "(" parameters ")" ('->' typeExpr)? raises? block
-operator:= exportFuncSpec? 'operator' operatorType "(" parameters ")" ('->' typeExpr)? raises? block
+function:= exportFuncSpec? 'func' IDENT '(' parameters ')' ('->' typeExpr)? raises? block
+iterator:= exportFuncSpec? 'iterator' IDENT '(' parameters ')' ('->' typeExpr)? raises? block
+operator:= exportFuncSpec? 'operator' operatorType '(' parameters ')' ('->' typeExpr)? raises? block
 operatorType: "+" | "-" | "*" | "/" | "%" | "**" | "&&" | " | |" | "^^" | "&"
     | "|" | "^" | "&&" | "<<" | ">>" | "<<<" | ">>>" | "!+" | "!-" | "!*" | "~"
     | "<" | "<=" | ">" | ">=" | "==" | "!=" | "!" | "[]" | "<>" | "in"
-parameterList: nl* parameter (comma parameter)* nl*
-parameters: (nl* parameter (comma parameter)*)? nl*
+parameterList:= nl* parameter (comma parameter)* nl*
+parameters:= (nl* parameter (comma parameter)*)? nl*
 comma: ',' nl*
 parameter: "var"? paramID (":" typeExpr)? ("=" expr)?
 paramID: IDENT | "<" IDENT ">"
 externFunctionStatement := externFunction | externRpc
 externFunction := 'extern' STRING 'func' IDENT '(' parameters ')' ('->' typeExpr)? nl+
 externRpc := 'rpc' IDENT '(' parameters ')' ('->' typeExpr)? nl+
-ifStatement: ifPart elseIfPart* elsePart?
-ifPart:=  'if' expr block
-elseIfPart:= 'else' 'if' expr block
-elsePart:=  'else' block
+ifElseStatement: ifStatement elseIfStatement* elseStatement?
+ifStatement:=  'if' expr block
+elseIfStatement:= 'else' 'if' expr block
+elseStatement:=  'else' block
 switchStatement:=  'switch' expr '{' nl+ switchCase* defaultCase? '}' nl+
 typeswitchStatement:  'typeswitch' expr '{' nl+ typeswitchCase* defaultCase? '}' nl+
 exceptBlock:= '{' nl+ exceptCase* defaultCase? '}' nl+

@@ -507,6 +507,23 @@ static void updateSignature(deSignature signature) {
   }
 }
 
+// Check the return type of a signature vs its type constraint if any.
+static void checkSignatureReturnType(deSignature signature) {
+  deFunction function = deSignatureGetUniquifiedFunction(signature);
+  if (function == deFunctionNull) {
+    function = deSignatureGetFunction(signature);
+  }
+  deExpression constraint = deFunctionGetTypeExpression(function);
+  if (constraint != deExpressionNull) {
+    deBlock scopeBlock = deFunctionGetSubBlock(function);
+    deDatatype datatype = deSignatureGetReturnType(signature);
+    if (!deDatatypeMatchesTypeExpression(scopeBlock, datatype, constraint)) {
+      deSigError(signature, "Violation of return type constraint: %s",
+          deDatatypeGetTypeString(datatype));
+    }
+  }
+}
+
 // Add a signature to the binding queue.
 void deQueueSignature(deSignature signature) {
   if (deSignatureQueued(signature) ||
@@ -548,6 +565,7 @@ void deBindAllSignatures(void) {
         if (deSignatureGetFirstBinding(signature) == deBindingNull) {
           // The signature is now fully bound.
           updateSignature(signature);
+          checkSignatureReturnType(signature);
           if (deBlockIsConstructor(deSignatureGetBlock(signature))) {
             deGenerateDefaultMethods(deDatatypeGetClass(deSignatureGetReturnType(signature)));
           }

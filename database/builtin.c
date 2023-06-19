@@ -62,7 +62,7 @@ deTemplate deFindTypeTemplate(deDatatypeType type) {
     case DE_TYPE_TEMPLATE:
     case DE_TYPE_NONE:
     case DE_TYPE_EXPR:
-      utExit("Unexpected type");
+      return deTemplateNull;
   }
   return deTemplateNull;  // Dummy return.
 }

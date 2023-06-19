@@ -519,7 +519,7 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
   }
 
   // See if a `len` character keyword exists in the keyword table.
-  func tryNonAlphaKeyword(self, len: u64) -> Token {
+  func tryNonAlphaKeyword(self, len: u64) -> Keyword? {
     for i in range(len) {
       char = self.readChar()
     }

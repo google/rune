@@ -27,6 +27,11 @@
 //
 // With strong/weak keywords and rules, the resulting parse tree looks very
 // close to an AST.
+//
+// For now, we're using the "direct left recursion" algorithm described in this
+// paper: http://www.tinlizzie.org/~awarth/papers/pepm08.pdf.  Left recursion
+// is only supported within the same rule.  If we need support for general
+// left recursion, we can implement the full algorithm described in the paper.
 
 import database as db
 use keytab
@@ -50,13 +55,9 @@ enum PexprType {
   Not  // Called Not-predicated on Wikipedia.
 }
 
-// We build an array of actions during parsing so that when we succeed, we can
-// replay the actions taken during parsing to build a parse tree.
-class Action(self: Action, lexer: Lexer, pexpr: Pexpr, pos: u32, push: bool) {
-  self.pexpr = pexpr
-  self.pos = pos
-  self.push = push
-  lexer.appendAction(self)
+struct Match {
+  success: bool
+  pos: u32
 }
 
 class Peg(self, fileName: string) {
@@ -68,8 +69,6 @@ class Peg(self, fileName: string) {
   // progress made during parsing and report a syntax error at the first token
   // that cannot be parsed by any rule.
   self.maxTokenPos = 0u32
-  self.numActions = 0u32
-  self.actions = arrayof(Action)
   self.savedToken1 = null(Token)
   self.savedToken2 = null(Token)
   self.numKeywords = 0u32
@@ -89,8 +88,6 @@ class Peg(self, fileName: string) {
     }
     self.savedToken1 = null(Token)
     self.savedToken2 = null(Token)
-    self.numActions = 0u32
-    self.actions.resize(0)
     filepath = db.Filepath(fileName, null(db.Filepath), false)
     lexer = Lexer(filepath, self.keytab)
     lexer.enableIdentUnderscores(allowUnderscores)
@@ -106,72 +103,27 @@ class Peg(self, fileName: string) {
       }
     }
     rule = self.firstOrderedRule!
-    result = self.parseUsingRule(rule, 0u32)
-    if !result[0] {
+    result = self.parseUsingRule(null(ParseResult), rule, 0u32)
+    if !result.success {
       pos = min(self.maxTokenPos, <u32>self.lexer!.tokens.length() - 1)
       token = self.lexer!.tokens[pos]
       token.location.error("Syntax error")
       return null(Node)
     }
-    node = self.buildParseTree()
-    if !isnull(node) {
-      node!.simplify()
-      if debugMode || dumpParseTree {
-        node!.dump()
-      }
+    parseResult = self.lexer!.firstParseResult!
+    node = parseResult.buildParseTree()
+    if debugMode || dumpParseTree {
+      node.dump()
     }
     return node
-  }
-
-  // Build a parse tree from the actions.  We use the following rules:
-  // - A pexpr matching a single node returns the node.  E.g. There is no node
-  //   for statement.
-  // - An optinal pexpr has a Node at that position in the child array if it
-  //   exists, otherwise null(Node).
-  // - A * or + pexpression is replaced with a sub-Node containing the matches.
-  // - Value tokens are always added, but keywords only if the matching pexpr
-  //   is not weak.  E.g. ('->' typeExpr)? becomes the type expression node or null.
-  func buildParseTree(self: Peg) -> Node? {
-    stackPos = 0
-    for i in range(self.numActions) {
-      action = self.actions[i]
-      pexpr = action.pexpr
-      pos = action.pos
-      if action.push {
-        if i == 0 {
-          node = Node(null(Node), pexpr)
-          rootNode = node
-        } else {
-          if pexpr.type == PexprType.Term {
-            token = self.lexer!.tokens[pos]
-            node = Node(node, pexpr, token)
-          } else if pexpr.type == PexprType.Keyword {
-            node = Node(node, pexpr, null(Token), pexpr.keyword)
-          } else {
-            node = Node(node, pexpr)
-          }
-        }
-        stackPos += 1
-      } else {
-        node = node.parentNode!
-        stackPos -= 1
-      }
-    }
-    assert stackPos == 0
-    return rootNode
   }
 
   // Reads all tokens up-front.
   func tokenizeInput(self: Peg) {
     do {
       token = self.parseToken()
+      token.pexpr = null(Pexpr)
     } while !token.eof()
-  }
-
-  func dumpActions(self: Peg) {
-    for i in range(self.numActions) {
-      println "Action: ", self.actions[i]
-    }
   }
 
   // Add the EOF token to the first rule.
@@ -193,9 +145,9 @@ class Peg(self, fileName: string) {
 
   // Parse input using the PEG rules.  Basically, use recursive decent.
   // Return a position > `pos` on success, and `pos` on failure.
-  // TODO: Memoize this to achieve practical speeds.
-  func parseUsingRule(self: Peg, rule: Rule, pos: u32) -> (bool, u32) {
-    parseResult = rule.findParseResult(pos)
+  func parseUsingRule(self: Peg, parentParseResult: ParseResult?,
+      rule: Rule, pos: u32) -> Match {
+    parseResult = rule.findHashedParseResult(pos)
     if !isnull(parseResult) {
       if debugMode {
         println "Using prior result for ", rule.sym.name
@@ -203,147 +155,132 @@ class Peg(self, fileName: string) {
       if parseResult!.pending {
         parseResult!.foundRecursion = true
       }
-      self.appendParseResultActions(parseResult!)
       return parseResult!.result
     }
     token = self.lexer!.tokens[pos]
     if token.type == TokenType.Keyword {
       if !rule.firstKeywords[token.keyword!.num] {
         // Don't bother cacheing this decision.
-        return (rule.canBeEmpty, pos)
+        return Match(rule.canBeEmpty, pos)
       }
     } else if !rule.firstTokens[<u32>token.type] {
       // Don't bother cacheing this decision.
-      return (rule.canBeEmpty, pos)
+      return Match(rule.canBeEmpty, pos)
     }
     if debugMode {
       println "Parse using rule ", rule.sym.name
     }
-    actionStart = self.numActions
-    pres = ParseResult(rule, pos, (false, pos))
-    foundRecursion = false
-    lastResult = (false, pos)
+    // For now, we're using the "direct left recursion" algorithm described in
+    // this paper: http://www.tinlizzie.org/~awarth/papers/pepm08.pdf
+    // Left recursion is only supported within the same rule.
+    // Set the initial memo to false - this will stop recursive attempts to
+    // apply this rule and allow subsequent rules to be tried.
+    pres = ParseResult(parentParseResult, rule, pos, Match(false, pos))
+    lastResult = Match(false, pos)
     do {
-      self.popActions(actionStart)
       pres.pending = true
-      result = self.parseUsingPexpr(rule.pexpr!, pos)
+      result = self.parseUsingPexpr(pres, rule.pexpr!, pos)
       pres.pending = false
       madeProgress = false
-      if result[0] && result[1] > lastResult[1]{
+      if result.success && result.pos > lastResult.pos{
         madeProgress = true
         lastResult = result
         // Cache this result.
-        pres.setResult(lastResult, actionStart, self.numActions)
+        pres.result = lastResult
+        if pres.foundRecursion {
+          pres = pushRecursiveParseResult(pres)
+        }
       }
     } while madeProgress && pres.foundRecursion
-    if pres.foundRecursion && lastResult[0] {
-      self.popActions(actionStart)
-      self.appendParseResultActions(pres)
+    assert pres.result.success == lastResult.success
+    if !pres.result.success && !isnull(parentParseResult) {
+      parentParseResult!.removeChildParseResult(pres)
+      if pres.foundRecursion {
+        child = pres.firstChildParseResult
+        if !isnull(child) {
+          pres.removeChildParseResult(child!)
+          parentParseResult!.appendChildParseResult(child!)
+        }
+      }
     }
     if debugMode {
       println "Returning from rule ", rule.sym.name, " with ", result
     }
     return lastResult
-  }
 
-  // Copy the actions generated the first time we matched a rule onto the
-  // action stack so that we will build the corresponding portion of the parse
-  // tree.
-  func appendParseResultActions(self: Peg, parseResult: ParseResult) {
-    for action in parseResult.actions {
-      self.resizeActionsIfNeeded()
-      self.actions[self.numActions] = action
-      self.numActions += 1
-    }
-  }
-
-  func recordAction(self: Peg, pexpr: Pexpr, pos: u32, push: bool) {
-    self.resizeActionsIfNeeded()
-    self.actions[self.numActions] = Action(self.lexer!, pexpr, pos, push)
-    self.numActions += 1
-  }
-
-  // Increase the size of the actions array if it is full.
-  func resizeActionsIfNeeded(self: Peg) {
-    if <u64>self.numActions == self.actions.length() {
-      if self.actions.length() == 0 {
-        self.actions.resize(32)
-      } else if <u64>self.numActions == self.actions.length() {
-        self.actions.resize(self.actions.length() << 1)
+    // Create a new ParseResult to hold the information on pres.  Make
+    // pres its child so we can remember the recursive matches we've made.
+    func pushRecursiveParseResult(pres: ParseResult) -> ParseResult {
+      rule = pres.rule!
+      rule.removeHashedParseResult(pres)
+      parent = pres.parentParseResult
+      if !isnull(parent) {
+        parent!.removeChildParseResult(pres)
       }
+      newPres = ParseResult(parent, rule, pres.pos, pres.result)
+      newPres.foundRecursion = true
+      newPres.appendChildParseResult(pres)
+      return newPres
     }
   }
 
-  func popActions(self, pos: u32) {
-    while self.numActions > pos {
-      self.numActions -= 1
-      self.actions[self.numActions] = null(Action)
-    }
-  }
-
-  func parseUsingPexpr(self: Peg, pexpr: Pexpr, pos: u32) -> (bool, u32) {
+  func parseUsingPexpr(self: Peg, parseResult: ParseResult, pexpr: Pexpr, pos: u32) -> Match {
     if debugMode {
       println "counter = ", counter, ", pos = ", pos
     }
     counter += 1
-    actionPos = self.numActions
-    self.recordAction(pexpr, pos, true)
-    result = self.parseUsingPexprImpl(pexpr, pos)
-    if pos > self.maxTokenPos {
-      assert <u64>pos < self.lexer!.tokens.length()
-      self.maxTokenPos = pos
+    result = self.parseUsingPexprImpl(parseResult, pexpr, pos)
+    if result.success && result.pos > self.maxTokenPos {
+      self.maxTokenPos = result.pos
     }
     if debugMode {
       println "Result = ", result
-    }
-    if result[0] {
-      self.recordAction(pexpr, result[1], false)
-    } else {
-      self.popActions(actionPos)
     }
     return result
   }
 
   // Parse input from pos using this pexpr.
-  func parseUsingPexprImpl(self: Peg, pexpr: Pexpr, pos: u32) -> (bool, u32) {
+  func parseUsingPexprImpl(self: Peg, parseResult: ParseResult, pexpr: Pexpr, pos: u32) -> Match {
     token = self.lexer!.tokens[pos]
     if debugMode {
       token.location.dump()
       println "Parsing above token using ", pexpr.toString()
     }
     switch pexpr.type {
-      PexprType.Nonterm => return self.parseUsingRule(pexpr.nontermRule!, pos)
+      PexprType.Nonterm => return self.parseUsingRule(parseResult, pexpr.nontermRule!, pos)
       PexprType.Term => {
         if token.type != pexpr.tokenType {
-          return (false, pos)
+          return Match(false, pos)
         }
-        return (true, pos + 1)
+        token.pexpr = pexpr
+        return Match(true, pos + 1)
       }
       PexprType.Keyword => {
         if token.type != TokenType.Keyword || token.keyword! != pexpr.keyword! {
-          return (false, pos)
+          return Match(false, pos)
         }
-        return (true, pos + 1)
+        token.pexpr = pexpr
+        return Match(true, pos + 1)
       }
-      PexprType.Empty => return (true, pos)
-      PexprType.Sequence => return self.parseUsingSequencePexpr(pexpr, pos)
-      PexprType.Choice =>  return self.parseUsingChoicePexpr(pexpr, pos)
-      PexprType.ZeroOrMore => return self.parseUsingZeroOrMorePexpr(pexpr, pos)
-      PexprType.OneOrMore => return self.parseUsingOneOrMorePexpr(pexpr, pos)
-      PexprType.Optional => return self.parseUsingOptionalPexpr(pexpr, pos)
-      PexprType.And => return self.parseUsingAndPexpr(pexpr, pos)
-      PexprType.Not => return self.parseUsingNotPexpr(pexpr, pos)
+      PexprType.Empty => return Match(true, pos)
+      PexprType.Sequence => return self.parseUsingSequencePexpr(parseResult, pexpr, pos)
+      PexprType.Choice =>  return self.parseUsingChoicePexpr(parseResult, pexpr, pos)
+      PexprType.ZeroOrMore => return self.parseUsingZeroOrMorePexpr(parseResult, pexpr, pos)
+      PexprType.OneOrMore => return self.parseUsingOneOrMorePexpr(parseResult, pexpr, pos)
+      PexprType.Optional => return self.parseUsingOptionalPexpr(parseResult, pexpr, pos)
+      PexprType.And => return self.parseUsingAndPexpr(parseResult, pexpr, pos)
+      PexprType.Not => return self.parseUsingNotPexpr(parseResult, pexpr, pos)
     }
   }
 
-  func parseUsingSequencePexpr(self: Peg, pexpr, pos) -> (bool, u32) {
+  func parseUsingSequencePexpr(self: Peg, parseResult: ParseResult, pexpr, pos) -> Match {
     childPos = pos
     for child in pexpr.childPexprs() {
-      result = self.parseUsingPexpr(child, childPos)
-      if !result[0] {
-        return (false, pos)
+      result = self.parseUsingPexpr(parseResult, child, childPos)
+      if !result.success {
+        return Match(false, pos)
       }
-      childPos = result[1]
+      childPos = result.pos
       if <u64>childPos == self.lexer!.tokens.length() {
         return result
       }
@@ -351,57 +288,57 @@ class Peg(self, fileName: string) {
     return result
   }
 
-  func parseUsingChoicePexpr(self: Peg, pexpr, pos) -> (bool, u32) {
+  func parseUsingChoicePexpr(self: Peg, parseResult: ParseResult, pexpr, pos) -> Match {
     for child in pexpr.childPexprs() {
-      result = self.parseUsingPexpr(child, pos)
-      if result[0] {
+      result = self.parseUsingPexpr(parseResult, child, pos)
+      if result.success {
         return result
       }
     }
-    return (false, pos)
+    return Match(false, pos)
   }
 
-  func parseUsingZeroOrMorePexpr(self: Peg, pexpr, pos) -> (bool, u32) {
+  func parseUsingZeroOrMorePexpr(self: Peg, parseResult: ParseResult, pexpr, pos) -> Match {
     child = pexpr.firstChildPexpr!
-    lastResult = (true, pos)
+    lastResult = Match(true, pos)
     do {
-      result = self.parseUsingPexpr(child, lastResult[1])
-    } while result[0] {
+      result = self.parseUsingPexpr(parseResult, child, lastResult.pos)
+    } while result.success {
       lastResult = result
     }
     return lastResult
   }
 
-  func parseUsingOneOrMorePexpr(self: Peg, pexpr, pos) -> (bool, u32) {
+  func parseUsingOneOrMorePexpr(self: Peg, parseResult: ParseResult, pexpr, pos) -> Match {
     child = pexpr.firstChildPexpr!
-    lastResult = (false, pos)
+    lastResult = Match(false, pos)
     do {
-      result = self.parseUsingPexpr(child, lastResult[1])
-    } while result[0] {
+      result = self.parseUsingPexpr(parseResult, child, lastResult.pos)
+    } while result.success {
       lastResult = result
     }
     return lastResult
   }
 
-  func parseUsingOptionalPexpr(self: Peg, pexpr, pos) -> (bool, u32) {
+  func parseUsingOptionalPexpr(self: Peg, parseResult: ParseResult, pexpr, pos) -> Match {
     child = pexpr.firstChildPexpr!
-    result = self.parseUsingPexpr(child, pos)
-    if result[0] {
+    result = self.parseUsingPexpr(parseResult, child, pos)
+    if result.success {
       return result
     }
-    return (true, pos)
+    return Match(true, pos)
   }
 
-  func parseUsingAndPexpr(self: Peg, pexpr, pos) -> (bool, u32) {
+  func parseUsingAndPexpr(self: Peg, parseResult: ParseResult, pexpr, pos) -> Match {
     child = pexpr.firstChildPexpr!
-    result = self.parseUsingPexpr(child, pos)
-    return (result[0], pos)
+    result = self.parseUsingPexpr(parseResult, child, pos)
+    return Match(result.success, pos)
   }
 
-  func parseUsingNotPexpr(self: Peg, pexpr, pos) -> (bool, u32) {
+  func parseUsingNotPexpr(self: Peg, parseResult: ParseResult, pexpr, pos) -> Match {
     child = pexpr.firstChildPexpr!
-    result = self.parseUsingPexpr(child, pos)
-    return (!result[0], pos)
+    result = self.parseUsingPexpr(parseResult, child, pos)
+    return Match(!result.success, pos)
   }
 
   // Recursive decent parser for rules, using the `Lexer` class.
@@ -743,25 +680,179 @@ class Peg(self, fileName: string) {
   }
 }
 
-class ParseResult (self, rule: Rule, pos: u32, result: (bool, u32)) {
+class ParseResult(self, parentParseResult: ParseResult?, rule: Rule, pos: u32, result: Match) {
   self.pos = pos
   self.result = result
-  self.actions = arrayof(Action)
   self.foundRecursion = false
   self.pending = false
-  rule.insertParseResult(self)
+  rule.insertHashedParseResult(self)
+  rule.appendParseResult(self)
   // Add it to the lexer so we can destroy this result when the lexer is destroyed.
+  if !isnull(parentParseResult) {
+    parentParseResult!.appendChildParseResult(self)
+  }
   lexer = rule.peg!.lexer!
   lexer.appendParseResult(self)
 
-  func setResult(self: ParseResult, result: (bool, u32), actionStart: u32, actionEnd: u32) {
-    self.result = result
-    peg = self.rule!.peg!
-    self.actions.resize(actionEnd - actionStart)
-    for i in range(actionEnd - actionStart) {
-      self.actions[i] = peg.actions[actionStart + i]
+  func buildParseTree(self: ParseResult) -> Node {
+    parentNode = null(Node)
+    parent = self.parentParseResult
+    if !isnull(parent) {
+      parentNode = parent!.node!
+    }
+    node = Node(parentNode, self, self.pos, self.result.pos)
+    pos = self.pos
+    for child in self.childParseResults() {
+      self.addNodeTokens(pos, child.pos)
+      child.buildParseTree()
+      pos = child.result.pos
+    }
+    self.addNodeTokens(pos, self.result.pos)
+    node.simplify()
+    return node
+  }
+
+  // Append the tokens in the range to the node.
+  func addNodeTokens(self: ParseResult, startPos: u32, endPos: u32) {
+    lexer = self.rule!.peg!.lexer!
+    node = self.node!
+    for pos in range(startPos, endPos) {
+      token = lexer.tokens[pos]
+      pexpr = token.pexpr!
+      if !pexpr.weak {
+        Node(node, null(ParseResult), pos, pos + 1, token)
+      }
     }
   }
+}
+
+// This is the AST class, which is a simplified version of ParseResult.
+class Node(self, parent: Node?, parseResult: ParseResult?, startPos: u32, endPos: u32, token: Token? = null(Token)) {
+  self.startPos = startPos
+  self.endPos = endPos
+  self.token = token
+  if !isnull(parent) {
+    parent!.appendChildNode(self)
+  }
+  if !isnull(parseResult) {
+    parseResult!.insertNode(self)
+  }
+
+  func simplify(self: Node) {
+    for child in self.safeChildNodes() {
+      if isnull(child.firstChildNode) {
+        token = child.token
+        rule = null(Rule)
+        if !isnull(self.parseResult) {
+          rule = self.parseResult!.rule
+        }
+        if (isnull(rule) || rule!.weak) && (isnull(token) || token!.pexpr!.weak) {
+          child!.destroy()
+        }
+      }
+    }
+    firstChild = self.firstChildNode
+    if !isnull(firstChild) && firstChild == self.lastChildNode {
+      self.mergeChildNode()
+    }
+  }
+
+  // Merge this node's sole child into this node, unless both represent
+  // strong rules.  If only one represents a strong rule, keep that one.
+  func mergeChildNode(self: Node) {
+    child = self.firstChildNode!
+    rule1 = null(Rule)
+    rule2 = null(Rule)
+    parseResult1 = self.parseResult
+    parseResult2 = child.parseResult
+    if !isnull(parseResult1) {
+      rule1 = parseResult1!.rule!
+    }
+    if !isnull(parseResult2) {
+      rule2 = parseResult2!.rule!
+    }
+    if !isnull(rule1) && !rule1!.weak && !isnull(rule2) && !rule2!.weak {
+      return  // Don't merge strong nodes.
+    }
+    for node in child.safeChildNodes() {
+      child.removeChildNode(node)
+      self.appendChildNode(node)
+    }
+    self.token = child.token
+    if !isnull(rule2) && !rule2!.weak {
+      if !isnull(parseResult1) {
+        parseResult1!.removeNode(self)
+      }
+      parseResult2!.removeNode(child)
+      parseResult2!.insertNode(self)
+    }
+    child.destroy()
+  }
+
+  func dump(self: Node) {
+    println self.toString()
+  }
+
+  func toString(self: Node) -> string {
+    printSpace = false
+    return self.toStringIndented(0u32, printSpace)
+  }
+
+  func toStringIndented(self: Node, depth: u32, var printSpace: bool) -> string {
+    s = ""
+    needsParen = !isnull(self.firstChildNode)
+    rule = null(Rule)
+    if !isnull(self.parseResult) {
+      rule = self.parseResult!.rule
+    }
+    if !isnull(rule) && !rule!.weak {
+      s.append('\n')
+      printSpace = false
+      s.concat(indent(depth))
+      s.concat(rule!.sym.name)
+      needsParen = true
+    }
+    if needsParen {
+      if printSpace {
+        s.append(' ')
+        printSpace = false
+      }
+      s.append('(')
+    }
+    if !isnull(self.token) {
+      token = self.token!
+      if printSpace {
+        s.append(' ')
+      }
+      isStrongKeyword = token.type == TokenType.Keyword && !token.pexpr!.weak
+      if isStrongKeyword {
+        s.append('"')
+      }
+      s.concat(token.getName())
+      if isStrongKeyword {
+        s.append('"')
+      }
+      printSpace = true
+    } else {
+      for child in self.childNodes() {
+        s.concat(child.toStringIndented(depth + 1, printSpace))
+      }
+    }
+    if needsParen {
+      s.append(')')
+      printSpace = true
+    }
+    return s
+  }
+}
+
+func indent(depth: u32) -> string {
+  s = ""
+  s.resize(depth << 1)
+  for i in range(depth << 1) {
+    s[i] = ' '
+  }
+  return s
 }
 
 class Rule(self, parser: Peg, sym: Sym, pexpr: Pexpr, location: db.Location) {
@@ -806,7 +897,7 @@ class Rule(self, parser: Peg, sym: Sym, pexpr: Pexpr, location: db.Location) {
     return s
   }
 
-  exportlib func dump(self: Rule) {
+  func dump(self: Rule) {
     println self.toString()
   }
 }
@@ -924,139 +1015,9 @@ class Pexpr(self, type: PexprType, location: db.Location) {
     return "(" + s + ")"
   }
 
-  exportlib func dump(self: Pexpr) {
+  func dump(self: Pexpr) {
     println self.toString()
   }
-}
-
-enum NodeType {
-  Pexpr
-  Token
-  Keyword
-}
-
-// This represents the parser tree.
-class Node(self, parent: Node?, pexpr: Pexpr, token: Token? = null(Token),
-    keyword: Keyword? = null(Keyword)) {
-  self.token = null(Token)
-  self.keyword = null(Keyword)
-  self.type = NodeType.Pexpr
-  if !isnull(token) {
-    self.type = NodeType.Token
-    self.token = token
-  } else if !isnull(keyword) {
-    self.type = NodeType.Keyword
-    self.keyword = keyword
-  }
-  pexpr.appendNode(self)
-  if !isnull(parent) {
-    parent!.appendChildNode(self)
-  }
-
-  func simplify(self: Node) {
-    for child in self.safeChildNodes() {
-      child.simplify()
-      switch child.type {
-        NodeType.Pexpr => {
-          first = child.firstChildNode
-          if isnull(first) {
-            child.destroy()
-          }
-        }
-        NodeType.Keyword => {
-          if child.pexpr!.weak {
-            child.destroy()
-          }
-        }
-        NodeType.Token => {
-          token = child.token!
-          if token.type == TokenType.Eof {
-            child.destroy()
-          }
-        }
-      }
-    }
-    first = self.firstChildNode
-    if !isnull(first) {
-      if isnull(first!.nextNodeChildNode) {
-        rule1 = self.pexpr!.rule
-        rule2 = first!.pexpr!.rule
-        if isnull(rule1) || rule1!.weak || isnull(rule2) || rule2!.weak {
-          self.collapse()
-        }
-      }
-    }
-  }
-
-  // Collapse the child of this node into this node.
-  func collapse(self) {
-    child = self.firstChildNode!
-    self.token = child.token
-    self.keyword = child.keyword
-    self.type = child.type
-    do {
-      first = child.firstChildNode!
-    } while !isnull(first) {
-      child.removeChildNode(first)
-      self.appendChildNode(first)
-    }
-    rule1 = self.pexpr!.rule
-    rule2 = child.pexpr!.rule
-    if !isnull(rule2)  && (isnull(rule1) || rule1!.weak) {
-      self.pexpr!.removeNode(self)
-      child.pexpr!.appendNode(self)
-    }
-    child.destroy()
-  }
-
-  func dump(self: Node) {
-    s = self.toString()
-    println s
-  }
-
-  func toString(self: Node) {
-    return self.toStringIndented(0u32)
-  }
-
-  func toStringIndented(self, depth: u32) -> string {
-    s = ""
-    switch self.type {
-      NodeType.Pexpr => {
-        rule = self.pexpr!.rule
-        if !isnull(rule) && !rule!.weak {
-          s.append('\n')
-          s.concat(indent(depth))
-          s.concat(rule!.sym.name)
-        }
-        s.append('(')
-        pexpr = self.pexpr!
-        if pexpr.type == PexprType.Nonterm {
-          s.concat(pexpr.nontermRule!.sym.name)
-        }
-        firstTime = true
-        for child in self.childNodes() {
-          if !firstTime {
-            s.append(' ')
-          }
-          firstTime = false
-          s.concat(child.toStringIndented(depth + 1))
-        }
-        s.append(')')
-      }
-      NodeType.Token => s.concat(self.token!.getName())
-      NodeType.Keyword => s.concat("\"%s\"" % self.keyword!.sym.name)
-    }
-    return s
-  }
-}
-
-func indent(depth: u32) -> string {
-  s = ""
-  s.resize(depth << 1)
-  for i in range(depth << 1) {
-    s[i] = ' '
-  }
-  return s
 }
 
 relation Hashed Peg Rule cascade ("sym")
@@ -1065,12 +1026,13 @@ relation OneToOne Rule Pexpr cascade
 relation TailLinked Keyword Pexpr cascade
 relation TailLinked Pexpr:"Parent" Pexpr:"Child" cascade
 relation TailLinked Rule:"Nonterm" Pexpr:"Nonterm"cascade
-relation Hashed Rule ParseResult cascade ("pos")
-relation DoublyLinked Pexpr Node cascade
-relation DoublyLinked Node:"Parent" Node:"Child" cascade
-relation DoublyLinked Lexer Action cascade
+relation Hashed Rule:"Hashed" ParseResult:"Hashed" cascade ("pos")
+relation DoublyLinked Rule ParseResult cascade
 relation DoublyLinked Lexer ParseResult cascade
+relation DoublyLinked ParseResult:"Parent" ParseResult:"Child"
 relation OneToOne Peg Lexer cascade
+relation OneToOne ParseResult Node cascade
+relation DoublyLinked Node:"Parent" Node:"Child" cascade
 
 counter = 0
 debugMode = false
@@ -1088,7 +1050,7 @@ unittest {
       dumpParseTree = true
       xArg += 1
     } else {
-      println "Usage: ", argv[0], " [-d|--debug+--parseTree] [runeFile...]"
+      println "Usage: ", argv[0], " [-d|--debug|--parseTree] [runeFile...]"
       exit(1i32)
     }
   }
@@ -1110,7 +1072,10 @@ unittest parseFilesOnCommandLiineTest {
     parser.parseRules()
     for i in range (xArg, argv.length()) {
       println "Parsing ", argv[i]
-      node = parser.parse(argv[i], allowUnderscores = true)
+      parseResult = parser.parse(argv[i], allowUnderscores = true)
+      if !!isnull(parseResult) {
+        exit(1i32)
+      }
       parsedAFile = true
     }
   }
@@ -1146,7 +1111,7 @@ unittest parseRuneRulesTest {
 unittest parseFactorialFunctionTest {
   parser = Peg(dataDir + "testdata/rune.syn")
   parser.parseRules()
-  node = parser.parse(dataDir + "testdata/factorial.rn")
+  parser.parse(dataDir + "testdata/factorial.rn")
   println "passed parseFactorialFunctionTest"
 }
 
@@ -1165,7 +1130,7 @@ unittest reuseParseResultTest {
   assert !isnull(node)
   s = node!.toString()
   println s
-  assert s == "\nexprStatement(exit \"(\" 1i32 \")\")"
+  assert s == "(\n  exprStatement(exit \"(\" 1i32 \")\") EOF)"
   println "passed reuseParseResultTest"
 }
 
@@ -1177,7 +1142,7 @@ unittest testLeftRecursion {
   assert !isnull(node)
   s = node!.toString()
   println s
-  assert s == "((1 \"+\" 2) \"+\" 3)"
+  assert s == "(((1 \"+\" 2) \"+\" 3) EOF)"
   println "passed testLeftRecursion"
 }
 

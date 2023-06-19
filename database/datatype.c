@@ -646,8 +646,13 @@ static char *getTupleDefaultValue(deDatatype datatype) {
 
 // Return a default value string for the structure.
 static char *getStructDefaultValue(deDatatype datatype) {
+  deFunction function = deDatatypeGetFunction(datatype);
+  deBlock subBlock = deFunctionGetSubBlock(function);
+  char *name = utAllocString(deGetBlockPath(subBlock, false));
   char *parameters =  getTupleDatatypeParametersValueString(datatype);
-  return utSprintf("%s(%s)", deFunctionGetName(deDatatypeGetFunction(datatype)), parameters);
+  char *result =  utSprintf("%s(%s)", name, parameters);
+  utFree(name);
+  return result;
 }
 
 // Return a default value string for the structure.

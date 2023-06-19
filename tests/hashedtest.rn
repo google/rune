@@ -21,7 +21,7 @@ class Bar(self, name: string) {
   func new(foo: Foo, name: string) -> Bar {
     oldBar = foo.findBar(name)
     if !isnull(oldBar) {
-      return oldBar
+      return oldBar!
     }
     newBar = Bar(name)
     foo.insertBar(newBar)

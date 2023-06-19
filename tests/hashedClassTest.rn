@@ -44,7 +44,7 @@ class Bar(self, name: string) {
     oldBar = foo.findBar(newBar)
     if !isnull(oldBar) {
       newBar.destroy()
-      return oldBar
+      return oldBar!
     }
     foo.insertBar(newBar)
     return newBar
