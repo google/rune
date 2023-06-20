@@ -14,12 +14,36 @@
 
 RUNE=../rune
 SRC=\
-rune.rn \
-database/expr.rn \
-database/filepath.rn \
-database/line.rn \
-database/line.stdout \
-database/root.rn
+database/bigint.rn\
+database/block.rn\
+database/class.rn\
+database/datatype.rn\
+database/expr.rn\
+database/filepath.rn\
+database/function.rn\
+database/ident.rn\
+database/location.rn\
+database/package.rn\
+database/paramspec.rn\
+database/rel.rn\
+database/root.rn\
+database/signature.rn\
+database/statement.rn\
+database/template.rn\
+database/trans.rn\
+database/util.rn\
+database/value.rn\
+database/variable.rn\
+parse/char.rn\
+parse/hir.rn\
+parse/exprTree.rn\
+parse/keytab.rn\
+parse/lexer.rn\
+parse/package.rn\
+parse/pegparser.rn\
+parse/rule.rn\
+parse/token.rn\
+rune.rn
 
 rune: $(SRC)
 	$(RUNE) -g rune.rn

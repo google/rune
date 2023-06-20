@@ -19,7 +19,7 @@ exportStructSpec:  "export"
     | "exportlib"
 struct:= exportStructSpec? structOrMessage IDENT '{' nl+ (structMember nl+)* '}' nl+
 structOrMessage: 'struct' | 'message'
-structMember: IDENT (":" typeExpr)? ("=" expr)?
+structMember:= IDENT (":" typeExpr)? ("=" expr)?
 appendCode:= 'appendcode' pathExpr? block
 prependCode:= 'prependcode' pathExpr? block
 block:= '{' nl+ statement* '}' nl*
@@ -94,8 +94,8 @@ refStatement:= 'ref' expr nl+
 unrefStatement:= 'unref' expr nl+
 exprs: exprList?
 exprList: expr (comma expr)*
-expr: selectExpr ("..." nl* selectExpr)?
-selectExpr: orExpr "?" nl* orExpr ":" nl* orExpr | orExpr
+expr:= selectExpr ("..." nl* selectExpr)?
+selectExpr: orExpr "?" nl* orExpr ':' nl* orExpr | orExpr
 orExpr: orExpr "||" nl* xorExpr | xorExpr
 xorExpr: xorExpr "^^" nl* andExpr | andExpr
 andExpr: andExpr "&&" nl* inExpr | inExpr
@@ -129,7 +129,7 @@ postfixExpr: postfixExpr "." IDENT
 basicExpr: IDENT
     | tokenExpr
     | "[" nl* exprList nl* "]"
-    | "(" nl* expr nl* ")"
+    | '(' nl* expr nl* ')'
     | tupleExpr
     | "secret" '(' nl* expr ')'
     | "reveal" '(' nl* expr ')'

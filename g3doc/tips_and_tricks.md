@@ -32,3 +32,13 @@ Rune compiler in Rune. Here are some tips for working on this effort.
         you the contents of `parser` assuming Clang has not optimized it away.
     4.  Write `dump` methods for your classes, and use the ones that already
         exist. They are invaluable for debugging in gdb.
+7.  The Rune C compiler is NOT memory safe. In particular, it passes all tuples,
+    structures and arrays by reference, een if the called function may realloc
+    the arrays containing them. This is mostly a problem when writing copy
+    methods for classes: DO NOT PASS ARRAYs, TUPLES, or STRUCTs to copy
+    constructors. The auto-generated allocation function may move the arrays
+    holding the data, causing your program to crash randomly. The work-around is
+    to assign the tuple/array/struct to a local variable, which in the C Rune
+    compiler forces a copy, and to pass the copy to the copy-constructor.
+8.  There is a global 'counter' variable which can be used in condition
+    expressions on GDB breakpoints.

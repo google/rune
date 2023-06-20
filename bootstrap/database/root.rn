@@ -13,9 +13,14 @@
 // limitations under the License.
 
 theGlobalRoot = Root()
+counter = 0
 
 class Root(self) {
-  self.indentDepth = 0u32  // Used in dump functions.
+  self.counter = 0
+  self.debugMode = false
+  self.dumpParseTree = false
+  self.indentDepth = 0u32
+  self.runePackageDir = ""
 
   func indent(self, var text: string) {
     for i in range(self.indentDepth) {
@@ -30,6 +35,16 @@ class Root(self) {
   func decrementIndent(self) {
     self.indentDepth -= 1
   }
+}
+
+// This is for debugging.  We can use this as a condition on
+// breakpoints.
+func incCounter() {
+  counter += 1
+}
+
+func getCounter() -> u64 {
+  return counter
 }
 
 // Returns the global root.

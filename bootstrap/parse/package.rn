@@ -13,3 +13,9 @@
 // limitations under the License.
 
 use char
+use hir
+use exprTree
+use keytab
+use lexer
+use pegparser
+use token

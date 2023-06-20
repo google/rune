@@ -1,0 +1,48 @@
+//  Copyright 2023 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import database as db
+use hir
+use keytab
+use lexer
+use pegparser
+use sym
+use token
+
+// TODO: When expression building is completed, Merge this file into hir.rn
+// rather than using a transformer to append code to the HirBuilder class.
+transformer ExprTree() {
+  appendcode HirBuilder {
+
+    // Expressions have one of the following forms:
+    //
+    //   (<token>) -- A single string, identifier, number, or type literal.
+    //   (<keyword> ...) -- what follows depends on the keyword, e.g. ("!" Foo),
+    //                      usually just a signle expression.
+    //   <rule>(...) -- "Strong" rules declared with := remain in the tree.
+    //   (<non-keyword> <keyword>...) -- In-fix expression e.g. (a "+" b).
+    //                      usually a binary operator.
+    //
+    // The infix expressions exist due to limitations in the current PEG
+    // parser's left recursion handling.  It appears simpler to deal with the
+    // infix operators here rather than add general left recursion support to
+    // the PEG parser.
+    func buildExprTree(self: HirBuilder, node: Node) {
+      // node.dump()
+    }
+
+  }
+}
+
+transform ExprTree()

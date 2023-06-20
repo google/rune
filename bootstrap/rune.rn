@@ -12,6 +12,64 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import database
+import database as db
+import io
+import parse
 
-println "Hi!"
+// Print commandline help and exit.
+func usage() {
+  println "Usage: ", argv[0], " [options...] [runeFile...]\n" +
+      "    -d|--debug:  Run in debug mode, which generates a lot of internal logging.\n" +
+      "    --parseTree: Print parse trees of parsed files.\n" +
+      "    -p <dir>:    Use <dir> as the root directory for Rune's builtin packages.\n"
+  exit(1i32)
+}
+
+root = db.getRoot()
+
+packageDir = io.getenv("TEST_SRCDIR")
+if packageDir != "" {
+  if packageDir[packageDir.length() - 1] != '/' {
+    packageDir.append('/')
+  }
+  packageDir.concat("google3/third_party/rune/bootstrap/")
+}
+root.packageDir  = packageDir
+
+xArg = 1
+while xArg < argv.length() && argv[xArg][0] == '-' {
+  if argv[xArg] == "-d" || argv[xArg] == "--debug" {
+    root.debugMode = true
+    xArg += 1
+  } else if argv[xArg] == "--parseTree" {
+    root.dumpParseTree = true
+    xArg += 1
+  } else if argv[xArg] == "-p" {
+    xArg += 1
+    if xArg == argv.length() {
+      println "-p requires a path to the root package directory"
+      exit(1i32)
+    }
+    root.packageDir = argv[xArg]
+    xArg += 1
+    xArg += 1
+  } else {
+    usage()
+    exit(1i32)
+  }
+}
+
+if xArg == argv.length() {
+  usage()
+}
+
+parser = parse.Peg(root.packageDir + "parse/rune.syn")
+parser.parseRules()
+for i in range (xArg, argv.length()) {
+  println "Parsing ", argv[i]
+  node = parser.parse(argv[i], allowUnderscores = true)
+  if isnull(node) {
+    exit(1i32)
+  }
+  parse.HirBuilder(node!).build()
+}
