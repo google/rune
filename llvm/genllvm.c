@@ -2542,8 +2542,8 @@ static void limitCheck(llElement index, llElement limit) {
 }
 
 // Check that the index is not null, when in debug mode.
-static void nullCheck(llElement index) {
-  if (deUnsafeMode || (!llDebugMode && deStatementGenerated(llCurrentStatement))) {
+static void nullCheck(llElement index, bool alwaysCheck) {
+  if (deUnsafeMode || (!alwaysCheck && !llDebugMode && deStatementGenerated(llCurrentStatement))) {
     return;
   }
   llElement string = generateString(deCStringCreate("Null indirection"));
@@ -2610,7 +2610,7 @@ static void indexArray(llElement array, llElement index, bool needsBoundsCheck) 
     uint32 refWidth = deClassGetRefWidth(deDatatypeGetClass(indexDatatype));
     index = createElement(deUintDatatypeCreate(refWidth),
         llElementGetName(index), llElementIsRef(index));
-    nullCheck(index);
+    nullCheck(index, false);
   } else if (needsBoundsCheck) {
     boundsCheck(array, index, "Index out of bounds");
   }
@@ -3686,7 +3686,9 @@ static uint32 findClassRefWidth(deDatatype datatype) {
 // is an object type.
 static void generateNotNullExpression(deExpression expression) {
   generateExpression(deExpressionGetFirstExpression(expression));
-  // TODO: Generate not-null check here.
+  llElement *elementPtr = topOfStack();
+  derefElement(elementPtr);
+  nullCheck(*elementPtr, true);
 }
 
 // Generate code for an expression.

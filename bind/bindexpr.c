@@ -372,7 +372,7 @@ static void bindBinaryArithmeticExpression(deBlock scopeBlock, deExpression expr
 
 // Bind a bitwise OR expression.  This is different from the other bitwise
 // operators because it also used in type unions, such as "a: Uint | Int".
-static void bindBitwiseOrExpression(deBlock scopeBlock, deExpression expression) {
+static void bindBitwiseOrExpression(deBlock scopeBlock, deExpression expression, bool isTypeExpr) {
   deExpression left = deExpressionGetFirstExpression(expression);
   deExpression right = deExpressionGetNextExpression(left);
   if (deExpressionIsType(left) && deExpressionIsType(right)) {
@@ -381,10 +381,7 @@ static void bindBitwiseOrExpression(deBlock scopeBlock, deExpression expression)
   }
   deDatatype leftType, rightType;
   checkBinaryExpression(scopeBlock, expression, &leftType, &rightType, false);
-  if (deExpressionIsType(left)) {
-    if (!deExpressionIsType(right)) {
-      deExprError(expression, "Non-equal types passed to binary operator");
-    }
+  if (isTypeExpr) {
     deExpressionSetIsType(expression, true);
     deExpressionSetDatatype(expression, deNoneDatatypeCreate());
   } else {
@@ -1023,8 +1020,8 @@ static void bindCastExpression(deExpression expression) {
   leftDatatype = deSetDatatypeSecret(leftDatatype, deDatatypeSecret(rightDatatype));
   if (deDatatypeGetType(leftDatatype) == DE_TYPE_ENUMCLASS) {
     // If the cast is to an ENUMCLASS, instead cast to an ENUM.
-    deBlock enumBlock = deFunctionGetSubBlock(deDatatypeGetFunction(leftDatatype));
-    leftDatatype = deFindEnumIntType(enumBlock);
+    deFunction enumFunc = deDatatypeGetFunction(leftDatatype);
+    leftDatatype = deEnumDatatypeCreate(enumFunc);
   }
   verifyCast(expression, leftDatatype, rightDatatype, line);
   deExpressionSetDatatype(expression, leftDatatype);
@@ -1559,10 +1556,9 @@ static bool bindDotExpression(deBlock scopeBlock, deExpression expression) {
   deBlock classBlock;
   if (type == DE_TYPE_CLASS) {
     if (deDatatypeNullable(datatype)) {
-      deString string = deMutableStringCreate();
-      deDumpExpressionStr(string, expression);
-      deExprError(expression, "Cannot use dot operator on nullable type: %s.",
-          deStringGetCstr(string));
+      // Infer the ! operator.
+      datatype = deSetDatatypeNullable(datatype, false);
+      deExpressionSetDatatype(accessExpr, datatype);
     }
     classBlock = deClassGetSubBlock(deDatatypeGetClass(datatype));
   } else if (type == DE_TYPE_TEMPLATE) {
@@ -1659,7 +1655,7 @@ static void bindTemplateInst(deBlock scopeBlock, deExpression expression) {
 }
 
 // Bind the expression's expression.
-static deBindRes bindExpression(deBlock scopeBlock, deExpression expression) {
+static deBindRes bindExpression(deBlock scopeBlock, deExpression expression, bool isTypeExpr) {
   deDatatype oldDatatype = deExpressionGetDatatype(expression);
   if (oldDatatype != deDatatypeNull && deDatatypeGetType(oldDatatype) == DE_TYPE_MODINT) {
     // TODO: Add support for operator overloading in modular expressions.
@@ -1701,7 +1697,7 @@ static deBindRes bindExpression(deBlock scopeBlock, deExpression expression) {
       break;
     case DE_EXPR_BITOR :
     case DE_EXPR_BITOR_EQUALS:
-      bindBitwiseOrExpression(scopeBlock, expression);
+      bindBitwiseOrExpression(scopeBlock, expression, isTypeExpr);
       break;
     case DE_EXPR_ADD:
     case DE_EXPR_SUB:
@@ -2001,7 +1997,9 @@ void deBindStatement(deBinding binding) {
   deExpression expression = deBindingGetFirstExpression(binding);
   deBlock scopeBlock = deGetBindingBlock(binding);
   while (expression != deExpressionNull) {
-    deBindRes result = bindExpression(scopeBlock, expression);
+    deBindingType type = deBindingGetType(binding);
+    bool isTypeExpr = type == DE_BIND_VAR_CONSTRAINT || type == DE_BIND_FUNC_CONSTRAINT;
+    deBindRes result = bindExpression(scopeBlock, expression, isTypeExpr);
     if (result == DE_BINDRES_BLOCKED) {
       return;
     } else if (result == DE_BINDRES_REBIND) {

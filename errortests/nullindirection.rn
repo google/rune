@@ -18,4 +18,4 @@ class Foo(self, x) {
 
 foo = null(Foo(123))
 bar = Foo(123)
-println foo!.x
+println foo.x

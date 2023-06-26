@@ -48,12 +48,12 @@ transformer DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
       if isnull(prevChild) {
         self.insert$labelB$B(child)
       } else {
-        nextChild = prevChild!.next$A$labelB$B
+        nextChild = prevChild.next$A$labelB$B
         if isnull(nextChild) {
           self.append$labelB$B(child)
         } else {
-          child.next$A$labelB$B = prevChild!.next$A$labelB$B
-          child.prev$A$labelB$B = nextChild!.prev$A$labelB$B
+          child.next$A$labelB$B = prevChild.next$A$labelB$B
+          child.prev$A$labelB$B = nextChild.prev$A$labelB$B
           prevChild.next$A$labelB$B = child
           nextChild.prev$A$labelB$B = child
           child.$labelA$A = self
@@ -89,7 +89,7 @@ transformer DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
       next = child.next$A$labelB$B
       prev = child.prev$A$labelB$B
       if !isnull(prev) {
-        prev!.next$A$labelB$B = next
+        prev.next$A$labelB$B = next
       } else {
         debug {
           assert self.first$labelB$B == child
@@ -97,7 +97,7 @@ transformer DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
         self.first$labelB$B = next
       }
       if !isnull(next) {
-        next!.prev$A$labelB$B = prev
+        next.prev$A$labelB$B = prev
       } else {
         debug {
           assert self.last$labelB$B == child
@@ -130,13 +130,13 @@ transformer DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
     }
 
     iterator $labelB$pluralB(self) {
-      for child = self.first$labelB$B, !isnull(child), child = child!.next$A$labelB$B {
+      for child = self.first$labelB$B, !isnull(child), child = child.next$A$labelB$B {
         yield child!
       }
     }
 
     iterator reverse$labelB$pluralB(self) {
-      for child = self.last$labelB$B, !isnull(child), child = child!.prev$A$labelB$B {
+      for child = self.last$labelB$B, !isnull(child), child = child.prev$A$labelB$B {
         yield child!
       }
     }
@@ -144,7 +144,7 @@ transformer DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
     iterator safe$labelB$pluralB(self) {
       child = self.first$labelB$B
       while !isnull(child) {
-        next$A$labelB$B = child!.next$A$labelB$B
+        next$A$labelB$B = child.next$A$labelB$B
         yield child!
         child = next$A$labelB$B
       }
@@ -153,7 +153,7 @@ transformer DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
     iterator safeReverse$labelB$pluralB(self) {
       child = self.last$labelB$B
       while !isnull(child) {
-        prev$A$labelB$B = child!.prev$A$labelB$B
+        prev$A$labelB$B = child.prev$A$labelB$B
         yield child!
         child = prev$A$labelB$B
       }
@@ -166,7 +166,7 @@ transformer DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
       do {
         child$labelB$B = self.first$labelB$B
       } while !isnull(child$labelB$B) {
-        child$labelB$B!.destroy()
+        child$labelB$B.destroy()
       }
     }
   } else {
@@ -189,7 +189,7 @@ transformer DoublyLinked(A: Class, B: Class, cascadeDelete:bool = false,
   // Remove self from A on destruction.
   prependcode B.destroy {
     if !isnull(self.$labelA$A) {
-      self.$labelA$A!.remove$labelB$B(self)
+      self.$labelA$A.remove$labelB$B(self)
     }
   }
 }

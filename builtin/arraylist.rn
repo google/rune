@@ -70,7 +70,7 @@ transformer ArrayList(A: Class, B: Class, cascadeDelete:bool = false,
       for i in range(self.$labelB$pluralB.length()) {
         child$labelB$B = self.$labelB$pluralB[i]
         if !isnull(child$labelB$B) {
-          child$labelB$B!.destroy()
+          child$labelB$B.destroy()
         }
       }
     }
@@ -94,7 +94,7 @@ transformer ArrayList(A: Class, B: Class, cascadeDelete:bool = false,
   // Remove self from A on destruction.
   prependcode B.destroy {
     if !isnull(self.$labelA$A) {
-      self.$labelA$A!.remove$labelB$B(self)
+      self.$labelA$A.remove$labelB$B(self)
     }
   }
 }

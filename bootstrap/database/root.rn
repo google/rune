@@ -19,8 +19,11 @@ class Root(self) {
   self.counter = 0
   self.debugMode = false
   self.dumpParseTree = false
+  self.dumpFuncTree = false
   self.indentDepth = 0u32
   self.runePackageDir = ""
+  // Constants:
+  self.defaultRefWidth = 32u32
 
   func indent(self, var text: string) {
     for i in range(self.indentDepth) {

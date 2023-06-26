@@ -15,7 +15,7 @@
 class Foo(self, bar: Bar?, hash: u64) {
   self.hash = hash
   if !isnull(bar) {
-    bar!.insertFoo(self)
+    bar.insertFoo(self)
   }
 }
 

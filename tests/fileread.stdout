@@ -19,7 +19,7 @@ func readFile(fileName: string, len: u64 = 0) -> string {
   if isnull(file) {
     raise Status.NotFound, "Unable to read file ", name
   }
-  return file!.read(len)
+  return file.read(len)
 }
 
 name = "tests/fileread.rn"

@@ -52,16 +52,16 @@ for i in range(list.length()) {
   C(a!, list[i])
 }
 do {
-  b = a!.popB()
+  b = a.popB()
 } while !isnull(b) {
-  println "popped B ", b!.cost
-  b!.destroy()
+  println "popped B ", b.cost
+  b.destroy()
 }
 do {
-  c = a!.popC()
+  c = a.popC()
 } while !isnull(c) {
-  println "popped C ", c!.cost
-  c!.destroy()
+  println "popped C ", c.cost
+  c.destroy()
 }
 for i in range(list.length()) {
   B(a!, list[i])

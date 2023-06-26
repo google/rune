@@ -25,7 +25,7 @@ class Filepath(self, path: string, parent: Filepath?, isPackage: bool) {
   self.text = ""  // Call the readFile() method to initialize this.
   getRoot().insertFilepath(self)
   if !isnull(parent) {
-    parent!.appendChildFilepath(self)
+    parent.appendChildFilepath(self)
   }
 
   // Create a filepath object that records the path to a module or package.  If
@@ -62,7 +62,7 @@ class Filepath(self, path: string, parent: Filepath?, isPackage: bool) {
     if isnull(file) {
       raise Status.NotFound, "Unable to read file ", self.sym.name
     }
-    self.text = file!.read()
+    self.text = file.read()
     // Append a newline at the end if missing.
     if self.text.length() == 0 || self.text[self.text.length() - 1] != '\n' {
       self.text.append('\n')

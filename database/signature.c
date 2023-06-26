@@ -268,7 +268,7 @@ static deDatatype findTypeExprDatatype(deBlock scopeBlock, deExpression typeExpr
 // Find the concrete datatype for the datatype, and report an error if it is
 // still not concrete.
 static deDatatype findConcreteDatatype(deDatatype datatype, deExpression expression) {
-    if (!deDatatypeConcrete(datatype)) {
+    if (datatype != deDatatypeNull && !deDatatypeConcrete(datatype)) {
       datatype = deFindUniqueConcreteDatatype(datatype, expression);
     }
     if (datatype == deDatatypeNull || !deDatatypeConcrete(datatype)) {
@@ -328,6 +328,10 @@ deDatatypeArray deFindFullySpecifiedParameters(deBlock block) {
     } else if (typeExpr != deExpressionNull) {
       expression = typeExpr;
       datatype = findTypeExprDatatype(block, typeExpr);
+    }
+    if (datatype == deDatatypeNull) {
+      deError(deVariableGetLine(var), "Expected fully specified type for parameter %s",
+          deVariableGetName(var));
     }
     datatype = findConcreteDatatype(datatype, expression);
     deDatatypeArrayAppendDatatype(datatypes, datatype);

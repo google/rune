@@ -13,10 +13,16 @@
 // limitations under the License.
 
 use bigint
+use block
 use datatype
 use expr
 use filepath
+use function
+use ident
 use location
 use location
 use root
+use statement
+use template
 use value
+use variable

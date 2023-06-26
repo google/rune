@@ -148,7 +148,7 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
 
   // A non-ASCII UTF-8 character will match ([\xc0-\xff][\x80-\xbf]*).
   func readChar(self) -> Char {
-    char = getChar(self.filepath!.text, self.pos)
+    char = getChar(self.filepath.text, self.pos)
     self.pos += <u32>char.len
     return char
   }
@@ -170,13 +170,13 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
         self.error("End of file while reading string")
       }
       char = self.readChar()
-      c = self.filepath!.text[char.pos]
+      c = self.filepath.text[char.pos]
     } while c != target {
       if c == '\\' {
         s.append(self.readEscapedChar(self.useWeakStrings))
       } else {
         for i in range(char.pos, char.pos + <u32>char.len) {
-          s.append(self.filepath!.text[i])
+          s.append(self.filepath.text[i])
         }
       }
     }
@@ -191,7 +191,7 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
   // otherwise escape double quotes.
   func readEscapedChar(self, singleQuotes: bool) -> u8 {
     char = self.readChar()
-    c = self.filepath!.text[char.pos]
+    c = self.filepath.text[char.pos]
     if c == 'a' {
       return '\a'
     } else if c == 'b' {
@@ -218,9 +218,9 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
       return '\0'
     } else if c == 'x' {
       char = self.readChar()
-      hi = self.filepath!.text[char.pos]
+      hi = self.filepath.text[char.pos]
       char = self.readChar()
-      lo = self.filepath!.text[char.pos]
+      lo = self.filepath.text[char.pos]
       if !isHexDigit(hi) || !isHexDigit(lo) {
         self.error("Non-hex digit in hexadecimal escape sequence")
       }
@@ -244,7 +244,7 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
     if char.len != 1 {
       self.error("Only single-byte characters can be used in single quotes")
     }
-    c = self.filepath!.text[char.pos]
+    c = self.filepath.text[char.pos]
     if c == '\\' {
       c = self.readEscapedChar(true)
     }
@@ -254,7 +254,7 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
 
   func expectChar(self, expectedChar: u8) {
     char = self.readChar()
-    c = self.filepath!.text[char.pos]
+    c = self.filepath.text[char.pos]
     if c != expectedChar {
       self.error("Expected %s, got %s" % (chr(expectedChar), chr(c)))
     }
@@ -474,14 +474,14 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
     if self.startPos + <u32>text.length() > self.len {
       return false
     }
-    return text == self.filepath!.text[self.startPos : self.startPos + <u32>text.length()]
+    return text == self.filepath.text[self.startPos : self.startPos + <u32>text.length()]
   }
 
   func inputHas(self, text: string) -> bool {
     if self.pos + <u32>text.length() > self.len {
       return false
     }
-    return text == self.filepath!.text[self.pos : self.pos + <u32>text.length()]
+    return text == self.filepath.text[self.pos : self.pos + <u32>text.length()]
   }
 
   func readIdentOrKeyword(self) -> Token {
@@ -508,7 +508,7 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
       keyword = self.tryNonAlphaKeyword(i)
       if !isnull(keyword) {
         // Check to see if it is a newline.
-        if i == 1 && keyword!.sym.name[0] == '\n' {
+        if i == 1 && keyword.sym.name[0] == '\n' {
           self.line += 1
         }
         return Token.newValueToken(self, keyword!, self.location())
@@ -523,7 +523,7 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
     for i in range(len) {
       char = self.readChar()
     }
-    text = self.filepath!.text[self.startPos : self.pos]
+    text = self.filepath.text[self.startPos : self.pos]
     keytab = self.keytab!
     return keytab.lookup(text)
   }
@@ -619,7 +619,7 @@ unittest parseEscapedSingleQuotedCharsTest {
       '\\', '\'', '\0', '\xde', '\xad']
   for i in range(expRes.length()) {
     token = lexer.parseToken()
-    assert token.type == TokenType.Integer && token.value!.intVal! == db.Bigint(expRes[i])
+    assert token.type == TokenType.Integer && token.value.intVal! == db.Bigint(expRes[i])
   }
   println "Passed escaped chars test"
 }
@@ -631,8 +631,8 @@ unittest parseIntegerTest {
   do {
     token = lexer.parseToken()
   } while !token.isKeyword("\n") {
-    println "token value = ", token.value!.intVal!.toString()
-    assert token.type == TokenType.Integer && token.value!.intVal!.toString() == expRes[i]
+    println "token value = ", token.value.intVal.toString()
+    assert token.type == TokenType.Integer && token.value.intVal.toString() == expRes[i]
     i += 1
   }
   println "Passed parse integer test"
@@ -643,7 +643,7 @@ unittest parseHexTest {
   expRes = ["0u64", "au4", "3i3", "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffedu256"]
   for i in  range(expRes.length()) {
     token = lexer.parseToken()
-    intValStr = token.value!.intVal!.toStringInBase(16u32)
+    intValStr = token.value.intVal.toStringInBase(16u32)
     println "token value = ", intValStr
     assert token.type == TokenType.Integer && intValStr == expRes[i]
   }
@@ -655,7 +655,7 @@ unittest parseFloatTest {
   expRes = ["0.0", "3.14", "9.99e2", "2.4e-24", "1.234568e8"]
   for i in  range(expRes.length()) {
     token = lexer.parseToken()
-    floatValStr = "%f" % token.value!.floatVal
+    floatValStr = "%f" % token.value.floatVal
     println "token value = ", floatValStr
     assert token.type == TokenType.Float && floatValStr == expRes[i]
   }
@@ -668,7 +668,7 @@ unittest parseEscapedIdentTest {
   for i in  range(expRes.length()) {
     token = lexer.parseToken()
     assert token.type == TokenType.Ident
-    identStr = token.value!.symVal!.name
+    identStr = token.value.symVal.name
     println "token value = ", identStr
     assert identStr == expRes[i]
   }
@@ -681,7 +681,7 @@ unittest parseIdentTest {
   for i in  range(expRes.length()) {
     token = lexer.parseToken()
     assert token.type == TokenType.Ident
-    identStr = token.value!.symVal!.name
+    identStr = token.value.symVal.name
     println "token value = ", identStr
     assert identStr == expRes[i]
   }
@@ -695,7 +695,7 @@ unittest enableUnderscoresTest {
   for i in  range(expRes.length()) {
     token = lexer.parseToken()
     assert token.type == TokenType.Ident
-    identStr = token.value!.symVal!.name
+    identStr = token.value.symVal.name
     println "token value = ", identStr
     assert identStr == expRes[i]
   }
@@ -708,7 +708,7 @@ unittest uintIntOrRandTest {
   expRes = ["u32", "i6", "rand1024"]
   for i in  range(expRes.length()) {
     token = lexer.parseToken()
-    width = <u32>(token.value!.intVal!)
+    width = <u32>(token.value.intVal!)
     switch token.type {
       TokenType.RandUint => str = "rand%u" % width
       TokenType.IntType => str = "i%u" % width
@@ -729,7 +729,7 @@ unittest singleLineCommentTest {
     token = lexer.parseToken()
     switch token.type {
       TokenType.Keyword => str = "\\n"
-      TokenType.Integer => str = token.value!.intVal!.toString()
+      TokenType.Integer => str = token.value.intVal.toString()
       default => panic "Unexpected token type"
     }
     println "token value = ", str
@@ -746,7 +746,7 @@ unittest blockCommentTest {
     token = lexer.parseToken()
     switch token.type {
       TokenType.Keyword => str = "\\n"
-      TokenType.Integer => str = token.value!.intVal!.toString()
+      TokenType.Integer => str = token.value.intVal.toString()
       default => panic "Unexpected token type"
     }
     println "token value = ", str

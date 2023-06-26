@@ -100,9 +100,9 @@ class Ident(self, function: Function, object: Function | Variable, sym: Sym, obj
   // Return the location of the identifier.
   func location(self) -> Location {
     if !isnull(self.function) {
-      return self.function!.location
+      return self.function.location
     }
-    return self.variable!.location!
+    return self.variable.location!
   }
 
   // Find an identifier from the path Expr.

@@ -29,13 +29,13 @@ class Tree(self, label: string, child1 = null(self), child2 = null(self)) {
     left = self.firstTree
     right = null(self)
     if !isnull(left) {
-      right = left!.nextTreeTree
-      left!.dumpRec(depth + 1)
+      right = left.nextTreeTree
+      left.dumpRec(depth + 1)
     }
     indent(depth)
     println self.label
     if !isnull(right) {
-      right!.dumpRec(depth + 1)
+      right.dumpRec(depth + 1)
     }
   }
 }

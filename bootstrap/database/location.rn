@@ -23,15 +23,22 @@ class Location(self, filepath: Filepath, pos:u32, len: u32, line: u32) {
   self.line = line
   filepath.appendLocation(self)
 
+  // Return an empty location.  This is used for thinks like module
+  // functions that have no locaiton.
+  func emptyLocation() -> Location {
+    filepath = Filepath("__empty__", null(Filepath), false)
+    return Location(filepath, 0u32, 0u32, 0u32)
+  }
+
   // Write the location to stdout, with a filename and location number prefix.
   func dump(self) {
     filepath = self.filepath
     assert !isnull(filepath)
-    path = filepath!.getRelativePath()
+    path = filepath.getRelativePath()
     if path.length() > 0 {
       println "File %s, line %u:" % (path, self.line)
     }
-    if filepath!.text.length() > 0 {
+    if filepath.text.length() > 0 {
       self.printLocationAndCarots()
     }
   }
@@ -40,11 +47,11 @@ class Location(self, filepath: Filepath, pos:u32, len: u32, line: u32) {
   func error(self, msg) {
     filepath = self.filepath
     assert !isnull(filepath)
-    path = filepath!.getRelativePath()
+    path = filepath.getRelativePath()
     if path.length() > 0 {
       println "%s:%u: %s" % (path, self.line, msg)
     }
-    if filepath!.text.length() > 0 {
+    if filepath.text.length() > 0 {
       self.printLocationAndCarots()
     }
   }
@@ -52,7 +59,7 @@ class Location(self, filepath: Filepath, pos:u32, len: u32, line: u32) {
   func printLocationAndCarots(self) {
     start = self.findLocationStart()
     end = self.findLocationEnd()
-    println self.filepath!.text[start:end]
+    println self.filepath.text[start:end]
     for i in range(self.pos - start) {
       print " "
     }
@@ -66,7 +73,7 @@ class Location(self, filepath: Filepath, pos:u32, len: u32, line: u32) {
     pos = self.pos
     while pos != 0 {
       pos -= 1
-      c = self.filepath!.text[pos]
+      c = self.filepath.text[pos]
       if c == '\n' {
         return pos + 1
       }
@@ -76,13 +83,13 @@ class Location(self, filepath: Filepath, pos:u32, len: u32, line: u32) {
 
   func findLocationEnd(self) -> u32 {
     pos = self.pos
-    while pos < <pos>self.filepath!.text.length() {
-      if self.filepath!.text[pos] == '\n' {
+    while pos < <pos>self.filepath.text.length() {
+      if self.filepath.text[pos] == '\n' {
         return pos
       }
       pos += 1
     }
-    return <pos>self.filepath!.text.length()
+    return <pos>self.filepath.text.length()
   }
 }
 

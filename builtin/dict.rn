@@ -40,7 +40,7 @@ class Dict(self, <key>, <value>) {
     if isnull(entry) {
       raise Status.NotFound, "Key not found in dictionary"
     }
-    return entry!.value
+    return entry.value
   }
 
   operator [] (dict: Dict, key) {

@@ -15,27 +15,41 @@
 RUNE=../../rune
 RNFLAGS=-g -r ..
 
-RUNE_TESTS=char lexer token keytab pegparser
+RUNE_TESTS=char lexer token keytab pegparser hir
+
+SRC= \
+char.rn \
+exprTree.rn \
+hir.rn \
+keytab.rn \
+lexer.rn \
+package.rn \
+pegparser.rn \
+rule.rn \
+token.rn
 
 all: runtests
 
 runtests: $(RUNE_TESTS)
 	for test in $(RUNE_TESTS); do "./$$test"; done
 
-char: char.rn
+char: $(SRC)
 	$(RUNE) $(RNFLAGS) char.rn
 
-lexer: lexer.rn char.rn
+lexer: $(SRC)
 	$(RUNE) $(RNFLAGS) lexer.rn
 
-token: token.rn
+token: $(SRC)
 	$(RUNE) $(RNFLAGS) token.rn
 
-keytab: keytab.rn
+keytab: $(SRC)
 	$(RUNE) $(RNFLAGS) keytab.rn
 
-pegparser: pegparser.rn lexer.rn token.rn char.rn keytab.rn
+pegparser: $(SRC)
 	$(RUNE) $(RNFLAGS) pegparser.rn
 
+hir: $(SRC)
+	$(RUNE) $(RNFLAGS) hir.rn
+
 clean:
-	rm -f $(RUNE_TESTS) *.ll parsergen
+	rm -f $(RUNE_TESTS) *.ll

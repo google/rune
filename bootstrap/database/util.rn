@@ -15,7 +15,7 @@
 use location
 
 func Error(text: string, location: Location) {
-  path = location.filepath!.getRelativePath()
+  path = location.filepath.getRelativePath()
   println "File %s:%u: %s" % (path, location.line, text)
   location.dump()
   raise Status.InvalidArgument, "Exiting due to errors"

@@ -32,7 +32,7 @@ class Heapq(self, <value>) {
     if isnull(element) {
       raise Exception.Underflow, "Heapq underflow"
     }
-    return element!.value
+    return element.value
   }
 
   func empty(self) {

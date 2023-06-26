@@ -41,8 +41,8 @@ transformer LinkedList(A: Class, B: Class, cascadeDelete:bool = false,
       if isnull(prevChild) {
         self.insert$labelB$B(child)
       } else {
-        child.next$A$labelB$B = prevChild!.next$A$labelB$B
-        prevChild!.next$A$labelB$B = child
+        child.next$A$labelB$B = prevChild.next$A$labelB$B
+        prevChild.next$A$labelB$B = child
         child.$labelA$A = self
         ref child
       }
@@ -95,7 +95,7 @@ transformer LinkedList(A: Class, B: Class, cascadeDelete:bool = false,
     }
 
     iterator $labelB$pluralB(self) {
-      for child = self.first$labelB$B, !isnull(child), child = child!.next$A$labelB$B {
+      for child = self.first$labelB$B, !isnull(child), child = child.next$A$labelB$B {
         yield child!
       }
     }
@@ -103,7 +103,7 @@ transformer LinkedList(A: Class, B: Class, cascadeDelete:bool = false,
     iterator safe$labelB$pluralB(self) {
       child = self.first$labelB$B
       while !isnull(child) {
-        next$A$labelB$B = child!.next$A$labelB$B
+        next$A$labelB$B = child.next$A$labelB$B
         yield child!
         child = next$A$labelB$B
       }
@@ -116,7 +116,7 @@ transformer LinkedList(A: Class, B: Class, cascadeDelete:bool = false,
       do {
         child$labelB$B = self.first$labelB$B
       } while !isnull(child$labelB$B) {
-        child$labelB$B!.destroy()
+        child$labelB$B.destroy()
       }
     }
   } else {
@@ -138,7 +138,7 @@ transformer LinkedList(A: Class, B: Class, cascadeDelete:bool = false,
   // Remove self from A on destruction.
   prependcode B.destroy {
     if !isnull(self.$labelA$A) {
-      self.$labelA$A!.remove$labelB$B(self)
+      self.$labelA$A.remove$labelB$B(self)
     }
   }
 }

@@ -56,18 +56,17 @@ class Variable(self, function: Function, isParam: bool, isConst: bool, sym: Sym,
 
   // Dump the variable to a string for debugging purposes.
   func dumpToString(self, var text: string) {
-    getRoot().indent(text)
     if self.isParam && !self.isConst {
       text += "var "
     }
     text += "%s" % self.sym.name
     if !isnull(self.typeExpr) {
       text += ": "
-      self.typeExpr!.dumpToString(text)
+      self.typeExpr.dumpToString(text)
     }
     if !isnull(self.initializerExpr) {
       text += " = "
-      self.initializerExpr!.dumpToString(text)
+      self.initializerExpr.dumpToString(text)
     }
   }
 
@@ -82,11 +81,11 @@ class Variable(self, function: Function, isParam: bool, isConst: bool, sym: Sym,
   func copy(self, destFunc: Function) -> Variable {
     initializer = null(Expr)
     if !isnull(self.initializerExpr) {
-      initializer = self.initializerExpr!.copy()
+      initializer = self.initializerExpr.copy()
     }
     type = null(Expr)
     if !isnull(self.typeExpr) {
-      type = self.typeExpr!.copy()
+      type = self.typeExpr.copy()
     }
     newVariable = Variable(destFunc, self.isParam, self.isConst, self.sym,
         initializer, type, self.generated, self.location)

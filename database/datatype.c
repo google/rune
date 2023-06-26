@@ -958,7 +958,15 @@ bool deDatatypeMatchesTypeExpression(deBlock scopeBlock, deDatatype datatype,
       if (datatype == constraintType) {
         return true;
       }
-      if (deDatatypeGetType(constraintType) != DE_TYPE_TEMPLATE) {
+      deDatatypeType type = deDatatypeGetType(constraintType);
+      if (type == DE_TYPE_ENUMCLASS) {
+        if (deDatatypeGetType(datatype) == DE_TYPE_ENUM) {
+          deFunction enumFunction = deDatatypeGetFunction(datatype);
+          return enumFunction == deDatatypeGetFunction(constraintType);
+        }
+        return false;
+      }
+      if (type != DE_TYPE_TEMPLATE) {
         deError(line, "Invalid constraint type %s", deDatatypeGetTypeString(constraintType));
       }
       deTemplate templ = deDatatypeGetTemplate(constraintType);

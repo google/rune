@@ -69,8 +69,8 @@ class Value(self: Value, value: string | bool | Int | Uint | Bigint | Float | Sy
       DatatypeType.String => return "\"" + self.stringVal + "\"" // TODO: Escape the string.
       DatatypeType.Bool => return self.boolVal ? "true" : "false"
       DatatypeType.Float => return "%ff%u" % (self.floatVal, self.width)
-      DatatypeType.Int, DatatypeType.Uint => return self.intVal!.toString()
-      DatatypeType.Sym => return self.symVal!.name
+      DatatypeType.Int, DatatypeType.Uint => return self.intVal.toString()
+      DatatypeType.Sym => return self.symVal.name
     }
   }
 
@@ -98,7 +98,7 @@ unittest valueTypesTest {
   c = Value(true)
   d = Value(3.1415927f32)
   e = Value(Sym.new("test"))
-  println a.intVal!.toStringInBase(16u32)
+  println a.intVal.toStringInBase(16u32)
   println b
   println c
   println d

@@ -48,9 +48,9 @@ enum ExprType {
   Shr  // a >> b
   Rotl  // a <<< b
   Rotr  // a >>> b
-  Addtrunc  // a !+ b
-  Subtrunc  // a !- b
-  Multrunc  // a !* b
+  AddTrunc  // a !+ b
+  SubTrung  // a !- b
+  MulTrunc  // a !* b
   Bitnot  // ~a
   Lt  // a < b
   Le  // a <= b
@@ -59,10 +59,10 @@ enum ExprType {
   Equal  // a == b
   Notequal  // a != b
   Negate  // -a
-  Negatetrunc  // !-a
+  NegateTrunc  // !-a
   Not  // !a
   Cast  // <b>a
-  Casttrunc  // !<b>a
+  CastTrunc  // !<b>a
   Select  // passed? a : b
   Call  // fact(n)
   Index  // a[i]
@@ -88,9 +88,9 @@ enum ExprType {
   ShrEquals  // a >>= b
   RotlEquals  // a <<<= b
   RotrEquals  // a >>>= b
-  AddtruncEquals  // a !+ b
-  SubtruncEquals  // a !- b
-  MultruncEquals  // a !* b
+  AddTruncEquals  // a !+ b
+  SubTrungEquals  // a !- b
+  MulTruncEquals  // a !* b
   Dot  // a.b
   Dotdotdot  // case u1 ... u32
   List  // fact(a, b, c)
@@ -99,7 +99,7 @@ enum ExprType {
   In  // if element in set
   Const  // const self.x = x
   Null  // null(Node())
-  Nullself  // n = Tree(null, null)
+  Notnull  // n = node!
   Funcaddr  // &max(0u32, 0u32)
   Arrayof  // arrayof(u32)
   Typeof  // typeof a
@@ -151,35 +151,174 @@ func getPrecedence(type: ExprType) -> u32 {
 // Return the expression type's name.
 func getExprTypeName(type: ExprType) -> string {
   switch type {
-    ExprType.Modint => return "mod"
+    ExprType.Add => return "+"
+    ExprType.Sub => return "-"
+    ExprType.Mul => return "*"
+    ExprType.Div => return "/"
+    ExprType.Mod => return "%"
     ExprType.And => return "&&"
-    ExprType.Xor => return "^^"
     ExprType.Or => return "||"
+    ExprType.Xor => return "^^"
+    ExprType.Bitand => return "&"
+    ExprType.Bitor => return "|"
+    ExprType.Bitxor => return "^"
+    ExprType.Exp => return "**"
+    ExprType.Shl => return "<<"
+    ExprType.Shr => return ">>"
+    ExprType.Rotl => return "<<<"
+    ExprType.Rotr => return ">>>"
+    ExprType.AddTrunc => return "!+"
+    ExprType.SubTrung => return "!-"
+    ExprType.MulTrunc => return "!*"
+    ExprType.Bitnot => return "~"
     ExprType.Lt => return "<"
     ExprType.Le => return "<="
     ExprType.Gt => return ">"
     ExprType.Ge => return ">="
     ExprType.Equal => return "=="
     ExprType.Notequal => return "!="
-    ExprType.Shl => return "<<"
-    ExprType.Shr => return ">>"
-    ExprType.Rotl => return "<<<"
-    ExprType.Rotr => return ">>>"
-    ExprType.Bitand => return "&"
-    ExprType.Bitxor => return "^"
-    ExprType.Bitor => return "|"
-    ExprType.Negate, ExprType.Sub => return "-"
-    ExprType.Add => return "+"
-    ExprType.Mul => return "*"
-    ExprType.Div => return "/"
-    ExprType.Mod => return "%"
-    ExprType.Exp => return "**"
+    ExprType.Negate => return "-"
+    ExprType.NegateTrunc => return "!-"
     ExprType.Not => return "!"
-    ExprType.Bitnot => return "~"
-    ExprType.Dot => return "."
+    ExprType.Cast => return "<>"
+    ExprType.CastTrunc => return "!<>"
+    ExprType.Select => return "?:"
+    ExprType.Call => return "()"
     ExprType.Index => return "[]"
+    ExprType.Slice => return "[:]"
+    ExprType.Secret => return "secret"
+    ExprType.Reveal => return "reveal"
+    ExprType.Equals => return "="
+    ExprType.AddEquals => return "+="
+    ExprType.SubEquals => return "-="
+    ExprType.MulEquals => return "*="
+    ExprType.DivEquals => return "/="
+    ExprType.ModEquals => return "%="
+    ExprType.AndEquals => return "&&="
+    ExprType.OrEquals => return "||="
+    ExprType.XorEquals => return "^^="
+    ExprType.BitandEquals => return "&="
+    ExprType.BitorEquals => return "|="
+    ExprType.BitxorEquals => return "^="
+    ExprType.ExpEquals => return "**="
+    ExprType.ShlEquals => return "<<="
+    ExprType.ShrEquals => return ">>="
+    ExprType.RotlEquals => return "<<<="
+    ExprType.RotrEquals => return ">>>="
+    ExprType.AddTruncEquals => return "!+="
+    ExprType.SubTrungEquals => return "!-="
+    ExprType.MulTruncEquals => return "!*="
+    ExprType.Dot => return "."
+    ExprType.Dotdotdot => return "..."
+    ExprType.Tuple => return "tuple"
+    ExprType.List => return "list"
+    ExprType.As => return "as"
     ExprType.In => return "in"
-    default => raise Exception.Internal, "Unexpected expression type"
+    ExprType.Const => return "const"
+    ExprType.Null => return "null"
+    ExprType.Notnull => return "notnull"
+    ExprType.Funcaddr => return "funcaddr"
+    ExprType.Arrayof => return "arrayof"
+    ExprType.Typeof => return "typeof"
+    ExprType.Unsigned => return "unsigned"
+    ExprType.Signed => return "signed"
+    ExprType.Widthof => return "widthof"
+    ExprType.Isnull => return "isnull"
+    ExprType.UintType => return "uinttype"
+    ExprType.IntType => return "inttype"
+    ExprType.FloatType => return "floattype"
+    ExprType.StringType => return "stringtype"
+    ExprType.BoolType => return "booltype"
+    ExprType.Typeindex => return "typeindex"
+    ExprType.Namedparam => return "namedparam"
+    default => panic "Unexpected expression type ", type
+  }
+}
+
+// Return the expression type given its sym.
+func getExprTypeFromSym(sym: Sym) -> ExprType {
+  // TODO: pre-build this symbols for improved speed.
+  switch sym {
+    Sym.new("+") => return ExprType.Add
+    Sym.new("-") => return ExprType.Sub
+    Sym.new("*") => return ExprType.Mul
+    Sym.new("/") => return ExprType.Div
+    Sym.new("%") => return ExprType.Mod
+    Sym.new("&&") => return ExprType.And
+    Sym.new("||") => return ExprType.Or
+    Sym.new("^^") => return ExprType.Xor
+    Sym.new("&") => return ExprType.Bitand
+    Sym.new("|") => return ExprType.Bitor
+    Sym.new("^") => return ExprType.Bitxor
+    Sym.new("**") => return ExprType.Exp
+    Sym.new("<<") => return ExprType.Shl
+    Sym.new(">>") => return ExprType.Shr
+    Sym.new("<<<") => return ExprType.Rotl
+    Sym.new(">>>") => return ExprType.Rotr
+    Sym.new("!+") => return ExprType.AddTrunc
+    Sym.new("!-") => return ExprType.SubTrung
+    Sym.new("!*") => return ExprType.MulTrunc
+    Sym.new("~") => return ExprType.Bitnot
+    Sym.new("<") => return ExprType.Lt
+    Sym.new("<=") => return ExprType.Le
+    Sym.new(">") => return ExprType.Gt
+    Sym.new(">=") => return ExprType.Ge
+    Sym.new("==") => return ExprType.Equal
+    Sym.new("!=") => return ExprType.Notequal
+    Sym.new("-") => return ExprType.Negate
+    Sym.new("!-") => return ExprType.NegateTrunc
+    Sym.new("!") => return ExprType.Not
+    Sym.new("<>") => return ExprType.Cast
+    Sym.new("!<>") => return ExprType.CastTrunc
+    Sym.new("?:") => return ExprType.Select
+    Sym.new("()") => return ExprType.Call
+    Sym.new("[]") => return ExprType.Index
+    Sym.new("[:]") => return ExprType.Slice
+    Sym.new("secret") => return ExprType.Secret
+    Sym.new("reveal") => return ExprType.Reveal
+    Sym.new("=") => return ExprType.Equals
+    Sym.new("+=") => return ExprType.AddEquals
+    Sym.new("-=") => return ExprType.SubEquals
+    Sym.new("*=") => return ExprType.MulEquals
+    Sym.new("/=") => return ExprType.DivEquals
+    Sym.new("%=") => return ExprType.ModEquals
+    Sym.new("&&=") => return ExprType.AndEquals
+    Sym.new("||=") => return ExprType.OrEquals
+    Sym.new("^^=") => return ExprType.XorEquals
+    Sym.new("&=") => return ExprType.BitandEquals
+    Sym.new("|=") => return ExprType.BitorEquals
+    Sym.new("^=") => return ExprType.BitxorEquals
+    Sym.new("**=") => return ExprType.ExpEquals
+    Sym.new("<<=") => return ExprType.ShlEquals
+    Sym.new(">>=") => return ExprType.ShrEquals
+    Sym.new("<<<=") => return ExprType.RotlEquals
+    Sym.new(">>>=") => return ExprType.RotrEquals
+    Sym.new("!+=") => return ExprType.AddTruncEquals
+    Sym.new("!-=") => return ExprType.SubTrungEquals
+    Sym.new("!*=") => return ExprType.MulTruncEquals
+    Sym.new(".") => return ExprType.Dot
+    Sym.new("...") => return ExprType.Dotdotdot
+    Sym.new("tuple") => return ExprType.Tuple
+    Sym.new("list") => return ExprType.List
+    Sym.new("as") => return ExprType.As
+    Sym.new("in") => return ExprType.In
+    Sym.new("const") => return ExprType.Const
+    Sym.new("null") => return ExprType.Null
+    Sym.new("notnull") => return ExprType.Notnull
+    Sym.new("funcaddr") => return ExprType.Funcaddr
+    Sym.new("arrayof") => return ExprType.Arrayof
+    Sym.new("typeof") => return ExprType.Typeof
+    Sym.new("unsigned") => return ExprType.Unsigned
+    Sym.new("signed") => return ExprType.Signed
+    Sym.new("widthof") => return ExprType.Widthof
+    Sym.new("isnull") => return ExprType.Isnull
+    Sym.new("uinttype") => return ExprType.UintType
+    Sym.new("inttype") => return ExprType.IntType
+    Sym.new("floattype") => return ExprType.FloatType
+    Sym.new("stringtype") => return ExprType.StringType
+    Sym.new("booltype") => return ExprType.BoolType
+    Sym.new("typeindex") => return ExprType.Typeindex
+    Sym.new("namedparam") => return ExprType.Namedparam
   }
 }
 
@@ -322,10 +461,10 @@ class Expr(self, type: ExprType, location: Location) {
   func dumpBinary(self, var text: string, opType: string, parentPrecedence: u32) {
     parent = self.parentExpr
     left = self.firstChildExpr!
-    right = left!.nextExprChildExpr!
+    right = left.nextExprChildExpr!
     precedence = self.getPrecedence()
     needParens = precedence < parentPrecedence || (
-        precedence == parentPrecedence && !isnull(parent) && parent!.firstChildExpr != self)
+        precedence == parentPrecedence && !isnull(parent) && parent.firstChildExpr != self)
     if needParens {
       text += "("
     }
@@ -391,16 +530,32 @@ class Expr(self, type: ExprType, location: Location) {
     text += ")"
   }
 
+  // Write out the assignment expression.
+  func dumpAssignment(self, var text) {
+    target = self.firstChildExpr!
+    value = target.nextExprChildExpr!
+    constraint = value.nextExprChildExpr
+    target.dumpToString(text)
+    if !isnull(constraint) {
+      text.concat(": ")
+      constraint.dumpToString(text)
+    }
+    text.append(' ')
+    text += getExprTypeName(self.type)
+    text.append(' ')
+    value.dumpToString(text)
+  }
+
   // Write out the expression in a reasonably readable format to the end of |string|.
   func dumpToString(self, var text: string) {
     parent = self.parentExpr
     parentPrecedence = 0u32
     if !isnull(parent) {
-      parentPrecedence = parent!.getPrecedence()
+      parentPrecedence = parent.getPrecedence()
     }
     switch self.type {
-      ExprType.Constant => text += self.val!.toString()
-      ExprType.Ident => text += self.val!.symVal!.name
+      ExprType.Constant => text += self.val.toString()
+      ExprType.Ident => text += self.val.symVal.name
       ExprType.Array => self.dumpArray(text)
       ExprType.Tuple => self.dumpTuple(text)
       ExprType.Randuint => text += "rand%u" % self.width
@@ -421,9 +576,9 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Shr => self.dumpBinary(text, ">>", parentPrecedence)
       ExprType.Rotl => self.dumpBinary(text, "<<<", parentPrecedence)
       ExprType.Rotr => self.dumpBinary(text, ">>>", parentPrecedence)
-      ExprType.Addtrunc => self.dumpBinary(text, "!+", parentPrecedence)
-      ExprType.Subtrunc => self.dumpBinary(text, "!-", parentPrecedence)
-      ExprType.Multrunc => self.dumpBinary(text, "!*", parentPrecedence)
+      ExprType.AddTrunc => self.dumpBinary(text, "!+", parentPrecedence)
+      ExprType.SubTrung => self.dumpBinary(text, "!-", parentPrecedence)
+      ExprType.MulTrunc => self.dumpBinary(text, "!*", parentPrecedence)
       ExprType.Lt => self.dumpBinary(text, "<", parentPrecedence)
       ExprType.Le => self.dumpBinary(text, "<=", parentPrecedence)
       ExprType.Gt => self.dumpBinary(text, ">", parentPrecedence)
@@ -431,11 +586,11 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Equal => self.dumpBinary(text, "==", parentPrecedence)
       ExprType.Notequal => self.dumpBinary(text, "!=", parentPrecedence)
       ExprType.Negate => self.dumpPrefix(text, "-", parentPrecedence)
-      ExprType.Negatetrunc => self.dumpPrefix(text, "!-", parentPrecedence)
+      ExprType.NegateTrunc => self.dumpPrefix(text, "!-", parentPrecedence)
       ExprType.Not => self.dumpPrefix(text, "!", parentPrecedence)
       ExprType.Bitnot => self.dumpPrefix(text, "~", parentPrecedence)
       ExprType.Cast => self.dumpCast(text, parentPrecedence, false)
-      ExprType.Casttrunc => self.dumpCast(text, parentPrecedence, true)
+      ExprType.CastTrunc => self.dumpCast(text, parentPrecedence, true)
       ExprType.Select => self.dumpSelect(text, parentPrecedence)
       ExprType.Call => self.dumpCall(text)
       ExprType.Funcaddr => self.dumpPrefix(text, "&", parentPrecedence)
@@ -446,40 +601,29 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Widthof => self.dumpBuiltin(text, "widthof")
       ExprType.Isnull => self.dumpBuiltin(text, "isnull")
       ExprType.Null => self.dumpBuiltin(text, "null")
-      ExprType.Nullself => text += "null"
+      ExprType.Notnull => {
+        self.firstChildExpr.dumpToString(text)
+        text.append('!')
+      }
       ExprType.Index, ExprType.Typeindex => self.dumpIndex(text)
       ExprType.Slice => self.dumpSlice(text)
       ExprType.Secret => {
         text += "secret("
-        self.firstChildExpr!.dumpToString(text)
+        self.firstChildExpr.dumpToString(text)
         text += ")"
       }
       ExprType.Reveal => {
         text += "reveal("
-        self.firstChildExpr!.dumpToString(text)
+        self.firstChildExpr.dumpToString(text)
         text += ")"
       }
       ExprType.Const => self.dumpPrefix(text, "const ", parentPrecedence)
-      ExprType.Equals => self.dumpBinary(text, "=", parentPrecedence)
-      ExprType.AddEquals => self.dumpBinary(text, "+=", parentPrecedence)
-      ExprType.SubEquals => self.dumpBinary(text, "-=", parentPrecedence)
-      ExprType.MulEquals => self.dumpBinary(text, "*=", parentPrecedence)
-      ExprType.DivEquals => self.dumpBinary(text, "/=", parentPrecedence)
-      ExprType.ModEquals => self.dumpBinary(text, "%=", parentPrecedence)
-      ExprType.AndEquals => self.dumpBinary(text, "&&=", parentPrecedence)
-      ExprType.OrEquals => self.dumpBinary(text, "||=", parentPrecedence)
-      ExprType.XorEquals => self.dumpBinary(text, "^^=", parentPrecedence)
-      ExprType.ExpEquals => self.dumpBinary(text, "**=", parentPrecedence)
-      ExprType.ShlEquals => self.dumpBinary(text, "<<=", parentPrecedence)
-      ExprType.ShrEquals => self.dumpBinary(text, ">>=", parentPrecedence)
-      ExprType.RotlEquals => self.dumpBinary(text, "<<<=", parentPrecedence)
-      ExprType.RotrEquals => self.dumpBinary(text, ">>>=", parentPrecedence)
-      ExprType.AddtruncEquals => self.dumpBinary(text, "!+=", parentPrecedence)
-      ExprType.SubtruncEquals => self.dumpBinary(text, "!-=", parentPrecedence)
-      ExprType.MultruncEquals => self.dumpBinary(text, "!*=", parentPrecedence)
-      ExprType.BitandEquals => self.dumpBinary(text, "&=", parentPrecedence)
-      ExprType.BitorEquals => self.dumpBinary(text, "|=", parentPrecedence)
-      ExprType.BitxorEquals => self.dumpBinary(text, "^=", parentPrecedence)
+      ExprType.Equals, ExprType.AddEquals, ExprType.SubEquals, ExprType.MulEquals,
+          ExprType.DivEquals, ExprType.ModEquals, ExprType.AndEquals, ExprType.OrEquals,
+          ExprType.XorEquals, ExprType.ExpEquals, ExprType.ShlEquals, ExprType.ShrEquals,
+          ExprType.RotlEquals, ExprType.RotrEquals, ExprType.AddTruncEquals,
+          ExprType.SubTrungEquals, ExprType.MulTruncEquals, ExprType.BitandEquals,
+          ExprType.BitorEquals, ExprType.BitxorEquals => self.dumpAssignment(text)
       ExprType.As => self.dumpBinary(text, " as ", parentPrecedence)
       ExprType.In => self.dumpBinary(text, " in ", parentPrecedence)
       ExprType.Dot => self.dumpBinary(text, ".", parentPrecedence)
@@ -491,8 +635,8 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.StringType => text += "string"
       ExprType.BoolType => text += "bool"
       ExprType.Namedparam => {
-        text += self.firstChildExpr!.val!.symVal!.name + " = "
-        self.lastChildExpr!.dumpToString(text)
+        text += self.firstChildExpr.val.symVal.name + " = "
+        self.lastChildExpr.dumpToString(text)
       }
     }
   }
@@ -505,7 +649,7 @@ class Expr(self, type: ExprType, location: Location) {
   }
 
   // Write out the expression in a reasonably readable format.
-  func dump(self) {
+  func dump(self: Expr) {
     text = ""
     self.dumpToString(text)
     println text
@@ -586,6 +730,15 @@ unittest unaryTest {
 unittest newIdentTest {
   expr = Expr.newIdent(Sym.new("test"), location)
   expr.dump()
+}
+
+unittest getExprTypeNameTest {
+  for i in range(<u32>ExprType.Add, <u32>ExprType.Namedparam) {
+    type = <ExprType>i
+    if type != ExprType.Negate && type != ExprType.NegateTrunc {
+      assert type == getExprTypeFromSym(Sym.new(getExprTypeName(type)))
+    }
+  }
 }
 
 unittest {

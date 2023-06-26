@@ -16,10 +16,10 @@ class Human(self: Human, name: string, mother: Human? = null(self),
     father: Human? = null(self)) {
   self.name = name
   if !isnull(mother) {
-    mother!.appendMotheredHuman(self)
+    mother.appendMotheredHuman(self)
   }
   if !isnull(father) {
-    father!.appendFatheredHuman(self)
+    father.appendFatheredHuman(self)
   }
 
   func printFamilyTree(self, level: u32) {

@@ -99,11 +99,11 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
       hash = hashValue(key) & (self.$labelB$B_Table.length() - 1)
       entry = self.$labelB$B_Table[hash]
       while !isnull(entry) {
-        if key == entry!.$keyField {
+        if key == entry.$keyField {
           ref entry!
           return entry!
         }
-        entry = entry!.nextHashed$A$labelB$B
+        entry = entry.nextHashed$A$labelB$B
       }
       return null(entry)
     }
@@ -117,12 +117,12 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
       for i in range(length) {
         entry = self.$labelB$B_Table[i]
         while !isnull(entry) {
-          hash = hashValue(entry!.$keyField) & mask
+          hash = hashValue(entry.$keyField) & mask
           if i != hash {
             println "Hash table check failed for ", entry!
             raise Exception.Internal, "i = ", i, ", hash = ", hash
           }
-          entry = entry!.nextHashed$A$labelB$B
+          entry = entry.nextHashed$A$labelB$B
         }
       }
     }
@@ -138,11 +138,11 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
           oldEntry = self.$labelB$B_Table[i]
           prevEntry = null(oldEntry)
           while !isnull(oldEntry) {
-            rawHash = hashValue(oldEntry!.$keyField)
+            rawHash = hashValue(oldEntry.$keyField)
             newHash = rawHash & newMask
             oldHash = rawHash & oldMask
             assert oldHash == i
-            nextEntry = oldEntry!.nextHashed$A$labelB$B
+            nextEntry = oldEntry.nextHashed$A$labelB$B
             if newHash == oldHash {
               prevEntry = oldEntry!
             } else {
@@ -150,10 +150,10 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
               if isnull(prevEntry) {
                 self.$labelB$B_Table[i] = nextEntry
               } else {
-                prevEntry!.nextHashed$A$labelB$B = nextEntry
+                prevEntry.nextHashed$A$labelB$B = nextEntry
               }
               // Insert entry.
-              oldEntry!.nextHashed$A$labelB$B = self.$labelB$B_Table[newHash]
+              oldEntry.nextHashed$A$labelB$B = self.$labelB$B_Table[newHash]
               self.$labelB$B_Table[newHash] = oldEntry!
             }
             oldEntry = nextEntry
@@ -170,7 +170,7 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
           updateHashTableAfterResize(self)
         }
       }
-      hash = hashValue(entry!.$keyField) & (self.$labelB$B_Table.length() - 1)
+      hash = hashValue(entry.$keyField) & (self.$labelB$B_Table.length() - 1)
       entry.nextHashed$A$labelB$B = self.$labelB$B_Table[hash]
       self.$labelB$B_Table[hash] = entry
       entry.$labelA$A = self
@@ -179,7 +179,7 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
     }
 
     func remove$labelB$B(self, child) {
-      hash = hashValue(child!.$keyField) & (self.$labelB$B_Table.length() - 1)
+      hash = hashValue(child.$keyField) & (self.$labelB$B_Table.length() - 1)
       entry = self.$labelB$B_Table[hash]
       prev = null(entry)
       while !isnull(entry) {
@@ -187,7 +187,7 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
           if isnull(prev) {
             self.$labelB$B_Table[hash] = child.nextHashed$A$labelB$B
           } else {
-            prev!.nextHashed$A$labelB$B = child.nextHashed$A$labelB$B
+            prev.nextHashed$A$labelB$B = child.nextHashed$A$labelB$B
           }
           child.nextHashed$A$labelB$B = null(child)
           child.$labelA$A = null(self)
@@ -196,7 +196,7 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
           return
         }
         prev = entry!
-        entry = entry!.nextHashed$A$labelB$B
+        entry = entry.nextHashed$A$labelB$B
       }
       raise Exception.Internal, "Entry not found in map"
     }
@@ -206,7 +206,7 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
         entry = self.$labelB$B_Table[i]
         while !isnull(entry) {
           yield entry!
-          entry = entry!.nextHashed$A$labelB$B
+          entry = entry.nextHashed$A$labelB$B
         }
       }
     }
@@ -215,7 +215,7 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
       for i in range(self.$labelB$B_Table.length()) {
         entry = self.$labelB$B_Table[i]
         while !isnull(entry) {
-          nextEntry = entry!.nextHashed$A$labelB$B
+          nextEntry = entry.nextHashed$A$labelB$B
           yield entry!
           entry = nextEntry
         }
@@ -230,10 +230,10 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
       for x$labelB$B in range(self.$labelB$B_Table.length()) {
         $labelB$B_Entry = self.$labelB$B_Table[x$labelB$B]
         while !isnull($labelB$B_Entry) {
-          next$labelB$B_Entry = $labelB$B_Entry!.nextHashed$A$labelB$B
-          $labelB$B_Entry!.nextHashed$A$labelB$B = null($labelB$B_Entry!)
-          $labelB$B_Entry!.$labelA$A = null(self)
-          $labelB$B_Entry!.destroy()
+          next$labelB$B_Entry = $labelB$B_Entry.nextHashed$A$labelB$B
+          $labelB$B_Entry.nextHashed$A$labelB$B = null($labelB$B_Entry!)
+          $labelB$B_Entry.$labelA$A = null(self)
+          $labelB$B_Entry.destroy()
           $labelB$B_Entry = next$labelB$B_Entry
         }
         self.$labelB$B_Table[x$labelB$B] = null($labelB$B_Entry)
@@ -244,9 +244,9 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
       for x$labelB$B in range(self.$labelB$B_Table.length()) {
         $labelB$B_Entry = self.$labelB$B_Table[x$labelB$B]
         while !isnull($labelB$B_Entry) {
-          next$labelB$B_Entry = $labelB$B_Entry!.nextHashed$A$labelB$B
-          $labelB$B_Entry!.nextHashed$A$labelB$B = null($labelB$B_Entry)
-          $labelB$B_Entry!.$labelA$A = null(self)
+          next$labelB$B_Entry = $labelB$B_Entry.nextHashed$A$labelB$B
+          $labelB$B_Entry.nextHashed$A$labelB$B = null($labelB$B_Entry)
+          $labelB$B_Entry.$labelA$A = null(self)
           $labelB$B_Entry = next$labelB$B_Entry
         }
         self.$labelB$B_Table[x$labelB$B] = null($labelB$B_Entry)
@@ -261,7 +261,7 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
   // Remove self from A on destruction.
   prependcode B.destroy {
     if !isnull(self.$labelA$A) {
-      self.$labelA$A!.remove$labelB$B(self)
+      self.$labelA$A.remove$labelB$B(self)
     }
   }
 }

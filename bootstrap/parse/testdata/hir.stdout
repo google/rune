@@ -1,0 +1,11 @@
+class Foo:u16(self, var value: Uint = 0u32) {
+  test = value
+}
+Passed buildClassTest
+module fostfixExprTest() {
+  self.firstChildNode.token
+  node!
+  1u64
+}
+
+Passed postfixExprTest

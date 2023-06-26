@@ -12,18 +12,19 @@ import:= 'import' pathExprWithAlias nl+
 importLib:= 'importlib' pathExprWithAlias nl+
 importRpc:= 'importrpc' pathExprWithAlias nl+
 use:= 'use' IDENT nl+
-class:= exportFuncSpec? 'class' IDENT (":" UINTTYPE)? '(' parameterList ')' raises? block
-exportFuncSpec: exportStructSpec
-    | "rpc"
-exportStructSpec:  "export"
-    | "exportlib"
+class:= exportFuncSpec? 'class' IDENT optRefWidth '(' parameterList ')' raises? block
+optRefWidth:= (':' UINTTYPE)?
+exportFuncSpec: exportStructSpec | "rpc"
+exportStructSpec:  "export" | "exportlib"
 struct:= exportStructSpec? structOrMessage IDENT '{' nl+ (structMember nl+)* '}' nl+
 structOrMessage: 'struct' | 'message'
-structMember:= IDENT (":" typeExpr)? ("=" expr)?
+structMember:= IDENT optTypeConstraint optInitializer
+optTypeConstraint:= (':' typeExpr)?
+optInitializer:= ('=' expr)?
 appendCode:= 'appendcode' pathExpr? block
 prependCode:= 'prependcode' pathExpr? block
 block:= '{' nl+ statement* '}' nl*
-functionStatement: exportFuncSpec? (function | iterator | operator)
+functionStatement: function | iterator | operator
 function:= exportFuncSpec? 'func' IDENT '(' parameters ')' ('->' typeExpr)? raises? block
 iterator:= exportFuncSpec? 'iterator' IDENT '(' parameters ')' ('->' typeExpr)? raises? block
 operator:= exportFuncSpec? 'operator' operatorType '(' parameters ')' ('->' typeExpr)? raises? block
@@ -33,128 +34,148 @@ operatorType: "+" | "-" | "*" | "/" | "%" | "**" | "&&" | " | |" | "^^" | "&"
 parameterList:= nl* parameter (comma parameter)* nl*
 parameters:= (nl* parameter (comma parameter)*)? nl*
 comma: ',' nl*
-parameter: "var"? paramID (":" typeExpr)? ("=" expr)?
-paramID: IDENT | "<" IDENT ">"
-externFunctionStatement := externFunction | externRpc
-externFunction := 'extern' STRING 'func' IDENT '(' parameters ')' ('->' typeExpr)? nl+
-externRpc := 'rpc' IDENT '(' parameters ')' ('->' typeExpr)? nl+
+parameter:= "var"? (paramID | templateParamID) optTypeConstraint optInitializer
+paramID:= IDENT
+templateParamID:= '<' IDENT '>'
+externFunctionStatement: externFunction | externRpc
+externFunction:= 'extern' STRING 'func' IDENT '(' parameters ')' ('->' typeExpr)? nl+
+externRpc:= 'rpc' IDENT '(' parameters ')' ('->' typeExpr)? nl+
 ifElseStatement: ifStatement elseIfStatement* elseStatement?
 ifStatement:=  'if' expr block
 elseIfStatement:= 'else' 'if' expr block
 elseStatement:=  'else' block
 switchStatement:=  'switch' expr '{' nl+ switchCase* defaultCase? '}' nl+
-typeswitchStatement:  'typeswitch' expr '{' nl+ typeswitchCase* defaultCase? '}' nl+
-exceptBlock:= '{' nl+ exceptCase* defaultCase? '}' nl+
+typeswitchStatement:= 'typeswitch' expr '{' nl+ typeswitchCase* defaultCase? '}' nl+
 switchCase:= exprList '=>' blockOrStatement
-blockOrStatement: block
-    | statement
+blockOrStatement:= '{' nl+ statement* '}' nl* | statement
 typeswitchCase:= typeExprList '=>' blockOrStatement
 exceptCase:= pathExprList '=>' blockOrStatement
-typeExprList: typeExpr (comma typeExpr)*
-pathExprList: pathExpr (comma pathExpr)*
+typeExprList:= typeExpr (comma typeExpr)*
+pathExprList:= pathExpr (comma pathExpr)*
 defaultCase:= 'default' '=>' blockOrStatement
 doWhileStatement: doStatement? whileStatement
 doStatement:= 'do' block
 whileStatement:= 'while' expr nlsOrBlock
-nlsOrBlock: nl+
-    | block
+nlsOrBlock: nl+ | block
 forStatement:=  'for' assignmentExpr comma expr comma assignmentExpr block
-assignmentStatement:= assignmentExpr nl+
-assignmentExpr: expr (":" typeExpr)? assignmentOp expr
+assignmentStatement: assignmentExpr nl+
+assignmentExpr:= expr optTypeConstraint assignmentOp expr
 assignmentOp: "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^="
     | "&&=" | "||=" | "^=" | "**=" | "<<=" | ">>=" | "<<<=" | ">>>=" | "!+="
     | "!-=" | "!*=" | "**="
 exprStatement:= expr nl+
-callParameters: nl* (callParameter (comma callParameter)*)? comma?
+callParameters:= '(' nl* (callParameter (comma callParameter)*)? comma? ')'
 callParameter: (IDENT '=')? expr
 printStatement:= 'print' exprs nl+
 printlnStatement:= 'println' exprs nl+
 tryExceptStatement: tryStatement exceptStatement
 tryStatement:= 'try' block
-exceptStatement:= 'except' IDENT exceptBlock
+exceptStatement:= 'except' IDENT '{' nl+ exceptCase* defaultCase? '}' nl+
 raiseStatement:= 'raise' raiseExprList nl+
 raiseExprList: pathExpr (comma expr)*
-panicStatement:= 'panic' exprs nl+
-assertStatement:= 'assert' exprs nl+
+panicStatement:= 'panic' exprList nl+
+assertStatement:= 'assert' exprList nl+
 returnStatement:= 'return' expr? nl+
 transformer:= 'transformer' IDENT '(' parameters ')' block
 transformStatement:= 'transform' pathExpr '(' nl* exprs ')' nl+
-relationStatement:= 'relation' pathExpr typePathExpr label? typePathExpr label? "cascade"?
-    ("(" callParameters ")")?  nl+
-label: ":" STRING
+relationStatement:= 'relation' pathExpr typePathExpr optLabel typePathExpr optLabel optCascade
+    (callParameters)?  nl+
+optLabel:= (':' STRING)?
+optCascade:= ("cascade")?
 yield:= 'yield' expr nl+
 unitTest:= 'unittest' IDENT? block
 debugStatement:= 'debug' block
 enum:= 'enum' IDENT '{' nl+ entry* '}' nl+
-entry: IDENT ("=" INTEGER)? nl+
+entry:= IDENT ('=' INTEGER)? nl+
 foreachStatement:= 'for' IDENT 'in' expr block
 finalFunction:= 'final' '(' parameter ')' raises? block
-raises: "raises" pathExprList
+raises:= 'raises' pathExprList
 refStatement:= 'ref' expr nl+
 unrefStatement:= 'unref' expr nl+
-exprs: exprList?
-exprList: expr (comma expr)*
-expr:= selectExpr ("..." nl* selectExpr)?
-selectExpr: orExpr "?" nl* orExpr ':' nl* orExpr | orExpr
+exprs:= (expr (comma expr)*)?
+exprList:= expr (comma expr)*
+expr: rangeExpr | selectPrecExpr
+rangeExpr:= selectPrecExpr '...' nl* selectPrecExpr
+selectPrecExpr: selectExpr | orExpr
+selectExpr:= orExpr '?' nl* orExpr ':' nl* orExpr
 orExpr: orExpr "||" nl* xorExpr | xorExpr
 xorExpr: xorExpr "^^" nl* andExpr | andExpr
-andExpr: andExpr "&&" nl* inExpr | inExpr
-inExpr: modExpr "in" nl* modExpr | modExpr
-modExpr: relationExpr "mod" nl* bitorExpr | relationExpr
-relationExpr: bitorExpr relationOp nl* bitorExpr | bitorExpr
-relationOp: "==" | "!=" | "<" | "<=" | ">" | ">="
+andExpr: andExpr "&&" nl* inPrecExpr | inPrecExpr
+inPrecExpr: inExpr | modPrecExpr
+inExpr:= modPrecExpr 'in' nl* modPrecExpr
+modPrecExpr: modExpr | relationPrecExpr
+modExpr:= relationPrecExpr 'mod' nl* bitorExpr
+relationPrecExpr: relationExpr | bitorExpr
+relationExpr: equalExpr | notEqualExpr | ltExpr | leExpr | gtExpr | geExpr
+equalExpr:= bitorExpr '==' nl* bitorExpr
+notEqualExpr:= bitorExpr '!=' nl* bitorExpr
+ltExpr:= bitorExpr '<' nl* bitorExpr
+leExpr:= bitorExpr '<=' nl* bitorExpr
+gtExpr:= bitorExpr '>' nl* bitorExpr
+geExpr:= bitorExpr '>=' nl* bitorExpr
 bitorExpr: bitorExpr "|" nl* bitxorExpr | bitxorExpr
 bitxorExpr: bitxorExpr "^" nl* bitandExpr | bitandExpr
-bitandExpr: shiftExpr ("&" nl* shiftExpr)*
-shiftExpr: addExpr shiftOp nl* addExpr | addExpr
-shiftOp: ">>" | "<<" | ">>>" | "<<<"
+bitandExpr: bitandExpr "&" nl* shiftPrecExpr | shiftPrecExpr
+shiftPrecExpr: shiftExpr | addExpr
+shiftExpr:= shlExpr | shrExpr | rotrExpr | rotlExpr
+shlExpr:= addExpr '<<' nl* addExpr
+shrExpr:= addExpr '>>' nl* addExpr
+rotlExpr:= addExpr '<<<' nl* addExpr
+rotrExpr:= addExpr '>>>' nl* addExpr
 addExpr: addExpr addOp nl* mulExpr | mulExpr
 addOp: "+" | "-" | "!+" | "!-"
 mulExpr: mulExpr mulOp nl* prefixExpr | prefixExpr
 mulOp: "*" | "/" | "%" | "!*"
-prefixExpr: exponentiateExpr
-    | "!" prefixExpr
-    | "~" prefixExpr
-    | "-" prefixExpr
-    | "!-" prefixExpr
-    | "<" typeExpr ">" prefixExpr
-    | "!<" typeExpr ">" prefixExpr
-exponentiateExpr: postfixExpr "**" nl* exponentiateExpr | postfixExpr
+prefixExpr: exponentiatePrecExpr
+    | notExpr
+    | bitNotExpr
+    | negateExpr
+    | negateTruncExpr
+    | castExpr
+    | castTruncExpr
+notExpr:= '!' prefixExpr
+bitNotExpr:= '~' prefixExpr
+negateExpr:= '-' prefixExpr
+negateTruncExpr:= '!-' prefixExpr
+castExpr:= '<' typeExpr '>' prefixExpr
+castTruncExpr:= '!<' typeExpr '>' prefixExpr
+exponentiatePrecExpr: exponentiateExpr | postfixExpr
+exponentiateExpr:= postfixExpr '**' nl* exponentiatePrecExpr
 postfixExpr: postfixExpr "." IDENT
     | postfixExpr "!"
-    | postfixExpr "(" callParameters ")"
-    | postfixExpr "[" nl* expr nl* "]"
-    | postfixExpr "[" nl* expr ":" nl* expr nl* "]"
+    | postfixExpr callParameters
+    | postfixExpr indexSuffix
+    | postfixExpr sliceSuffix
     | basicExpr
-basicExpr: IDENT
-    | tokenExpr
-    | "[" nl* exprList nl* "]"
-    | '(' nl* expr nl* ')'
-    | tupleExpr
-    | "secret" '(' nl* expr ')'
-    | "reveal" '(' nl* expr ')'
-    | "arrayof" '(' nl* typeExpr ')'
-    | "typeof" '(' nl* expr ')'
-    | "null" '(' nl* expr ')'
-    | "&" pathExpr '(' nl* exprs ')'
-    | "unsigned" '(' nl* expr ')'
-    | "signed" '(' nl* expr ')'
-    | "widthof" '(' nl* expr ')'
-    | "isnull" '(' nl* expr ')'
+indexSuffix:= '[' nl* expr nl* ']'
+sliceSuffix:= '[' nl* expr ':' nl* expr nl* ']'
+basicExpr: IDENT | '(' nl* expr nl* ')' | tokenExpr | arrayExpr | tupleExpr
+    | secretExpr | revealExpr | arrayofExpr | typeofExpr | nullExpr | funcPtrExpr
+    | unsignedExpr | signedExpr | widthofExpr | isnullExpr
+arrayExpr:= '[' nl* exprList nl* ']'
+secretExpr:= 'secret' '(' nl* expr ')'
+revealExpr:= 'reveal' '(' nl* expr ')'
+arrayofExpr:= 'arrayof' '(' nl* typeExpr ')'
+typeofExpr:= 'typeof' '(' nl* expr ')'
+nullExpr:= 'null' '(' nl* expr ')'
+funcPtrExpr:= '&' pathExpr '(' nl* exprs ')'
+unsignedExpr:= 'unsigned' '(' nl* expr ')'
+signedExpr:= 'signed' '(' nl* expr ')'
+widthofExpr:= 'widthof' '(' nl* expr ')'
+isnullExpr:= 'isnull' '(' nl* expr ')'
 tokenExpr: INTEGER | FLOAT | STRING | RANDUINT | bool | typeLiteral
 bool: "true" | "false"
 typeLiteral: UINTTYPE | INTTYPE | "string" | "bool" | "f32" | "f64"
 pathExpr: pathExpr "." IDENT | IDENT
 pathExprWithAlias: pathExpr ("as" IDENT)?
-tupleExpr: "(" nl* expr (comma expr)+ comma? ")"
-    | "(" nl* expr "," ")"
-    | "(" ")"
-typeExpr: typeExpr "|" typeRangeExpr | typeRangeExpr
+tupleExpr:= '(' nl* expr (comma expr)+ comma? ')'
+    | '(' nl* expr ',' ')'
+    | '(' ')'
+typeExpr: orTypeExpr
+orTypeExpr: orTypeExpr "|" typeRangeExpr | typeRangeExpr
 typeRangeExpr: typeLiteral "..." typeLiteral
     | compoundTypeExpr
-compoundTypeExpr: basicTypeExpr
-    | arrayTypeExpr
-    | tupleTypeExpr
+compoundTypeExpr: basicTypeExpr | arrayTypeExpr | tupleTypeExpr
 arrayTypeExpr: "[" nl* typeExpr (comma typeExpr)* comma? "]"
 tupleTypeExpr: "(" nl* typeExpr (comma typeExpr)+ comma? ")"
     | "(" nl* typeExpr "," ")"
@@ -166,5 +187,6 @@ basicTypeExpr: typePathExpr "?"?
     | typeLiteral
     | "secret" '(' nl* typeRangeExpr ')'
     | '(' typeExpr ')'
-typePathExpr: pathExpr ("<" typeExprList ">")?
+typePathExpr: pathExpr templateParams?
+templateParams:= '<' typeExpr (comma typeExpr)* '>'
 nl: '\n' | ';'

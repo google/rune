@@ -26,31 +26,699 @@ use pegparser
 use sym
 use token
 
+root = db.getRoot()
+
 // The AST structure is defined in rune.syn.
 // To split this task in two, we build Expr instances in buildExpr.rn.
 // When both are complete, we'll merge buildExpr.rn into hir.rn.
-class HirBuilder(self, goalNode: Node) {
+class HirBuilder(self, goalNode: Node, destModule: db.Function) {
   self.goalNode = goalNode
-  self.buildParseSyms()
+  self.destModule = destModule
+  self.buildExprParseSyms()
+  self.buildStatementParseSyms()
 
   func build(self: HirBuilder) {
-    self.buildFromExprNodes(self.goalNode)
+    self.buildHir()
   }
 
-  // Traverse the AST looking for nodes of the form:
-  //   expr(...)
-  // Build expression trees from these using the db.Expr class.
-  func buildFromExprNodes(self: HirBuilder, node: Node) {
-    if node.getRuleSym() == self.exprSym {
-      self.buildExprTree(node)
-    } else {
-      for child in node.childNodes() {
-        self.buildFromExprNodes(child)
+  func buildHir(self: HirBuilder) {
+    self.currentFunction = self.destModule
+    self.currentBlock = self.currentFunction.subBlock!
+    self.buildBlockStatement(self.goalNode)
+    if root.dumpFuncTree {
+      self.currentFunction.dump()
+    }
+  }
+
+  func buildBlockStatement(self: HirBuilder, blockNode: Node) {
+    for statementNode in blockNode.childNodes() {
+      token = statementNode.token
+      if isnull(token) || !token.eof() {
+        self.buildStatement(statementNode)
       }
     }
   }
 
-  func buildParseSyms(self: HirBuilder) {
-    self.exprSym = Sym.new("expr")
+  func buildStatement(self: HirBuilder, statementNode: Node) {
+    switch statementNode.getRuleSym()! {
+      self.appendCodeSym => self.buildAppendCode(statementNode)
+      self.assertStatementSym => self.buildPrintStatement(statementNode, db.StateType.Assert)
+      self.assignmentExprSym => self.buildAssignmentStatement(statementNode)
+      self.classSym => self.buildClass(statementNode)
+      self.debugStatementSym => self.buildDebugStatement(statementNode)
+      self.defaultCaseSym => self.buildDefaultCaseStatement(statementNode)
+      self.doStatementSym => self.buildDoStatement(statementNode)
+      self.elseIfStatementSym => self.buildElseIfStatement(statementNode)
+      self.elseStatementSym => self.buildElseStatement(statementNode)
+      self.enumSym => self.buildEnum(statementNode)
+      self.exceptStatementSym => self.buildExceptStatement(statementNode)
+      self.exprStatementSym => self.buildExprStatement(statementNode)
+      self.externFunctionSym => self.buildExternFunction(statementNode)
+      self.externRpcSym => self.buildExternRpc(statementNode)
+      self.finalFunctionSym => self.buildFinalFunction(statementNode)
+      self.foreachStatementSym => self.buildForeachStatement(statementNode)
+      self.forStatementSym => self.buildForStatement(statementNode)
+      self.functionSym => self.buildFunction(statementNode)
+      self.ifElseStatementSym => self.buildCompoundStatement(statementNode)
+      self.ifStatementSym => self.buildIfStatement(statementNode)
+      self.importLibSym => self.buildImportLibStatement(statementNode)
+      self.importRpcSym => self.buildImportRpcStatement(statementNode)
+      self.importSym => self.buildImportStatement(statementNode)
+      self.iteratorSym => self.buildIterator(statementNode)
+      self.operatorSym => self.buildOperator(statementNode)
+      self.panicStatementSym => self.buildPrintStatement(statementNode, db.StateType.Panic)
+      self.prependCodeSym => self.buildPrependCode(statementNode)
+      self.printlnStatementSym => self.buildPrintStatement(statementNode, db.StateType.Println)
+      self.printStatementSym => self.buildPrintStatement(statementNode, db.StateType.Print)
+      self.raiseStatementSym => self.buildRaiseStatement(statementNode)
+      self.refStatementSym => self.buildRefStatement(statementNode)
+      self.relationStatementSym => self.buildRelationStatement(statementNode)
+      self.returnStatementSym => self.buildReturnStatement(statementNode)
+      self.statementSym => self.buildCompoundStatement(statementNode)
+      self.structSym => self.buildStruct(statementNode)
+      self.exceptCaseSym, self.switchCaseSym => self.buildCaseStatement(statementNode)
+      self.switchStatementSym => self.buildSwitchStatement(statementNode)
+      self.transformerSym => self.buildTransformer(statementNode)
+      self.transformStatementSym => self.buildTransformStatement(statementNode)
+      self.tryExceptStatementSym => self.buildTryExceptStatement(statementNode)
+      self.tryStatementSym => self.buildTryStatement(statementNode)
+      self.typeswitchStatementSym => self.buildTypeswitchStatement(statementNode)
+      self.unitTestSym => self.buildUnitTest(statementNode)
+      self.unrefStatementSym => self.buildUnrefStatement(statementNode)
+      self.useSym => self.buildUseStatement(statementNode)
+      self.doWhileStatementSym => self.buildCompoundStatement(statementNode)
+      self.whileStatementSym => self.buildWhileStatement(statementNode)
+      self.yieldSym => self.buildYield(statementNode)
+      default => {
+        panic "Failed to handle node: ", statementNode
+      }
+    }
   }
+
+  // Some nodes at the Statement level are a sequence of sub-statements.  This
+  // includes if-elseif-else chains and do-while loops.
+  func buildCompoundStatement(self: HirBuilder, statementNode: Node) {
+    for child in statementNode.childNodes() {
+      self.buildStatement(child)
+    }
+  }
+
+  // Format: ifStatement(expr(...) block(...))
+  func buildIfStatement(self: HirBuilder, statementNode: Node) {
+    exprNode = statementNode.firstChildNode
+    blockNode = statementNode.lastChildNode
+    self.newStatement(statementNode, db.StateType.If, exprNode, blockNode)
+  }
+
+  // Format: elseIfStatement(expr(...) block(...))
+  func buildElseIfStatement(self: HirBuilder, statementNode: Node) {
+    exprNode = statementNode.firstChildNode
+    blockNode = statementNode.lastChildNode
+    self.newStatement(statementNode, db.StateType.ElseIf, exprNode, blockNode)
+  }
+
+  // Format: elseStatement(block(...))
+  func buildElseStatement(self: HirBuilder, statementNode: Node) {
+    blockNode = statementNode.firstChildNode
+    self.newStatement(statementNode, db.StateType.ElseIf, null(Node), blockNode)
+  }
+
+  // Format: switchStatement(expr(...) switchCase(...)* defaultCase(statement | Block)?)
+  func buildSwitchStatement(self: HirBuilder, statementNode: Node) {
+    exprNode = statementNode.firstChildNode!
+    switchStatement = db.Statement(self.currentBlock, db.StateType.Switch, statementNode.location)
+    expr = self.buildExprTree(exprNode)
+    switchStatement.insertExpr(expr)
+    savedBlock = self.currentBlock
+    self.currentBlock = db.Block(statementNode.location)
+    switchStatement.insertSubBlock(self.currentBlock)
+    caseNode = exprNode.nextNodeChildNode
+    while !isnull(caseNode) {
+      self.buildStatement(caseNode!)
+      caseNode = caseNode.nextNodeChildNode
+    }
+    self.currentBlock = savedBlock
+  }
+
+  // Format: switchCase((expr(...)+) (statement | block(...)))
+  func buildCaseStatement(self: HirBuilder, statementNode: Node) {
+    exprList = self.buildExprList(statementNode.firstChildNode!,
+        statementNode.firstChildNode.location)
+    blockNode = statementNode.lastChildNode!
+    statement = self.newStatement(statementNode, db.StateType.Case, exprList, blockNode)
+  }
+
+  // Build an expression of type ExprType.List and put all of the expressions
+  // passed under it.  Return a list expression with no children if exprNode is null.
+  func buildExprList(self: HirBuilder, exprNode: Node?, location: db.Location) -> db.Expr {
+    listExpr = db.Expr(db.ExprType.List, location)
+    if !isnull(exprNode) {
+      for child in exprNode.childNodes() {
+        listExpr.appendChildExpr(self.buildExprTree(child))
+      }
+    }
+    return listExpr
+  }
+
+  func buildDefaultCaseStatement(self: HirBuilder, statementNode: Node) {
+    blockNode = statementNode.lastChildNode
+    self.newStatement(statementNode, db.StateType.Default, null(Node), blockNode)
+  }
+
+  // Format: doStatement(block(,,,))
+  func buildDoStatement(self: HirBuilder, statementNode: Node) {
+    blockNode = statementNode.lastChildNode
+    self.newStatement(statementNode, db.StateType.Do, null(Node), blockNode)
+  }
+
+  // whileStatement(expr(...) block(...))
+  func buildWhileStatement(self: HirBuilder, statementNode: Node) {
+    exprNode = statementNode.firstChildNode!
+    blockNode = exprNode.nextNodeChildNode  // This can be null.
+    self.newStatement(statementNode, db.StateType.While, exprNode, blockNode)
+  }
+
+  // forStatement(assignmentExpr(...) expr(...) assignmentExpr(...) block(...))
+  func buildForStatement(self: HirBuilder, statementNode: Node) {
+    initNode = statementNode.firstChildNode!
+    condNode = initNode.nextNodeChildNode!
+    updateNode = condNode.nextNodeChildNode!
+    initExpr = self.buildAssignExpr(initNode)
+    condExpr = self.buildExprTree(condNode)
+    updateExpr = self.buildAssignExpr(updateNode)
+    listExpr = db.Expr(db.ExprType.List, statementNode.location)
+    listExpr.appendChildExpr(initExpr)
+    listExpr.appendChildExpr(condExpr)
+    listExpr.appendChildExpr(updateExpr)
+    blockNode = updateNode.nextNodeChildNode
+    statement = self.newStatement(statementNode, db.StateType.For, listExpr, blockNode)
+  }
+
+  // Build an assignment expresion.
+  // Format: assignmentExpr(expr(...) optTypeConstraint(...) <op e.g. "="> expr(...))
+  func buildAssignExpr(self, node: Node) -> db.Expr {
+    // Put the optional type constraint last in the expression list.
+    targetNode = node.firstChildNode!
+    typeConstraintNode = targetNode.nextNodeChildNode
+    if typeConstraintNode.getRuleSym() == self.optTypeConstraintSym {
+      opNode = typeConstraintNode.nextNodeChildNode!
+      typeConstraintNode = typeConstraintNode.firstChildNode
+    } else {
+      opNode = typeConstraintNode!
+      typeConstraintNode = null(Node)
+    }
+    valueNode = opNode.nextNodeChildNode!
+    targetExpr = self.buildExprTree(targetNode)
+    valueExpr = self.buildExprTree(valueNode)
+    token = opNode.token!
+    opType = db.getExprTypeFromSym(token.keyword.sym)
+    assignExpr = db.Expr.newBinary(opType, targetExpr, valueExpr, node.location)
+    if !isnull(typeConstraintNode) {
+      typeConstraintExpr = self.buildExprTree(typeConstraintNode!)
+      assignExpr.appendChildExpr(typeConstraintExpr)
+    }
+    return assignExpr
+  }
+
+  // Format: assignmentExpr(expr(...) optTypeConstraint(...) <op, e.g. "="> expr(...))
+  func buildAssignmentStatement(self: HirBuilder, statementNode: Node) {
+    expr = self.buildAssignExpr(statementNode)
+    statement = db.Statement(self.currentBlock, db.StateType.Assign, statementNode.location)
+    statement.insertExpr(expr)
+  }
+
+  // We only allow call expressions, which is checked here.
+  func buildExprStatement(self: HirBuilder, statementNode: Node) {
+    expr = self.buildExprTree(statementNode.firstChildNode!)
+    statement = db.Statement(self.currentBlock, db.StateType.Call, statementNode.location)
+    statement.insertExpr(expr)
+    // TODO: Verify that the expression is a call statement.  This check is
+    // left ouit for now while fleshing out buildExprTree.
+  }
+
+  // Format: print(ln)Statement(exprs(expr(...)+)?)
+  func buildPrintStatement(self: HirBuilder, statementNode: Node,
+      stateType: db.StateType) {
+    exprs = statementNode.firstChildNode
+    if isnull(exprs) {
+      exprList = self.buildExprList(statementNode, statementNode.location)
+    } else {
+      exprList = self.buildExprList(statementNode.firstChildNode, statementNode.location)
+    }
+    self.newStatement(statementNode, stateType, exprList, null(Node))
+  }
+
+  // Format: tryStatement(block(...))
+  func buildTryStatement(self: HirBuilder, statementNode: Node) {
+    self.newStatement(statementNode, db.StateType.Try, null(Node),
+        statementNode.firstChildNode!)
+  }
+
+  // Format: exceptStatement(IDENT exceptCase(...)* defaultCase(...)?)
+  func buildExceptStatement(self: HirBuilder, statementNode: Node) {
+    identNode = statementNode.firstChildNode!
+    exceptStatement = db.Statement(self.currentBlock, db.StateType.Except, statementNode.location)
+    identExpr = db.Expr.newIdent(identNode.getIdentSym()!, identNode.location)
+    exceptStatement.insertExpr(identExpr)
+    savedBlock = self.currentBlock
+    self.currentBlock = db.Block(statementNode.location)
+    exceptStatement.insertSubBlock(self.currentBlock)
+    caseNode = identNode.nextNodeChildNode
+    while !isnull(caseNode) {
+      self.buildStatement(caseNode!)
+      caseNode = caseNode.nextNodeChildNode
+    }
+    self.currentBlock = savedBlock
+  }
+
+  // Format: raiseStatement(pathExpr() expr()*)
+  func buildRaiseStatement(self: HirBuilder, statementNode: Node) {
+    exprList = self.buildExprList(statementNode, statementNode.location)
+    self.newStatement(statementNode, db.StateType.Raise, exprList, null(Node))
+  }
+
+  func buildReturnStatement(self: HirBuilder, statementNode: Node) {
+    exprNode = statementNode.firstChildNode
+    self.newStatement(statementNode, db.StateType.Return, exprNode, null(Node))
+  }
+
+  // Format: transformStatement(pathExpr(...) exprs(expr(...)*)?)
+  func buildTransformStatement(self: HirBuilder, statementNode: Node) {
+    pathExprNode = statementNode.firstChildNode!
+    pathExpr = self.buildExprTree(pathExprNode)
+    listExpr = db.Expr(db.ExprType.List, statementNode.location)
+    listExpr.appendChildExpr(pathExpr)
+    exprsNode = pathExprNode.nextNodeChildNode
+    if !isnull(exprsNode) {
+      listExpr.appendChildExpr(self.buildExprList(exprsNode, exprsNode.location))
+    }
+    self.newStatement(statementNode, db.StateType.Transform, listExpr, null(Node))
+  }
+
+  // Format: relationStatement(pathExpr(<Transformer>)
+  //     typePathExpr(pathExpr(<parent>) templateParams(typeExpr(...)+)?) optLabel(STRING)?
+  //     typePathExpr(pathExpr(<cild>) templateParams(typeExpr(...))?) optLabel(STRING)?
+  //     optCascade("cascade")? callParameters(expr(...)*)?)
+  func buildRelationStatement(self: HirBuilder, statementNode: Node) {
+    hasCascade = false
+    transformerNode = statementNode.firstChildNode!
+    parentNode = transformerNode.nextNodeChildNode!
+    next = parentNode.nextNodeChildNode
+    parentLabel = null(Node)
+    if next.getRuleSym()! == self.optLabelSym {
+      parentLabel = next
+      next = next.nextNodeChildNode
+    }
+    childNode = next!
+    next = next.nextNodeChildNode
+    childLabel = null(Node)
+    if !isnull(next) && next.getRuleSym()! == self.optLabelSym {
+      childLabel = next
+      next = next.nextNodeChildNode
+    }
+    optCascadeNode = null(Node)
+    if !isnull(next) && next.getRuleSym()! == self.optCascadeSym {
+      optCascadeNode = next
+      next = next.nextNodeChildNode
+    }
+    callParamsNode = next
+    // The order in the list expression is parent, child, cascade: bool,
+    // parentLabel: string, childLabel:string, (more).  This matches the
+    // parameter lists of our relation transformers.
+    // Build the list backwards.  "insert" adds to the start of the list.
+    listExpr = self.buildExprList(callParamsNode, statementNode.location)
+    if !isnull(childLabel) {
+      listExpr.insertChildExpr(db.Expr.newConstant(childLabel.firstChildNode.token.value!,
+          childLabel.location))
+    }
+    if !isnull(parentLabel) {
+      listExpr.insertChildExpr(db.Expr.newConstant(parentLabel.firstChildNode.token.value!,
+          parentLabel.location))
+    }
+    listExpr.insertChildExpr(db.Expr.newConstant(db.Value(!isnull(optCascadeNode)),
+        statementNode.location))
+    listExpr.insertChildExpr(self.buildExprTree(childNode))
+    listExpr.insertChildExpr(self.buildExprTree(parentNode))
+    callExpr = db.Expr.newBinary(db.ExprType.Call, self.buildExprTree(transformerNode),
+        listExpr, statementNode.location)
+    self.newStatement(statementNode, db.StateType.Transform, callExpr, null(Node))
+  }
+
+  func buildDebugStatement(self: HirBuilder, statementNode: Node) {
+    if root.debugMode {
+      // Don't build the debug statement's block if not in debug mode.
+      self.buildBlockStatement(statementNode.firstChildNode!!)
+    }
+  }
+
+  // Format: foreachStatement(IDEN expr(...) block(...))
+  func buildForeachStatement(self: HirBuilder, statementNode: Node) {
+    identNode = statementNode.firstChildNode!
+    rangeNode = identNode.nextNodeChildNode!
+    blockNode = rangeNode.nextNodeChildNode!
+    identExpr = db.Expr.newIdent(identNode.getIdentSym()!, identNode.location)
+    rangeExpr = self.buildExprTree(rangeNode)
+    expr = db.Expr.newBinary(db.ExprType.List, identExpr, rangeExpr, statementNode.location)
+    self.newStatement(statementNode, db.StateType.Foreach, expr, blockNode)
+  }
+
+  func buildRefStatement(self: HirBuilder, statementNode: Node) {
+    exprNode = statementNode.firstChildNode!
+    self.newStatement(statementNode, db.StateType.Ref, exprNode, null(Node))
+  }
+
+  func buildUnrefStatement(self: HirBuilder, statementNode: Node) {
+    exprNode = statementNode.firstChildNode!
+    self.newStatement(statementNode, db.StateType.Unref, exprNode, null(Node))
+  }
+
+  // Format: appendCode(pathExpr(...)? block(...))
+  func buildAppendCode(self: HirBuilder, statementNode: Node) {
+    node = statementNode.firstChildNode!
+    pathExprNode = null(Node)
+    if node.getRuleSym() == self.pathExprSym {
+      pathExprNode = node
+      node = node.nextNodeChildNode
+    }
+    self.newStatement(statementNode, db.StateType.Appendcode, pathExprNode, node)
+  }
+
+  // Format: class(("export" | "exportlib" | "rpc")? IDENT optRefWidth(<uintType>)
+  //         parameterList(...) raises(pathExprList(...))? block)
+  func buildClass(self: HirBuilder, statementNode: Node) {
+    node = statementNode.firstChildNode
+    exportTypeSym = node.getKeywordSym()
+    if !isnull(exportTypeSym) {
+      node = node.nextNodeChildNode
+    }
+    classSym = node.getIdentSym()!
+    node = node.nextNodeChildNode
+    optWidthNode = null(Node)
+    if node.getRuleSym() == self.optRefWidthSym {
+      optWidthNode = node
+      node = node.nextNodeChildNode
+    }
+    parametersNode = node
+    node = node.nextNodeChildNode
+    raisesNode = null(Node)
+    if node.getRuleSym() == self.raisesSym {
+      raisesNode = node.firstChildNode  // Get the pathExprList node.
+      node = node.nextNodeChildNode
+    }
+    blockNode = node
+    constructor = db.Function(self.currentFunction, db.FuncType.Constructor, classSym,
+        db.Linkage.Module, statementNode.location)
+    self.buildParameters(constructor, parametersNode!)
+    width = 32u32
+    if !isnull(optWidthNode) {
+      try {
+        width = <u32>optWidthNode.firstChildNode.token.value.intVal!
+      } except e {
+        default => width = 100u32  // Too big, we'll report an error.
+      }
+      if width > 64u32 {
+        optWidthNode.token.lexer.error("The maximum class reference width is 64")
+      }
+    }
+    template = db.Template(constructor, width, statementNode.location)
+    savedBlock = self.currentBlock
+    self.currentBlock = db.Block(blockNode.location)
+    self.buildBlockStatement(blockNode!)
+    constructor.insertSubBlock(self.currentBlock)
+    self.currentBlock = savedBlock
+  }
+
+  // Format: parameters(parameter(...)*)
+  func buildParameters(self: HirBuilder, function: db.Function, parametersNode: Node) {
+    for paramNode in parametersNode.childNodes() {
+      self.buildParameter(function, paramNode)
+    }
+  }
+
+  // Format: parameter("var"? (paramID(IDENT) | templateParamID(IDENT))
+  //         optTypeConstraint(typeExpr(...)) optInitializer(expr(...)))
+  // Build a parameter on a function, including methods and constructors.
+  func buildParameter(self: HirBuilder, function: db.Function, paramNode: Node) {
+    node = paramNode.firstChildNode
+    isVarParam = false
+    if node.getKeywordSym() == self.varSym {
+      isVarParam = true
+      node = node.nextNodeChildNode
+    }
+    isTemplateParam = node.getRuleSym() == self.templateParamIDSym
+    varSym = node.firstChildNode.getIdentSym()!
+    node = node.nextNodeChildNode
+    typeConstraintExpr = null(db.Expr)
+    if !isnull(node) && node.getRuleSym() == self.optTypeConstraintSym {
+      typeConstraintExpr = self.buildExprTree(node.firstChildNode!)
+      node = node.nextNodeChildNode
+    }
+    initializerExpr = null(db.Expr)
+    if !isnull(node) && node.getRuleSym() == self.optInitializerSym {
+      initializerExpr = self.buildExprTree(node.firstChildNode!)
+      node = node.nextNodeChildNode
+    }
+    assert isnull(node)
+    db.Variable(function, /*isParam=*/ true, /*isConst=*/ !isVarParam, varSym, initializerExpr,
+        typeConstraintExpr, /*generated=*/ false, paramNode.location)
+  }
+
+  // Format: enum(IDENT entry(IDENT INTEGER?)*)
+  func buildEnum(self: HirBuilder, statementNode: Node) {
+    identNode = statementNode.firstChildNode!
+    enumSym = identNode.getIdentSym()!
+    enumFunc = db.Function(self.currentFunction, db.FuncType.Enum, enumSym,
+        db.Linkage.Module, statementNode.location)
+    for node = identNode.nextNodeChildNode, !isnull(node), node = node.nextNodeChildNode {
+      // self.buildEntry(node)
+    }
+  }
+
+  // self.buildEntry(node)
+
+  func buildExternFunction(self: HirBuilder, statementNode: Node) {
+    // TODO: write this.
+    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  }
+
+  func buildExternRpc(self: HirBuilder, statementNode: Node) {
+    // TODO: write this.
+    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  }
+
+  func buildFinalFunction(self: HirBuilder, statementNode: Node) {
+    // TODO: write this.
+    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  }
+
+  func buildFunction(self: HirBuilder, statementNode: Node) {
+    // TODO: write this.
+    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  }
+
+  func buildIterator(self: HirBuilder, statementNode: Node) {
+    // TODO: write this.
+    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  }
+
+  func buildOperator(self: HirBuilder, statementNode: Node) {
+    // TODO: write this.
+    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  }
+
+  func buildTransformer(self: HirBuilder, statementNode: Node) {
+    // TODO: write this.
+    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  }
+
+  func buildImportStatement(self: HirBuilder, statementNode: Node) {
+    // TODO: write this.
+    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  }
+
+  func buildImportLibStatement(self: HirBuilder, statementNode: Node) {
+    // TODO: write this.
+    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  }
+
+  func buildImportRpcStatement(self: HirBuilder, statementNode: Node) {
+    // TODO: write this.
+    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  }
+
+  func buildPrependCode(self: HirBuilder, statementNode: Node) {
+    // TODO: write this.
+    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  }
+
+  func buildStruct(self: HirBuilder, statementNode: Node) {
+    // TODO: write this.
+    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  }
+
+  func buildTypeswitchStatement(self: HirBuilder, statementNode: Node) {
+    // TODO: write this.
+    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  }
+
+  func buildTryExceptStatement(self: HirBuilder, statementNode: Node) {
+    // TODO: write this.
+    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  }
+
+  func buildUnitTest(self: HirBuilder, statementNode: Node) {
+    // TODO: write this.
+    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  }
+
+  func buildUseStatement(self: HirBuilder, statementNode: Node) {
+    // TODO: write this.
+    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  }
+
+  func buildYield(self: HirBuilder, statementNode: Node) {
+    // TODO: write this.
+    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  }
+
+  // Build a statement with it's expression and sub-block.
+  func newStatement(self: HirBuilder, statementNode: Node,
+      type: db.StateType, expr: Node? | db.Expr?, blockNode: Node?) {
+    statement = db.Statement(self.currentBlock, type, statementNode.location)
+    if !isnull(expr) {
+      typeswitch expr! {
+        Node => statement.insertExpr(self.buildExprTree(expr!))
+        db.Expr => statement.insertExpr(expr)
+      }
+    }
+    if !isnull(blockNode) {
+      savedBlock = self.currentBlock
+      self.currentBlock = db.Block(blockNode.location)
+      self.buildBlockStatement(blockNode!)
+      statement.insertSubBlock(self.currentBlock)
+      self.currentBlock = savedBlock
+    }
+    return statement
+  }
+
+  func buildStatementParseSyms(self: HirBuilder) {
+    self.appendCodeSym = Sym.new("appendCode")
+    self.assertStatementSym = Sym.new("assertStatement")
+    self.assignmentExprSym = Sym.new("assignmentExpr")
+    self.classSym = Sym.new("class")
+    self.debugStatementSym = Sym.new("debugStatement")
+    self.defaultCaseSym = Sym.new("defaultCase")
+    self.doStatementSym = Sym.new("doStatement")
+    self.elseIfStatementSym = Sym.new("elseIfStatement")
+    self.elseStatementSym = Sym.new("elseStatement")
+    self.enumSym = Sym.new("enum")
+    self.exceptStatementSym = Sym.new("exceptStatement")
+    self.exprStatementSym = Sym.new("exprStatement")
+    self.exprSym = Sym.new("expr")
+    self.typeExprSym = Sym.new("typeExpr")
+    self.pathExprSym = Sym.new("pathExpr")
+    self.externFunctionSym = Sym.new("externFunction")
+    self.externRpcSym = Sym.new("externRpc")
+    self.finalFunctionSym = Sym.new("finalFunction")
+    self.foreachStatementSym = Sym.new("foreachStatement")
+    self.forStatementSym = Sym.new("forStatement")
+    self.functionSym = Sym.new("function")
+    self.ifStatementSym = Sym.new("ifStatement")
+    self.importLibSym = Sym.new("importlib")
+    self.importRpcSym = Sym.new("importrpc")
+    self.importSym = Sym.new("import")
+    self.iteratorSym = Sym.new("iterator")
+    self.operatorSym = Sym.new("operator")
+    self.panicStatementSym = Sym.new("panicStatement")
+    self.prependCodeSym = Sym.new("prependCode")
+    self.printlnStatementSym = Sym.new("printlnStatement")
+    self.printStatementSym = Sym.new("printStatement")
+    self.raiseStatementSym = Sym.new("raiseStatement")
+    self.refStatementSym = Sym.new("refStatement")
+    self.relationStatementSym = Sym.new("relationStatement")
+    self.returnStatementSym = Sym.new("returnStatement")
+    self.statementSym = Sym.new("statement")
+    self.structSym = Sym.new("struct")
+    self.switchCaseSym = Sym.new("switchCase")
+    self.exceptCaseSym = Sym.new("exceptCase")
+    self.switchStatementSym = Sym.new("switchStatement")
+    self.transformerSym = Sym.new("transformer")
+    self.transformStatementSym = Sym.new("transformStatement")
+    self.tryExceptStatementSym = Sym.new("tryExceptStatement")
+    self.tryStatementSym = Sym.new("tryStatement")
+    self.typeswitchStatementSym = Sym.new("typeswitchStatement")
+    self.unitTestSym = Sym.new("unitTest")
+    self.unrefStatementSym = Sym.new("unrefStatement")
+    self.useSym = Sym.new("use")
+    self.whileStatementSym = Sym.new("whileStatement")
+    self.yieldSym = Sym.new("yield")
+    self.optTypeConstraintSym = Sym.new("optTypeConstraint")
+    self.optInitializerSym = Sym.new("optInitializer")
+    self.optLabelSym = Sym.new("optLabel")
+    self.optCascadeSym = Sym.new("optCascade")
+    self.optRefWidthSym = Sym.new("optRefWidth")
+    self.raisesSym = Sym.new("raises")
+    self.varSym = Sym.new("var")
+    self.templateParamIDSym = Sym.new("templateParamID")
+    self.typePathExprSym = Sym.new("typePathExpr")
+    self.ifElseStatementSym = Sym.new("ifElseStatement")
+    self.doWhileStatementSym = Sym.new("doWhileStatement")
+  }
+}
+
+unittest {
+  import io
+
+  dataDir = io.getenv("TEST_SRCDIR")
+  if dataDir != "" {
+    if dataDir[dataDir.length() - 1] != '/' {
+      dataDir.append('/')
+    }
+    dataDir.concat("google3/third_party/rune/bootstrap/parse/")
+  }
+  mainFunc = db.getMainFunc()
+
+  func compareInputToOutput(moduleName: string, code: string) {
+    parser = Peg(dataDir + "rune.syn")
+    parser.parseRules()
+    filepath = db.Filepath("buildclass.rn", null(db.Filepath), false)
+    filepath.text = code
+    node = parser.parse(filepath)
+    assert !isnull(node)
+    module = db.Function(mainFunc, db.FuncType.Module, Sym.new(moduleName),
+        db.Linkage.Module, db.Location.emptyLocation())
+    HirBuilder(node!, module).build()
+    s = ""
+    module.dumpToString(s)
+    fullCode = "module %s() {\n%s}\n" % (moduleName, code)
+    println s
+    assert s == fullCode
+  }
+}
+
+unittest buildClassTest {
+  code = "class Foo:u16(self, var value: Uint = 0u32) {\n  test = value\n}\n"
+  parser = Peg(dataDir + "rune.syn")
+  parser.parseRules()
+  filepath = db.Filepath("buildclass.rn", null(db.Filepath), false)
+  filepath.text = code
+  node = parser.parse(filepath)
+  assert !isnull(node)
+  mainFunc = db.getMainFunc()
+  HirBuilder(node!, mainFunc).build()
+  ident = mainFunc.findIdent(Sym.new("Foo"))
+  assert !isnull(ident)
+  constructor = ident.nameFunction
+  assert !isnull(constructor)
+  s = ""
+  constructor.dumpToString(s)
+  print s
+  assert s == code
+  println "Passed buildClassTest"
+}
+
+unittest postfixExprTest {
+  code = "  self.firstChildNode.token\n  node!\n  1u64\n"
+  compareInputToOutput("fostfixExprTest", code)
+  println "Passed postfixExprTest"
 }

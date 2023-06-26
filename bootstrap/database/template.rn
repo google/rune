@@ -13,8 +13,24 @@
 // limitations under the License.
 
 use function
+use location
+use root
+use sym
 
-class Template(self) {
+class Template(self, constructor: Function, refWidth: u32, location: Location) {
+  self.refWidth = refWidth
+  self.location = location
+  constructor.insertTemplate(self)
 }
 
 relation OneToOne Function Template cascade
+
+// Type hint.
+if false {
+  mainFunc = getMainFunc()
+  rootLocation = mainFunc.location
+  rootFilepath = rootLocation.filepath
+  constructor = Function(mainFunc, FuncType.Constructor, Sym.new("Foo"),
+      Linkage.Module, rootLocation)
+  template = Template(constructor, 16u32, rootLocation)
+}

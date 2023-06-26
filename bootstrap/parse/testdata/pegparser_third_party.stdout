@@ -14,36 +14,41 @@ passed parseFactorialFunctionTest
  . }
  ^
 passed parseSyntaxErrorTest
-(
+
+goal(
   exprStatement(
-    expr(exit "("
-      expr(1i32) ")")) EOF)
+    postfixExpr(exit
+      callParameters(1i32))) EOF)
 passed reuseParseResultTest
-(((1 "+" 2) "+" 3) EOF)
+
+goal(
+  expr(
+    expr(1 "+" 2) "+" 3) EOF)
 passed testLeftRecursion
-(
-  assignmentStatement(
-    expr(x) "="
-    expr((a "||" b) "||" c))
-  assignmentStatement(
-    expr(x) "="
-    expr((a "^^" b) "^^" c))
-  assignmentStatement(
-    expr(x) "="
-    expr((a "&&" b) "&&" c))
-  assignmentStatement(
-    expr(x) "="
-    expr((a "|" b) "|" c))
-  assignmentStatement(
-    expr(x) "="
-    expr((a "+" b) "+" c))
-  assignmentStatement(
-    expr(x) "="
-    expr((a "*" b) "*" c))
-  assignmentStatement(
-    expr(x) "="
-    expr(a "**" (b "**" c)))
-  assignmentStatement(
-    expr(x) "="
-    expr((a "." b) "." c)) EOF)
+
+goal(
+  assignmentExpr(x "="
+    orExpr(
+      orExpr(a "||" b) "||" c))
+  assignmentExpr(x "="
+    xorExpr(
+      xorExpr(a "^^" b) "^^" c))
+  assignmentExpr(x "="
+    andExpr(
+      andExpr(a "&&" b) "&&" c))
+  assignmentExpr(x "="
+    bitorExpr(
+      bitorExpr(a "|" b) "|" c))
+  assignmentExpr(x "="
+    addExpr(
+      addExpr(a "+" b) "+" c))
+  assignmentExpr(x "="
+    mulExpr(
+      mulExpr(a "*" b) "*" c))
+  assignmentExpr(x "="
+    exponentiateExpr(a
+      exponentiateExpr(b c)))
+  assignmentExpr(x "="
+    postfixExpr(
+      postfixExpr(a "." b) "." c)) EOF)
 passed testRuneLeftRecursion

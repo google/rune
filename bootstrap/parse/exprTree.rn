@@ -12,36 +12,78 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import database as db
 use hir
-use keytab
-use lexer
-use pegparser
-use sym
-use token
 
 // TODO: When expression building is completed, Merge this file into hir.rn
 // rather than using a transformer to append code to the HirBuilder class.
 transformer ExprTree() {
   appendcode HirBuilder {
 
-    // Expressions have one of the following forms:
-    //
-    //   (<token>) -- A single string, identifier, number, or type literal.
-    //   (<keyword> ...) -- what follows depends on the keyword, e.g. ("!" Foo),
-    //                      usually just a signle expression.
-    //   <rule>(...) -- "Strong" rules declared with := remain in the tree.
-    //   (<non-keyword> <keyword>...) -- In-fix expression e.g. (a "+" b).
-    //                      usually a binary operator.
-    //
     // The infix expressions exist due to limitations in the current PEG
-    // parser's left recursion handling.  It appears simpler to deal with the
-    // infix operators here rather than add general left recursion support to
-    // the PEG parser.
-    func buildExprTree(self: HirBuilder, node: Node) {
-      // node.dump()
+    // parser's left recursion handling.
+    func buildExprTree(self: HirBuilder, node: Node) -> db.Expr {
+      if !isnull(node.token) {
+        return self.buildTokenExpr(node)
+      }
+      switch node.getRuleSym()! {
+        self.postfixExprSym => return self.buildPostfixExpr(node)
+        default => return db.Expr.newIdent(Sym.new("ident"), db.Location.emptyLocation())
+      }
     }
 
+    // Build the expression tree for this expression node.
+    func buildTokenExpr(self: HirBuilder, node: Node) -> db.Expr {
+      token = node.token!
+      switch token.type {
+        TokenType.Ident => return db.Expr.newIdent(node.getIdentSym()!, node.location)
+        TokenType.Bool => println "Write me!"
+        TokenType.Float, TokenType.Integer, TokenType.String => {
+          return db.Expr.newConstant(token.value!, node.location)
+        }
+        TokenType.Keyword, TokenType.RandUint, TokenType.UintType, TokenType.IntType => {
+        }
+        default => panic "Not expecting token type ", token.type
+      }
+// temp
+return db.Expr.newIdent(Sym.new("temp"), node.location)
+    }
+
+    // Format: postfixExpr(<expr> <suffix>)
+    func buildPostfixExpr(self: HirBuilder, node: Node) -> db.Expr{
+      firstChild = node.firstChildNode!
+      postfixNode = firstChild.nextNodeChildNode!
+      token = postfixNode.token
+      if !isnull(token) {
+        postfixKeywordSym = postfixNode.getKeywordSym()
+        switch postfixKeywordSym! {
+          self.bangSym => return db.Expr.newUnary(db.ExprType.Notnull,
+              self.buildExprTree(firstChild), node.location)
+          self.dotSym => {
+            lastChild = postfixNode.nextNodeChildNode!
+            return db.Expr.newBinary(db.ExprType.Dot, self.buildExprTree(firstChild),
+                self.buildExprTree(lastChild), postfixNode.location)
+          }
+        }
+      }
+      switch postfixNode.getRuleSym()! {
+        self.callParametersSym,
+        self.indexSuffixSym,
+        self.sliceSuffixSym => {
+          // TODO: Writ these.
+        }
+      }
+// temp
+return db.Expr.newIdent(Sym.new("temp"), node.location)
+    }
+
+    func buildExprParseSyms(self) {
+      self.postfixExprSym = Sym.new("postfixExpr")
+      self.bangSym = Sym.new("!")
+      self.dotSym = Sym.new(".")
+      self.indexSuffixSym = Sym.new("indexSuffix")
+      self.sliceSuffixSym = Sym.new("sliceSuffix")
+      self.callParametersSym = Sym.new("callParameters")
+    }
   }
 }
 
