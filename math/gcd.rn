@@ -1,0 +1,46 @@
+//  Copyright 2023 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Author: Christian Arnold (github: ctarnold)
+
+// Find the greatest common divisor (gcd) of positive integers.
+// Return -1 if invalid input.
+// 2*log_2(b) recursive calls where b <= a
+// warning: unspecified behavior for non-integer types.
+export func gcd(a, b) {
+
+	// a >= b > 0 by Euclid's algo.
+	// validate this condition.
+	if a < 0 {
+		return -1
+	}
+	if b < 0 {
+		return -1
+	}
+	if a < b {
+		temp = a
+		a = b
+		b = temp
+	}
+	modulo = a mod b
+	if modulo == 0 {
+		return b
+	}
+	return gcd(b, modulo)
+}
+
+	
+
+
+
