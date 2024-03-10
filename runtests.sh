@@ -49,7 +49,7 @@ for test in errortests/*.rn; do
   executable=$(echo "$test" | sed 's/\.rn$//')
   result=$(./rune "$args" -x "$test" | grep "Exiting due to error")
   if [[ "$result" == "" ]]; then
-    result=$("./$executable" | egrep "(Exception|Panic)")
+    result=$("./$executable" | grep -E "(Exception|Panic)")
   fi
   if [[ "$result" != "" ]]; then
     echo "$test passed"
