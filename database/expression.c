@@ -55,6 +55,7 @@ uint32 getPrecedence(deExpressionType type) {
     case DE_EXPR_INTTYPE:
     case DE_EXPR_STRINGTYPE:
     case DE_EXPR_BOOLTYPE:
+    case DE_EXPR_NONETYPE:
       return 17;
     default:
       return 1;
@@ -569,6 +570,9 @@ void deDumpExpressionStr(deString string, deExpression expression) {
       break;
     case DE_EXPR_BOOLTYPE:
       deStringSprintf(string, "bool");
+      break;
+    case DE_EXPR_NONETYPE:
+      deStringSprintf(string, "none");
       break;
     case DE_EXPR_NAMEDPARAM:
       deStringSprintf(string, "%s = ",

@@ -14,7 +14,7 @@
 
 RUNE=../../rune
 
-RUNE_TESTS=bigint block expr function statement value filepath location
+RUNE_TESTS=bigint block expr function statement value filepath location datatype
 
 runtests: $(RUNE_TESTS)
 	for test in $(RUNE_TESTS); do "./$$test"; done
@@ -42,6 +42,9 @@ filepath: filepath.rn
 
 location: location.rn
 	$(RUNE) -g location.rn
+
+datatype: datatype.rn
+	$(RUNE) -g datatype.rn
 
 clean:
 	rm -f $(RUNE_TESTS) *.ll

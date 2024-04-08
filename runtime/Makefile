@@ -6,6 +6,7 @@ SRC= \
 array.c \
 bigint.c \
 io.c \
+float.c \
 random.c \
 runtime.c
 

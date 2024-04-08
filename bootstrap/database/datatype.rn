@@ -33,20 +33,97 @@ enum DatatypeType {
   Struct
   Sym
   Enum
-  Enumclass
-  Tbdclass  // Returned by null(A).
+  EnumClass
+  Null  // Returned by null(A).
 }
 
-class Datatype(self, type: DatatypeType) {
+class Datatype(self, type: DatatypeType, width: u32 = 0u32, concrete: bool = true) {
   self.type = type
+  self.concrete = concrete
+  self.width = width
+
+  func newBasic(type: DatatypeType, width: u32 = 0u32, concrete: bool = true) {
+    newDatatype = Datatype(type, width, concrete)
+    oldDatatype = root.findDatatype(newDatatype)
+    if !isnull(oldDatatype) {
+      newDatatype.destroy()
+      return oldDatatype!
+    }
+    root.insertDatatype(newDatatype)
+    return newDatatype
+  }
 
   func hash(self) -> u64 {
-    return <u64>self.type
+    hash = hashValue(<u64>self.type)
+    if self.concrete {
+      hash = hashValues(hash, 1u64)
+    } else {
+      hash = hashValues(hash, 0u64)
+    }
+    return hashValues(hash, <u64>self.width)
   }
 
-  operator ==(self, other: Datatype) {
-    return self.type == other.type
+  func equals(self, other: Datatype) {
+    return self.type == other.type && self.concrete == other.concrete && self.width == other.width
+  }
+
+  func toString(self: Datatype) {
+    text = ""
+    self.dumpToString(text)
+    return text
+  }
+
+  func dump(self: Datatype) {
+    print self.toString()
+  }
+
+  func dumpToString(self: Datatype, var text: string) {
+    switch self.type {
+      DatatypeType.None => text.concat("none")
+      DatatypeType.Bool => text.concat("bool")
+      DatatypeType.String => text.concat("string")
+      DatatypeType.Uint => text.concat("u%u" % self.width)
+      DatatypeType.Int => text.concat("i%u" % self.width)
+      DatatypeType.Float => text.concat("f%u" % self.width)
+      default => raise Status.Unimplemented, "Type not yet printable"
+    }
   }
 }
 
+// Create common datatypes to reduce calling datatype constructors.
+func createCommonDatatypes() {
+  root.noneType = Datatype.newBasic(DatatypeType.None)
+  root.boolType = Datatype.newBasic(DatatypeType.Bool)
+  root.stringType = Datatype.newBasic(DatatypeType.String)
+  root.uint8Type = Datatype.newBasic(DatatypeType.Uint, 8u32)
+  root.uint16Type = Datatype.newBasic(DatatypeType.Uint, 16u32)
+  root.uint32Type = Datatype.newBasic(DatatypeType.Uint, 32u32)
+  root.uint64Type = Datatype.newBasic(DatatypeType.Uint, 64u32)
+  root.int8Type = Datatype.newBasic(DatatypeType.Int, 8u32)
+  root.int16Type = Datatype.newBasic(DatatypeType.Int, 16u32)
+  root.int32Type = Datatype.newBasic(DatatypeType.Int, 32u32)
+  root.int64Type = Datatype.newBasic(DatatypeType.Int, 64u32)
+  root.f32Type = Datatype.newBasic(DatatypeType.Float, 32u32)
+  root.f64Type = Datatype.newBasic(DatatypeType.Float, 64u32)
+}
+
+root = getRoot()
+createCommonDatatypes()
+
 relation HashedClass Root Datatype cascade
+
+unittest printBasicDatatypeTest {
+  println root.noneType
+  println root.boolType
+  println root.stringType
+  println root.uint8Type
+  println root.uint16Type
+  println root.uint32Type
+  println root.uint64Type
+  println root.int8Type
+  println root.int16Type
+  println root.int32Type
+  println root.int64Type
+  println root.f32Type
+  println root.f64Type
+}

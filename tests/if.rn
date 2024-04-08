@@ -12,11 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+no = false
+
 val = 2
 if val == 1 {
   println "one"
 } else if val == 2 {
   println "two"
+} else if true {
+  println "true"
+} else if false {
+  println "false"
+} else if no {
+  println "no"
 } else {
   println "three"
 }

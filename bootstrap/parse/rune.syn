@@ -25,21 +25,22 @@ appendCode:= 'appendcode' pathExpr? block
 prependCode:= 'prependcode' pathExpr? block
 block:= '{' nl+ statement* '}' nl*
 functionStatement: function | iterator | operator
-function:= exportFuncSpec? 'func' IDENT '(' parameters ')' ('->' typeExpr)? raises? block
-iterator:= exportFuncSpec? 'iterator' IDENT '(' parameters ')' ('->' typeExpr)? raises? block
-operator:= exportFuncSpec? 'operator' operatorType '(' parameters ')' ('->' typeExpr)? raises? block
+function:= exportFuncSpec? 'func' IDENT parameters optFuncTypeConstraint? raises? block
+iterator:= exportFuncSpec? 'iterator' IDENT parameters ('->' typeExpr)? raises? block
+operator:= exportFuncSpec? 'operator' operatorType parameters optFuncTypeConstraint? raises? block
 operatorType: "+" | "-" | "*" | "/" | "%" | "**" | "&&" | " | |" | "^^" | "&"
     | "|" | "^" | "&&" | "<<" | ">>" | "<<<" | ">>>" | "!+" | "!-" | "!*" | "~"
     | "<" | "<=" | ">" | ">=" | "==" | "!=" | "!" | "[]" | "<>" | "in"
 parameterList:= nl* parameter (comma parameter)* nl*
-parameters:= (nl* parameter (comma parameter)*)? nl*
+parameters:= '(' (nl* parameter (comma parameter)*)? nl* ')'
 comma: ',' nl*
 parameter:= "var"? (paramID | templateParamID) optTypeConstraint optInitializer
 paramID:= IDENT
 templateParamID:= '<' IDENT '>'
 externFunctionStatement: externFunction | externRpc
-externFunction:= 'extern' STRING 'func' IDENT '(' parameters ')' ('->' typeExpr)? nl+
-externRpc:= 'rpc' IDENT '(' parameters ')' ('->' typeExpr)? nl+
+externFunction:= 'extern' STRING 'func' IDENT parameters optFuncTypeConstraint? nl+
+externRpc:= 'rpc' IDENT parameters optFuncTypeConstraint? nl+
+optFuncTypeConstraint:= '->' typeExpr
 ifElseStatement: ifStatement elseIfStatement* elseStatement?
 ifStatement:=  'if' expr block
 elseIfStatement:= 'else' 'if' expr block
@@ -76,7 +77,7 @@ raiseExprList: pathExpr (comma expr)*
 panicStatement:= 'panic' exprList nl+
 assertStatement:= 'assert' exprList nl+
 returnStatement:= 'return' expr? nl+
-transformer:= 'transformer' IDENT '(' parameters ')' block
+transformer:= 'transformer' IDENT parameters block
 transformStatement:= 'transform' pathExpr '(' nl* exprs ')' nl+
 relationStatement:= 'relation' pathExpr typePathExpr optLabel typePathExpr optLabel optCascade
     (callParameters)?  nl+
@@ -117,7 +118,7 @@ bitorExpr: bitorExpr "|" nl* bitxorExpr | bitxorExpr
 bitxorExpr: bitxorExpr "^" nl* bitandExpr | bitandExpr
 bitandExpr: bitandExpr "&" nl* shiftPrecExpr | shiftPrecExpr
 shiftPrecExpr: shiftExpr | addExpr
-shiftExpr:= shlExpr | shrExpr | rotrExpr | rotlExpr
+shiftExpr: shlExpr | shrExpr | rotrExpr | rotlExpr
 shlExpr:= addExpr '<<' nl* addExpr
 shrExpr:= addExpr '>>' nl* addExpr
 rotlExpr:= addExpr '<<<' nl* addExpr
@@ -165,9 +166,9 @@ widthofExpr:= 'widthof' '(' nl* expr ')'
 isnullExpr:= 'isnull' '(' nl* expr ')'
 tokenExpr: INTEGER | FLOAT | STRING | RANDUINT | bool | typeLiteral
 bool: "true" | "false"
-typeLiteral: UINTTYPE | INTTYPE | "string" | "bool" | "f32" | "f64"
+typeLiteral: UINTTYPE | INTTYPE | "string" | "bool" | "none" | "f32" | "f64"
 pathExpr: pathExpr "." IDENT | IDENT
-pathExprWithAlias: pathExpr ("as" IDENT)?
+pathExprWithAlias: pathExpr ('as' IDENT)?
 tupleExpr:= '(' nl* expr (comma expr)+ comma? ')'
     | '(' nl* expr ',' ')'
     | '(' ')'

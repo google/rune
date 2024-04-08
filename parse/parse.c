@@ -16,6 +16,7 @@
 // including path.h, which also includes stdlib.h.
 #define _DEFAULT_SOURCE
 #include <stdlib.h>
+#include <libgen.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -101,7 +102,7 @@ static void importModuleIdentifiers(deBlock destBlock, deBlock sourceBlock, deLi
   } deEndBlockIdent;
 }
 
-// Find an existing module that has already been imported.m
+// Find an existing module that has already been imported.
 static deBlock findExistingModule(deBlock packageBlock, deExpression pathExpr) {
   deIdent ident = deFindIdentFromPath(packageBlock, pathExpr);
   deLine line = deExpressionGetLine(pathExpr);
@@ -208,6 +209,13 @@ static char *findModuleFile(deBlock packageBlock, deExpression pathExpr, bool *i
   // Check relative to current package.
   char *path = findPathUnderFilepath(deFilepathGetName(
       deBlockGetFilepath(packageBlock)), commonPath, isPackageDir);
+  if (path  != NULL) {
+    utFree(commonPath);
+    return utAllocString(path);
+  }
+  // Check if it is a sibling directory to the current package.
+  char *sibling=dirname(deFilepathGetName(deBlockGetFilepath(packageBlock)));
+  path = findPathUnderFilepath(sibling, commonPath, isPackageDir);
   if (path  != NULL) {
     utFree(commonPath);
     return utAllocString(path);
@@ -410,6 +418,7 @@ deBlock deParseModule(char *fileName, deBlock packageBlock, bool isMainModule, d
   if (deBlockFindIdent(packageBlock, moduleName) != deIdentNull) {
     deError(importLine, "Module name %s already in use in this scope", utSymGetName(moduleName));
   }
+
   char *text = utSprintf("Auto-generated function %s()", utSymGetName(moduleName));
   deLine line = deLineCreate(filepath, text, strlen(text), 0);
   deFunction moduleFunc = deFunctionCreate(filepath, packageBlock, DE_FUNC_MODULE,
@@ -425,6 +434,7 @@ deBlock deParseModule(char *fileName, deBlock packageBlock, bool isMainModule, d
   deInsertModuleInitializationCall(moduleFunc);
   utFree(fullName);
   executeModuleRelations(newModuleBlock);
+
   return newModuleBlock;
 }
 

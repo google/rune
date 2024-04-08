@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import cbackend as c
+
 use sym
 
 use root
@@ -24,6 +26,7 @@ use statement
 use template
 use block
 use variable
+
 
 enum FuncType {
   Plain  // Includes methods.
@@ -77,6 +80,7 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   self.linkage = linkage
   self.location = location
   self.isExtern = linkage == Linkage.ExternC || linkage == Linkage.ExternRpc
+  self.opType = ExprType.Add  // Used for overloaded operators.
   if !isnull(parent) {
     parent.appendChildFunction(self)
     Ident(parent!, self, sym, location)
@@ -108,27 +112,42 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
 
   // Dump the function to the end of |string| for debugging purposes.
   func dumpToString(self, var text: string) {
+    if self.type == FuncType.Enum {
+      self.dumpEnumToString(text)
+      return
+    }
     root.indent(text)
     dumpFuncHeader(self, text)
     self.dumpParams(text)
-    text += ") "
+    text += ")"
     if !isnull(self.typeExpr) {
-      text += "-> "
+      text += " -> "
       self.typeExpr.dumpToString(text)
-      text += " "
     }
-    text += "{\n"
-    getRoot().incrementIndent()
-    self.subBlock.dumpToString(text)
-    for function in self.childFunctions() {
-      function.dumpToString(text)
+    if self.linkage == Linkage.ExternC || self.linkage == Linkage.ExternRpc {
+      text += "\n"
+    } else {
+      text += " {\n"
+      getRoot().incrementIndent()
+      self.subBlock.dumpToString(text)
+      for function in self.childFunctions() {
+        function.dumpToString(text)
+      }
+      getRoot().decrementIndent()
+      getRoot().indent(text)
+      text += "}\n"
     }
-    getRoot().decrementIndent()
-    getRoot().indent(text)
-    text += "}\n"
 
     func dumpFuncHeader(self: Function, var text: string) {
-      text.concat("%s %s" % (getFuncTypeName(self.type), self.name()))
+      if self.linkage == Linkage.ExternC {
+        text.concat("extern \"C\" func %s" % self.name())
+      } else if self.linkage == Linkage.ExternRpc {
+        text.concat("rpc %s" % self.name())
+      } else if self.type == FuncType.Final {
+        text.concat("final")
+      } else {
+        text.concat("%s %s" % (getFuncTypeName(self.type), self.name()))
+      }
       if self.type == FuncType.Constructor {
         template = self.template
         if template.refWidth != root.defaultRefWidth {
@@ -137,6 +156,60 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       }
       text.append('(')
     }
+  }
+
+  // Dump an enumerated type to the string.
+  func dumpEnumToString(self: Function, var text: string) {
+    root.indent(text)
+    text.concat("enum %s {\n" % self.name())
+    getRoot().incrementIndent()
+    for variable in self.variables() {
+      root.indent(text)
+      variable.dumpToString(text)
+      text.append('\n')
+    }
+    getRoot().decrementIndent()
+    root.indent(text)
+    text.concat("}\n")
+  }
+
+  func genC(self: Function, builder: c.CBuilder) {
+    switch self.type {
+      FuncType.Module => self.genModule(builder)
+      FuncType.Plain => self.genCPlainFunc(builder)
+      default => raise Status.Unimplemented, "Function type not yet supported by C backend ", self.type
+    }
+  }
+
+  func genModule(self: Function, builder: c.CBuilder) {
+    for statement in self.subBlock.statements() {
+      // Note that a Rune statement may correspond to a C statement in main()
+      // or a C top-level declaration.
+      statement.genC(builder)
+    }
+  }
+
+  func genCPlainFunc(self: Function, builder: c.CBuilder) {
+    // TODO: figure out storage types.....
+
+    if isnull(self.typeExpr) {
+      returnType = builder.cType(c.CType.Void)
+    } else {
+      returnType = self.typeExpr.genCType(builder)
+    }
+    // open new scope - new parameter bindings are added to the scope
+    // automatically
+    builder.openScope()
+    builder.openParamList()
+    for variable in self.variables() {
+      param = variable.genCParameter(builder)  // param is added to new scope
+      builder.addParam(param)
+    }
+    paramList = builder.closeParamList()
+    body = self.subBlock.genC(builder)
+    builder.closeScope()
+    fundec = builder.cFunDef(self.location, self.name(), returnType, paramList, body)
+    builder.addDeclaration(fundec)
   }
 
   // Dump the function to stdout for debugging purposes.
@@ -187,21 +260,6 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     statement = Statement(block, StateType.Call, location)
     statement.insertExpr(callExpr)
     return statement
-  }
-
-  // Declare an iterator.
-  func newIterator(owningFunc: Function, name: Sym, selfName: Sym, linkage: Linkage,
-      location: Location) -> Function {
-    iteratorFunc = Function(owningFunc, FuncType.Iterator, name, linkage, location)
-    Variable(iteratorFunc, true, false, selfName, null(Expr), null(Expr), false, location)
-    return iteratorFunc
-  }
-
-  // Create an overloaded operator.
-  func newOperator(owningFunc: Function, opType: ExprType, location: Location) -> Function {
-    name = owningFunc.createUniqueSym(Sym.new(getExprTypeName(opType)))
-    function = Function(owningFunc, FuncType.Operator, name, Linkage.Package, location)
-    return function
   }
 
   // Generate a unique name for an identifier in the function, based on |name|.
@@ -329,16 +387,6 @@ unittest prependAndAppendFunctionCallTest {
   mainCopy.dump()
 }
 
-unittest newIteratorAndOperatorTest {
-  itr = Function.newIterator(mainFunc, Sym.new("testItr"), Sym.new("self"),
-      Linkage.Module, rootLocation)
-  op = Function.newOperator(mainFunc, ExprType.Add, rootLocation)
-  itr.dump()
-  op.dump()
-  itr.destroy()
-  op.destroy()
-}
-
 unittest insertModuleInitializationCallTest {
   // Create an inner function.
   function1 = createEmptyFunction(getRoot().mainFunction!, "module1")
@@ -368,4 +416,14 @@ unittest createConstructorTest {
   constructor = Function(mainFunc, FuncType.Constructor, Sym.new("Foo"),
       Linkage.Module, rootLocation)
   template = Template(constructor, 16u32, rootLocation)
+}
+
+unittest newIteratorAndOperatorTest {
+  itr = Function(mainFunc, FuncType.Iterator, Sym.new("testItr"), Linkage.Module, rootLocation)
+  op = Function(mainFunc, FuncType.Operator, Sym.new("*"), Linkage.Module, rootLocation)
+  op.opType = ExprType.Mul
+  itr.dump()
+  op.dump()
+  itr.destroy()
+  op.destroy()
 }

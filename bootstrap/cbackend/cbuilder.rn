@@ -1,0 +1,159 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import database as db
+
+use clanguageclasses
+use escapestring
+
+relation DoublyLinked CBuilder CBlock cascade
+
+class CBuilder(self) {
+  self.currentParamList = null(CParamList)
+  self.currentExprList = null(CExprList)
+  self.program = CProgram()
+  self.currentBlock = null(CBlock)
+
+  func build(self, module: db.Function) -> CProgram {
+    module.genC(self)
+    return self.program
+  }
+
+  func addDeclaration(self, dec: CDeclaration) {
+    self.program.insertCDeclaration(dec)
+  }
+
+  func openScope(self) {
+  }
+
+  func closeScope(self) {
+  }
+
+  func openBlock(self, location: db.Location?) {
+    self.currentBlock = CBlock(location)
+    //self.cblocks().appendCBlock(block)
+    //self.appendCBlock(block)
+    self.appendCBlock(CBlock(location))
+  }
+
+  func closeBlock(self) -> CBlock {
+    //block = self.currentCBlock
+    block = self.lastCBlock!
+    //self.currentCBlock = block.prevCBlockCBuilder
+    //self.cblocks().removeCBlock(block)
+    self.removeCBlock(block)
+    return block
+  }
+
+  func addStatement(self, statement: CStatement) {
+    if isnull(self.currentBlock) {
+      self.program.addStatementToMain(statement)
+    } else {
+      self.currentBlock.appendCStatement(statement)
+    }
+  }
+
+  func openParamList(self) {
+    assert isnull(self.currentParamList)
+    self.currentParamList = CParamList()
+  }
+
+  func closeParamList(self) -> CParamList {
+    assert !isnull(self.currentParamList)
+    params = self.currentParamList!
+    self.currentParamList = null(CParamList)
+    return params
+  }
+
+  func addParam(self, param: CParameter) {
+    assert !isnull(self.currentParamList)
+    self.currentParamList.appendCParameter(param)
+  }
+
+  func cParameter(self, location: db.Location, name: string, type: CTypeExpr) -> CParameter {
+    return CParameter(location, name, type)
+  }
+
+  func cType(self, type: CType) -> CTypeExpr {
+    return CTypeExpr(type)
+  }
+
+  /* Rune expressions *********************************************************************/
+
+  func openExprList(self) {
+    assert isnull(self.currentExprList)
+    self.currentExprList = CExprList()
+  }
+
+  func closeExprList(self) -> CExpr {
+    assert !isnull(self.currentExprList)
+    list = self.currentExprList!
+    self.currentExprList = null(CExprList)
+    return CExpr(list)
+  }
+
+  func addExpr(self, expr: CExpr) {
+    assert !isnull(self.currentExprList)
+    self.currentExprList.appendCExpr(expr)
+  }
+
+  func cStringLiteral(self, value: string) -> CExpr {
+    return CExpr(CLiteral(escapeString(value)))
+  }
+
+  func cBoolLiteral(self, value: bool) -> CExpr {
+    return CExpr(CLiteral(value))
+  }
+
+  func cIntLiteral(self, value: db.Bigint) -> CExpr {
+    return CExpr(CLiteral(value))
+  }
+
+  func cUintLiteral(self, value: Uint) -> CExpr {
+    return CExpr(CLiteral(value))
+  }
+
+  func cFloatLiteral(self, value: Float) -> CExpr {
+    return CExpr(CLiteral(value))
+  }
+
+  func cUnaryMinus(self, location: db.Location, arg: CExpr) -> CExpr {
+    return CExpr(CPrefixOperator(location, CPrefixOperator.Type.UnaryMinus, arg))
+  }
+
+  func cBinaryOperator(self, location: db.Location, op: CBinaryOperator.Type,
+                       left: CExpr, right: CExpr) -> CExpr {
+    return CExpr(CBinaryOperator(location, op, left, right))
+  }
+
+  func cCall(self, location: db.Location, name: string | CRuntimeFunction, args: CExpr) -> CExpr {
+    return CExpr(CCall(location, name, args))
+  }
+
+
+
+  /* Rune statements *******************************************************************/
+
+  func cPrintlnStatement(self, location: db.Location, args: CExpr) -> CStatement {
+    return CStatement(self.cCall(location, CRuntimeFunction.Printf, args))
+  }
+
+  func cFunDef(self, location: db.Location, name: string, returnType: CTypeExpr,
+               params: CParamList, body: CBlock) -> CDeclaration {
+    return CDeclaration(CFunctionDeclaration(
+       location, name, returnType, params, body))
+  }
+
+}
+

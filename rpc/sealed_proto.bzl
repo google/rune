@@ -85,7 +85,6 @@ genrpcfiles = rule(
         ),
     },
     doc = "Generate C++ sources from a Sealed Computing .rn file.",
-    output_to_genfiles = True,
     implementation = _genrpcfiles_impl,
 )
 

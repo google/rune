@@ -2,10 +2,127 @@ class Foo:u16(self, var value: Uint = 0u32) {
   test = value
 }
 Passed buildClassTest
-module fostfixExprTest() {
+module postfixExprTest() {
   self.firstChildNode.token
   node!
   1u64
 }
 
 Passed postfixExprTest
+module enumTest() {
+  enum Color {
+    Red = 1u8
+    Blue = 2u8
+    Green
+  }
+}
+
+Passed enumTest
+module externFunctionTest() {
+  extern "C" func readln(maxLen: u64 = 0u64) -> string
+}
+
+Passed externFunctionTest
+module externRpcTest() {
+  rpc readln(maxLen: u64 = 0u64) -> string
+}
+
+Passed externRpcTest
+module classWithFinalFunc() {
+  class Foo(self, name) {
+    self.name = name
+    final(self) {
+      println "Destroying ", self.name
+    }
+  }
+}
+
+Passed classWithFinalFuncTest
+module functionTest() {
+  func mux(select, a, b) {
+    if select {
+      return a
+    }
+    return b
+  }
+}
+
+Passed functionTest
+module operatorTest() {
+  operator +(self: Foo, other: Foo) -> Foo {
+    return "nope"
+  }
+}
+
+Passed operatorTest
+module transformerTest() {
+  transformer LinkedList(A: Class, B: Class, cascadeDelete, labelA: string = "", labelB: string = "", pluralB = "") {
+    println "Hi"
+  }
+}
+
+Passed transformerTest
+module importTest() {
+  importlib foo
+  importrpc foo
+  import foo
+  import a as b
+  use asdf
+}
+
+Passed importTest
+module noneConstraintTest() {
+  func foo(x) -> none {
+    println x
+  }
+}
+
+Passed noneConstraintTest
+module typeOfTest() {
+  func foo(x) -> none {
+    println typeof(x)
+  }
+}
+
+Passed typeOfTest
+module arithOpTest() {
+  i = (((1u64 + 2u64) * 3u64) / 4u64) % 5u64 - 1u64
+  j = (5u64 !+ 3u64) !- 2u64 !* 16u64
+}
+
+Passed arithOpTest
+module relOpTest() {
+  func f(i) -> bool {
+    return ((((i == j && i > j) && i < j) && i >= j) && i <= j) && i != j
+  }
+}
+
+Passed relOpTest
+module logOpTest() {
+  func f(i) -> bool {
+    return i == j && i == j || i == j ^^ i == j
+  }
+}
+
+Passed logOpTest
+module bitOpTest() {
+  func f(i) -> int {
+    return i | ((((j & k ^ l) >> 3u64) << 4u64) >>> 5u64) <<< 6u64
+  }
+}
+
+Passed bitOpTest
+module modintTest() {
+  func f(i) -> int {
+    return i mod 5u64
+  }
+}
+
+Passed modintTest
+module inOpTest() {
+  func f(i) -> int {
+    return i in 5u64
+  }
+}
+
+Passed inOpTest

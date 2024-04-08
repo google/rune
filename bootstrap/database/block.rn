@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import cbackend as c
+
 use sym
 
 use root
@@ -19,6 +21,7 @@ use filepath
 use function
 use location
 use statement
+
 
 // A literal block statement.  All statements exist within a block.
 class Block(self, location: Location) {
@@ -94,6 +97,14 @@ class Block(self, location: Location) {
     for statement in self.safeStatements() {
       statement.destroy()
     }
+  }
+
+  func genC(self, builder: c.CBuilder) -> c.CBlock {
+     builder.openBlock(self.location)
+     for statement in self.statements() {
+       statement.genC(builder)
+     }
+     return builder.closeBlock()
   }
 }
 

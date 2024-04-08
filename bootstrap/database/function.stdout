@@ -13,10 +13,6 @@ package main(argc: u32, argv: string) -> i32 {
   func botFunc() {
   }
 }
-iterator testItr(var self) {
-}
-operator +() {
-}
 package main(argc: u32, argv: string) -> i32 {
   main.module1()
   main.module2()
@@ -36,4 +32,8 @@ func topFunc() {
   func printTest_2() {
     println
   }
+}
+iterator testItr() {
+}
+operator *() {
 }

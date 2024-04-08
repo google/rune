@@ -14,7 +14,6 @@
 
 #include "third_party/rune/rpc/rpc_text.h"
 
-#include "third_party/absl/flags/flag.h"
 #include "testing/base/public/gunit.h"
 #include "third_party/rune/include/de.h"
 
@@ -54,8 +53,8 @@ TEST_P(EncodeDecodeTest, Examples) {
 }
 
 TEST(EncodeRequest, SecretLength) {
-  const std::string proto_file = absl::GetFlag(FLAGS_test_srcdir) +
-      "/google3/third_party/rune/rpc/Test.rn";
+  const std::string proto_file =
+      ::testing::SrcDir() + "/google3/third_party/rune/rpc/Test.rn";
   std::string text_proto = "(\"Hello\", secret(\"World\"))";
   auto message = EncodeRequest(proto_file, "Echo", text_proto);
   EXPECT_TRUE(message.ok());

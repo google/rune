@@ -43,6 +43,16 @@ parse/package.rn\
 parse/pegparser.rn\
 parse/rule.rn\
 parse/token.rn\
+cbackend/cbuilder.rn\
+cbackend/cemitter.rn\
+cbackend/clanguageclasses.rn\
+cbackend/cruntime.rn\
+cbackend/escapestring.rn\
+cbackend/float2string.rn\
+cbackend/int2cstring.rn\
+cbackend/package.rn\
+cbackend/stringstream.rn\
+cbackend/stringwriter.rn\
 rune.rn
 
 rune: $(SRC)

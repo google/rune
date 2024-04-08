@@ -136,6 +136,7 @@ enum ExpressionType
   DE_EXPR_FLOATTYPE  // x: f32 = y
   DE_EXPR_STRINGTYPE  // x: string = y
   DE_EXPR_BOOLTYPE  // done: bool = checkForDone()
+  DE_EXPR_NONETYPE  // func foo() -> none {
   DE_EXPR_NAMEDPARAM  // Myclass(name = "me", profession = "hacker")
   DE_EXPR_TEMPLATE_INST  // Point<i32, i32>
 

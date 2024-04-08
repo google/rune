@@ -16,7 +16,7 @@ class Foo(self) {
 }
 
 func asdf() {
-  println bar!
+  println bar
 }
 
 foo = null(Foo)

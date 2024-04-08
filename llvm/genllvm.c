@@ -3931,6 +3931,7 @@ static void generateExpression(deExpression expression) {
     case DE_EXPR_AS:
     case DE_EXPR_LIST:
     case DE_EXPR_DOTDOTDOT:
+    case DE_EXPR_NONETYPE:
       utExit("Unexpected expression type");
       break;
   }

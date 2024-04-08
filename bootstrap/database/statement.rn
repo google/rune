@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import cbackend as c
+
 use root
 use filepath
 use location
@@ -46,8 +48,8 @@ enum StateType {
   Prependcode
   Use
   Import
-  Importlib
-  Importrpc
+  ImportLib
+  ImportRpc
   Foreach
   Yield
   Ref  // These two are used by transformers to manage reference counts.
@@ -83,8 +85,8 @@ export func statementTypeGetKeyword(type: StateType) {
     StateType.Prependcode => return "prependcode"
     StateType.Use => return "use"
     StateType.Import => return "import"
-    StateType.Importlib => return "importlib"
-    StateType.Importrpc => return "importrpc"
+    StateType.ImportLib => return "importlib"
+    StateType.ImportRpc => return "importrpc"
     StateType.Yield => return "yield"
     StateType.Ref => return "ref"
     StateType.Unref => return "unref"
@@ -182,6 +184,31 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     destBlock.removeStatement(newStatement)
     destBlock.insertAfterStatement(destStatement, newStatement)
     return newStatement
+  }
+
+  // C Generator .................................................
+
+  func genC(self, builder: c.CBuilder) {
+    switch self.type {
+      StateType.Println => self.genCPrintln(builder)
+      default => raise Status.Unimplemented, "Statement type not yet supported by C backend builder ", self.type
+    }
+  }
+
+  func genCPrintln(self, builder: c.CBuilder) {
+    assert isnull(self.subBlock)
+    assert !isnull(self.expr)
+
+    // This expr will be a list of parameters.
+    args = self.expr.genC(builder)
+    assert args.type == c.CExpr.Type.List
+
+    // Add a trailing newline to 1st element of the list
+    firstElement = args.cExprList.index(0)
+    assert firstElement.type == c.CExpr.Type.Literal
+    assert firstElement.cLiteral.type == c.CLiteral.Type.String
+    firstElement.cLiteral.stringValue += "\\n"
+    builder.addStatement(builder.cPrintlnStatement(self.location, args))
   }
 }
 

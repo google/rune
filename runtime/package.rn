@@ -31,6 +31,9 @@ enum ComparisonType {
   NotEqual = 5u32 // a != b
 }
 
+extern "C" func f32tostring(dest: string, value: f32)
+extern "C" func f64tostring(dest: string, value: f64)
+
 extern "C" func integerToBigint(value: u64, width: u32,
     isSigned: bool, isSecret: bool) -> BigintArray
 extern "C" func bigintWidth(value: BigintArray) -> u32

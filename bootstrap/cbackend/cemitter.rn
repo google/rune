@@ -1,0 +1,146 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import database as db
+import io
+use stringwriter
+use cruntime
+
+class CEmitter(self, filename: string) {
+  // TODO: add buffers to string_writer so that it flushes to file every 4K or so.
+  self.filename = filename
+  self.sw = StringWriter()
+  self.printfArg = false
+  self.runtime = CRuntime()
+
+  /* context functions *******************************************************/
+
+  func include(self, path: string) {
+    self.runtime.include(path)
+  }
+
+  func define(self, text: string) {
+    self.runtime.define(text)
+  }
+
+  /* C feature support *******************************************************/
+
+  func needStringifyMacro(self) {
+    self.runtime.needStringifyMacro = true
+  }
+
+  func needIntAdd(self, isSigned: bool, width: u32) -> string {
+    if isSigned {
+      return self.runtime.needIntAdd(width)
+    }
+    return self.runtime.needUintAdd(width)
+  }
+
+  func needIntSub(self, isSigned: bool, width: u32) -> string {
+    if isSigned {
+      return self.runtime.needIntSub(width)
+    }
+    return self.runtime.needUintSub(width)
+  }
+
+  func needIntMul(self, isSigned: bool, width: u32) -> string {
+    if isSigned {
+      return self.runtime.needIntMul(width)
+    }
+    return self.runtime.needUintMul(width)
+  }
+
+  func needIntDiv(self, isSigned: bool, width: u32) -> string {
+    if isSigned {
+      return self.runtime.needIntDiv(width)
+    }
+    return self.runtime.needUintDiv(width)
+  }
+
+  func needIntExp(self, isSigned: bool, width: u32) -> string {
+    if isSigned {
+      return self.runtime.needIntExp(width)
+    }
+    return self.runtime.needUintExp(width)
+  }
+
+  func needRotl(self, width: u32) -> string {
+    return self.runtime.rotl.needWidth(width)
+  }
+
+  func needRotr(self, width: u32) -> string {
+    return self.runtime.rotr.needWidth(width)
+  }
+
+
+  /* layout and string functions ********************************************/
+
+  func indent(self) {
+    self.sw.indent()
+  }
+
+  func deindent(self) {
+    self.sw.deindent()
+  }
+
+  func space(self) {
+    self.sw.space()
+  }
+
+  func newline(self) {
+    self.sw.newline()
+  }
+
+  func write(self, stuff: string) {
+    self.sw.write(stuff)
+  }
+
+  func writeln(self, stuff: string) {
+    self.write(stuff)
+    self.newline()
+  }
+
+  /* closing out ***********************************************************/
+
+  func generateHeader(self) -> string {
+    bodyWriter = self.sw
+    self.sw = StringWriter()
+    self.runtime.emit(self)
+    self.newline()
+    headerText = self.sw.close()
+    self.sw = bodyWriter
+    return headerText
+  }
+
+  func close(self) -> string {
+    bodyText = self.sw.close()
+    headerText = self.generateHeader()
+    text = headerText + bodyText
+    if self.filename == "" {
+      // dump to string
+      return text
+    } else if self.filename == "-" {
+      // dump to stdout
+      println text
+      return ""
+    } else {
+      file = io.open(self.filename, "w")
+      if isnull(file) {
+        raise Status.NotFound, "Unable to write file ", self.filename
+      }
+      file.write(text)
+      return ""
+    }
+  }
+}

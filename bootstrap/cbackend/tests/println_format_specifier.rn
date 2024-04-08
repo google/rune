@@ -1,0 +1,35 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Rune format specifiers:
+//
+//   %b        - Match an bool value: prints true or false
+//   %i<width> - Match an Int value
+//   %u<width> - Match a Uint value
+//   %f        - Match a Float value
+//   %s - match a string value
+//   %x<width> - Match an Int or Uint value, print in lower-case-hex
+//   %[t]      - Match an array of type t value, were t is another format specifier
+//   %(t1, ..., tn) - Tuple value of format specifiers
+
+println "This is a string: \"%s\"" % "hello"
+println "This is an int: %i8" % -1i8
+println "This is an unsigned int: %u16" % 65535u16
+println "This is a hex value: 0x%x32" % 0xdeadbeefu32
+println "This is a 64-bit int: %u64" % 1
+println "This is a 64-bit signed int: %i64" % -1
+
+println "This is a float: %f32" % 2.71828175f32
+println "This is a negative float: %f64" % -3.1415926535897931
+

@@ -15,14 +15,18 @@
 import database as db
 import io
 import parse
+import cbackend as c
 use sym
 
 // Print commandline help and exit.
 func usage() {
   println "Usage: ", argv[0], " [options...] [runeFile...]\n" +
       "    -d|--debug:  Run in debug mode, which generates a lot of internal logging.\n" +
+      "    -q:          Don't output trace information.\n" +
       "    --parseTree: Print parse trees of parsed files.\n" +
       "    --funcTree:  Print the tree of functions.\n" +
+      "    --hir:       Print HIR output.\n" +
+      "    --oc <filename>: output C to the given filename.\n" +
       "    -p <dir>:    Use <dir> as the root directory for Rune's builtin packages.\n"
   exit(1i32)
 }
@@ -43,11 +47,26 @@ while xArg < argv.length() && argv[xArg][0] == '-' {
   if argv[xArg] == "-d" || argv[xArg] == "--debug" {
     root.debugMode = true
     xArg += 1
+  } else if argv[xArg] == "-q" {
+    root.quietMode = true
+    xArg += 1
   } else if argv[xArg] == "--parseTree" {
     root.dumpParseTree = true
     xArg += 1
   } else if argv[xArg] == "--funcTree" {
     root.dumpFuncTree = true
+    xArg += 1
+  } else if argv[xArg] == "--hir" {
+    root.dumpHir = true
+    xArg += 1
+  } else if argv[xArg] == "--oc" {
+    root.generateC = true
+    xArg += 1
+    if xArg == argv.length() {
+      println "-oc requires an output filename, or '-' for stdout"
+      exit(1i32)
+    }
+    root.outputCFilename = argv[xArg]
     xArg += 1
   } else if argv[xArg] == "-p" {
     xArg += 1
@@ -56,7 +75,6 @@ while xArg < argv.length() && argv[xArg][0] == '-' {
       exit(1i32)
     }
     root.packageDir = argv[xArg]
-    xArg += 1
     xArg += 1
   } else {
     usage()
@@ -77,7 +95,9 @@ for i in range (xArg, argv.length()) {
     println "Rune file ", fileName, " must end in .rn."
     exit(1i32)
   }
-  println "Parsing ", fileName
+  if !root.quietMode {
+    println "Parsing ", fileName
+  }
   node = parser.parse(argv[i], allowUnderscores = true)
   if isnull(node) {
     exit(1i32)
@@ -86,4 +106,10 @@ for i in range (xArg, argv.length()) {
   module = db.Function(mainFunc, db.FuncType.Module, Sym.new(moduleName),
     db.Linkage.Module, db.Location.emptyLocation())
   parse.HirBuilder(node!, module).build()
+  if root.generateC {
+    emitter = c.CEmitter(root.outputCFilename)
+    program = c.CBuilder().build(module)
+    program.emit(emitter)
+    emitter.close()
+  }
 }

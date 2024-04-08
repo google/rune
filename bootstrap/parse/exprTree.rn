@@ -26,7 +26,41 @@ transformer ExprTree() {
         return self.buildTokenExpr(node)
       }
       switch node.getRuleSym()! {
+        self.inPrecExprSym => return self.buildExprTree(node)
+        self.modPrecExprSym => return self.buildExprTree(node)
+        self.shiftExprSym => return self.buildExprTree(node)
+        self.shiftPrecExprSym => return self.buildExprTree(node)
+
         self.postfixExprSym => return self.buildPostfixExpr(node)
+        self.typeofExprSym => return self.buildTypeOfExpr(node)
+        self.addExprSym => return self.buildInfixExpr(node)
+        self.mulExprSym => return self.buildInfixExpr(node)
+
+        self.andExprSym => return self.buildInfixExpr(node)
+        self.orExprSym => return self.buildInfixExpr(node)
+        self.xorExprSym => return self.buildInfixExpr(node)
+
+        self.expExprSym => return self.buildBinaryExpr(node, db.ExprType.Exp)
+        self.equalExprSym => return self.buildBinaryExpr(node, db.ExprType.Equal)
+        self.geExprSym => return self.buildBinaryExpr(node, db.ExprType.Ge)
+        self.gtExprSym => return self.buildBinaryExpr(node, db.ExprType.Gt)
+        self.leExprSym => return self.buildBinaryExpr(node, db.ExprType.Le)
+        self.ltExprSym => return self.buildBinaryExpr(node, db.ExprType.Lt)
+        self.notEqualExprSym => return self.buildBinaryExpr(node, db.ExprType.Notequal)
+
+        self.bitandExprSym => return self.buildInfixExpr(node)
+        self.bitorExprSym => return self.buildInfixExpr(node)
+        self.bitxorExprSym => return self.buildInfixExpr(node)
+        self.rotlExprSym => return self.buildBinaryExpr(node, db.ExprType.Rotl)
+        self.rotrExprSym => return self.buildBinaryExpr(node, db.ExprType.Rotr)
+        self.shlExprSym => return self.buildBinaryExpr(node, db.ExprType.Shl)
+        self.shrExprSym => return self.buildBinaryExpr(node, db.ExprType.Shr)
+
+        self.inExprSym => return self.buildBinaryExpr(node, db.ExprType.In)
+        self.modExprSym => return self.buildBinaryExpr(node, db.ExprType.Modint)
+
+        self.negateExprSym => return self.buildPrefixExpr(node, db.ExprType.Negate)
+
         default => return db.Expr.newIdent(Sym.new("ident"), db.Location.emptyLocation())
       }
     }
@@ -36,20 +70,113 @@ transformer ExprTree() {
       token = node.token!
       switch token.type {
         TokenType.Ident => return db.Expr.newIdent(node.getIdentSym()!, node.location)
-        TokenType.Bool => println "Write me!"
+        TokenType.Bool => return self.buildBoolExpr(node)
         TokenType.Float, TokenType.Integer, TokenType.String => {
           return db.Expr.newConstant(token.value!, node.location)
         }
-        TokenType.Keyword, TokenType.RandUint, TokenType.UintType, TokenType.IntType => {
-        }
+        TokenType.Keyword => return self.buildKeywordExpr(node)
+        TokenType.UintType => return self.buildVarWidthExpr(db.ExprType.UintType, node)
+        TokenType.IntType => return self.buildVarWidthExpr(db.ExprType.IntType, node)
+        TokenType.RandUint => return self.buildVarWidthExpr(db.ExprType.RandUint, node)
         default => panic "Not expecting token type ", token.type
       }
+    }
+
+    func buildBoolExpr(self: HirBuilder, node: Node) -> db.Expr {
+      value = false
+      if node.getKeywordSym() == self.falseSym {
+        value = false
+      } else if node.getKeywordSym() == self.trueSym {
+        value = true
+      } else {
+        panic "Unexpected token value ", node.getKeywordSym()
+      }
+      expr = db.Expr.newConstant(db.Value(value), node.location)
+      expr.isConst = true
+      return expr
+    }
+
+    // Build an expression for the keyword.
+    func buildKeywordExpr(self:HirBuilder, node: Node) -> db.Expr {
+      keyWordSym = node.getKeywordSym()!
+      if keyWordSym == self.stringSym {
+        return db.Expr(db.ExprType.StringType, node.location)
+      } else if keyWordSym == self.boolSym {
+        return db.Expr(db.ExprType.BoolType, node.location)
+      } else if keyWordSym == self.noneSym {
+        return db.Expr(db.ExprType.NoneType, node.location)
+      } else if keyWordSym == self.trueSym {
+        return db.Expr.newConstant(db.Value(true), node.location)
+      } else if keyWordSym == self.falseSym {
+        return db.Expr.newConstant(db.Value(false), node.location)
+      }
+      // TODO: Deal with the other keywords
 // temp
 return db.Expr.newIdent(Sym.new("temp"), node.location)
     }
 
+    // Build an expression of the given type with the width specified on the node.
+    func buildVarWidthExpr(self: HirBuilder, type: db.ExprType, node: Node) -> db.Expr {
+      expr = db.Expr(type, node.location)
+      expr.width = <u32>node.token.value.intVal!
+      return expr
+    }
+
+    // Format: binaryExpr(<expr> <expr>)
+    func buildBinaryExpr(self: HirBuilder, node: Node, opType: db.ExprType) -> db.Expr {
+      leftChild = node.firstChildNode!
+      rightChild = leftChild.nextNodeChildNode!
+      assert isnull(rightChild.nextNodeChildNode)
+      leftExpr = self.buildExprTree(leftChild)
+      rightExpr = self.buildExprTree(rightChild)
+      return db.Expr.newBinary(opType, leftExpr, rightExpr, node.location)
+    }
+
+    // Format: infixExpr(<expr> <op> <expr>)
+    func buildInfixExpr(self: HirBuilder, node: Node) -> db.Expr {
+      leftChild = node.firstChildNode!
+      opChild = leftChild.nextNodeChildNode!
+      token = opChild.token
+      rightChild = opChild.nextNodeChildNode!
+      assert isnull(rightChild.nextNodeChildNode)
+      if !isnull(token) {
+        leftExpr = self.buildExprTree(leftChild)
+        rightExpr = self.buildExprTree(rightChild)
+        opSym = opChild.getKeywordSym()
+        switch opSym! {
+          self.bangMinusSym => opType = db.ExprType.SubTrunc
+          self.bangPlusSym => opType = db.ExprType.AddTrunc
+          self.bangTimesSym => opType = db.ExprType.MulTrunc
+          self.dividesSym => opType = db.ExprType.Div
+          self.minusSym => opType = db.ExprType.Sub
+          self.percentSym => opType = db.ExprType.Mod
+          self.plusSym => opType = db.ExprType.Add
+          self.timesSym => opType = db.ExprType.Mul
+
+          self.andSym => opType = db.ExprType.And
+          self.orSym => opType = db.ExprType.Or
+          self.xorSym => opType = db.ExprType.Xor
+
+          self.bitandSym => opType = db.ExprType.Bitand
+          self.bitorSym => opType = db.ExprType.Bitor
+          self.bitxorSym => opType = db.ExprType.Bitxor
+          default => opType = db.ExprType.Null  // An impossible symbol for binary op
+        }
+        if opType != db.ExprType.Null {
+          return db.Expr.newBinary(opType, leftExpr, rightExpr, node.location)
+        }
+      }
+      return db.Expr.newIdent(Sym.new("temp"), node.location)
+    }
+
+    func buildPrefixExpr(self: HirBuilder, node: Node, opType: db.ExprType) -> db.Expr {
+      child = node.firstChildNode!
+      return db.Expr.newUnary(db.ExprType.Negate,
+      	      self.buildExprTree(child), node.location)
+    }
+
     // Format: postfixExpr(<expr> <suffix>)
-    func buildPostfixExpr(self: HirBuilder, node: Node) -> db.Expr{
+    func buildPostfixExpr(self: HirBuilder, node: Node) -> db.Expr {
       firstChild = node.firstChildNode!
       postfixNode = firstChild.nextNodeChildNode!
       token = postfixNode.token
@@ -76,15 +203,93 @@ return db.Expr.newIdent(Sym.new("temp"), node.location)
 return db.Expr.newIdent(Sym.new("temp"), node.location)
     }
 
+    func buildTypeOfExpr(self: HirBuilder, node: Node) -> db.Expr {
+      firstChild = node.firstChildNode!
+      return db.Expr.newUnary(db.ExprType.Typeof,
+          self.buildExprTree(firstChild), firstChild.location)
+    }
+
     func buildExprParseSyms(self) {
-      self.postfixExprSym = Sym.new("postfixExpr")
-      self.bangSym = Sym.new("!")
-      self.dotSym = Sym.new(".")
-      self.indexSuffixSym = Sym.new("indexSuffix")
-      self.sliceSuffixSym = Sym.new("sliceSuffix")
+      // nonterminal symbols
+      self.addExprSym = Sym.new("addExpr")
+      self.andExprSym = Sym.new("andExpr")
+      self.bitandExprSym = Sym.new("bitandExpr")
+      self.bitorExprSym = Sym.new("bitorExpr")
+      self.bitxorExprSym = Sym.new("bitxorExpr")
       self.callParametersSym = Sym.new("callParameters")
+      self.callParametersSym = Sym.new("callParameters")
+      self.equalExprSym = Sym.new("equalExpr")
+      self.geExprSym = Sym.new("geExpr")
+      self.indexSuffixSym = Sym.new("indexSuffix")
+      self.gtExprSym = Sym.new("gtExpr")
+      self.inExprSym = Sym.new("inExpr")
+      self.inPrecExprSym = Sym.new("inPrecExpr")
+      self.leExprSym = Sym.new("leExpr")
+      self.ltExprSym = Sym.new("ltExpr")
+      self.modPrecExprSym = Sym.new("modPrecExpr")
+      self.modExprSym = Sym.new("modExpr")
+      self.mulExprSym = Sym.new("mulExpr")
+      self.expExprSym = Sym.new("exponentiateExpr")
+      self.negateExprSym = Sym.new("negateExpr")
+      self.notEqualExprSym = Sym.new("notEqualExpr")
+      self.orExprSym = Sym.new("orExpr")
+      self.postfixExprSym = Sym.new("postfixExpr")
+      self.relationExprSym = Sym.new("relationExpr")
+      self.relationPrecExprSym = Sym.new("relationPrecExpr")
+      self.rotlExprSym = Sym.new("rotlExpr")
+      self.rotrExprSym = Sym.new("rotrExpr")
+      self.shiftExprSym = Sym.new("shiftExprSym")
+      self.shiftPrecExprSym = Sym.new("shiftPrecExpr")
+      self.shlExprSym = Sym.new("shlExpr")
+      self.shrExprSym = Sym.new("shrExpr")
+      self.sliceSuffixSym = Sym.new("sliceSuffix")
+      self.typeofExprSym = Sym.new("typeofExpr")
+      self.xorExprSym = Sym.new("xorExpr")
+
+      // terminal symbols
+      self.andSym = Sym.new("&&")
+      self.bangSym = Sym.new("!")
+      self.bangMinusSym = Sym.new("!-")
+      self.bangPlusSym = Sym.new("!+")
+      self.bangTimesSym = Sym.new("!*")
+      self.bitandSym = Sym.new("&")
+      self.bitorSym = Sym.new("|")
+      self.bitxorSym = Sym.new("^")
+      self.boolSym = Sym.new("bool")
+      self.dividesSym = Sym.new("/")
+      self.dotSym = Sym.new(".")
+      self.equalSym = Sym.new("==")
+      self.expSym = Sym.new("**")
+      self.falseSym = Sym.new("false")
+      self.geSym = Sym.new(">=")
+      self.gtSym = Sym.new(">")
+      self.inSym = Sym.new("in")
+      self.leSym = Sym.new("<=")
+      self.ltSym = Sym.new("<")
+      self.minusSym = Sym.new("-")
+      self.modSym = Sym.new("mod")
+      self.noneSym = Sym.new("none")
+      self.notEqualSym = Sym.new("!=")
+      self.orSym = Sym.new("||")
+      self.percentSym = Sym.new("%")
+      self.plusSym = Sym.new("+")
+      self.rotlSym = Sym.new("<<<")
+      self.rotrSym = Sym.new(">>>")
+      self.shlSym = Sym.new("<<")
+      self.shrSym = Sym.new(">>")
+      self.stringSym = Sym.new("string")
+      self.timesSym = Sym.new("*")
+      self.trueSym = Sym.new("true")
+      self.xorSym = Sym.new("^^")
     }
   }
 }
 
 transform ExprTree()
+
+unittest postfixExprTest {
+  code = "  println false\n  println true\n"
+  compareInputToOutput("postfixExprTest", code)
+  println "Passed postfixExprTest"
+}
+

@@ -1,0 +1,41 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Generator that reads successive characters from a string, with a 'push back'
+// capability.
+
+class StringStream(self, str: string) {
+  self.str = str
+  self.returned = arrayof(u8)
+  self.numReturned = 0u64
+
+  iterator next(self) {
+    pos = 0u64
+    while pos < self.str.length() || self.numReturned > 0 {
+      if self.numReturned > 0 {
+        self.numReturned -= 1
+        next = self.returned[self.numReturned]
+      } else {
+        next = self.str[pos]
+	pos += 1
+      }
+      yield next
+    }
+  }
+
+  func unget(self, c: u8) {
+    self.returned[self.numReturned] = c
+    self.numReturned += 1
+  }
+}

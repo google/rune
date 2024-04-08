@@ -143,6 +143,8 @@ clean:
 	for file in tests/*.rn crypto_class/*.rn errortests/*.rn; do exeFile=$$(echo "$$file" | sed 's/.rn$$//'); rm -f "$$exeFile"; done
 	cd runtime ; make clean
 	cd bootstrap/database ; make clean
+	cd bootstrap/cbackend ; make clean
+
 
 obj: include/dedatabase.h llvm/lldatabase.h
 	mkdir -p obj/database obj/llvm obj/parse obj/runtime obj/src obj/util obj/rpc obj/bind obj/transformer

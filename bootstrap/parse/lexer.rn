@@ -277,7 +277,7 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
 
   func parseIntegerSuffix(self, intVal: db.Bigint) -> Token {
     filepath = self.filepath!
-    width = 64u32
+    width = 64u32 // default if there are no format specifiers
     c = filepath.text[self.pos]
     if c == 'i' || c == 'u' {
       self.pos += 1
@@ -558,7 +558,7 @@ unittest parseEscapedCharsTest {
   token = lexer.parseToken()
   assert token.type == TokenType.String
   value = token.value!
-  assert value.type == db.Datatype.String
+  assert value.type == db.DatatypeType.String
   s = value.stringVal
   assert s[0] == '\x07'  // Bell.
   assert s[1] == '\x08'  // Backspace.

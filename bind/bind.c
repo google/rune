@@ -550,6 +550,17 @@ void deQueueSignature(deSignature signature) {
   }
 }
 
+// Some variables are never bound, and have no datatype.  Delete them.
+static void removeUnusedVariables(deClass theClass) {
+  deVariable var;
+  deBlock block = deClassGetSubBlock(theClass);
+  deSafeForeachBlockVariable(block, var) {
+    if (deVariableGetDatatype(var) == deDatatypeNull) {
+      deVariableDestroy(var);
+    }
+  } deEndSafeBlockVariable;
+}
+
 // Bind signatures until done.  This can be called multiple times, to bind new
 // statements and functions.
 void deBindAllSignatures(void) {
@@ -567,7 +578,9 @@ void deBindAllSignatures(void) {
           updateSignature(signature);
           checkSignatureReturnType(signature);
           if (deBlockIsConstructor(deSignatureGetBlock(signature))) {
-            deGenerateDefaultMethods(deDatatypeGetClass(deSignatureGetReturnType(signature)));
+            deClass theClass = deDatatypeGetClass(deSignatureGetReturnType(signature));
+            removeUnusedVariables(theClass);
+            deGenerateDefaultMethods(theClass);
           }
         }
       }

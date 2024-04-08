@@ -29,12 +29,30 @@ static void createVariableIfMissing(deBlock scopeBlock, deExpression expr) {
   }
 }
 
+// Determine if this is a member access in a constructor.
+static bool isMemberAccessInConstructor(deBlock scopeBlock, deExpression expr) {
+  deClass theClass = deBlockGetOwningClass(scopeBlock);
+  if (theClass == deClassNull || deExpressionGetType(expr) != DE_EXPR_DOT) {
+    return false;
+  }
+  deExpression leftExpr = deExpressionGetFirstExpression(expr);
+  if (deExpressionGetType(leftExpr) != DE_EXPR_IDENT) {
+    return false;
+  }
+  deFunction constructor =  deTemplateGetFunction(deClassGetTemplate(theClass));
+  deVariable selfVar = deBlockGetFirstVariable(deFunctionGetSubBlock(constructor));
+  return deVariableGetSym(selfVar) == deExpressionGetName(leftExpr);
+}
+
 // Create variables when we find assignment expressions that assign to an identifier.
 static void createExpressionVariables(deBlock scopeBlock, deExpression expr) {
   if (deExpressionGetType(expr) == DE_EXPR_EQUALS) {
     deExpression target = deExpressionGetFirstExpression(expr);
     if (deExpressionGetType(target) == DE_EXPR_IDENT) {
       createVariableIfMissing(scopeBlock, target);
+    }
+    if (isMemberAccessInConstructor(scopeBlock, target)) {
+      createVariableIfMissing(scopeBlock, deExpressionGetLastExpression(target));
     }
   }
   deExpression child;
@@ -43,25 +61,30 @@ static void createExpressionVariables(deBlock scopeBlock, deExpression expr) {
   } deEndExpressionExpression;
 }
 
+// Create any variables declared by the statement.
+void deCreateStatementVariables(deBlock scopeBlock, deStatement statement) {
+  deExpression expr = deStatementGetExpression(statement);
+  if (expr != deExpressionNull) {
+    createExpressionVariables(scopeBlock, expr);
+  }
+  deBlock subBlock = deStatementGetSubBlock(statement);
+  if (subBlock != deBlockNull) {
+    deCreateBlockVariables(scopeBlock, subBlock);
+  }
+}
+
 // Create variables in the block from assignment expressions of the form:
 //   IDENT = expression
 // Then, recurse into child functions.
-static void createBlockVariables(deBlock scopeBlock, deBlock block) {
+void deCreateBlockVariables(deBlock scopeBlock, deBlock block) {
   deStatement statement;
   deForeachBlockStatement(block, statement) {
-    deExpression expr = deStatementGetExpression(statement);
-    if (expr != deExpressionNull) {
-      createExpressionVariables(scopeBlock, expr);
-    }
-    deBlock subBlock = deStatementGetSubBlock(statement);
-    if (subBlock != deBlockNull) {
-      createBlockVariables(scopeBlock, subBlock);
-    }
+    deCreateStatementVariables(scopeBlock, statement);
   } deEndBlockStatement;
   deFunction func;
   deForeachBlockFunction(block, func) {
     deBlock subBlock = deFunctionGetSubBlock(func);
-    createBlockVariables(subBlock, subBlock);
+    deCreateBlockVariables(subBlock, subBlock);
   } deEndBlockFunction;
 }
 
@@ -70,5 +93,5 @@ static void createBlockVariables(deBlock scopeBlock, deBlock block) {
 // assignment expression that could create a local variable otherwise.
 void deCreateLocalAndGlobalVariables(void) {
   deBlock scopeBlock = deRootGetBlock(deTheRoot);
-  createBlockVariables(scopeBlock, scopeBlock);
+  deCreateBlockVariables(scopeBlock, scopeBlock);
 }

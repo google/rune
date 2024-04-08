@@ -25,6 +25,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "cttk.h"  // For cttk_bool.
 
@@ -183,9 +184,7 @@ static inline void runtime_zeroMemory(uint64_t *p, uint64_t numWords) {
 // src and dest must be uint64_t aligned.
 static inline void runtime_copyWords(size_t *dest, const size_t *src,
                                size_t numWords) {
-  while (numWords--) {
-    *dest++ = *src++;
-  }
+  memcpy((void *)dest, (const void *)src, numWords * sizeof(size_t));
 }
 
 // Convert bytes to words of size size_t, rounding up.

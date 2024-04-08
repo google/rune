@@ -1,0 +1,125 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use stringstream
+
+class Escaper(self, stuff: string) {
+
+  enum State {
+    Copy
+    FormatSpecifier
+    FormatWidth
+  }
+
+  self.stream = StringStream(stuff)
+  self.formatWidth = 0u32
+  self.formatChar = 'x'
+  self.state = State.Copy
+  self.value = ""
+
+  func copy(self, c: u8) {
+    switch c {
+      '"' => self.value += "\\\""
+      '%' => self.state = Escaper.State.FormatSpecifier
+      default => self.value.append(c)
+    }
+  }
+
+  func readFormatSpecifier(self, c: u8) {
+    switch c {
+      'i', 'u', 'x', 'f' => {
+        self.formatChar = c
+        self.formatWidth = 0u32
+        self.state = Escaper.State.FormatWidth
+      }
+      '%','s' => {
+        self.value += "%" + chr(c)
+        self.state = Escaper.State.Copy
+      }
+      'b' => {
+        self.value += "%d"  // TODO - figure out how to convert to 'true/false'
+        self.state = Escaper.State.Copy
+      }
+      default => {
+        self.state = Escaper.State.Copy
+      }
+    }
+  }
+
+  func convertFormatWidth(self) {
+    if self.formatWidth > 64u32 {
+      raise Status.Unimplemented, "Format Widths > 64 bits not yet supported by C backend: ", self.formatWidth
+    } else if self.formatChar == 'f' {
+      if self.formatWidth <= 32u32 && self.formatWidth != 0u32 {
+        self.value += "%.\" FLT_SIG_DIGITS \"g"
+      } else {
+        self.value += "%.\" DBL_SIG_DIGITS \"g"
+      }
+    } else {
+      self.value += "%\" PRI"
+      switch self.formatChar {
+        'i' => self.value += "d"
+        'u' => self.value += "u"
+        'x' => self.value += "x"
+	default => println "Warning: found %" + chr(self.formatChar)
+      }
+      if self.formatWidth == 0u32 {
+        self.value += "64"
+      } else if self.formatWidth <= 8u32 {
+        self.value += "8"
+      } else if self.formatWidth <= 16u32 {
+        self.value += "16"
+      } else if self.formatWidth <= 32u32 {
+        self.value += "32"
+      } else {
+        self.value += "64"
+      }
+      self.value += " \""
+      self.formatWidth = 0u32
+    }
+  }
+
+  func readFormatWidth(self, c: u8) {
+    if c >= '0' && c <= '9' {
+      self.formatWidth = self.formatWidth * 10 + <u32>(c - '0')
+    } else {
+      self.convertFormatWidth()
+      self.state = Escaper.State.Copy
+      self.stream.unget(c)
+    }
+  }
+
+  func escape(self) -> string {
+    for c in self.stream.next() {
+      switch self.state {
+        Escaper.State.Copy => self.copy(c)
+        Escaper.State.FormatSpecifier => self.readFormatSpecifier(c)
+        Escaper.State.FormatWidth => self.readFormatWidth(c)
+	default => println "Warning: weird state ", self.state
+      }
+    }
+
+    switch self.state {
+      Escaper.State.FormatSpecifier => self.value += "%"
+      Escaper.State.FormatWidth => self.convertFormatWidth()
+      default => self.value += ""
+    }
+    return self.value
+  }
+}
+
+// Convert a Rune string to a C string
+func escapeString(stuff: string) -> string {
+  return Escaper(stuff).escape()
+}

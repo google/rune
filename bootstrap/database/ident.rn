@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import cbackend
+
 use sym
 
 use location
@@ -49,6 +51,14 @@ class Ident(self, function: Function, object: Function | Variable, sym: Sym, obj
       text += "%s %x\n" % (getFuncTypeName(ident.function.type), <u32>function)
     } else {
       text += "variable %x\n" % <u32>self.variable
+    }
+  }
+
+  func emitC(self, emitter: CEmitter) {
+    if !isnull(ident.function) {
+          emitter.emitFunction(ident.function.type, <u32>function)
+    } else {
+      emitter.emitVariable(<u32>self.variable)
     }
   }
 

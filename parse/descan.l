@@ -327,6 +327,7 @@ static void logMsg(char *format, ...) {
 <INITIAL>"isnull"               { retToken(KWISNULL); }
 <INITIAL>"iterator"             { retToken(KWITERATOR); }
 <INITIAL>"mod"                  { retToken(KWMOD); }
+<INITIAL>"none"                 { retToken(KWNONE); }
 <INITIAL>"null"                 { retToken(KWNULL); }
 <INITIAL>"operator"             { retToken(KWOPERATOR); }
 <INITIAL>"prependcode"          { retToken(KWPREPENDCODE); }

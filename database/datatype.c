@@ -985,6 +985,8 @@ bool deDatatypeMatchesTypeExpression(deBlock scopeBlock, deDatatype datatype,
       return datatype == deSetDatatypeSecret(deStringDatatypeCreate(), secret);
     case DE_EXPR_BOOLTYPE:
       return datatype == deSetDatatypeSecret(deBoolDatatypeCreate(), secret);
+    case DE_EXPR_NONETYPE:
+      return datatype == deNoneDatatypeCreate();
     case DE_EXPR_DOTDOTDOT:
       return matchDotDotDotTypeConstraint(scopeBlock, datatype, typeExpression);
     default:

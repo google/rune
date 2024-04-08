@@ -1067,6 +1067,13 @@ static deVariable findNamedParam(deBlock block, deExpression param) {
   return var;
 }
 
+// Check that the expression's datatype is not none.
+static void checkNotNone(deExpression expr) {
+  if (deExpressionGetDatatype(expr) == deNoneDatatypeCreate()) {
+    deExprError(expr, "Expression has none type.");
+  }
+}
+
 // Find call datatypes.  For default parameters with default values that are
 // not specified by the caller, use deNullDatatype, as this will be bound when
 // expression the function.
@@ -1097,7 +1104,9 @@ static deDatatypeArray findCallDatatypes(deBlock scopeBlock,
     var = deVariableGetNextBlockVariable(var);
   } else if (isMethodCall(access)) {
     // Add the type of the object on the left of the dot expression as self parameter.
-    deDatatype selfType = deExpressionGetDatatype(deExpressionGetFirstExpression(access));
+    deExpression selfExpr = deExpressionGetFirstExpression(access);
+    checkNotNone(selfExpr);
+    deDatatype selfType = deExpressionGetDatatype(selfExpr);
     if (deDatatypeArrayGetUsedDatatype(paramTypes) == 0) {
       deExprError(access, "Function %s lacks a self parameter, but is called as a method",
           deFunctionGetName(function));
@@ -1109,6 +1118,7 @@ static deDatatypeArray findCallDatatypes(deBlock scopeBlock,
   deExpression param = deExpressionGetFirstExpression(params);
   bool foundNamedParam = false;
   while (param != deExpressionNull) {
+    checkNotNone(param);
     foundNamedParam |= deExpressionGetType(param) == DE_EXPR_NAMEDPARAM;
     if (!foundNamedParam) {
       if (var == deVariableNull || deVariableGetType(var) != DE_VAR_PARAMETER) {
@@ -1222,6 +1232,7 @@ static void markConstructorClassBound(deSignature signature) {
   deSignatureSetBound(signature, true);
   deQueueEventBlockedBindings(deSignatureGetReturnEvent(signature));
   deClassSetBound(theClass, true);
+  deCreateBlockVariables(deClassGetSubBlock(theClass), deFunctionGetSubBlock(function));
 }
 
 // Bind a call expression.
@@ -1859,6 +1870,10 @@ static deBindRes bindExpression(deBlock scopeBlock, deExpression expression, boo
       deExpressionSetIsType(expression, true);
       deExpressionSetDatatype(expression, deBoolDatatypeCreate());
       break;
+    case DE_EXPR_NONETYPE:
+      deExpressionSetIsType(expression, true);
+      deExpressionSetDatatype(expression, deNoneDatatypeCreate());
+      break;
     case DE_EXPR_AS:
       utExit("Unexpected expression type");
       break;
@@ -1942,9 +1957,11 @@ static void postProcessBoundStatement(deBlock scopeBlock, deBinding binding) {
   deStatementSetInstantiated(statement, deBindingInstantiated(binding));
   deStatementType type = deStatementGetType(statement);
   if (type == DE_STATEMENT_RETURN || type == DE_STATEMENT_YIELD) {
+    deExpression expr = deStatementGetExpression(statement);
     deDatatype datatype = deNoneDatatypeCreate();
     if (deStatementGetExpression(statement) != deExpressionNull) {
-      datatype = deExpressionGetDatatype(deStatementGetExpression(statement));
+      checkNotNone(expr);
+      datatype = deExpressionGetDatatype(expr);
     }
     updateSignatureReturnType(deBindingGetSignature(binding), datatype);
   } else if (type == DE_STATEMENT_TYPESWITCH) {
@@ -2023,8 +2040,10 @@ void deBindStatement(deBinding binding) {
       if (datatype != deDatatypeNull &&
           !deDatatypeMatchesTypeExpression(scopeBlock, datatype, typeExpr)) {
         deCurrentSignature = deBindingGetSignature(binding);
-        deError(deExpressionGetLine(typeExpr), "Failed type constraint: %s",
-            deDatatypeGetTypeString(datatype));
+        deSigError(deCurrentSignature, "Failed type constraint: variable %s expected type %s, got: %s",
+                   deVariableGetName(variable),
+                   deEscapeString(deExpressionToString(typeExpr)),
+                   deDatatypeGetTypeString(datatype));
       }
       break;
     }

@@ -277,6 +277,7 @@ static void moveImportsToBlock(deBlock subBlock, deBlock destBlock) {
 %token <lineVal> KWMULTRUNC
 %token <lineVal> KWMULTRUNCEQUALS
 %token <lineVal> KWNOTEQUAL
+%token <lineVal> KWNONE
 %token <lineVal> KWNULL
 %token <lineVal> KWOPERATOR
 %token <lineVal> KWOR
@@ -2079,6 +2080,10 @@ typeLiteral: UINTTYPE
 | KWBOOL
 {
   $$ = deExpressionCreate(DE_EXPR_BOOLTYPE, deCurrentLine);
+}
+| KWNONE
+{
+  $$ = deExpressionCreate(DE_EXPR_NONETYPE, deCurrentLine);
 }
 | KWF32
 {

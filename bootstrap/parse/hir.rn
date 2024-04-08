@@ -48,6 +48,11 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
     if root.dumpFuncTree {
       self.currentFunction.dump()
     }
+    if root.dumpHir {
+      s = ""
+      self.currentFunction.dumpToString(s)
+      println s
+    }
   }
 
   func buildBlockStatement(self: HirBuilder, blockNode: Node) {
@@ -78,14 +83,14 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
       self.finalFunctionSym => self.buildFinalFunction(statementNode)
       self.foreachStatementSym => self.buildForeachStatement(statementNode)
       self.forStatementSym => self.buildForStatement(statementNode)
-      self.functionSym => self.buildFunction(statementNode)
+      self.functionSym => self.buildFunction(db.FuncType.Plain, statementNode)
       self.ifElseStatementSym => self.buildCompoundStatement(statementNode)
       self.ifStatementSym => self.buildIfStatement(statementNode)
-      self.importLibSym => self.buildImportLibStatement(statementNode)
-      self.importRpcSym => self.buildImportRpcStatement(statementNode)
-      self.importSym => self.buildImportStatement(statementNode)
-      self.iteratorSym => self.buildIterator(statementNode)
-      self.operatorSym => self.buildOperator(statementNode)
+      self.importLibSym => self.buildImportStatement(db.StateType.ImportLib, statementNode)
+      self.importRpcSym => self.buildImportStatement(db.StateType.ImportRpc, statementNode)
+      self.importSym => self.buildImportStatement(db.StateType.Import, statementNode)
+      self.iteratorSym => self.buildFunction(db.FuncType.Iterator, statementNode)
+      self.operatorSym => self.buildFunction(db.FuncType.Operator, statementNode)
       self.panicStatementSym => self.buildPrintStatement(statementNode, db.StateType.Panic)
       self.prependCodeSym => self.buildPrependCode(statementNode)
       self.printlnStatementSym => self.buildPrintStatement(statementNode, db.StateType.Println)
@@ -98,14 +103,14 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
       self.structSym => self.buildStruct(statementNode)
       self.exceptCaseSym, self.switchCaseSym => self.buildCaseStatement(statementNode)
       self.switchStatementSym => self.buildSwitchStatement(statementNode)
-      self.transformerSym => self.buildTransformer(statementNode)
+      self.transformerSym => self.buildFunction(db.FuncType.Transformer, statementNode)
       self.transformStatementSym => self.buildTransformStatement(statementNode)
       self.tryExceptStatementSym => self.buildTryExceptStatement(statementNode)
       self.tryStatementSym => self.buildTryStatement(statementNode)
       self.typeswitchStatementSym => self.buildTypeswitchStatement(statementNode)
       self.unitTestSym => self.buildUnitTest(statementNode)
       self.unrefStatementSym => self.buildUnrefStatement(statementNode)
-      self.useSym => self.buildUseStatement(statementNode)
+      self.useSym => self.buildImportStatement(db.StateType.Use, statementNode)
       self.doWhileStatementSym => self.buildCompoundStatement(statementNode)
       self.whileStatementSym => self.buildWhileStatement(statementNode)
       self.yieldSym => self.buildYield(statementNode)
@@ -426,8 +431,9 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
       node = node.nextNodeChildNode
     }
     blockNode = node
+    linkage = self.getLinkage(exportTypeSym)
     constructor = db.Function(self.currentFunction, db.FuncType.Constructor, classSym,
-        db.Linkage.Module, statementNode.location)
+        linkage, statementNode.location)
     self.buildParameters(constructor, parametersNode!)
     width = 32u32
     if !isnull(optWidthNode) {
@@ -441,10 +447,29 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
       }
     }
     template = db.Template(constructor, width, statementNode.location)
+    self.fillSubBlock(constructor, constructor.subBlock, blockNode!)
+  }
+
+  // Return the linkage type for the export spec.
+  func getLinkage(self: HirBuilder, sym: Sym?) -> db.Linkage {
+    if isnull(sym) {
+      return db.Linkage.Module
+    }
+    switch sym! {
+      self.exportSym => return db.Linkage.Package
+      self.exportlibSym => return db.Linkage.Libcall
+      self.rpcSym => return db.Linkage.Rpc
+    }
+  }
+
+  // Fill out the sub-statements and sub-functions from the block node.
+  func fillSubBlock(self: HirBuilder, function: db.Function, block: db.Block, blockNode: Node) {
     savedBlock = self.currentBlock
-    self.currentBlock = db.Block(blockNode.location)
-    self.buildBlockStatement(blockNode!)
-    constructor.insertSubBlock(self.currentBlock)
+    savedFunction = self.currentFunction
+    self.currentBlock = block
+    self.currentFunction = function
+    self.buildBlockStatement(blockNode)
+    self.currentFunction = savedFunction
     self.currentBlock = savedBlock
   }
 
@@ -489,61 +514,145 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
     enumSym = identNode.getIdentSym()!
     enumFunc = db.Function(self.currentFunction, db.FuncType.Enum, enumSym,
         db.Linkage.Module, statementNode.location)
-    for node = identNode.nextNodeChildNode, !isnull(node), node = node.nextNodeChildNode {
-      // self.buildEntry(node)
+    for entryNode = identNode.nextNodeChildNode, !isnull(entryNode),
+        entryNode = entryNode.nextNodeChildNode {
+      self.buildEntry(enumFunc, entryNode!)
     }
   }
 
-  // self.buildEntry(node)
+  // Format: entry(IDENT INTEGER?)
+  func buildEntry(self: HirBuilder, enumFunc: db.Function, entryNode: Node) {
+    identNode = entryNode.firstChildNode!
+    valueNode = identNode.nextNodeChildNode
+    valueExpr = null(db.Expr)
+    if !isnull(valueNode) {
+      valueExpr = db.Expr.newConstant(valueNode.token.value!, valueNode.location)
+    }
+    db.Variable(enumFunc, false, true, identNode.getIdentSym()!,
+        valueExpr, null(db.Expr), false, entryNode.location)
+  }
 
+  // Format: externFunction("C" IDENT parameters(...) optFuncTypeConstraint("string"))
   func buildExternFunction(self: HirBuilder, statementNode: Node) {
-    // TODO: write this.
-    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+    externStringNode = statementNode.firstChildNode!
+    if externStringNode.token.value.stringVal != "C" {
+      externStringNode.location.error("Only extern \"C\" is currently supported")
+    }
+    identNode = externStringNode.nextNodeChildNode
+    parametersNode = identNode.nextNodeChildNode!
+    function = db.Function(self.currentFunction, db.FuncType.Plain, identNode.getIdentSym()!,
+        db.Linkage.ExternC, statementNode.location)
+    self.buildParameters(function, parametersNode)
+    typeConstraintNode = parametersNode.nextNodeChildNode
+    if !isnull(typeConstraintNode) {
+      typeConstraintExpr = self.buildExprTree(typeConstraintNode.firstChildNode!)
+      function.insertTypeExpr(typeConstraintExpr)
+    }
   }
 
+  // Format: externRpc(IDENT parameters(...) optFuncTypeConstraint("string"))
   func buildExternRpc(self: HirBuilder, statementNode: Node) {
-    // TODO: write this.
-    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+    identNode = statementNode.firstChildNode
+    parametersNode = identNode.nextNodeChildNode!
+    function = db.Function(self.currentFunction, db.FuncType.Plain, identNode.getIdentSym()!,
+        db.Linkage.ExternRpc, statementNode.location)
+    self.buildParameters(function, parametersNode)
+    typeConstraintNode = parametersNode.nextNodeChildNode
+    if !isnull(typeConstraintNode) {
+      typeConstraintExpr = self.buildExprTree(typeConstraintNode.firstChildNode!)
+      function.insertTypeExpr(typeConstraintExpr)
+    }
   }
 
+  // Format: finalFunction(parameter(...) block(...)))
   func buildFinalFunction(self: HirBuilder, statementNode: Node) {
-    // TODO: write this.
-    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+    parameterNode = statementNode.firstChildNode!
+    blockNode = parameterNode.nextNodeChildNode!
+    function = db.Function(self.currentFunction, db.FuncType.Final, Sym.new("final"),
+        db.Linkage.Module, statementNode.location)
+    self.buildParameter(function, parameterNode)
+    self.fillSubBlock(function, function.subBlock, blockNode)
   }
 
-  func buildFunction(self: HirBuilder, statementNode: Node) {
-    // TODO: write this.
-    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  // Format: function(<exportSym>? IDENT parameters(...) optFuncTypeConstraint(...) block(...))
+  func buildFunction(self: HirBuilder, type: db.FuncType, statementNode: Node) {
+    funcValues = self.findFunctionValues(type, statementNode)
+    exportTypeSym = funcValues[0]
+    identSym = funcValues[1]
+    opType = funcValues[2]
+    parametersNode = funcValues[3]
+    typeConstraintNode = funcValues[4]
+    blockNode = funcValues[5]
+    linkage = self.getLinkage(exportTypeSym)
+    function = db.Function(self.currentFunction, type, identSym,
+        linkage, statementNode.location)
+    if type == db.FuncType.Operator {
+      function.opType = opType
+    }
+    self.buildParameters(function, parametersNode)
+    if !isnull(typeConstraintNode) {
+      typeConstraintExpr = self.buildExprTree(typeConstraintNode.firstChildNode!)
+      function.insertTypeExpr(typeConstraintExpr)
+    }
+    self.fillSubBlock(function, function.subBlock, blockNode)
   }
 
-  func buildIterator(self: HirBuilder, statementNode: Node) {
-    // TODO: write this.
-    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  // Extract the values from the function node.  This returns a tuple of:
+  // (exportTypeSym, identSym, opType, paramentersNode, typeConstraintNode, blockNode).
+  // Format: function(<exportSym>? IDENT parameters(...) optFuncTypeConstraint(...) block(...))
+  func findFunctionValues(self: HirBuilder, type: db.FuncType, statementNode: Node) {
+    node = statementNode.firstChildNode
+    nextNode = node.nextNodeChildNode
+    exportTypeSym = null(Sym)
+    if nextNode.getRuleSym() != self.parametersSym {
+      exportTypeSym = node.getKeywordSym()
+      node = nextNode
+    }
+    identNode = node!
+    if type != db.FuncType.Operator {
+      identSym = identNode.getIdentSym()!
+      opType = db.ExprType.Add
+    } else {
+      result = self.findOperatorSym(identNode)
+      identSym = result[0]
+      opType = result[1]
+    }
+    node = node.nextNodeChildNode
+    parametersNode = node!
+    node = node.nextNodeChildNode
+    typeConstraintNode = null(Node)
+    if node.getRuleSym() == self.optFuncTypeConstraintSym {
+      typeConstraintNode = node
+      node = node.nextNodeChildNode
+    }
+    if node.getRuleSym() == self.raisesSym {
+      // TODO: Build HIR data structures for the raises node.
+      raisesNode = node.firstChildNode  // Get the pathExprList node.
+      node = node.nextNodeChildNode
+    }
+    blockNode = node!
+    return (exportTypeSym, identSym, opType, parametersNode, typeConstraintNode, blockNode)
   }
 
-  func buildOperator(self: HirBuilder, statementNode: Node) {
-    // TODO: write this.
-    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  // Find a name for the operator, and its expression type.
+  func findOperatorSym(self: HirBuilder, opNode: Node) -> (Sym, db.ExprType) {
+    opSym = opNode.getKeywordSym()!
+    exprType = db.getExprTypeFromSym(opSym)
+    name = self.currentFunction.createUniqueSym(opSym)
+    return (name, exprType)
   }
 
-  func buildTransformer(self: HirBuilder, statementNode: Node) {
-    // TODO: write this.
-    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
-  }
-
-  func buildImportStatement(self: HirBuilder, statementNode: Node) {
-    // TODO: write this.
-    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
-  }
-
-  func buildImportLibStatement(self: HirBuilder, statementNode: Node) {
-    // TODO: write this.
-    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
-  }
-
-  func buildImportRpcStatement(self: HirBuilder, statementNode: Node) {
-    // TODO: write this.
-    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+  // Format: import(<pathExpr> | pathExprWithAlias(<pathExpr> IDENT)
+  func buildImportStatement(self: HirBuilder, type: db.StateType, statementNode: Node) {
+    node = statementNode.firstChildNode!
+    if node.getRuleSym() == self.pathExprWithAliasSym {
+      pathExpr = self.buildExprTree(node.firstChildNode!)
+      aliasExpr = self.buildExprTree(node.lastChildNode!)
+      expr = db.Expr.newBinary(db.ExprType.As, pathExpr, aliasExpr, statementNode.location)
+    } else {
+      expr = self.buildExprTree(node)
+    }
+    self.newStatement(statementNode, type, expr, null(Node))
   }
 
   func buildPrependCode(self: HirBuilder, statementNode: Node) {
@@ -571,11 +680,6 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
     self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
   }
 
-  func buildUseStatement(self: HirBuilder, statementNode: Node) {
-    // TODO: write this.
-    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
-  }
-
   func buildYield(self: HirBuilder, statementNode: Node) {
     // TODO: write this.
     self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
@@ -583,8 +687,8 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
 
   // Build a statement with it's expression and sub-block.
   func newStatement(self: HirBuilder, statementNode: Node,
-      type: db.StateType, expr: Node? | db.Expr?, blockNode: Node?) {
-    statement = db.Statement(self.currentBlock, type, statementNode.location)
+      type: db.StateType, expr: Node? | db.Expr?, blockNode: Node?) -> db.Statement {
+    statement = db.Statement(self.currentBlock!, type, statementNode.location)
     if !isnull(expr) {
       typeswitch expr! {
         Node => statement.insertExpr(self.buildExprTree(expr!))
@@ -595,7 +699,7 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
       savedBlock = self.currentBlock
       self.currentBlock = db.Block(blockNode.location)
       self.buildBlockStatement(blockNode!)
-      statement.insertSubBlock(self.currentBlock)
+      statement.insertSubBlock(self.currentBlock!)
       self.currentBlock = savedBlock
     }
     return statement
@@ -624,8 +728,8 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
     self.forStatementSym = Sym.new("forStatement")
     self.functionSym = Sym.new("function")
     self.ifStatementSym = Sym.new("ifStatement")
-    self.importLibSym = Sym.new("importlib")
-    self.importRpcSym = Sym.new("importrpc")
+    self.importLibSym = Sym.new("importLib")
+    self.importRpcSym = Sym.new("importRpc")
     self.importSym = Sym.new("import")
     self.iteratorSym = Sym.new("iterator")
     self.operatorSym = Sym.new("operator")
@@ -663,12 +767,19 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
     self.typePathExprSym = Sym.new("typePathExpr")
     self.ifElseStatementSym = Sym.new("ifElseStatement")
     self.doWhileStatementSym = Sym.new("doWhileStatement")
+    self.optFuncTypeConstraintSym = Sym.new("optFuncTypeConstraint")
+    self.exportSym = Sym.new("export");
+    self.exportlibSym = Sym.new("exportlib");
+    self.rpcSym = Sym.new("rpc");
+    self.parametersSym = Sym.new("parameters");
+    self.pathExprWithAliasSym = Sym.new("pathExprWithAlias");
   }
 }
 
 unittest {
   import io
 
+  // TEST_SRCDIR is set when running on Forge.
   dataDir = io.getenv("TEST_SRCDIR")
   if dataDir != "" {
     if dataDir[dataDir.length() - 1] != '/' {
@@ -719,6 +830,106 @@ unittest buildClassTest {
 
 unittest postfixExprTest {
   code = "  self.firstChildNode.token\n  node!\n  1u64\n"
-  compareInputToOutput("fostfixExprTest", code)
+  compareInputToOutput("postfixExprTest", code)
   println "Passed postfixExprTest"
+}
+
+unittest enumTest {
+  code = "  enum Color {\n    Red = 1u8\n    Blue = 2u8\n    Green\n  }\n"
+  compareInputToOutput("enumTest", code)
+  println "Passed enumTest"
+}
+
+unittest externFunctionTest {
+  code = "  extern \"C\" func readln(maxLen: u64 = 0u64) -> string\n"
+  compareInputToOutput("externFunctionTest", code)
+  println "Passed externFunctionTest"
+}
+
+unittest externRpcTest {
+  code = "  rpc readln(maxLen: u64 = 0u64) -> string\n"
+  compareInputToOutput("externRpcTest", code)
+  println "Passed externRpcTest"
+}
+
+unittest classWithFinalFuncTest {
+  code = "  class Foo(self, name) {\n    self.name = name\n    final(self) {\n" +
+      "      println \"Destroying \", self.name\n    }\n  }\n"
+
+  compareInputToOutput("classWithFinalFunc", code)
+  println "Passed classWithFinalFuncTest"
+}
+
+unittest functionTest {
+  code = "  func mux(select, a, b) {\n    if select {\n      return a\n    }\n    return b\n  }\n"
+  compareInputToOutput("functionTest", code)
+  println "Passed functionTest"
+}
+
+unittest operatorTest {
+  code = "  operator +(self: Foo, other: Foo) -> Foo {\n    return \"nope\"\n  }\n"
+  compareInputToOutput("operatorTest", code)
+  println "Passed operatorTest"
+}
+
+unittest transformerTest {
+  code = "  transformer LinkedList(A: Class, B: Class, cascadeDelete, " +
+      "labelA: string = \"\", labelB: string = \"\", pluralB = \"\") {\n" +
+  "    println \"Hi\"\n  }\n"
+  compareInputToOutput("transformerTest", code)
+  println "Passed transformerTest"
+}
+
+unittest importTest {
+  code = "  importlib foo\n  importrpc foo\n  import foo\n  import a as b\n  use asdf\n"
+  compareInputToOutput("importTest", code)
+  println "Passed importTest"
+}
+
+unittest noneConstraintTest {
+  code = "  func foo(x) -> none {\n    println x\n  }\n"
+  compareInputToOutput("noneConstraintTest", code)
+  println "Passed noneConstraintTest"
+}
+
+unittest typeOfTest {
+  code = "  func foo(x) -> none {\n    println typeof(x)\n  }\n"
+  compareInputToOutput("typeOfTest", code)
+  println "Passed typeOfTest"
+}
+
+unittest arithOpTest {
+  code = "  i = (((1u64 + 2u64) * 3u64) / 4u64) % 5u64 - 1u64\n  j = (5u64 !+ 3u64) !- 2u64 !* 16u64\n"
+  compareInputToOutput("arithOpTest", code)
+  println "Passed arithOpTest"
+}
+
+unittest relOpTest {
+   code = "  func f(i) -> bool {\n    return ((((i == j && i > j) && i < j) && i >= j) && i <= j) && i != j\n  }\n"
+   compareInputToOutput("relOpTest", code)
+   println "Passed relOpTest"
+}
+
+unittest logOpTest {
+  code = "  func f(i) -> bool {\n    return i == j && i == j || i == j ^^ i == j\n  }\n"
+  compareInputToOutput("logOpTest", code)
+  println "Passed logOpTest"
+}
+
+unittest bitOpTest {
+  code = "  func f(i) -> int {\n    return i | ((((j & k ^ l) >> 3u64) << 4u64) >>> 5u64) <<< 6u64\n  }\n"
+  compareInputToOutput("bitOpTest", code)
+  println "Passed bitOpTest"
+}
+
+unittest modintTest {
+  code = "  func f(i) -> int {\n    return i mod 5u64\n  }\n"
+  compareInputToOutput("modintTest", code)
+  println "Passed modintTest"
+}
+
+unittest inOpTest {
+  code = "  func f(i) -> int {\n    return i in 5u64\n  }\n"
+  compareInputToOutput("inOpTest", code)
+  println "Passed inOpTest"
 }

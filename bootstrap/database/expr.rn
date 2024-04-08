@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import cbackend as c
+
 use sym
 
 use filepath
@@ -24,9 +26,10 @@ use statement
 use variable
 use function
 
+
 enum ExprType {
   Constant // Any constant such as true, false, "test", 1, 3.14f32, 0xabci255, etc.
-  Randuint  // e.g. rand256.
+  RandUint  // e.g. rand256.
   Ident  // a
   Array  // [1u8, 2u8, 3u8, 4u8] or "passed"
   Modint  // 2 mod p
@@ -49,7 +52,7 @@ enum ExprType {
   Rotl  // a <<< b
   Rotr  // a >>> b
   AddTrunc  // a !+ b
-  SubTrung  // a !- b
+  SubTrunc  // a !- b
   MulTrunc  // a !* b
   Bitnot  // ~a
   Lt  // a < b
@@ -89,7 +92,7 @@ enum ExprType {
   RotlEquals  // a <<<= b
   RotrEquals  // a >>>= b
   AddTruncEquals  // a !+ b
-  SubTrungEquals  // a !- b
+  SubTruncEquals  // a !- b
   MulTruncEquals  // a !* b
   Dot  // a.b
   Dotdotdot  // case u1 ... u32
@@ -113,6 +116,7 @@ enum ExprType {
   FloatType  // x: f32 = y
   StringType  // x: string = y
   BoolType  // done: bool = checkForDone()
+  NoneType  // func foo(x) -> none
   Typeindex  // u32[]
   Namedparam  // Myclass(name = "me", profession = "hacker")
 }
@@ -123,27 +127,26 @@ enum ExprType {
 // Example: "value & 1 == 0" should test that value is even, but in C the result is always 0.
 func getPrecedence(type: ExprType) -> u32 {
   switch type {
-    ExprType.Modint => return 1u32
+    // In increasing order of precedence.
+    ExprType.Dotdotdot => return 1u32
     ExprType.Select => return 2u32
-    ExprType.And => return 3u32
+    ExprType.Or => return 3u32
     ExprType.Xor => return 4u32
-    ExprType.Or => return 5u32
-    ExprType.Lt, ExprType.Le, ExprType.Gt, ExprType.Ge,
-        ExprType.Equal, ExprType.Notequal => return 6u32
-    ExprType.Shl, ExprType.Shr, ExprType.Rotl, ExprType.Rotr => return 7u32
-    ExprType.Bitand => return 8u32
-    ExprType.Bitxor => return 9u32
-    ExprType.Bitor => return 10u32
-    ExprType.Sub, ExprType.Add => return 11u32
-    ExprType.Mul,ExprType.Div, ExprType.Mod => return 12u32
-    ExprType.Exp => return 13u32
-    ExprType.Not, ExprType.Negate, ExprType.Secret,
-        ExprType.Reveal, ExprType.Funcaddr, ExprType.Typeof,
-        ExprType.Widthof, ExprType.Arrayof, ExprType.Bitnot,
-        ExprType.Isnull => return 14u32
-    ExprType.Call,  ExprType.Cast => return 15u32
-    ExprType.Dot, ExprType.Index => return 16u32
-    ExprType.Constant, ExprType.Ident, ExprType.Typeindex => return 17u32
+    ExprType.And => return 5u32
+    ExprType.In => return 6u32
+    ExprType.Modint => return 7u32
+    ExprType.Lt, ExprType.Le, ExprType.Gt, ExprType.Ge, ExprType.Equal, ExprType.Notequal => return 8u32
+
+    ExprType.Bitor => return 9u32
+    ExprType.Bitxor => return 10u32
+    ExprType.Bitand => return 11u32
+    ExprType.Shl, ExprType.Shr, ExprType.Rotl, ExprType.Rotr => return 12u32
+    ExprType.Sub, ExprType.Add, ExprType.SubTrunc, ExprType.AddTrunc => return 13u32
+    ExprType.Mul, ExprType.Div, ExprType.Mod, ExprType.MulTrunc => return 14u32
+    ExprType.Exp, ExprType.Not, ExprType.Bitnot, ExprType.Negate, ExprType.NegateTrunc, ExprType.Cast, ExprType.CastTrunc => return 15u32
+    ExprType.Dot, ExprType.Notnull, ExprType.Call, ExprType.Index, ExprType.Slice => return 16u32
+    ExprType.Ident, ExprType.Constant, ExprType.Array, ExprType.Tuple, ExprType.Secret, ExprType.Reveal, ExprType.Arrayof, ExprType.Typeof, ExprType.Null, ExprType.Funcaddr, ExprType.Unsigned, ExprType.Signed, ExprType.Widthof, ExprType.Isnull => return 17u32
+
     default => return 1u32
   }
 }
@@ -151,6 +154,7 @@ func getPrecedence(type: ExprType) -> u32 {
 // Return the expression type's name.
 func getExprTypeName(type: ExprType) -> string {
   switch type {
+    ExprType.Ident => return "<ident>"
     ExprType.Add => return "+"
     ExprType.Sub => return "-"
     ExprType.Mul => return "*"
@@ -168,7 +172,7 @@ func getExprTypeName(type: ExprType) -> string {
     ExprType.Rotl => return "<<<"
     ExprType.Rotr => return ">>>"
     ExprType.AddTrunc => return "!+"
-    ExprType.SubTrung => return "!-"
+    ExprType.SubTrunc => return "!-"
     ExprType.MulTrunc => return "!*"
     ExprType.Bitnot => return "~"
     ExprType.Lt => return "<"
@@ -206,7 +210,7 @@ func getExprTypeName(type: ExprType) -> string {
     ExprType.RotlEquals => return "<<<="
     ExprType.RotrEquals => return ">>>="
     ExprType.AddTruncEquals => return "!+="
-    ExprType.SubTrungEquals => return "!-="
+    ExprType.SubTruncEquals => return "!-="
     ExprType.MulTruncEquals => return "!*="
     ExprType.Dot => return "."
     ExprType.Dotdotdot => return "..."
@@ -229,6 +233,7 @@ func getExprTypeName(type: ExprType) -> string {
     ExprType.FloatType => return "floattype"
     ExprType.StringType => return "stringtype"
     ExprType.BoolType => return "booltype"
+    ExprType.NoneType => return "nonetype"
     ExprType.Typeindex => return "typeindex"
     ExprType.Namedparam => return "namedparam"
     default => panic "Unexpected expression type ", type
@@ -256,7 +261,7 @@ func getExprTypeFromSym(sym: Sym) -> ExprType {
     Sym.new("<<<") => return ExprType.Rotl
     Sym.new(">>>") => return ExprType.Rotr
     Sym.new("!+") => return ExprType.AddTrunc
-    Sym.new("!-") => return ExprType.SubTrung
+    Sym.new("!-") => return ExprType.SubTrunc
     Sym.new("!*") => return ExprType.MulTrunc
     Sym.new("~") => return ExprType.Bitnot
     Sym.new("<") => return ExprType.Lt
@@ -294,7 +299,7 @@ func getExprTypeFromSym(sym: Sym) -> ExprType {
     Sym.new("<<<=") => return ExprType.RotlEquals
     Sym.new(">>>=") => return ExprType.RotrEquals
     Sym.new("!+=") => return ExprType.AddTruncEquals
-    Sym.new("!-=") => return ExprType.SubTrungEquals
+    Sym.new("!-=") => return ExprType.SubTruncEquals
     Sym.new("!*=") => return ExprType.MulTruncEquals
     Sym.new(".") => return ExprType.Dot
     Sym.new("...") => return ExprType.Dotdotdot
@@ -317,6 +322,7 @@ func getExprTypeFromSym(sym: Sym) -> ExprType {
     Sym.new("floattype") => return ExprType.FloatType
     Sym.new("stringtype") => return ExprType.StringType
     Sym.new("booltype") => return ExprType.BoolType
+    Sym.new("nonetype") => return ExprType.NoneType
     Sym.new("typeindex") => return ExprType.Typeindex
     Sym.new("namedparam") => return ExprType.Namedparam
   }
@@ -463,13 +469,12 @@ class Expr(self, type: ExprType, location: Location) {
     left = self.firstChildExpr!
     right = left.nextExprChildExpr!
     precedence = self.getPrecedence()
-    needParens = precedence < parentPrecedence || (
-        precedence == parentPrecedence && !isnull(parent) && parent.firstChildExpr != self)
+    needParens = precedence <= parentPrecedence && precedence < getPrecedence(ExprType.Dot)
     if needParens {
       text += "("
     }
     left.dumpToString(text)
-    if precedence <= getPrecedence(ExprType.Add) {
+    if precedence < getPrecedence(ExprType.Dot) {
       text += " " + opType + " "
     } else {
       text += opType
@@ -558,7 +563,7 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Ident => text += self.val.symVal.name
       ExprType.Array => self.dumpArray(text)
       ExprType.Tuple => self.dumpTuple(text)
-      ExprType.Randuint => text += "rand%u" % self.width
+      ExprType.RandUint => text += "rand%u" % self.width
       ExprType.Modint => self.dumpBinary(text, "mod", parentPrecedence)
       ExprType.Add => self.dumpBinary(text, "+", parentPrecedence)
       ExprType.Sub => self.dumpBinary(text, "-", parentPrecedence)
@@ -577,7 +582,7 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Rotl => self.dumpBinary(text, "<<<", parentPrecedence)
       ExprType.Rotr => self.dumpBinary(text, ">>>", parentPrecedence)
       ExprType.AddTrunc => self.dumpBinary(text, "!+", parentPrecedence)
-      ExprType.SubTrung => self.dumpBinary(text, "!-", parentPrecedence)
+      ExprType.SubTrunc => self.dumpBinary(text, "!-", parentPrecedence)
       ExprType.MulTrunc => self.dumpBinary(text, "!*", parentPrecedence)
       ExprType.Lt => self.dumpBinary(text, "<", parentPrecedence)
       ExprType.Le => self.dumpBinary(text, "<=", parentPrecedence)
@@ -622,10 +627,10 @@ class Expr(self, type: ExprType, location: Location) {
           ExprType.DivEquals, ExprType.ModEquals, ExprType.AndEquals, ExprType.OrEquals,
           ExprType.XorEquals, ExprType.ExpEquals, ExprType.ShlEquals, ExprType.ShrEquals,
           ExprType.RotlEquals, ExprType.RotrEquals, ExprType.AddTruncEquals,
-          ExprType.SubTrungEquals, ExprType.MulTruncEquals, ExprType.BitandEquals,
+          ExprType.SubTruncEquals, ExprType.MulTruncEquals, ExprType.BitandEquals,
           ExprType.BitorEquals, ExprType.BitxorEquals => self.dumpAssignment(text)
-      ExprType.As => self.dumpBinary(text, " as ", parentPrecedence)
-      ExprType.In => self.dumpBinary(text, " in ", parentPrecedence)
+      ExprType.As => self.dumpBinary(text, "as", parentPrecedence)
+      ExprType.In => self.dumpBinary(text, "in", parentPrecedence)
       ExprType.Dot => self.dumpBinary(text, ".", parentPrecedence)
       ExprType.Dotdotdot => self.dumpBinary(text, "...", parentPrecedence)
       ExprType.List => self.dumpList(text)
@@ -634,6 +639,7 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.FloatType => text += "f%u" % self.width
       ExprType.StringType => text += "string"
       ExprType.BoolType => text += "bool"
+      ExprType.NoneType => text += "none"
       ExprType.Namedparam => {
         text += self.firstChildExpr.val.symVal.name + " = "
         self.lastChildExpr.dumpToString(text)
@@ -670,6 +676,139 @@ class Expr(self, type: ExprType, location: Location) {
       newExpr.appendChildExpr(newChild)
     }
     return newExpr
+  }
+
+
+  // C Generator
+
+  func genC(self, builder: c.CBuilder) -> c.CExpr {
+    switch self.type {
+      // First, the operators that map directly to C binary operators
+      ExprType.AddTrunc => return self.genCBinaryOp(builder)
+      ExprType.Constant => return self.val.genC(builder)
+      ExprType.Ident => return self.val.genC(builder)
+      ExprType.List => return self.genCList(builder)
+      ExprType.Mod => return self.genCBinaryOp(builder)
+      ExprType.MulTrunc => return self.genCBinaryOp(builder)
+      ExprType.Negate => return self.genCPrefixOp(builder)
+      ExprType.And => return self.genCBinaryOp(builder)
+      ExprType.Or => return self.genCBinaryOp(builder)
+      ExprType.Bitand => return self.genCBinaryOp(builder)
+      ExprType.Bitor => return self.genCBinaryOp(builder)
+      ExprType.Bitxor => return self.genCBinaryOp(builder)
+      ExprType.Shl => return self.genCBinaryOp(builder)
+      ExprType.Shr => return self.genCBinaryOp(builder)
+      ExprType.SubTrunc => return self.genCBinaryOp(builder)
+      ExprType.Lt => return self.genCBinaryOp(builder)
+      ExprType.Le => return self.genCBinaryOp(builder)
+      ExprType.Gt => return self.genCBinaryOp(builder)
+      ExprType.Ge => return self.genCBinaryOp(builder)
+      ExprType.Equal => return self.genCBinaryOp(builder)
+      ExprType.Notequal => return self.genCBinaryOp(builder)
+
+      // Now, the operators that map to runtime functions
+      ExprType.Add => return self.genCBinaryOp(builder)
+      ExprType.Div => return self.genCBinaryOp(builder)
+      ExprType.Exp => return self.genCBinaryOp(builder)
+      ExprType.Mul => return self.genCBinaryOp(builder)
+      ExprType.Rotl => return self.genCBinaryOp(builder)
+      ExprType.Rotr => return self.genCBinaryOp(builder)
+      ExprType.Sub => return self.genCBinaryOp(builder)
+
+      default => raise Status.Unimplemented, "Expression type not yet supported by C backend: ", getExprTypeName(self.type)
+    }
+  }
+
+  func genCList(self, builder: c.CBuilder) -> c.CExpr {
+    // The Hello World test requires a single-valued list of expressions to be
+    // passed as arguments to a procedure call.
+    builder.openExprList()
+    for child in self.childExprs() {
+      builder.addExpr(child.genC(builder))
+    }
+    return builder.closeExprList()
+  }
+
+  func genCPrefixOp(self, builder: c.CBuilder) -> c.CExpr {
+    parent = self.parentExpr
+    left = self.firstChildExpr!
+
+    switch self.type {
+      ExprType.Negate => {
+        return builder.cUnaryMinus(self.location, left.genC(builder))
+      }
+      default => raise Status.Unimplemented, "Unary expression operator not yet supported by C backend: ", getExprTypeName(self.type)
+    }
+  }
+
+  func genCBinaryOp(self, builder: c.CBuilder) -> c.CExpr {
+    parent = self.parentExpr
+    left = self.firstChildExpr!
+    right = left.nextExprChildExpr!
+
+    l = left.genC(builder)
+    r = right.genC(builder)
+
+    // First, generate C Binary Operators for those operators that map
+    // directly to C operators.
+    switch self.type {
+      ExprType.AddTrunc => op = c.CBinaryOperator.Type.Plus
+      ExprType.SubTrunc => op = c.CBinaryOperator.Type.Minus
+      ExprType.MulTrunc => op = c.CBinaryOperator.Type.Times
+      ExprType.Mod => op = c.CBinaryOperator.Type.Modulus
+      ExprType.And => op = c.CBinaryOperator.Type.LogAnd
+      ExprType.Or =>  op = c.CBinaryOperator.Type.LogOr
+      ExprType.Bitand => op = c.CBinaryOperator.Type.BitAnd
+      ExprType.Bitor => op = c.CBinaryOperator.Type.BitOr
+      ExprType.Bitxor => op = c.CBinaryOperator.Type.BitXor
+      ExprType.Shl => op = c.CBinaryOperator.Type.ShiftLeft
+      ExprType.Shr => op = c.CBinaryOperator.Type.ShiftRight
+      ExprType.Lt => op = c.CBinaryOperator.Type.LessThan
+      ExprType.Le => op = c.CBinaryOperator.Type.LessThanEqual
+      ExprType.Gt => op = c.CBinaryOperator.Type.GreaterThan
+      ExprType.Ge => op = c.CBinaryOperator.Type.GreaterThanEqual
+      ExprType.Equal => op = c.CBinaryOperator.Type.Equals
+      ExprType.Notequal => op = c.CBinaryOperator.Type.NotEquals
+
+      default => {
+        switch self.type {
+          ExprType.Add => fn = c.CRuntimeFunction.AddWithOverflowDetect
+          ExprType.Mul => fn = c.CRuntimeFunction.MulWithOverflowDetect
+          ExprType.Sub => fn = c.CRuntimeFunction.SubWithOverflowDetect
+          ExprType.Div => fn = c.CRuntimeFunction.DivWithOverflowDetect
+          ExprType.Exp => fn = c.CRuntimeFunction.Exponentiate
+          ExprType.Rotl => fn = c.CRuntimeFunction.RotateLeft
+          ExprType.Rotr => fn = c.CRuntimeFunction.RotateRight
+          default => raise Status.Unimplemented, "Binary expression operator not yet supported by C backend: ", getExprTypeName(self.type)
+        }
+        // Can Rune do arbitrary length calls?
+        list = c.CExprList()
+        list.appendCExpr(l)
+        list.appendCExpr(r)
+        return builder.cCall(self.location, fn, c.CExpr(list))
+      }
+    }
+
+    if op == c.CBinaryOperator.Type.Modulus {
+      // The mod operator, %, can be either an arithmetic expression, or providing the args
+      // to a string format expression.
+      if l.type == c.CExpr.Type.Literal && l.cLiteral.type == c.CLiteral.Type.String {
+        // The first argument is a string literal, so we shall assume '%' is being used
+        // to replace format specifiers with arguments.
+        builder.addExpr(l)
+        return r
+      }
+    }
+    return builder.cBinaryOperator(self.location, op, l, r)
+  }
+
+  func genCType(self, builder: c.CBuilder) -> c.CTypeExpr {
+    //TODO
+    // switch self.type {
+    //  default => raise Status.Unimplemented, "TypeExpression type not yet supported by C backend", self.type
+    //}
+    println "TODO: Generate C TypeExpressions"
+    return builder.cType(c.CType.Void)
   }
 }
 

@@ -7,6 +7,7 @@ _A faster, safer, and more productive systems programming language_
 -   [Design decisions](design_decisions.md)
 -   [Rune's HIR Design](database_design.md)
 -   [Rune devleopoment tips and tricks](tips_and_tricks.md)
+-   [Rune bootstrap compiler phases](compiler_phases.md)
 
 Rune is a systems programming language designed for security-sensitive
 applications that are prone to common security flaws when implemented in

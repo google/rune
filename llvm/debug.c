@@ -306,8 +306,16 @@ static llTag createEnumTag(deDatatype datatype) {
 //   !9 = !{!10, !10, !10}
 //   !10 = !DIBasicType(name: "int", size: 32, encoding: DW_ATE_signed)
 static llTag createFuncptrTag(deDatatype datatype) {
-  llTag tag = createDatatypeTag(deDatatypeGetReturnType(datatype));
-  char *text = utSprintf("!{!%u", llTagGetNum(tag));
+  deDatatype returnType = deDatatypeGetReturnType(datatype);
+  llTag tag;
+  char *text;
+  if (deDatatypeGetType(returnType) == DE_TYPE_NONE) {
+    // Special case for functions returning no value.
+    text = "!{null";
+  } else {
+    tag = createDatatypeTag(returnType);
+    text = utSprintf("!{!%u", llTagGetNum(tag));
+  }
   deDatatype elementType;
   deForeachDatatypeTypeList(datatype, elementType) {
     tag = createDatatypeTag(elementType);

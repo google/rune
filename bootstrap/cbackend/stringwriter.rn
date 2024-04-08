@@ -1,0 +1,57 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+class StringWriter(self) {
+  // TODO: put some kind of of buffering here, so that we can flush to file
+  // every page or so worth's of text.
+  self.indentation = ""
+  self.text = ""
+
+  func indent(self) {
+    self.indentation += "  "
+  }
+
+  func deindent(self) {
+    len = self.indentation.length()
+    if len > 1 {
+      self.indentation = self.indentation[0:len-2]
+    }
+  }
+
+  func space(self) {
+    // TODO: Eventually consider writing a pretty printer.
+    self.text += " "
+  }
+
+  func newline(self) {
+    // TODO: Eventually consider writing a pretty printer.
+    self.text += "\n" + self.indentation
+  }
+
+  func write(self, stuff: string) {
+    self.text += stuff
+  }
+
+  func writeln(self, stuff: string) {
+    self.write(stuff)
+    self.newline()
+  }
+
+  func close(self) -> string {
+    result = self.text
+    self.text = ""
+    self.indentation = ""
+    return result
+  }
+}

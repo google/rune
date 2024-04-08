@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import cbackend as c
 use sym
 
 use root
@@ -99,6 +100,11 @@ class Variable(self, function: Function, isParam: bool, isConst: bool, sym: Sym,
       // There should just be one.
       ident.rename(newName)
     }
+  }
+
+  func genCParameter(self, builder: c.CBuilder) -> c.CParameter {
+    // TODO: convert self.typeExpr into a CTypeExpr
+    return builder.cParameter(self.location, self.sym.name, builder.cType(c.CType.Void))
   }
 }
 

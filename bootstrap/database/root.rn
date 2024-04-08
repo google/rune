@@ -18,8 +18,12 @@ counter = 0
 class Root(self) {
   self.counter = 0
   self.debugMode = false
+  self.quietMode = false
   self.dumpParseTree = false
   self.dumpFuncTree = false
+  self.dumpHir = false
+  self.generateC = false
+  self.outputCFilename = ""
   self.indentDepth = 0u32
   self.runePackageDir = ""
   // Constants:

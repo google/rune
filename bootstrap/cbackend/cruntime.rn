@@ -1,0 +1,478 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use int2cstring
+use cemitter
+
+/**
+ * Represents the set of #include directives that need to be added at the
+ * top of the generated C file.
+ */
+class CInclude(self, name: string) {
+  self.name = name
+
+  func hash(self) -> u64 {
+    return hashValue(self.name)
+  }
+
+  func equals(self, other: CInclude) -> bool {
+    return self.name == other.name
+  }
+}
+
+/**
+ * Represents the set of #define directives that need to be added at the
+ * top of the generated C file.
+ */
+class CDefine(self, text: string) {
+  self.text = text
+
+  func hash(self) -> u64 {
+    return hashValue(self.text)
+  }
+
+  func equals(self, other: CDefine) -> bool {
+    return self.text == other.text
+  }
+}
+
+/**
+ * For builtin Rune operators, we generate static inline functions at the
+ * top of the generated C file. This class encapsulates the information
+ * required to generate the non-bigint operators -- integer widths.
+ */
+class CIntFunction(self, name: string) {
+  self._name = name
+  self.widths = arrayof(u32)
+
+  func typeWidth(self, width: u32) -> u32 {
+    if width <= 8 {
+      return 8u32
+    } else if width <= 16 {
+      return 16u32
+    } else if width <= 32 {
+      return 32u32
+    } else if width <= 64 {
+      return 64u32
+    } else {
+      raise Status.Unimplemented, "Integer types larger than 64 not yet supported by C backend: ", width
+    }
+  }
+
+  func fnname(self, width: u32) {
+    // Round to 8, 16, 32 or 64
+    return "%s%s" % (self._name, int2cstring(width))
+  }
+
+  func needWidth(self, width: u32) -> string {
+    for i in range(self.widths.length()) {
+      if width == self.widths[i] {
+        return self.fnname(width)
+      }
+    }
+    self.widths.append(width)
+    return self.fnname(width)
+  }
+
+  func emitHeader(self, e: CEmitter, tyheader: string, width: u32, p1: string, p2: string) -> string {
+    tywidth = self.typeWidth(width)
+    tyname = "%s%s_t" % (tyheader, int2cstring(tywidth))
+    e.writeln("static inline %s %s(%s %s, %s %s) {" %
+        (tyname, self.fnname(width), tyname, p1, tyname, p2))
+    return tyname
+  }
+
+  func emitFooter(self, e: CEmitter) {
+    e.write("}")
+    e.newline()
+  }
+
+  func emit(self, e: CEmitter, object, emitFn) {
+    for width in self.widths {
+      e.newline()
+      emitFn(object, e, width)
+    }
+  }
+}
+
+
+relation HashedClass CRuntime CInclude cascade
+relation HashedClass CRuntime CDefine cascade
+
+/**
+ * Encapsulate those 'special definitions' that may be requested multiple
+ * times by the C backend generation, but only need to be emitted once
+ * in the header of the generated C file.
+ */
+class CRuntime(self) {
+  self.needStringifyMacro = false
+  self.needIntAddFn = false
+  self.needIntSubFn = false
+  self.needIntMulFn = false
+  self.needIntDivFn = false
+  self.needIntExpFn = false
+  self.needUintAddFn = false
+  self.needUintSubFn = false
+  self.needUintMulFn = false
+  self.needUintDivFn = false
+  self.needUintExpFn = false
+
+  self.raiseError = false
+  self.intadd = CIntFunction("intadd")
+  self.intsub = CIntFunction("intsub")
+  self.intmul = CIntFunction("intmul")
+  self.intdiv = CIntFunction("intdiv")
+  self.intexp = CIntFunction("intexp")
+  self.uintadd = CIntFunction("uintadd")
+  self.uintsub = CIntFunction("uintsub")
+  self.uintmul = CIntFunction("uintmul")
+  self.uintdiv = CIntFunction("uintdiv")
+  self.uintexp = CIntFunction("uintexp")
+  self.rotl = CIntFunction("rotl")
+  self.rotr = CIntFunction("rotr")
+
+  func include(self, path: string) {
+    include = CInclude(path)
+    old = self.findCInclude(include)
+    if !isnull(old) {
+      include.destroy()
+    } else {
+      self.insertCInclude(include)
+    }
+  }
+
+  func define(self, text: string) {
+    define = CDefine(text)
+    old = self.findCDefine(define)
+    if !isnull(old) {
+      define.destroy()
+    } else {
+      self.insertCDefine(define)
+    }
+  }
+
+  func needRaiseError(self) {
+    self.include("<stdlib.h>")
+    self.raiseError = true
+  }
+
+  func needIntAdd(self, width: u32) -> string {
+    self.needRaiseError()
+    self.needIntAddFn = true
+    return self.intadd.needWidth(width)
+  }
+  
+  func needIntSub(self, width: u32) -> string {
+    self.needRaiseError()
+    self.needIntSubFn = true
+    return self.intsub.needWidth(width)
+  }
+
+  func needIntMul(self, width: u32) -> string {
+    self.needRaiseError()
+    self.needIntMulFn = true
+    return self.intmul.needWidth(width)
+  }
+
+  func needIntDiv(self, width: u32) -> string {
+    self.needRaiseError()
+    self.needIntDivFn = true
+    return self.intdiv.needWidth(width)
+  }
+
+  func needIntExp(self, width: u32) -> string {
+    self.needRaiseError()
+    self.needIntExpFn = true
+    self.needIntMulFn = true
+    return self.intexp.needWidth(width)
+  }
+
+  func needUintAdd(self, width: u32) -> string {
+    self.needRaiseError()
+    self.needUintAddFn = true
+    return self.uintadd.needWidth(width)
+  }
+
+  func needUintSub(self, width: u32) -> string {
+    self.needRaiseError()
+    self.needUintSubFn = true
+    return self.uintsub.needWidth(width)
+  }
+
+  func needUintMul(self, width: u32) -> string {
+    self.needRaiseError()
+    self.needUintMulFn = true
+    return self.uintmul.needWidth(width)
+  }
+
+  func needUintDiv(self, width: u32) -> string {
+    self.needUintDivFn = true
+    return self.uintdiv.needWidth(width)
+  }
+
+  func needUintExp(self, width: u32) -> string {
+    self.needRaiseError()
+    self.needUintExpFn = true
+    self.needUintMulFn = true
+    return self.uintexp.needWidth(width)
+  }
+
+  /** Runtime Feature Emission **********************************************************/
+
+  func emitIntAdd(self, e: CEmitter, width: u32) {
+    tyname = self.intadd.emitHeader(e, "int", width, "a", "b")
+    e.writeln("  return (%s)intadd(a, b, %s);" % (tyname, int2cstring(width)))
+    self.intadd.emitFooter(e)
+  }
+
+  func emitIntSub(self, e: CEmitter, width: u32) {
+    tyname = self.intsub.emitHeader(e, "int", width, "a", "b")
+    e.writeln("  return (%s)intsub(a, b, %s);" % (tyname, int2cstring(width)))
+    self.intsub.emitFooter(e)
+  }
+
+  func emitIntMul(self, e: CEmitter, width: u32) {
+    tyname = self.intmul.emitHeader(e, "int", width, "a", "b")
+    e.writeln("  return (%s)intmul(a, b, %s);" % (tyname, int2cstring(width)))
+    self.intmul.emitFooter(e)
+  }
+
+  func emitIntDiv(self, e: CEmitter, width: u32) {
+    tyname = self.intdiv.emitHeader(e, "int", width, "a", "b")
+    e.writeln("  return (%s)intdiv(a, b, %s);" % (tyname, int2cstring(width)))
+    self.intdiv.emitFooter(e)
+  }
+
+  func emitIntExp(self, e: CEmitter, width: u32) {
+    tyname = self.intexp.emitHeader(e, "int", width, "a", "b")
+    e.writeln("  return (%s)intexp(a, b, %s);" % (tyname, int2cstring(width)))
+    self.intexp.emitFooter(e)
+  }
+
+  func emitUintAdd(self, e: CEmitter, width: u32) {
+    tyname = self.uintadd.emitHeader(e, "uint", width, "a", "b")
+    e.writeln("  return (%s)uintadd(a, b, %s);" % (tyname, int2cstring(width)))
+    self.uintadd.emitFooter(e)
+  }
+
+  func emitUintSub(self, e: CEmitter, width: u32) {
+    tyname = self.uintsub.emitHeader(e, "uint", width, "a", "b")
+    e.writeln("  return (%s)uintsub(a, b, %s);" % (tyname, int2cstring(width)))
+    self.uintsub.emitFooter(e)
+  }
+
+  func emitUintMul(self, e: CEmitter, width: u32) {
+    tyname = self.uintmul.emitHeader(e, "uint", width, "a", "b")
+    e.writeln("  return (%s)uintmul(a, b, %s);" % (tyname, int2cstring(width)))
+    self.uintmul.emitFooter(e)
+  }
+
+  func emitUintDiv(self, e: CEmitter, width: u32) {
+    tyname = self.uintdiv.emitHeader(e, "uint", width, "a", "b")
+    e.writeln("  return (%s)uintdiv(a, b, %s);" % (tyname, int2cstring(width)))
+    self.uintdiv.emitFooter(e)
+  }
+
+  func emitUintExp(self, e: CEmitter, width: u32) {
+    tyname = self.uintexp.emitHeader(e, "uint", width, "a", "b")
+    e.writeln("  return (%s)uintexp(a, b, %s);" % (tyname, int2cstring(width)))
+    self.uintexp.emitFooter(e)
+  }
+
+  func emitRotl(self, e: CEmitter, width: u32) {
+    tywidth = self.rotl.typeWidth(width)
+    tyname = "uint%s_t" % int2cstring(tywidth)
+    e.write("static inline %s %s(%s value, int distance) {" % (tyname, self.rotl.fnname(width), tyname))
+    e.newline()
+    downshift = "(value >> (%s - distance))" % int2cstring(width)
+    if width == tywidth {
+      e.write("  return (value << distance) | %s;" % downshift)
+    } else {
+      mask = (1u64 << width) - 1
+      e.write("  %s hi = value << distance;" % tyname)
+      e.newline()
+      e.write("  %s lo = %s & 0x%x;" % (tyname, downshift, mask))
+      e.newline()
+      e.write("  return (hi | lo) & 0x%x;" % mask)
+    }
+    e.newline()
+    e.write("}")
+    e.newline()
+  }
+
+  func emitRotr(self, e: CEmitter, width: u32) {
+    tywidth = self.rotr.typeWidth(width)
+    tyname = "uint%s_t" % int2cstring(tywidth)
+    e.write("static inline %s %s(%s value, int distance) {" % (tyname, self.rotr.fnname(width), tyname))
+    e.newline()
+    upshift = "(value << (%s - distance))" % int2cstring(width)
+    if width == tywidth {
+      e.write("  return (value >> distance) | %s;" % upshift)
+    } else {
+      mask = (1u64 << width) - 1
+      e.write("  %s lo = (value >> distance) & 0x%x;" % (tyname, mask))
+      e.newline()
+      e.write("  %s hi = %s;" % (tyname, upshift))
+      e.newline()
+      e.write("  return (hi | lo) & 0x%x;" % mask)
+    }
+    e.newline()
+    e.write("}")
+    e.newline()
+  }
+
+  func emit(self, e: CEmitter) {
+    for include in self.cIncludes() {
+      e.writeln("#include " + include.name)
+    }
+    e.newline()
+    if self.needStringifyMacro {
+      e.writeln("#define STRINGIFY(s) STR(s)\n#define STR(s) #s")
+    }
+    for define in self.cDefines() {
+      e.newline()
+      e.writeln(define.text)
+    }
+    if self.raiseError {
+      e.newline()
+      e.writeln("static inline void raise(const char *error) {")
+      e.writeln("  printf(\"%s Exception Raised, aborting\\n\", error);")
+      e.writeln("  abort();")
+      e.writeln("}")
+    }
+    if self.needIntAddFn {
+      e.newline()
+      e.writeln("static int64_t intadd(int64_t a, int64_t b, int width) {")
+      e.writeln("  int64_t max = (int64_t)(1ull << (width - 1)) - 1;")
+      e.writeln("  int64_t min = -max - 1;")
+      e.writeln("  if (b > 0 && a > (max - b)) raise(\"Overflow\");")
+      e.writeln("  if (b < 0 && a < (min - b)) raise(\"Underflow\");")
+      e.writeln("  return a + b;")
+      e.writeln("}")
+    }
+    if self.needIntSubFn {
+      e.newline()
+      e.writeln("static int64_t intsub(int64_t a, int64_t b, int width) {")
+      e.writeln("  int64_t max = (int64_t)(1ull << (width - 1)) - 1;")
+      e.writeln("  int64_t min = -max - 1;")
+      e.writeln("  if (b < 0 && a > (max + b)) raise(\"Overflow\");")
+      e.writeln("  if (b > 0 && a < (min + b)) raise(\"Underflow\");")
+      e.writeln("  return a - b;")
+      e.writeln("}")
+    }
+    if self.needIntMulFn {
+      e.newline()
+      e.writeln("static int64_t intmul(int64_t a, int64_t b, int width) {")
+      e.writeln("  int64_t max = (int64_t)(1ull << (width - 1)) - 1;")
+      e.writeln("  int64_t min = -max - 1;")
+      e.writeln("  if (a == 0 || b == 0) return 0;")
+      e.writeln("  if ((a > 0) && (b > 0) && (a > (max / b))) raise(\"Overflow\");")
+      e.writeln("  if ((a < 0) && (b < 0) && (a < (max / b))) raise(\"Overflow\");")
+      e.writeln("  if ((a > 0) && (b < 0) && (b < (min / a))) raise(\"Underflow\");")
+      e.writeln("  if ((a < 0) && (b > 0) && (b > (min / a))) raise(\"Underflow\");")
+      e.writeln("  return a * b;")
+      e.writeln("}")
+    }
+    if self.needIntDivFn {
+      e.newline()
+      e.writeln("static int64_t intdiv(int64_t a, int64_t b, int width) {")
+      e.writeln("  int64_t max = (int64_t)(1ull << (width - 1)) - 1;")
+      e.writeln("  int64_t min = -max - 1;")
+      e.writeln("  if (b == 0) raise(\"DivByZero\");")
+      e.writeln("  if (a == -1 && b == min) raise(\"Overflow\");")
+      e.writeln("  return a / b;")
+      e.writeln("}")
+    }
+    if self.needIntExpFn {
+      e.newline()
+      e.writeln("static int64_t intexp(int64_t a, int64_t exp, int width) {")
+      e.writeln("  int64_t result = 1;")
+      e.writeln("  if (exp == 0) return 1;")
+      e.writeln("  if (a == 0) return 0;")
+      e.writeln("  if (exp < 0) raise(\"NegativeExponent\");")
+      e.writeln("  for (;;) {")
+      e.writeln("    if (exp & 1) {")
+      e.writeln("      result = intmul(result, a, width);")
+      e.writeln("    }")
+      e.writeln("    exp >>= 1;")
+      e.writeln("    if (!exp) break;")
+      e.writeln("    a = intmul(a, a, width);")
+      e.writeln("  }")
+      e.writeln("  return result;")
+      e.writeln("}")
+    }
+    if self.needUintAddFn {
+      e.newline()
+      e.writeln("static uint64_t uintadd(uint64_t a, uint64_t b, int width) {")
+      e.writeln("  uint64_t max = (uint64_t)(1ull << (width - 1)) - 1;")
+      e.writeln("  if (a > (max - b)) raise(\"Overflow\");")
+      e.writeln("  return a + b;")
+      e.writeln("}")
+    }
+    if self.needUintSubFn {
+      e.newline()
+      e.writeln("static uint64_t uintsub(uint64_t a, uint64_t b, int width) {")
+      e.writeln("  if (b > a) raise(\"Underflow\");")
+      e.writeln("  return a - b;")
+      e.writeln("}")
+    }
+    if self.needUintMulFn {
+      e.newline()
+      e.writeln("static uint64_t uintmul(uint64_t a, uint64_t b, uint width) {")
+      e.writeln("  int64_t max = (uint64_t)(1ull << (width - 1)) - 1;")
+      e.writeln("  if (a == 0 || b == 0) return 0;")
+      e.writeln("  if (a > (max / b)) raise(\"Overflow\");")
+      e.writeln("  return a * b;")
+      e.writeln("}")
+    }
+    if self.needUintDivFn {
+      e.newline()
+      e.writeln("static uint64_t uintdiv(uint64_t a, uint64_t b, uint width) {")
+      e.writeln("  if (b == 0) raise(\"DivByZero\");")
+      e.writeln("  return a / b;")
+      e.writeln("}")
+    }
+    if self.needUintExpFn {
+      e.newline()
+      e.writeln("static uint64_t uintexp(uint64_t a, uint64_t exp, int width) {")
+      e.writeln("  uint64_t result = 1;")
+      e.writeln("  if (exp == 0) return 1;")
+      e.writeln("  if (a == 0) return 0;")
+      e.writeln("  for (;;) {")
+      e.writeln("    if (exp & 1) {")
+      e.writeln("      result = uintmul(result, a, width);")
+      e.writeln("    }")
+      e.writeln("    exp >>= 1;")
+      e.writeln("    if (!exp) break;")
+      e.writeln("    a = uintmul(a, a, width);")
+      e.writeln("  }")
+      e.writeln("  return result;")
+      e.writeln("}")
+    }
+    self.intadd.emit(e, self, &self.emitIntAdd(e, u32))
+    self.intsub.emit(e, self, &self.emitIntSub(e, u32))
+    self.intmul.emit(e, self, &self.emitIntMul(e, u32))
+    self.intdiv.emit(e, self, &self.emitIntDiv(e, u32))
+    self.intexp.emit(e, self, &self.emitIntExp(e, u32))
+    self.uintadd.emit(e, self, &self.emitUintAdd(e, u32))
+    self.uintsub.emit(e, self, &self.emitUintSub(e, u32))
+    self.uintmul.emit(e, self, &self.emitUintMul(e, u32))
+    self.uintdiv.emit(e, self, &self.emitUintDiv(e, u32))
+    self.uintexp.emit(e, self, &self.emitUintExp(e, u32))
+    self.rotl.emit(e, self, &self.emitRotl(e, u32))
+    self.rotr.emit(e, self, &self.emitRotr(e, u32))
+  }
+}
+
+

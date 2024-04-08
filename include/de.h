@@ -71,6 +71,7 @@ void deVerifyPrintfParameters(deExpression expression);
 void dePostProcessPrintStatement(deStatement statement);
 void deCreateVariableConstraintBinding(deSignature signature, deVariable var);
 void deCreateLocalAndGlobalVariables(void);
+void deCreateBlockVariables(deBlock scopeBlock, deBlock block);
 
 // Block methods.
 deBlock deBlockCreate(deFilepath filepath, deBlockType type, deLine line);

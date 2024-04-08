@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <iostream.h>
+#include <iostream>
 
 #include "base/init_google.h"
 #include "third_party/absl/strings/escaping.h"

@@ -40,6 +40,7 @@ Add LLVM compiler hints and optmizations as described at
 Support named parameters, like Python.
 
 ## Medium Term
+Support negative indicies, like Python, in slices to indicate size relative to length of the array.
 Write tests to verify that constant time processing of secrets is achieved.  E.g. if (issecret(foo)...
 Add support for fixed-sized arrays for improved speed.
 Make modular inverse constant time.
