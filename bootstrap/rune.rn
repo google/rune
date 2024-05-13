@@ -15,6 +15,7 @@
 import database as db
 import io
 import parse
+import types
 import cbackend as c
 use sym
 
@@ -26,6 +27,7 @@ func usage() {
       "    --parseTree: Print parse trees of parsed files.\n" +
       "    --funcTree:  Print the tree of functions.\n" +
       "    --hir:       Print HIR output.\n" +
+      "    --tc:        Print typechecker output.\n" +
       "    --oc <filename>: output C to the given filename.\n" +
       "    -p <dir>:    Use <dir> as the root directory for Rune's builtin packages.\n"
   exit(1i32)
@@ -58,6 +60,9 @@ while xArg < argv.length() && argv[xArg][0] == '-' {
     xArg += 1
   } else if argv[xArg] == "--hir" {
     root.dumpHir = true
+    xArg += 1
+  } else if argv[xArg] == "--tc" {
+    root.traceTypes = true
     xArg += 1
   } else if argv[xArg] == "--oc" {
     root.generateC = true
@@ -106,9 +111,15 @@ for i in range (xArg, argv.length()) {
   module = db.Function(mainFunc, db.FuncType.Module, Sym.new(moduleName),
     db.Linkage.Module, db.Location.emptyLocation())
   parse.HirBuilder(node!, module).build()
-  if root.generateC {
+  tc = types.TypeChecker()
+  tc.function(module)
+  numTypeErrors = tc.countTypeErrors()
+  if numTypeErrors > 0 {
+    println "Found %u type error%s." % (numTypeErrors, numTypeErrors > 1 ? "s" : "")
+    tc.dumpTypeErrors()
+  } else if root.generateC {
     emitter = c.CEmitter(root.outputCFilename)
-    program = c.CBuilder().build(module)
+    program = c.CBuilder(tc).build(module)
     program.emit(emitter)
     emitter.close()
   }

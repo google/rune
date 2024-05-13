@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import cbackend as c
-
 use sym
 
 use root
@@ -21,6 +19,8 @@ use filepath
 use function
 use location
 use statement
+
+import cbackend as c
 
 
 // A literal block statement.  All statements exist within a block.

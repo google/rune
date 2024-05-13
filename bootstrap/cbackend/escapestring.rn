@@ -13,8 +13,9 @@
 // limitations under the License.
 
 use stringstream
+use cemitter
 
-class Escaper(self, stuff: string) {
+class Escaper(self, emitter: CEmitter, stuff: string) {
 
   enum State {
     Copy
@@ -22,6 +23,7 @@ class Escaper(self, stuff: string) {
     FormatWidth
   }
 
+  self.emitter = emitter
   self.stream = StringStream(stuff)
   self.formatWidth = 0u32
   self.formatChar = 'x'
@@ -61,12 +63,25 @@ class Escaper(self, stuff: string) {
     if self.formatWidth > 64u32 {
       raise Status.Unimplemented, "Format Widths > 64 bits not yet supported by C backend: ", self.formatWidth
     } else if self.formatChar == 'f' {
+      self.emitter.include("<float.h>")
+      self.emitter.needStringifyMacro()
+      self.emitter.define("#if defined(DBL_DECIMAL_DIG)\n" +
+               "#  define DBL_SIG_DIGITS STRINGIFY(DBL_DECIMAL_DIG)\n" +
+               "#  define FLT_SIG_DIGITS STRINGIFY(FLT_DECIMAL_DIG)\n" +
+               "#elif defined(DECIMAL_DIG)\n" +
+               "#  define DBL_SIG_DIGITS STRINGIFY(DECIMAL_DIG)\n" +
+               "#  define FLT_SIG_DIGITS STRINGIFY(DECIMAL_DIG)\n" +
+               "#else\n" +
+               "#  define DBL_SIG_DIGITS STRINGIFY(DBL_DIG + 3)\n" +
+               "#  define FLT_SIG_DIGITS STRINGIFY(FLT_DIG + 3)\n" +
+               "#endif\n")
       if self.formatWidth <= 32u32 && self.formatWidth != 0u32 {
         self.value += "%.\" FLT_SIG_DIGITS \"g"
       } else {
         self.value += "%.\" DBL_SIG_DIGITS \"g"
       }
     } else {
+      self.emitter.include("<inttypes.h>")
       self.value += "%\" PRI"
       switch self.formatChar {
         'i' => self.value += "d"
@@ -120,6 +135,6 @@ class Escaper(self, stuff: string) {
 }
 
 // Convert a Rune string to a C string
-func escapeString(stuff: string) -> string {
-  return Escaper(stuff).escape()
+func escapeString(e: CEmitter, stuff: string) -> string {
+  return Escaper(e, stuff).escape()
 }

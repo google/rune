@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import cbackend as c
-
 use root
 use filepath
 use location
@@ -21,6 +19,8 @@ use block
 use expr
 use rel
 use value
+
+import cbackend as c
 
 enum StateType {
   Assert
@@ -190,9 +190,17 @@ class Statement(self, block: Block, type: StateType, location: Location) {
 
   func genC(self, builder: c.CBuilder) {
     switch self.type {
+      StateType.Assign => self.genCAssign(builder)
       StateType.Println => self.genCPrintln(builder)
       default => raise Status.Unimplemented, "Statement type not yet supported by C backend builder ", self.type
     }
+  }
+
+  func genCAssign(self, builder: c.CBuilder) {
+    assert isnull(self.subBlock)
+    assert !isnull(self.expr)
+    cexpr = self.expr.genC(builder)
+    builder.addStatement(c.CStatement(cexpr))
   }
 
   func genCPrintln(self, builder: c.CBuilder) {
@@ -205,6 +213,8 @@ class Statement(self, block: Block, type: StateType, location: Location) {
 
     // Add a trailing newline to 1st element of the list
     firstElement = args.cExprList.index(0)
+    // TODO: handle case where first element is not a format string.
+    // e.g., println 1
     assert firstElement.type == c.CExpr.Type.Literal
     assert firstElement.cLiteral.type == c.CLiteral.Type.String
     firstElement.cLiteral.stringValue += "\\n"

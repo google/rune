@@ -14,8 +14,10 @@
 
 import database as db
 import io
-use stringwriter
+import types
+use clanguageclasses
 use cruntime
+use stringwriter
 
 class CEmitter(self, filename: string) {
   // TODO: add buffers to string_writer so that it flushes to file every 4K or so.

@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import cbackend as c
 use sym
 
 use root
@@ -21,6 +20,8 @@ use value
 use function
 use datatype
 use expr
+
+import cbackend as c
 
 class Variable(self, function: Function, isParam: bool, isConst: bool, sym: Sym,
     initializer: Expr?, typeExpr: Expr?, generated: bool, location: Location) {
@@ -104,7 +105,8 @@ class Variable(self, function: Function, isParam: bool, isConst: bool, sym: Sym,
 
   func genCParameter(self, builder: c.CBuilder) -> c.CParameter {
     // TODO: convert self.typeExpr into a CTypeExpr
-    return builder.cParameter(self.location, self.sym.name, builder.cType(c.CType.Void))
+    type = builder.cVoidType(self.location)
+    return builder.cParameter(self.location, self.sym.name, type)
   }
 }
 

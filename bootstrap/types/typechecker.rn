@@ -1,0 +1,425 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import database as db
+use sym
+use builtins
+use typeclasses
+use typeunifier
+use typebuilder
+use typeerror
+
+TypeErrorPrefix = ": "
+
+STR = STRING()
+BOOL = BOOLEAN()
+INT = INTEGER()
+UINT = UINTEGER()
+ANYINT = ANYINTEGER()
+NUM = NUMBER()
+
+class SymbolMapping(self, key: Sym, ty: Type?) {
+  self.key = key
+  self.value = ty
+
+  func hash(self) -> u64 {
+    return hashValue(self.key.name)
+  }
+
+  func equals(self, other: SymbolMapping) -> bool {
+    return self.key == other.key
+  }
+}
+
+relation DoublyLinked BindingScope TypeVar cascade
+
+class BindingScope(self) {
+  func add(self, tv: TypeVar) {
+    self.appendTypeVar(tv)
+  }
+
+  iterator tyvars(self) {
+    for tv in self.typeVars() {
+      yield tv
+    }
+  }
+}
+
+relation HashedClass TypeChecker SymbolMapping cascade
+relation DoublyLinked TypeChecker BindingScope cascade
+relation DoublyLinked TypeChecker TypeError cascade
+
+class TypeChecker(self) {
+  self.unifier = TypeUnifier()
+  self.nextTyvarId = 1i32
+  self.numTypeErrorsReported = 0
+
+  func typeError(self, msg: string, location: db.Location?) {
+    self.appendTypeError(TypeError(msg, location))
+  }
+
+  func popTypeError(self) {
+    if !isnull(self.lastTypeError) {
+      self.removeTypeError(self.lastTypeError!)
+    }
+  }
+
+  func dumpTypeErrors(self, dumpText: bool = true, prefix: string = "") {
+    count = self.countTypeErrors()
+    pos = self.numTypeErrorsReported
+
+    while pos < count {
+      te = self.indexTypeError(pos)
+      if !isnull(te.location) {
+        te.location.error(te.msg, dumpText, prefix)
+      } else {
+        println prefix + "Type error: %s" % te.msg
+      }
+      self.numTypeErrorsReported += 1
+      pos += 1
+    }
+  }
+
+  func openScope(self) {
+    self.appendBindingScope(BindingScope())
+  }
+
+  func closeScope(self) -> BindingScope {
+    scope = self.lastBindingScope!    
+    self.removeBindingScope(scope)
+    return scope
+  }
+
+  func newSymbol(self, symbol: Sym, ty: Type?) -> Type? {
+    // TODO: there may already exist a symbol mapping, if we are creating
+    // a symbol with the same name as another in an outer scope.
+    if isnull(ty) {
+      tyvar = Type(self.newTyvar())
+      self.insertSymbolMapping(SymbolMapping(symbol, tyvar))
+      return tyvar
+    }
+
+    self.insertSymbolMapping(SymbolMapping(symbol, ty))
+    return ty
+  }
+
+  func newTyvar(self) -> TypeVar {
+    tyvar = TypeVar(self.nextTyvarId, null(Type))
+    self.nextTyvarId += 1
+    return tyvar
+  }
+
+  func unify(self, a: Type, b: Type) -> bool {
+    return self.unifier.unify(a, b)
+  }
+
+  // ---------------------------------- Type checking functions ----------------------
+
+  func resolve(self, t: Type) -> Type {
+    switch t.type {
+      Type.TypeClass.Var => {
+        t2 = self.unifier.resolveVar(t.tyvar!.id)
+        if !isnull(t2) {
+          return t2!
+        }
+        return t
+      }
+      Type.TypeClass.Int => return t
+      Type.TypeClass.AnyInt => return t
+      Type.TypeClass.Float => return t
+      Type.TypeClass.Typename => return t
+      Type.TypeClass.Choice => {
+        choices = arrayof(Type)
+        for choice in t.choice!.choices {
+          choices.append(self.resolve(choice))
+        }
+        return Type(ChoiceType(choices))
+      }
+      Type.TypeClass.Tuple => {
+        elements = arrayof(Type)
+        for child in t.tuple!.elements {
+          elements.append(self.resolve(child))
+        }
+        return Type(TupleType(elements))
+      }
+      Type.TypeClass.Function => {
+        return Type(FunctionType(self.resolve(t.function!.params),
+                                 self.resolve(t.function!.result)))
+      }
+      Type.TypeClass.Polymorphic => {
+        ty = self.unifier.resolveVar(t.poly!.v.id)
+        if !isnull(ty) {
+          // The unifier binds the variable, *but* since this is a new
+          // binding of that variable, the body of the polymorphic type
+          // exists in a hole in the scope of the existing tyvar binding.
+          return t
+        }
+        return Type(PolymorphicType(t.poly!.v, self.resolve(t.poly!.scope)))
+      }
+    }
+  }
+
+  func apply(self, function: Type, args: Type,
+             location: db.Location? = null(db.Location)) -> Type? {
+    switch function.type {
+      Type.TypeClass.Function => {
+        te = self.unifier.unify(function.function!.params, args, location)
+        if !isnull(te) {
+          self.typeError("could not unify\n%s    parameters of function %s\n%s    with args %s:\n%s%s" 
+                          % (TypeErrorPrefix, function.toString(),
+                             TypeErrorPrefix, args.toString(), TypeErrorPrefix, te.msg),
+                         location)
+          return null(Type)
+        }
+        return self.resolve(function.function!.result)
+      }
+
+      Type.TypeClass.Polymorphic => {
+        f2 = function.poly!.open(self.unifier.newVar())
+        return self.apply(f2, args, location)
+      }
+
+      Type.TypeClass.Choice => {
+        countErrors = 0
+        for choice in function.choice!.choices {
+           ty = self.apply(choice, args, location)
+           if !isnull(ty) {
+             // make sure that there are no type errors -- we can ignore
+             // any errors from previous branch attempts.
+             while countErrors > 0 {
+               self.popTypeError()
+               countErrors -= 1
+             }
+             return ty
+           }
+           countErrors += 1
+        }
+        self.typeError("Failed to apply any choice of function type %s to %s."
+                       % (function.toString(), args.toString()),
+                       location)
+        return null(Type)
+      }
+      default => {
+        self.typeError("attempting to apply a non-function %s to %s."
+                         % (function.toString(), args.toString()), location)
+        return null(Type)
+      }
+    }
+  }
+
+  // ------------------------- Typecheck explicit type expressions ---------------------
+
+  func explicitType(self, typeExpr: db.Expr) -> Type {
+    // TODO
+    return Type(TypeName("todo"))
+  }
+
+
+  // ------------------------- Typechecking database structures ------------------------
+
+  func symbol(self, symbol: Sym) -> Type? {
+    sm = SymbolMapping(symbol, null(Type))
+    found = self.findSymbolMapping(sm)
+    if !isnull(found) {
+      return found.value
+    }
+    return self.newSymbol(symbol, null(Type))
+  }
+
+  func getSymbolType(self, symbol: Sym) -> Type? {
+    sm = SymbolMapping(symbol, null(Type))
+    found = self.findSymbolMapping(sm)
+    if !isnull(found) {
+      return found.value
+    }
+    return null(Type)
+  }
+
+  func variable(self, v: db.Variable) -> Type? {
+    // TODO: handle v.isConst
+    if isnull(v.typeExpr) {
+      ty = Type(self.newTyvar())
+    } else {
+      ty = self.explicitType(v.typeExpr!)
+    }
+    if v.isParam {
+      self.newSymbol(v.sym, ty)
+    } else {
+      ty = self.symbol(v.sym)
+    }
+    return ty
+  }
+
+  func value(self, val: db.Value) -> Type? {
+    switch val.type {
+      db.DatatypeType.Bool => return BOOL
+      db.DatatypeType.String => return STR
+      db.DatatypeType.Int => return I(<u64>val.width)
+      db.DatatypeType.Uint => return U(<u64>val.width)
+      db.DatatypeType.Float => return F(<u64>val.width)
+      db.DatatypeType.Sym => return self.symbol(val.symVal!)
+      default => raise Status.Unimplemented, "Value type not yet supported by typechecker: ", val.type
+    }
+  }
+
+  // ---- typecheck expressions
+  func expr(self, expr: db.Expr) -> Type? {
+    switch expr.type {
+      db.ExprType.Constant => result = self.value(expr.val)
+      db.ExprType.Ident => result = self.value(expr.val)
+
+      db.ExprType.List => {
+        elements = arrayof(Type)
+        for child in expr.childExprs() {
+          ty = self.expr(child)
+          if isnull(ty) {
+            return ty
+          }
+          elements.append(ty!)
+        }
+        result = Type(TupleType(elements))
+      }
+
+      // Binary expressions --------------------------------------------------
+      db.ExprType.Add, db.ExprType.Div, db.ExprType.Mul, db.ExprType.Sub, db.ExprType.Bitxor, db.ExprType.AddTrunc, db.ExprType.MulTrunc, db.ExprType.SubTrunc, db.ExprType.Bitand, db.ExprType.Bitor, db.ExprType.Or, db.ExprType.Exp, db.ExprType.Mod, db.ExprType.And, db.ExprType.Or, db.ExprType.Xor, db.ExprType.Shl, db.ExprType.Shr, db.ExprType.Rotl, db.ExprType.Rotr, db.ExprType.Lt, db.ExprType.Le, db.ExprType.Gt, db.ExprType.Ge, db.ExprType.Equal, db.ExprType.Notequal, db.ExprType.Equals, db.ExprType.Equals, db.ExprType.AddEquals, db.ExprType.SubEquals, db.ExprType.MulEquals, db.ExprType.DivEquals, db.ExprType.ModEquals, db.ExprType.AndEquals, db.ExprType.OrEquals, db.ExprType.XorEquals, db.ExprType.BitandEquals, db.ExprType.BitorEquals, db.ExprType.BitxorEquals, db.ExprType.ExpEquals, db.ExprType.ShlEquals, db.ExprType.ShrEquals, db.ExprType.RotlEquals, db.ExprType.RotrEquals, db.ExprType.AddTruncEquals, db.ExprType.SubTruncEquals, db.ExprType.MulTruncEquals => {
+        left = self.expr(expr.firstChildExpr!)
+        right = self.expr(expr.firstChildExpr!.nextExprChildExpr!)
+        if isnull(left) || isnull(right) {
+          return left
+        }
+        opty = builtinType(expr.type)
+        argty = Type(TupleType([left!, right!]))
+        result = self.apply(opty, argty, expr.location)
+     }
+
+      // Unary expressions ----------------------------------------------------------
+      db.ExprType.Negate, db.ExprType.Bitnot, db.ExprType.Not => {
+        childType = self.expr(expr.firstChildExpr!)
+        if isnull(childType) {
+          return childType
+        }
+        opty = builtinType(expr.type)
+        result = self.apply(opty, childType!, expr.location)
+      }
+
+      default => raise Status.Unimplemented, "Expression type not yet supported by typechecker: ", db.getExprTypeName(expr.type)
+    }
+
+    if db.getRoot().traceTypes {
+       expr.location.annotation("\n[Typecheck] ", TypeErrorPrefix)
+       if isnull(result) {
+         println "%sType Error!" % TypeErrorPrefix
+         // Dump latest type errors as we go. These won't repeat errors already
+         // reported. We've already printed the line and caret marks, so don't print them again
+         self.dumpTypeErrors(false, TypeErrorPrefix)
+       } else {
+         println "%s%s" % (TypeErrorPrefix, result.toString())
+       }
+    }
+    return result
+  }
+
+
+  // Statements -------------------------------------------------------------
+  func statement(self, statement: db.Statement) {
+    switch statement.type {
+      db.StateType.Assign => ty = self.expr(statement.expr)
+      db.StateType.Call => ty = self.expr(statement.expr)
+      db.StateType.Println => ty = self.expr(statement.expr)
+
+      default => raise Status.Unimplemented, "Statement type not yet supported by typechecker: ", db.statementTypeGetKeyword(statement.type)
+    }
+  }
+
+  // Typecheck Functions, including modules ---------------------------------
+  func function(self, fn: db.Function) {
+    switch fn.type {
+      db.FuncType.Module => {
+        for statement in fn.subBlock.statements() {
+          self.statement(statement)
+        }
+      }
+
+      db.FuncType.Plain => self.plainFunction(fn)
+      default => {
+        raise Status.Unimplemented, "Function type not yet supported by typechecker: ", fn.type
+      }
+    }
+  }
+
+  func plainFunction(self, fn: db.Function) {
+    // Todo: consider storage types
+    if isnull(fn.typeExpr) {
+      returnType = Type(self.newTyvar())
+    } else {
+      returnType = self.explicitType(fn.typeExpr)
+    }
+
+    // open new scope - new parameter bindings are added to the scope
+    // automatically
+    self.openScope()
+    params = arrayof(Type)
+    for variable in fn.variables() {
+      param = self.variable(variable)!
+      params.append(param)
+    }
+    if params.length() == 1 {
+      paramType = params[0]
+    } else {
+      paramType = Type(TupleType(params))
+    }
+    bindingScope = self.closeScope()
+    fnType = Type(FunctionType(paramType, returnType))
+    for tyvar in bindingScope.tyvars() {
+      fnType = Type(PolymorphicType(tyvar, fnType))
+    }
+    // associate function name symbol to this type.
+    self.newSymbol(fn.sym, fnType)
+    println "Type of %s: %s" % (fn.sym.name, fnType.toString())
+  }
+}
+
+
+unittest TypeClasses {
+  // Instantiate all the type classes so that they get compiled.
+  v = TypeVar(0i32, null(Type))
+  i = IntType(true, 3u32)
+  f = FloatType(32u32)
+  c = ChoiceType([Type(IntType(true, 32u32))])
+  t = TupleType([Type(IntType(true, 32u32))])
+  tn = TypeName("boo")
+  fn = FunctionType(Type(tn), Type(tn))
+  p = PolymorphicType(TypeVar(0i32, null(Type)), Type(IntType(true, 32u32)))
+  p.toString()
+}
+
+unittest TypeApplyTest {
+  tc = TypeChecker()
+  assert tc.apply(FN(STR, INT), STR) == INT
+  assert isnull(tc.apply(FN(STR, INT), INT))
+  assert tc.apply(FN(INT, STR), I(64)) == STR
+  assert tc.apply(POLY(1, FN(V(1), V(1))), BOOL) == BOOL
+  assert isnull(tc.apply(BPOLY(1, [ANYINT], FN(V(1), V(1))), BOOL))
+}
+
+unittest SimpleTypeCheckTest {
+  filepath = db.Filepath.new("test_filepath", null(db.Filepath), false)
+  location = db.Location(filepath, 0u32, 0u32, 0u32)
+  left = db.Expr.newConstant(db.Value("Hello"), location)
+  right = db.Expr.newConstant(db.Value("World"), location)
+  expr = db.Expr.newBinary(db.ExprType.Lt, left, right, location)
+
+  tc = TypeChecker()
+  assert tc.expr(expr) == BOOL
+}

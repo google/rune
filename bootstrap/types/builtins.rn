@@ -1,0 +1,134 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/*
+ * Types for builtin values
+ */
+
+import database as db
+use typebuilder
+use typeclasses
+
+STR = STRING()
+BOOL = BOOLEAN()
+INT = INTEGER()
+UINT = UINTEGER()
+ANYINT = ANYINTEGER()
+NUM = NUMBER()
+
+func builtinType(op: db.ExprType) -> Type {
+  v = V(1)
+  switch op {
+    // arithmetic
+    db.ExprType.Add => {
+      return BPOLY(1, [STR, NUM], FN(TUPLE([v, v]), v))
+    }
+
+    db.ExprType.Sub, db.ExprType.Mul, db.ExprType.Div => {
+      return BPOLY(1, [NUM], FN(TUPLE([v, v]), v))
+    }
+
+    db.ExprType.Mod => {
+      return OR([
+                  BPOLY(1, [NUM], FN(TUPLE([v, v]), v)),
+                  POLY(1, FN(TUPLE([STR, v]), STR)) // For sprintf-like formatting
+                ])
+    }
+
+    db.ExprType.AddTrunc, db.ExprType.SubTrunc, db.ExprType.MulTrunc => {
+      return BPOLY(1, [ANYINT], FN(TUPLE([v, v]), v))
+    }
+
+    db.ExprType.Exp => {
+      return BPOLY(1, [ANYINT], FN(TUPLE([v, UINT]), v))
+    }
+
+    db.ExprType.Negate, db.ExprType.NegateTrunc => {
+      return OR([
+                  BPOLY(1, [F(32),F(64),INT], FN(v, v)),
+                  FN(UINT, INT)
+		])
+    }
+
+    // logical
+    db.ExprType.And, db.ExprType.Or, db.ExprType.Xor => {
+      return FN(TUPLE([BOOL, BOOL]), BOOL)
+    }
+
+    // Bitwise
+    db.ExprType.Bitand, db.ExprType.Bitor => {
+      return BPOLY(1, [ANYINT], FN(TUPLE([v, v]), v))
+    }
+
+    db.ExprType.Bitxor => {
+      return BPOLY(1, [STR, ANYINT], FN(TUPLE([v, v]), v))
+    }
+
+    // Shift
+    db.ExprType.Shl, db.ExprType.Shr, db.ExprType.Rotl, db.ExprType.Rotr => {
+      return BPOLY(1, [ANYINT], FN(TUPLE([v, UINT]), v))
+    }
+
+    db.ExprType.Bitnot => {
+      return BPOLY(1, [ANYINT], FN(v, v))
+    }
+
+    // Relational operators (todo... add ARRAY types here)
+    db.ExprType.Lt, db.ExprType.Le, db.ExprType.Gt, db.ExprType.Ge => {
+      return BPOLY(1, [NUM, STR], FN(TUPLE([v, v]), BOOL))
+    }
+
+    db.ExprType.Equal, db.ExprType.Notequal => {
+      return POLY(1, FN(TUPLE([v, v]), BOOL))
+    }
+
+    db.ExprType.Not => {
+      return FN(BOOL, BOOL)
+    }
+
+    db.ExprType.Equals => {
+      return POLY(1, FN(TUPLE([v, v]), v))
+    }
+
+    default => {
+      raise Status.Unimplemented, "Expression type not yet supported by typechecker: ", db.getExprTypeName(op)
+    }
+
+/* TODO
+    db.ExprType.Modint  // 2 mod p
+    db.ExprType.Cast  // <b>a
+    db.ExprType.CastTrunc  // !<b>a
+    db.ExprType.AddEquals  // a += b
+    db.ExprType.SubEquals  // a -= b
+    db.ExprType.MulEquals  // a *= b
+    db.ExprType.DivEquals  // a /= b
+    db.ExprType.ModEquals  // a %= b
+    db.ExprType.AndEquals  // a &&= b
+    db.ExprType.OrEquals   // a ||= b
+    db.ExprType.XorEquals  // a ^^= b
+    db.ExprType.BitandEquals  // a &= b
+    db.ExprType.BitorEquals   // a |= b
+    db.ExprType.BitxorEquals  // a ^= b
+    db.ExprType.ExpEquals  // a **= b
+    db.ExprType.ShlEquals  // a <<= b
+    db.ExprType.ShrEquals  // a >>= b
+    db.ExprType.RotlEquals  // a <<<= b
+    db.ExprType.RotrEquals  // a >>>= b
+    db.ExprType.AddTruncEquals  // a !+ b
+    db.ExprType.SubTruncEquals  // a !- b
+    db.ExprType.MulTruncEquals  // a !* b
+ */
+  }
+}
+

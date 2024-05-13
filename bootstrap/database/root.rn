@@ -22,6 +22,7 @@ class Root(self) {
   self.dumpParseTree = false
   self.dumpFuncTree = false
   self.dumpHir = false
+  self.traceTypes = false
   self.generateC = false
   self.outputCFilename = ""
   self.indentDepth = 0u32

@@ -20,22 +20,22 @@ runtests: $(RUNE_TESTS)
 	for test in $(RUNE_TESTS); do "./$$test"; done
 
 expr: expr.rn
-	$(RUNE) -g expr.rn
+	$(RUNE) -g -r .. expr.rn
 
 bigint: bigint.rn
 	$(RUNE) -g bigint.rn
 
 value: value.rn
-	$(RUNE) -g value.rn
+	$(RUNE) -g -r .. value.rn
 
 statement: statement.rn
-	$(RUNE) -g statement.rn
+	$(RUNE) -g -r .. statement.rn
 
 block: block.rn
-	$(RUNE) -g block.rn
+	$(RUNE) -g -r .. block.rn
 
 function: function.rn
-	$(RUNE) -g function.rn
+	$(RUNE) -g -r .. function.rn
 
 filepath: filepath.rn
 	$(RUNE) -g filepath.rn

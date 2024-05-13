@@ -35,7 +35,12 @@ class StringStream(self, str: string) {
   }
 
   func unget(self, c: u8) {
-    self.returned[self.numReturned] = c
+    assert self.numReturned <= self.returned.length()
+    if self.numReturned == self.returned.length() {
+      self.returned.append(c)
+    } else {
+      self.returned[self.numReturned] = c
+    }
     self.numReturned += 1
   }
 }

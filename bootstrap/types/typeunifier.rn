@@ -1,0 +1,412 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import database as db
+use typeclasses
+use typebuilder
+use typeerror
+
+STR = STRING()
+BOOL = BOOLEAN()
+INT = INTEGER()
+UINT = UINTEGER()
+ANYINT = ANYINTEGER()
+NUM = NUMBER()
+
+relation HashedClass TypeUnifier TypeUnifier.Mapping cascade
+
+// Type unifiers map identifiers to types
+class TypeUnifier(self) {
+  /* nextFreshVar is required when the unifier needs to generate a new, unique
+   * variable in order to unify a bound type. The bound variable needs to be
+   * replaced with a fresh type variable never seen before, and not occurring
+   * within the body of the bound type.
+   */
+  self.nextFreshVar = -1i32
+
+  func newVar(self) -> i32 {
+    result = self.nextFreshVar
+    self.nextFreshVar -= 1
+    return result
+  }
+
+  class Mapping(self, key: TypeVar, value: Type?) {
+    self.key = key
+    self.value = value
+
+    func hash(self) -> u64 {
+      return hashValue(self.key.id)
+    }
+
+    func equals(self, other: Mapping) -> bool {
+      return self.key == other.key
+    }
+  }
+
+  func setVar(self, tyvar: TypeVar, ty: Type) {
+    self.insertMapping(Mapping(tyvar, ty))
+  }
+
+  func lookupVar(self, id: i32) -> Type? {
+    e = Mapping(TypeVar(id, null(Type)), null(Type))
+    found = self.findMapping(e)
+    if isnull(found) {
+      return null(Type)
+    }
+    return found.value
+  }
+
+  func unify(self, a: Type, b: Type, location: db.Location? = null(db.Location)) -> TypeError? {
+    if a.type == Type.TypeClass.Var {
+      if b.type == Type.TypeClass.Var {
+        return self.unifyTwoVars(a.tyvar!, b.tyvar!, location)
+      } else {
+        return self.instantiateVar(a.tyvar!, b, location)
+      }
+    } else if b.type == Type.TypeClass.Var {
+      return self.instantiateVar(b.tyvar!, a, location)
+    } else if a.type == Type.TypeClass.Choice {
+      te = self.unifyChoice(a.choice!, b, location)
+      if !isnull(te) {
+        return te
+      }
+    } else if a.type == Type.TypeClass.Tuple {
+      return self.unifyTuple(a.tuple!, b, location)
+    } else if a.type == Type.TypeClass.Function {
+      return self.unifyFunction(a.function!, b, location)
+    } else if a.type == Type.TypeClass.Polymorphic {
+      return self.unifyPolymorphic(a.poly!, b, location)
+    } else if a.type == Type.TypeClass.AnyInt {
+      return self.unifyAnyInt(a.anyInt!, b, location)
+    } else if a != b {
+      return TypeError("Failed to unify %s and %s." % (a.toString(), b.toString()),
+                       location)
+    }
+    return null(TypeError)
+  }
+
+
+  func instantiateVar(self, tyvar: TypeVar, ty: Type,
+                      location: db.Location? = null(db.Location)) -> TypeError? {
+    assert ty.type != Type.TypeClass.Var
+
+    if !isnull(tyvar.constraint) {
+      te = self.unify(tyvar.constraint!, ty, location)
+      if !isnull(te) {
+        return TypeError("Type %s failed to satisfy tyvar constraint %s."
+                         % (ty.toString(), tyvar.constraint.toString()),
+                         location)
+      }
+    }
+    exists = self.lookupVar(tyvar.id)
+    if isnull(exists) {
+      self.setVar(tyvar, ty)
+      return null(TypeError)
+    } 
+    return self.unify(exists!, ty, location)
+  }
+
+
+  func unifyTwoVars(self, v1: TypeVar, v2: TypeVar,
+                    location: db.Location? = null(db.Location)) -> TypeError? {
+    if v1.id == v2.id {
+      return null(TypeError)
+    }
+    exists1 = self.lookupVar(v1.id)
+    if !isnull(exists1) {
+      return self.unify(exists1!, Type(v2), location)
+    }
+    exists2 = self.lookupVar(v2.id)
+    if !isnull(exists2) {
+      return self.unify(Type(v1), exists2!, location)
+    }
+
+    // If we are here, both variables are uninstantiated. First,
+    // we must check that their constraints, if they exist, are
+    // compatible.
+    constraint = null(Type)
+    if isnull(v1.constraint) {
+      constraint = v2.constraint
+    } else if isnull(v2.constraint) {
+      constraint = v1.constraint
+    } else {
+      te = self.unify(v1.constraint!, v2.constraint!)
+      if !isnull(te) {
+        return TypeError("Type variable constraints %s and %s do not unify."
+	                 % (v1.constraint.toString(), v2.constraint.toString()),
+			 location)
+      }
+    }
+
+    // To avoid potential reference cycles where v1 and v2 point
+    // to each other, always set the value of the tyvar with the
+    // highest id to be the tyvar with the lower id.
+    assert isnull(exists1) && isnull(exists2)
+
+    if v1.id > v2.id {
+      self.setVar(v1, Type(v2))
+    } else {
+      self.setVar(v2, Type(v1))
+    }
+    return null(TypeError)
+  }
+
+
+  func unifyChoice(self, t1: ChoiceType, b: Type,
+                  location: db.Location? = null(db.Location)) -> TypeError? {
+    if b.type == Type.TypeClass.Choice {
+      t2 = b.choice!
+      for i = 0, i < t2.choices.length(), i += 1 {
+        te = self.unifyChoice(t1, t2.choices[i], location)
+        if isnull(te) {
+          return te
+        }
+      }
+    } else {
+      for i = 0, i < t1.choices.length(), i += 1 {
+        te = self.unify(t1.choices[i], b, location)
+	if isnull(te) {
+	  return te
+        }
+      }
+    }
+    return TypeError("Failed to unify %s against any choice of %s."
+                     % (b.toString(), t1.toString()), location)
+  }
+
+
+  func unifyTuple(self, t1: TupleType, b: Type,
+                  location: db.Location? = null(db.Location)) -> TypeError? {
+    if b.type != Type.TypeClass.Tuple {
+      return TypeError("Unifying tuple %s with non-tuple %s" % (t1.toString(), b.toString()),
+                       location)
+    }
+    t2 = b.tuple!
+    if t1.elements.length() != t2.elements.length() {
+      return TypeError("Unifying tuple %s against tuple %s of different length."
+                       % (t1.toString(), t2.toString()),
+		       location)
+    }
+    for i = 0, i < t1.elements.length(), i += 1 {
+      te = self.unify(t1.elements[i], t2.elements[i], location)
+      if !isnull(te) {
+        return te
+      }
+    }
+    return null(TypeError)
+  }
+
+
+  func unifyFunction(self, t1: FunctionType, b: Type,
+                  location: db.Location? = null(db.Location)) -> TypeError? {
+    if b.type != Type.TypeClass.Function {
+      return TypeError("Unifying a function type %s against non-function type %s."
+                       % (t1.toString(), b.toString()),
+		       location)
+    }
+    t2 = b.function!
+    te = self.unify(t1.params, t2.params, location)
+    if !isnull(te) {
+      return te
+    }
+    return self.unify(t1.result, t2.result, location)
+  }
+
+
+  func unifyPolymorphic(self, t1: PolymorphicType, b: Type,
+                  location: db.Location? = null(db.Location)) -> TypeError? {
+    if b.type == Type.TypeClass.Polymorphic {
+      raise Status.Unimplemented, "Unification of two bound types, %s and %s" % (t1.toString(), b.toString())
+    }
+    t2 = t1.open(self.newVar())
+    return self.unify(t1.open(self.newVar()), b, location)
+  }
+
+
+  func unifyAnyInt(self, t1: AnyIntType, b: Type,
+                  location: db.Location? = null(db.Location)) -> TypeError? {
+    switch b.type {
+      Type.TypeClass.AnyInt => success = (t1.isSigned == b.anyInt.isSigned)
+      Type.TypeClass.Int => success = (t1.isSigned == b.int.isSigned)
+      default => return TypeError("Unifying type %s against non-integer type %s."
+                                  % (t1.toString(), b.toString()),
+				  location)
+    }
+    if success {
+      return null(TypeError)
+    }
+    return TypeError("Unifying type %s against integral type %s with different signedness."
+                     % (t1.toString(), b.toString()),
+                     location)
+  }
+
+
+  func dumpmapping(self, mapping) {
+    print "v%i32 --> " % mapping.key.id
+    if isnull(mapping.value) {
+      println "null"
+    } else if mapping.value.type != Type.TypeClass.Var {
+      println mapping.value!.toString()
+    } else {
+      m2 = self.findMapping(Mapping(mapping.value.tyvar!, null(Type)))
+      if isnull(m2) {
+        println "v%i32" % mapping.value.tyvar.id
+      } else {
+        self.dumpmapping(m2)
+      }
+    }
+  }      
+
+  func dump(self) {
+    for mapping in self.mappings() {
+      self.dumpmapping(mapping)
+    }
+  }
+
+  func resolveVar(self, v: i32) -> Type? {
+    ty = self.lookupVar(v)
+    if isnull(ty) || ty.type != Type.TypeClass.Var {
+      return ty
+    }
+    assert v > ty.tyvar.id
+    return self.resolveVar(ty.tyvar.id)
+  }
+
+}
+
+unittest TypeClasses {
+  // Instantiate all the type classes so that they get compiled.
+  v = TypeVar(0i32, null(Type))
+  i = IntType(true, 3u32)
+  f = FloatType(32u32)
+  c = ChoiceType([Type(IntType(true, 32u32))])
+  t = TupleType([Type(IntType(true, 32u32))])
+  tn = TypeName("boo")
+  fn = FunctionType(Type(tn), Type(tn))
+  p = PolymorphicType(TypeVar(0i32, null(Type)), Type(IntType(true, 32u32)))
+
+  println v.toString()
+  println i.toString()
+  println f.toString()
+  println c.toString()
+  println t.toString()
+  println tn.toString()
+  println fn.toString()
+  println p.toString()
+}
+
+unittest UnifyPrimitiveTypes {
+  println
+  println "**** Unify Primitive Types Test"
+  tu = TypeUnifier()
+  assert isnull(tu.instantiateVar(V(1).tyvar!, STR))
+  assert isnull(tu.unify(STR, STR))
+  assert isnull(tu.unify(I(32), I(32)))
+  assert isnull(tu.unify(F(64), F(64)))
+
+  assert !isnull(tu.unify(F(64), STR))
+  assert !isnull(tu.unify(I(32), U(32)))
+  assert !isnull(tu.unify(I(32), I(33)))
+  assert !isnull(tu.unify(U(32), F(32)))
+  tu.dump()
+}
+
+unittest UnifyTvars1 {
+  println
+  println "**** Unify Tyvars Test 1"
+  tu = TypeUnifier()
+  assert  isnull(tu.unify(V(1), STR))
+  assert  isnull(tu.unify(V(1), V(2)))
+  assert  isnull(tu.unify(V(2), STR))
+  assert !isnull(tu.unify(V(2), I(32)))
+  tu.dump()
+}
+
+unittest UnifyTvars2 {
+  println
+  println "**** Unify Tyvars Test 2"
+  tu = TypeUnifier()
+  assert  isnull(tu.unify(V(1), V(2)))
+  assert  isnull(tu.unify(V(1), STR))
+  assert !isnull(tu.unify(V(2), I(33)))
+  assert  isnull(tu.unify(V(2), STR))
+  tu.dump()
+}
+
+
+unittest UnifyTvarsConstraints {
+  println
+  println "**** Unify Tyvars Constraints Test"
+  tu = TypeUnifier()
+  assert  isnull(tu.unify(BV(1, STR), V(2)))
+  assert !isnull(tu.unify(BV(3, STR), BV(4, INT)))
+  assert  isnull(tu.unify(BV(5, OR([STR, INT])), V(6)))
+  assert  isnull(tu.unify(V(6), STR))
+  assert  isnull(tu.unify(BV(7, OR([STR, INT])), V(8)))
+  assert  isnull(tu.unify(V(7), INT))
+
+  assert  isnull(tu.unify(BV(9, OR([STR, INT])), V(10)))
+  // The following will pass because we pass in a type
+  // variable without constraint, even though the unifier
+  // has seen it before, it doesn't remember constraints
+  // associated with it.
+  assert isnull(tu.unify(V(9), BOOL))
+
+  // This will fail because we know var 10 is bound to
+  // a type variable with constraints.
+  assert !isnull(tu.unify(V(10), BOOL))
+  tu.dump()
+}
+
+unittest UnifyChoices {
+  println
+  println "**** Unify Choices Test"
+  tu = TypeUnifier()
+  assert  isnull(tu.unify(OR([V(1)]), STR))
+  assert !isnull(tu.unify(OR([F(64)]), STR))
+  assert  isnull(tu.unify(OR([STR, F(32)]), STR))
+  assert  isnull(tu.unify(OR([STR, F(32)]), F(32)))
+  assert !isnull(tu.unify(OR([STR, F(32)]), I(32)))
+
+  // TODO: need tests to show that vars that may be bound in one choice
+  // don't get bound
+  tu.dump()
+}
+
+unittest UnifyTuples {
+  println
+  println "**** Unify Tuples Test"
+  tu = TypeUnifier()
+  assert  isnull(tu.unify(TUPLE([V(1)]), TUPLE([STR])))
+  assert !isnull(tu.unify(TUPLE([F(64)]), TUPLE([STR])))
+  assert  isnull(tu.unify(TUPLE([V(1), STR, F(32)]), TUPLE([STR, V(1), V(2)])))
+  assert !isnull(tu.unify(TUPLE([V(1), STR, F(32)]), TUPLE([V(2), V(1), V(2)])))
+  assert  isnull(tu.unify(TUPLE([V(4), STR, F(32)]), TUPLE([V(5), V(6), V(4)])))
+  assert !isnull(tu.unify(TUPLE([V(1), V(2)]), I(32)))
+  tu.dump()
+}
+
+unittest Builtins {
+  println
+  println "**** Unify Builtins test"
+  use builtins
+  ty = builtinType(db.ExprType.Add)
+
+  tu = TypeUnifier()
+  assert  isnull(tu.unify(ty, FN(TUPLE([STR, STR]), STR)))
+  assert  isnull(tu.unify(ty, FN(TUPLE([I(64), I(64)]), I(64))))
+  assert  isnull(tu.unify(ty, FN(TUPLE([F(64), F(64)]), F(64))))
+  assert !isnull(tu.unify(ty, FN(TUPLE([BOOL, BOOL]), BOOL)))
+  assert !isnull(tu.unify(ty, FN(F(64), F(64))))
+}

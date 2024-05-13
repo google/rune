@@ -1,0 +1,90 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/*
+ * Type builder - convenience functions to create Type objects
+ */
+
+use typeclasses
+
+func STRING() -> Type {
+  return Type(TypeName("string"))
+}
+
+func BOOLEAN() -> Type {
+  return Type(TypeName("bool"))
+}
+
+func INTEGER() -> Type {
+  return Type(AnyIntType(true))
+}
+
+func UINTEGER() -> Type {
+  return Type(AnyIntType(false))
+}
+
+func ANYINTEGER() -> Type {
+  return Type(ChoiceType([INTEGER(), UINTEGER()]))
+}
+
+func NUMBER() -> Type {
+  return Type(ChoiceType([INTEGER(), UINTEGER(), F(32), F(64)]))
+}
+
+func U(width: u64) -> Type {
+  return Type(IntType(false, <u32>width))
+}
+
+func I(width: u64) -> Type {
+  return Type(IntType(true, <u32>width))
+}
+
+func F(width: u64) -> Type {
+  return Type(FloatType(<u32>width))
+}
+
+func V(id: u64) -> Type {
+  return Type(TypeVar(<i32>id, null(Type)))
+}
+
+func BV(id: u64, constraint: Type) -> Type {
+  return Type(TypeVar(<i32>id, constraint))
+}
+
+func TUPLE(types: [Type]) -> Type {
+  return Type(TupleType(types))
+}
+
+func OR(types: [Type]) -> Type {
+  return Type(ChoiceType(types))
+}
+
+func FN(arg: Type, res:Type) -> Type {
+  return Type(FunctionType(arg, res))
+}
+
+func POLY(v: u64, scope: Type) -> Type {
+  return Type(PolymorphicType(TypeVar(<i32>v, null(Type)), scope))
+}
+
+func BPOLY(v: u64, bounds: [Type], scope: Type) -> Type {
+  if bounds.length() == 1 {
+    constraint = bounds[0]
+  } else {
+    constraint = Type(ChoiceType(bounds))
+  }
+  tv = TypeVar(<i32>v, constraint)
+  return Type(PolymorphicType(tv, scope))
+}
+

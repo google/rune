@@ -392,6 +392,7 @@ deDatatype deBindBuiltinCall(deBlock scopeBlock, deFunction function,
   } else if (type == DE_TYPE_BOOL) {
     return bindBoolBuiltinMethod(function, parameterTypes, expression);
   } else {
+    deExprError(expression, "unknown builtin method call");
     utExit("Unknown builtin method call");
   }
   return deDatatypeNull;  // Dummy return.

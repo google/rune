@@ -13,9 +13,9 @@
 // limitations under the License.
 
 import cbackend as cb
+import types
 
 use sym
-
 use bigint
 use datatype
 
@@ -94,14 +94,17 @@ class Value(self: Value, value: string | bool | Int | Uint | Bigint | Float | Sy
     return !(v1 == v2)
   }
 
-  func genC(self, builder: cb.CBuilder) -> cb.CExpr {
+  func genC(self, builder: cb.CBuilder, bindingInstance: bool) -> cb.CExpr {
     switch self.type {
       DatatypeType.Bool => return  builder.cBoolLiteral(self.boolVal)
       DatatypeType.String => return builder.cStringLiteral(self.stringVal)
       DatatypeType.Int => return builder.cIntLiteral(self.intVal)
       DatatypeType.Uint => return builder.cIntLiteral(self.intVal)
       DatatypeType.Float => return builder.cFloatLiteral(self.floatVal)
-      DatatypeType.Sym => return builder.cStringLiteral(self.symVal.name)
+      DatatypeType.Sym => {
+        //println("gen symbol %s" % self.symVal.name)
+        return builder.cIdentifier(self.symVal!, bindingInstance)
+      }
       default => raise Status.Unimplemented, "Value type not yet supported by C backend: ", self.type
     }
   }

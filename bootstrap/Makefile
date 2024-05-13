@@ -53,6 +53,13 @@ cbackend/int2cstring.rn\
 cbackend/package.rn\
 cbackend/stringstream.rn\
 cbackend/stringwriter.rn\
+types/builtins.rn\
+types/package.rn\
+types/typebuilder.rn\
+types/typechecker.rn\
+types/typeclasses.rn\
+types/typeerror.rn\
+types/typeunifier.rn\
 rune.rn
 
 rune: $(SRC)

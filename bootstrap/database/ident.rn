@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import cbackend
-
 use sym
 
 use location
@@ -24,6 +22,9 @@ use function
 use variable
 use datatype
 use util
+
+import cbackend
+
 
 class Ident(self, function: Function, object: Function | Variable, sym: Sym, objLocation: Location) {
   self.exported = false

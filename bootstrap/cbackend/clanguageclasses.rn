@@ -13,32 +13,14 @@
 // limitations under the License.
 
 import database as db
+import types
 
 use cemitter
-use int2cstring
-use float2string
+use ctypegen
 use escapestring
-
-enum CType {
-   Void
-   Bool
-   Char
-   SChar
-   UChar
-   Short
-   UShort
-   Int
-   UInt
-   Long
-   ULong
-   LongLong
-   ULongLong
-   Float
-   Double
-   LongDouble
-   Enum
-   Ptr
-}
+use float2string
+use int2cstring
+use sym
 
 enum CStatementType {
    Assignment
@@ -65,11 +47,203 @@ enum CStatementType {
 }
 
 // Types ----------------------------------------------------------------------
-class CTypeExpr(self, type: CType /* | .... */) {
-  self.type = type
+class CPrimitiveType(self, ty: Type) {
+
+  enum Type {
+    Void
+    Char
+    Int
+    Short
+    Long
+    LongLong
+    Int8
+    Uint8
+    Int16
+    Uint16
+    Int32
+    Uint32
+    Int64
+    Uint64
+    Float
+    Double
+    LongDouble
+  }
+
+  self.type = ty
+
+  func width(self) -> u32 {
+    switch self.type {
+      CPrimitiveType.Type.Void => return 0u32
+      CPrimitiveType.Type.Char => return 8u32
+      CPrimitiveType.Type.Int => return 32u32
+      CPrimitiveType.Type.Short => return 16u32
+      CPrimitiveType.Type.Long => return 32u32
+      CPrimitiveType.Type.LongLong => return 64u32
+      CPrimitiveType.Type.Float => return 32u32
+      CPrimitiveType.Type.Double => return 64u32
+      CPrimitiveType.Type.LongDouble => return 80u32
+      CPrimitiveType.Type.Int8 => return 8u32
+      CPrimitiveType.Type.Uint8 => return 8u32
+      CPrimitiveType.Type.Int16 => return 16u32
+      CPrimitiveType.Type.Uint16 => return 16u32
+      CPrimitiveType.Type.Int32 => return 32u32
+      CPrimitiveType.Type.Uint32 => return 32u32
+      CPrimitiveType.Type.Int64 => return 64u32
+      CPrimitiveType.Type.Uint64 => return 64u32
+    }
+  }
+
+  func isSigned(self) -> bool {
+    switch self.type {
+      CPrimitiveType.Type.Void => return false
+      CPrimitiveType.Type.Char => return true // though this is platform dependent
+      CPrimitiveType.Type.Int => return true
+      CPrimitiveType.Type.Short => return true
+      CPrimitiveType.Type.Long => return true
+      CPrimitiveType.Type.LongLong => return true
+      CPrimitiveType.Type.Float => return true
+      CPrimitiveType.Type.Double => return true
+      CPrimitiveType.Type.LongDouble => return true
+      CPrimitiveType.Type.Int8 => return true
+      CPrimitiveType.Type.Uint8 => return false
+      CPrimitiveType.Type.Int16 => return true
+      CPrimitiveType.Type.Uint16 => return false
+      CPrimitiveType.Type.Int32 => return true
+      CPrimitiveType.Type.Uint32 => return false
+      CPrimitiveType.Type.Int64 => return true
+      CPrimitiveType.Type.Uint64 => return false
+    }
+  }
 
   func emit(self, e: CEmitter) {
-    e.write("Type %u" % self.type)
+    switch self.type {
+      CPrimitiveType.Type.Void => e.write("void")
+      CPrimitiveType.Type.Char => e.write("char")
+      CPrimitiveType.Type.Int => e.write("int")
+      CPrimitiveType.Type.Short => e.write("short")
+      CPrimitiveType.Type.Long => e.write("long")
+      CPrimitiveType.Type.LongLong => e.write("long long")
+      CPrimitiveType.Type.Float => e.write("float")
+      CPrimitiveType.Type.Double => e.write("double")
+      CPrimitiveType.Type.LongDouble => e.write("long double")
+
+      CPrimitiveType.Type.Int8 => {
+        e.include("<inttypes.h>")
+        e.write("int8_t")
+      }
+      CPrimitiveType.Type.Uint8 => {
+        e.include("<inttypes.h>")
+        e.write("uint8_t")
+      }
+      CPrimitiveType.Type.Int16 => {
+        e.include("<inttypes.h>")
+        e.write("int16_t")
+      }
+      CPrimitiveType.Type.Uint16 => {
+        e.include("<inttypes.h>")
+        e.write("uint16_t")
+      }
+      CPrimitiveType.Type.Int32 => {
+        e.include("<inttypes.h>")
+        e.write("int32_t")
+      }
+      CPrimitiveType.Type.Uint32 => {
+        e.include("<inttypes.h>")
+        e.write("uint8_t")
+      }
+      CPrimitiveType.Type.Int64 => {
+        e.include("<inttypes.h>")
+        e.write("int64_t")
+      }
+      CPrimitiveType.Type.Uint64 => {
+        e.include("<inttypes.h>")
+        e.write("uint64_t")
+      }
+    }
+  }
+}
+
+
+relation OneToOne CPointerType CTypeExpr cascade
+
+class CPointerType(self, type: CTypeExpr) {
+
+   self.insertCTypeExpr(type)
+
+   func emit(self, e: CEmitter) {
+     // TODO
+   }
+}
+
+
+class CDefinedType(self, name: string) {
+  self.name = name
+
+  func emit(self, e: CEmitter) {
+    if self.name == "bool" {
+      e.include("<inttypes.h>")
+      e.define("typedef uint8_t bool;")
+    }
+    if self.name == "string" {
+      e.define("typedef char *string;")
+    }
+    e.write("%s" % self.name)
+  }
+}
+
+
+relation OneToOne CTypeExpr CPrimitiveType cascade
+relation OneToOne CTypeExpr CPointerType cascade
+relation OneToOne CTypeExpr CDefinedType cascade
+
+
+class CTypeExpr(self, type: CPrimitiveType | CPointerType | CDefinedType) {
+
+  enum Type {
+    Primitive
+    Pointer
+    Defined
+  }
+
+  typeswitch type {
+    CPrimitiveType => {
+      self.type = Type.Primitive
+      self.primitive = type
+      self.insertCPrimitiveType(type)
+    }
+    CPointerType => {
+      self.type = Type.Pointer
+      self.pointer = type
+      self.insertCPointerType(type)
+    }
+    CDefinedType => {
+      self.type = Type.Defined
+      self.defined = type
+      self.insertCDefinedType(type)
+    }
+  }
+
+  func width(self) -> u32 {
+    switch self.type {
+      CTypeExpr.Type.Primitive => return self.cPrimitiveType.width()
+      CTypeExpr.Type.Defined => return 0u32
+      default => raise Status.Unimplemented, "Width not defined for this type"
+    }
+  }
+
+  func isSigned(self) -> bool {
+    switch self.type {
+      CTypeExpr.Type.Primitive => return self.cPrimitiveType.isSigned()
+      CTypeExpr.Type.Defined => return false
+      default => raise Status.Unimplemented, "isSigned not defined for this type"
+    }
+  }
+
+  func emit(self, e: CEmitter) {
+    switch self.type {
+      CTypeExpr.Type.Primitive => self.cPrimitiveType.emit(e)
+      CTypeExpr.Type.Defined => self.cDefinedType.emit(e)
+    }
   }
 }
 
@@ -128,8 +302,14 @@ class CLiteral(self, value: string | bool | db.Bigint | Uint | f64) {
   func emit(self, e: CEmitter) {
     switch self.type {
       CLiteral.Type.String => {
-        // value should already be escaped.
-        e.write("\"" + self.stringValue + "\"")
+        e.write("\"" + escapeString(e, self.stringValue) + "\"")
+      }
+      CLiteral.Type.Bool => {
+        if self.boolValue {
+          e.write("1")
+        } else {
+          e.write("0")
+        }
       }
       CLiteral.Type.Bool => {
         if e.printfArg {
@@ -142,30 +322,59 @@ class CLiteral(self, value: string | bool | db.Bigint | Uint | f64) {
         }
       }
       CLiteral.Type.Int => {
-        if e.printfArg {
-          e.include("<inttypes.h>")
-        }
         e.write(int2cstring(self.intValue))
       }
       CLiteral.Type.Float => {
-        if e.printfArg {
-          e.include("<float.h>")
-          e.needStringifyMacro()
-          e.define("#if defined(DBL_DECIMAL_DIG)\n" +
-                   "#  define DBL_SIG_DIGITS STRINGIFY(DBL_DECIMAL_DIG)\n" +
-                   "#  define FLT_SIG_DIGITS STRINGIFY(FLT_DECIMAL_DIG)\n" +
-                   "#elif defined(DECIMAL_DIG)\n" +
-                   "#  define DBL_SIG_DIGITS STRINGIFY(DECIMAL_DIG)\n" +
-                   "#  define FLT_SIG_DIGITS STRINGIFY(DECIMAL_DIG)\n" +
-                   "#else\n" +
-                   "#  define DBL_SIG_DIGITS STRINGIFY(DBL_DIG + 3)\n" +
-                   "#  define FLT_SIG_DIGITS STRINGIFY(FLT_DIG + 3)\n" +
-                   "#endif\n")
-        }
         e.write(float2string(self.floatValue))
       }
       default => raise Status.Unimplemented, "CLiteral type not yet supported"
     }
+  }
+}
+
+
+class CIdentifier(self, symbol: Sym, type: CTypeExpr?, firstInstance: bool, bindingInstance: bool) {
+  self.symbol = symbol
+  self.type = type
+  self.firstInstance = firstInstance
+  self.bindingInstance = bindingInstance
+
+  func hash(self) -> u64 {
+    return hashValue(self.symbol.name)
+  }
+
+  func equals(self, other: CIdentifier) -> bool {
+    return self.symbol.name == other.symbol.name
+  }
+
+  func width(self) -> u32 {
+    if isnull(self.type) {
+      return 0u32
+    } else {
+      return self.type.width()
+    }
+  }
+
+  func isSigned(self) -> bool {
+    if isnull(self.type) {
+      return false
+    } else {
+      return self.type.isSigned()
+    }
+  }
+
+  func emit(self, e: CEmitter) {
+    e.write(self.symbol.name)
+  }
+
+  func emitDeclaration(self, e: CEmitter) {
+    if isnull(self.type) {
+      e.writeln("<todo>")
+    } else {
+      self.type.emit(e)
+    }
+    e.space()
+    e.writeln("%s;" % self.symbol.name)
   }
 }
 
@@ -240,7 +449,7 @@ class CBinaryOperator(self, location: db.Location, type: CBinaryOperator.Type,
      LessThan
      LessThanEqual
 
-     //logical
+     // logical
      LogAnd
      LogOr
 
@@ -250,6 +459,9 @@ class CBinaryOperator(self, location: db.Location, type: CBinaryOperator.Type,
      BitXor
      ShiftLeft
      ShiftRight
+
+     // assignemnt
+     Assign
   }
 
   self.type = type
@@ -277,6 +489,7 @@ class CBinaryOperator(self, location: db.Location, type: CBinaryOperator.Type,
       CBinaryOperator.Type.BitXor => return 9u8
       CBinaryOperator.Type.ShiftLeft => return 5u8
       CBinaryOperator.Type.ShiftRight => return 5u8
+      CBinaryOperator.Type.Assign => return 14u8
     }
   }
 
@@ -308,6 +521,7 @@ class CBinaryOperator(self, location: db.Location, type: CBinaryOperator.Type,
       CBinaryOperator.Type.BitXor => return "^"
       CBinaryOperator.Type.ShiftLeft => return "<<"
       CBinaryOperator.Type.ShiftRight => return ">>"
+      CBinaryOperator.Type.Assign => return "="
     }
   }
 
@@ -419,18 +633,20 @@ class CCall(self, location: db.Location, fntype: CRuntimeFunction, args: CExpr, 
 }
 
 
-// Eventual Value type  CLiteral | CExprList | CVariable | CAssignOp | CUnaryOp | CBinaryOp | CFuncall | CSubscript | CField | CConditional
+// Eventual Value type  CLiteral | CExprList | CIdentifier | CAssignOp | CUnaryOp | CBinaryOp | CFuncall | CSubscript | CField | CConditional
 relation OneToOne CExpr CExprList cascade
 relation OneToOne CExpr CLiteral cascade
+relation OneToOne CExpr CIdentifier cascade
 relation OneToOne CExpr CCall cascade
 relation OneToOne CExpr: "parent" CPrefixOperator: "child" cascade
 relation OneToOne CExpr: "parent" CBinaryOperator: "child" cascade
 
-class CExpr(self, value: CLiteral | CPrefixOperator | CBinaryOperator | CCall | CExprList)  {
+
+class CExpr(self, value: CLiteral | CIdentifier | CPrefixOperator | CBinaryOperator | CCall | CExprList)  {
 
   enum Type {
     Literal
-    Variable
+    Identifier
     AssignOp
     PrefixOp
     BinaryOp
@@ -445,6 +661,10 @@ class CExpr(self, value: CLiteral | CPrefixOperator | CBinaryOperator | CCall | 
     CLiteral => {
       self.type = Type.Literal
       self.insertCLiteral(value)
+    }
+    CIdentifier => {
+      self.type = Type.Identifier
+      self.insertCIdentifier(value)
     }
     CExprList => {
       self.type = Type.List
@@ -467,6 +687,7 @@ class CExpr(self, value: CLiteral | CPrefixOperator | CBinaryOperator | CCall | 
   func emit(self, e: CEmitter) {
     switch self.type {
       CExpr.Type.Literal => self.cLiteral.emit(e)
+      CExpr.Type.Identifier => self.cIdentifier.emit(e)
       CExpr.Type.List => self.cExprList.emit(e)
       CExpr.Type.PrefixOp => self.childCPrefixOperator.emit(e)
       CExpr.Type.BinaryOp => self.childCBinaryOperator.emit(e)
@@ -477,6 +698,7 @@ class CExpr(self, value: CLiteral | CPrefixOperator | CBinaryOperator | CCall | 
   func precedence(self) -> u8 {
     switch self.type {
       CExpr.Type.Literal  => return 0u8
+      CExpr.Type.Identifier => return 0u8
       CExpr.Type.List     => return 0u8
       CExpr.Type.PrefixOp => return self.childCPrefixOperator.precedence()
       CExpr.Type.BinaryOp => return self.childCBinaryOperator.precedence()
@@ -487,6 +709,7 @@ class CExpr(self, value: CLiteral | CPrefixOperator | CBinaryOperator | CCall | 
   func isSigned(self) -> bool {
     switch self.type {
       CExpr.Type.Literal  => return self.cLiteral.isSigned()
+      CExpr.Type.Identifier => return self.cIdentifier.isSigned()
       CExpr.Type.List     => return self.cExprList.indexCExpr(0).isSigned()
       CExpr.Type.PrefixOp => return self.childCPrefixOperator.isSigned()
       CExpr.Type.BinaryOp => return self.childCBinaryOperator.isSigned()
@@ -497,6 +720,7 @@ class CExpr(self, value: CLiteral | CPrefixOperator | CBinaryOperator | CCall | 
   func width(self) -> u32 {
     switch self.type {
       CExpr.Type.Literal  => return self.cLiteral.width()
+      CExpr.Type.Identifier => return self.cIdentifier.width()
       CExpr.Type.List     => return self.cExprList.indexCExpr(0).width()
       CExpr.Type.PrefixOp => return self.childCPrefixOperator.width()
       CExpr.Type.BinaryOp => return self.childCBinaryOperator.width()
@@ -605,11 +829,24 @@ class CStatement(self, statement: CExpr) {
 // A CBlock is a list of C Statements, the following relation will add
 // methods to insert and append statements into that block.
 relation DoublyLinked CBlock CStatement cascade
+relation HashedClass CBlock CIdentifier cascade 
 
 class CBlock(self, location: db.Location) {
    self.location = location
 
+   func declare(self, id: CIdentifier) { //, value: CExpr) {
+     // add a declaration to the top of the block.
+     exists = self.findCIdentifier(id)
+     if isnull(exists) {
+        self.insertCIdentifier(id)
+     }
+   }
+
    func emit(self, e: CEmitter) {
+     for id in self.cIdentifiers() {
+       id.emitDeclaration(e)
+     }
+
      firstWritten = false
      for s in self.cStatements() {
         if firstWritten {

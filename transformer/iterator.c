@@ -65,30 +65,45 @@ static deStatement findStatementYieldStatement(deStatement statement) {
     return statement;
   }
   deBlock subBlock = deStatementGetSubBlock(statement);
-  if (subBlock != deBlockNull) {
-    deStatement subStatement;
-    deForeachBlockStatement(subBlock, subStatement) {
-      deStatement yieldStatement = findStatementYieldStatement(subStatement);
-      if (yieldStatement != deStatementNull && deStatementInstantiated(statement)) {
-        return yieldStatement;
-      }
-    } deEndBlockStatement;
+  if (subBlock == deBlockNull) {
+    return deStatementNull;
   }
-  return deStatementNull;
+  deStatement firstYieldStatement = deStatementNull;
+  deStatement subStatement;
+  deForeachBlockStatement(subBlock, subStatement) {
+    deStatement yieldStatement = findStatementYieldStatement(subStatement);
+    if (yieldStatement != deStatementNull && deStatementInstantiated(statement)) {
+      if (firstYieldStatement != deStatementNull) {
+        deLine line = deStatementGetLine(yieldStatement);
+        deError(line, "Only one yield statement per iterator is currently supported");
+      }
+      firstYieldStatement = yieldStatement;
+    }
+  } deEndBlockStatement;
+  return firstYieldStatement;
 }
 
 // Recursively search for a yield statement in the range of statements, not
-// including |lastStatement|.
+// including |lastStatement|.  Report an error if multiple yield statements are
+// found.
 static deStatement findYieldStatement(deStatement firstStatement, deStatement lastStatement) {
+  deStatement firstYieldStatement = deStatementNull;
   while (firstStatement != lastStatement) {
     deStatement yieldStatement = findStatementYieldStatement(firstStatement);
     if (yieldStatement != deStatementNull) {
-      return yieldStatement;
+      if (firstYieldStatement != deStatementNull) {
+        deLine line = deStatementGetLine(yieldStatement);
+        deError(line, "Only one yield statement per iterator is currently supported");
+      }
+      firstYieldStatement = yieldStatement;
     }
     firstStatement = deStatementGetNextBlockStatement(firstStatement);
   }
-  utExit("No yield statement found in iterator");
-  return deStatementNull;
+  if (firstYieldStatement == deStatementNull) {
+    deLine line = deStatementGetLine(firstStatement);
+    deError(line, "No yield statement found in iterator");
+  }
+  return firstYieldStatement;
 }
 // Turn the yield statement into an assignment.
 static void turnYieldIntLoopVarAssignment(deStatement yieldStatement, deExpression assignment) {

@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import cbackend as c
-
 use sym
 
 use filepath
@@ -25,6 +23,8 @@ use ident
 use statement
 use variable
 use function
+
+import cbackend as c
 
 
 enum ExprType {
@@ -339,6 +339,7 @@ class Expr(self, type: ExprType, location: Location) {
   // TODO: add datatype when ported to Rune.
   // self.datatype = null(Datatype)
   self.val = null(Value(0u32))
+  self.bindingInstance = false
 
   func newConstant(value: Value, location: Location) -> Expr {
     expr = Expr(ExprType.Constant, location)
@@ -685,8 +686,8 @@ class Expr(self, type: ExprType, location: Location) {
     switch self.type {
       // First, the operators that map directly to C binary operators
       ExprType.AddTrunc => return self.genCBinaryOp(builder)
-      ExprType.Constant => return self.val.genC(builder)
-      ExprType.Ident => return self.val.genC(builder)
+      ExprType.Constant => return self.val.genC(builder, false)
+      ExprType.Ident => return self.val.genC(builder, self.bindingInstance)
       ExprType.List => return self.genCList(builder)
       ExprType.Mod => return self.genCBinaryOp(builder)
       ExprType.MulTrunc => return self.genCBinaryOp(builder)
@@ -715,6 +716,8 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Rotr => return self.genCBinaryOp(builder)
       ExprType.Sub => return self.genCBinaryOp(builder)
 
+      // Assignment
+      ExprType.Equals => return self.genCBinaryOp(builder)
       default => raise Status.Unimplemented, "Expression type not yet supported by C backend: ", getExprTypeName(self.type)
     }
   }
@@ -746,7 +749,11 @@ class Expr(self, type: ExprType, location: Location) {
     left = self.firstChildExpr!
     right = left.nextExprChildExpr!
 
+    if self.type == ExprType.Equals {
+      self.bindingInstance = true
+    }
     l = left.genC(builder)
+    self.bindingInstance = false
     r = right.genC(builder)
 
     // First, generate C Binary Operators for those operators that map
@@ -769,6 +776,7 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Ge => op = c.CBinaryOperator.Type.GreaterThanEqual
       ExprType.Equal => op = c.CBinaryOperator.Type.Equals
       ExprType.Notequal => op = c.CBinaryOperator.Type.NotEquals
+      ExprType.Equals => op = c.CBinaryOperator.Type.Assign
 
       default => {
         switch self.type {
@@ -803,12 +811,18 @@ class Expr(self, type: ExprType, location: Location) {
   }
 
   func genCType(self, builder: c.CBuilder) -> c.CTypeExpr {
-    //TODO
-    // switch self.type {
-    //  default => raise Status.Unimplemented, "TypeExpression type not yet supported by C backend", self.type
-    //}
-    println "TODO: Generate C TypeExpressions"
-    return builder.cType(c.CType.Void)
+    switch self.type {
+      ExprType.UintType => return builder.cIntType(self.location, false, self.width)
+      ExprType.IntType => return builder.cIntType(self.location, true, self.width)
+      ExprType.FloatType => return builder.cFloatType(self.location, self.width)
+      ExprType.StringType => return builder.cStringType(self.location)
+      ExprType.BoolType => return builder.cBooleanType(self.location)
+      ExprType.NoneType => return builder.cVoidType(self.location)
+      default => raise Status.Unimplemented, "TypeExpression type not yet supported by C backend", self.type
+      // TODO:
+      //ExprType.Typeindex
+      //ExprType.Namedparam
+    }
   }
 }
 

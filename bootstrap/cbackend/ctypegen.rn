@@ -1,0 +1,96 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import types
+use clanguageclasses
+
+class CTypeGenerator(self, typechecker: types.TypeChecker) {
+  self.typechecker = typechecker
+
+  func genCInt(self, ty: types.IntType) -> CTypeExpr? {
+    if ty.width <= 8u32 {
+      primty = ty.isSigned ? CPrimitiveType.Type.Int8 : CPrimitiveType.Type.Uint8
+    } else if ty.width <= 16u32 {
+      primty = ty.isSigned ? CPrimitiveType.Type.Int16 : CPrimitiveType.Type.Uint16
+    } else if ty.width <= 32u32 {
+      primty = ty.isSigned ? CPrimitiveType.Type.Int32 : CPrimitiveType.Type.Uint32
+    } else if ty.width <= 64u32 {
+      primty = ty.isSigned ? CPrimitiveType.Type.Int64 : CPrimitiveType.Type.Uint64
+    } else {
+      raise Status.Unimplemented, "genCInt for integral width ", ty.width
+    }
+    return CTypeExpr(CPrimitiveType(primty))
+  }
+
+  func genCAnyInt(self, ty: types.AnyIntType) -> CTypeExpr? {
+    if ty.isSigned {
+      return CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Int64))
+    }
+    return CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Uint64))
+  }
+
+  func genCFloat(self, ty: types.FloatType) -> CTypeExpr? {
+    if ty.width == 32u32 {
+      return CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Float))
+    }
+    return CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Double))
+  }
+
+  func genCTypename(self, ty: types.TypeName) -> CTypeExpr? {
+    return CTypeExpr(CDefinedType(ty.name))
+  }
+
+  func genCChoice(self, ty: types.ChoiceType) -> CTypeExpr? {
+    println "TODO: gen choice types"
+    return null(CTypeExpr)
+  }
+
+  func genCTuple(self, ty: types.TupleType) -> CTypeExpr? {
+    println "TODO: gen tuple types"
+    return null(CTypeExpr)
+  }
+
+  func genCFunction(self, ty: types.FunctionType) -> CTypeExpr? {
+    println "TODO: gen function types"
+    return null(CTypeExpr)
+  }
+
+  func genCPolymorphic(self, ty: types.PolymorphicType) -> CTypeExpr? {
+    println "TODO: gen polymorphic types"
+    return null(CTypeExpr)
+  }
+
+  func genCType(self, ty: types.Type) -> CTypeExpr? {
+    switch ty.type {
+      types.Type.TypeClass.Var => {
+        ty2 = self.typechecker.resolve(ty)
+        if ty2.type == types.Type.TypeClass.Var {
+          println "TypeGenerator: type variable %s is unresolved." % ty.toString()
+          return null(CTypeExpr)
+        }
+        return self.genCType(ty2)
+      }
+      types.Type.TypeClass.Int => return self.genCInt(ty.int!)
+      types.Type.TypeClass.AnyInt => return self.genCAnyInt(ty.anyInt!)
+      types.Type.TypeClass.Float => return self.genCFloat(ty.float!)
+      types.Type.TypeClass.Typename => return self.genCTypename(ty.tyname!)
+      types.Type.TypeClass.Choice => return self.genCChoice(ty.choice!)
+      types.Type.TypeClass.Tuple => return self.genCTuple(ty.tuple!)
+      types.Type.TypeClass.Function => return self.genCFunction(ty.function!)
+      types.Type.TypeClass.Polymorphic => return self.genCPolymorphic(ty.poly!)
+    }
+  }
+
+}
+

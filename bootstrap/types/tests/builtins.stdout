@@ -1,0 +1,286 @@
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:2
+: "a" + "b"
+: ^^^
+: string
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:2
+: "a" + "b"
+:       ^^^
+: string
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:2
+: "a" + "b"
+: ^^^^^^^^^
+: string
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:3
+: 3.0 + 1u3
+: ^^^
+: f64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:3
+: 3.0 + 1u3
+:       ^^^
+: u3
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:3
+: 3.0 + 1u3
+: ^^^^^^^^^
+: Type Error!
+: third_party/rune/bootstrap/types/tests/builtins.rn:3: could not unify
+:     parameters of function (v-2:string|int|uint|f32|f64, v-2:string|int|uint|f32|f64) -> v-2:string|int|uint|f32|f64
+:     with args (f64, u3):
+: Failed to unify f64 and u3.
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:4
+: 1 + "hello"
+: ^
+: u64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:4
+: 1 + "hello"
+:     ^^^^^^^
+: string
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:4
+: 1 + "hello"
+: ^^^^^^^^^^^
+: Type Error!
+: third_party/rune/bootstrap/types/tests/builtins.rn:4: could not unify
+:     parameters of function (v-3:string|int|uint|f32|f64, v-3:string|int|uint|f32|f64) -> v-3:string|int|uint|f32|f64
+:     with args (u64, string):
+: Failed to unify u64 and string.
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:7
+: 1.0 * 2
+: ^^^
+: f64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:7
+: 1.0 * 2
+:       ^
+: u64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:7
+: 1.0 * 2
+: ^^^^^^^
+: Type Error!
+: third_party/rune/bootstrap/types/tests/builtins.rn:7: could not unify
+:     parameters of function (v-4:int|uint|f32|f64, v-4:int|uint|f32|f64) -> v-4:int|uint|f32|f64
+:     with args (f64, u64):
+: Failed to unify f64 and u64.
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:10
+: 1 % 2.0
+: ^
+: u64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:10
+: 1 % 2.0
+:     ^^^
+: f64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:10
+: 1 % 2.0
+: ^^^^^^^
+: Type Error!
+: third_party/rune/bootstrap/types/tests/builtins.rn:10: could not unify
+:     parameters of function (v-5:int|uint|f32|f64, v-5:int|uint|f32|f64) -> v-5:int|uint|f32|f64
+:     with args (u64, f64):
+: Failed to unify u64 and f64.
+: third_party/rune/bootstrap/types/tests/builtins.rn:10: could not unify
+:     parameters of function (string, v-6) -> string
+:     with args (u64, f64):
+: Failed to unify string and u64.
+: third_party/rune/bootstrap/types/tests/builtins.rn:10: Failed to apply any choice of function type Poly(v1:int|uint|f32|f64)[(v1, v1) -> v1]|Poly(v1)[(string, v1) -> string] to (u64, f64).
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:11
+: "alpha" % (1, 2.0, "hello")
+: ^^^^^^^
+: string
+
+[Typecheck] __empty__:0
+: v1
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:11
+: "alpha" % (1, 2.0, "hello")
+: ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+: string
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:14
+: 3.1 ** 4
+: ^^^
+: f64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:14
+: 3.1 ** 4
+:        ^
+: u64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:14
+: 3.1 ** 4
+: ^^^^^^^^
+: Type Error!
+: third_party/rune/bootstrap/types/tests/builtins.rn:14: could not unify
+:     parameters of function (v-9:int|uint, uint) -> v-9:int|uint
+:     with args (f64, u64):
+: Type f64 failed to satisfy tyvar constraint int|uint.
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:15
+: 3 ** (-1)
+: ^
+: u64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:15
+: 3 ** (-1)
+:        ^
+: u64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:15
+: 3 ** (-1)
+:      ^^^^
+: int
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:15
+: 3 ** (-1)
+: ^^^^^^^^^
+: Type Error!
+: third_party/rune/bootstrap/types/tests/builtins.rn:15: could not unify
+:     parameters of function (v-11:int|uint, uint) -> v-11:int|uint
+:     with args (u64, int):
+: Unifying type uint against integral type int with different signedness.
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:16
+: 3 ** 4.0
+: ^
+: u64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:16
+: 3 ** 4.0
+:      ^^^
+: f64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:16
+: 3 ** 4.0
+: ^^^^^^^^
+: Type Error!
+: third_party/rune/bootstrap/types/tests/builtins.rn:16: could not unify
+:     parameters of function (v-12:int|uint, uint) -> v-12:int|uint
+:     with args (u64, f64):
+: Unifying type uint against non-integer type f64.
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:19
+: 1.0 !+ 2.0
+: ^^^
+: f64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:19
+: 1.0 !+ 2.0
+:        ^^^
+: f64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:19
+: 1.0 !+ 2.0
+: ^^^^^^^^^^
+: Type Error!
+: third_party/rune/bootstrap/types/tests/builtins.rn:19: could not unify
+:     parameters of function (v-13:int|uint, v-13:int|uint) -> v-13:int|uint
+:     with args (f64, f64):
+: Type f64 failed to satisfy tyvar constraint int|uint.
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:22
+: -"hello"
+:  ^^^^^^^
+: string
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:22
+: -"hello"
+: ^^^^^^^^
+: Type Error!
+: third_party/rune/bootstrap/types/tests/builtins.rn:22: could not unify
+:     parameters of function v-14:f32|f64|int -> v-14:f32|f64|int
+:     with args string:
+: Type string failed to satisfy tyvar constraint f32|f64|int.
+: third_party/rune/bootstrap/types/tests/builtins.rn:22: could not unify
+:     parameters of function uint -> int
+:     with args string:
+: Unifying type uint against non-integer type string.
+: third_party/rune/bootstrap/types/tests/builtins.rn:22: Failed to apply any choice of function type Poly(v1:f32|f64|int)[v1 -> v1]|uint -> int to string.
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:25
+: 1 && true
+: ^
+: u64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:25
+: 1 && true
+:      ^^^^
+: bool
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:25
+: 1 && true
+: ^^^^^^^^^
+: Type Error!
+: third_party/rune/bootstrap/types/tests/builtins.rn:25: could not unify
+:     parameters of function (bool, bool) -> bool
+:     with args (u64, bool):
+: Failed to unify bool and u64.
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:28
+: 1.0 & 3
+: ^^^
+: f64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:28
+: 1.0 & 3
+:       ^
+: u64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:28
+: 1.0 & 3
+: ^^^^^^^
+: Type Error!
+: third_party/rune/bootstrap/types/tests/builtins.rn:28: could not unify
+:     parameters of function (v-15:int|uint, v-15:int|uint) -> v-15:int|uint
+:     with args (f64, u64):
+: Type f64 failed to satisfy tyvar constraint int|uint.
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:31
+: 1.0 << 3.0
+: ^^^
+: f64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:31
+: 1.0 << 3.0
+:        ^^^
+: f64
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:31
+: 1.0 << 3.0
+: ^^^^^^^^^^
+: Type Error!
+: third_party/rune/bootstrap/types/tests/builtins.rn:31: could not unify
+:     parameters of function (v-16:int|uint, uint) -> v-16:int|uint
+:     with args (f64, f64):
+: Type f64 failed to satisfy tyvar constraint int|uint.
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:34
+: true < false
+: ^^^^
+: bool
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:34
+: true < false
+:        ^^^^^
+: bool
+
+[Typecheck] third_party/rune/bootstrap/types/tests/builtins.rn:34
+: true < false
+: ^^^^^^^^^^^^
+: Type Error!
+: third_party/rune/bootstrap/types/tests/builtins.rn:34: could not unify
+:     parameters of function (v-17:int|uint|f32|f64|string, v-17:int|uint|f32|f64|string) -> bool
+:     with args (bool, bool):
+: Type bool failed to satisfy tyvar constraint int|uint|f32|f64|string.
+Found 17 type errors.

@@ -13,17 +13,47 @@
 // limitations under the License.
 
 import database as db
+import types
 
 use clanguageclasses
+use ctypegen
 use escapestring
+use sym
+
+relation HashedClass CurrentScope CIdentifier cascade
+
+class CurrentScope(self) {
+
+  func open(self) {
+    // todo
+  }
+
+  func close(self) {
+    // todo
+  }
+
+  func getIdentifier(self, name: Sym, type: CTypeExpr?, bindingInstance: bool) -> CIdentifier {
+    // todo: handle the case where the definition was in an outer scope.
+    id = CIdentifier(name, type, false, bindingInstance)
+    exists = self.findCIdentifier(id)
+    if isnull(exists) {
+      id.firstInstance = true
+      self.insertCIdentifier(id)
+    }
+    return id
+  }
+}
 
 relation DoublyLinked CBuilder CBlock cascade
 
-class CBuilder(self) {
+class CBuilder(self, tc: types.TypeChecker) {
   self.currentParamList = null(CParamList)
   self.currentExprList = null(CExprList)
   self.program = CProgram()
   self.currentBlock = null(CBlock)
+  self.identifierScope = CurrentScope()
+  self.typechecker = tc
+  self.typeGenerator = CTypeGenerator(tc)
 
   func build(self, module: db.Function) -> CProgram {
     module.genC(self)
@@ -35,9 +65,11 @@ class CBuilder(self) {
   }
 
   func openScope(self) {
+    self.identifierScope.open()
   }
 
   func closeScope(self) {
+    self.identifierScope.close()
   }
 
   func openBlock(self, location: db.Location?) {
@@ -85,8 +117,76 @@ class CBuilder(self) {
     return CParameter(location, name, type)
   }
 
+  func cIdentifier(self, symbol: Sym, bindingInstance: bool) -> CExpr {
+    type = self.typechecker.symbol(symbol)
+    if isnull(type) {
+      ctype = null(CTypeExpr)
+    } else {
+      ctype = self.typeGenerator.genCType(type!)
+    }
+    id = self.identifierScope.getIdentifier(symbol, ctype, bindingInstance)
+    if id.firstInstance {
+      if !isnull(self.currentBlock) {
+        self.currentBlock.declare(id)
+      } else {
+        self.program.mainCBlock.declare(id)
+      }
+    }
+    return CExpr(id)
+  }
+
   func cType(self, type: CType) -> CTypeExpr {
     return CTypeExpr(type)
+  }
+
+  func cIntType(self, location: db.Location, isSigned: bool, width: u32) -> CTypeExpr {
+    if isSigned {
+      if width <= 8 {
+        prim = CPrimitiveType(CPrimitiveType.Type.Int8)
+      } else if width <= 16 {
+        prim = CPrimitiveType(CPrimitiveType.Type.Int16)
+      } else if width <= 32 {
+        prim = CPrimitiveType(CPrimitiveType.Type.Int32)
+      } else if width <= 64 {
+        prim = CPrimitiveType(CPrimitiveType.Type.Int64)
+      } else {
+        raise Status.Unimplemented, "No support for primitive integers of width larger than 64"
+      }
+    } else {
+      if width <= 8 {
+        prim = CPrimitiveType(CPrimitiveType.Type.Uint8)
+      } else if width <= 16 {
+        prim = CPrimitiveType(CPrimitiveType.Type.Uint16)
+      } else if width <= 32 {
+        prim = CPrimitiveType(CPrimitiveType.Type.Uint32)
+      } else if width <= 64 {
+        prim = CPrimitiveType(CPrimitiveType.Type.Uint64)
+      } else {
+        raise Status.Unimplemented, "No support for primitive integers of width larger than 64"
+      }
+    }
+    return CTypeExpr(prim)
+  }
+
+  func cFloatType(self, location: db.Location, width: u32) -> CTypeExpr {
+    if width == 32 {
+      return CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Float))
+    } else if width == 64 {
+      return CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Double))
+    }
+    raise Status.Unimplemented, "No support for floating point width %u32." % width
+  }
+
+  func cStringType(self, location: db.Location) -> CTypeExpr {
+    return CTypeExpr(CDefinedType("string"))
+  }
+
+  func cBooleanType(self, location: db.Location) -> CTypeExpr {
+    return CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Int8))
+  }
+
+  func cVoidType(self, location: db.Location) -> CTypeExpr {
+    return CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Void))
   }
 
   /* Rune expressions *********************************************************************/
@@ -109,7 +209,7 @@ class CBuilder(self) {
   }
 
   func cStringLiteral(self, value: string) -> CExpr {
-    return CExpr(CLiteral(escapeString(value)))
+    return CExpr(CLiteral(value))
   }
 
   func cBoolLiteral(self, value: bool) -> CExpr {

@@ -1,0 +1,356 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+class TypeVar(self, id: i32, constraint: Type?) {
+  self.id = id
+  self.constraint = constraint
+
+  operator == (self, other: TypeVar) -> bool {
+    return self.id == other.id
+  }
+
+  func toString(self) -> string {
+    if isnull(self.constraint) {
+      return "v%i32" % self.id
+    } else {
+      return "v%i32:%s" % (self.id, self.constraint.toString())
+    }
+  }
+
+  func replaceVar(self, vold: TypeVar, vnew: TypeVar) -> Type {
+    if self.id == vold.id {
+      return Type(vnew)
+    }
+    return Type(self)
+  }
+}
+
+class IntType(self, isSigned: bool, width: u32) {
+  self.isSigned = isSigned
+  self.width = width
+
+  operator == (self, other: IntType) -> bool {
+    return other.isSigned == self.isSigned && other.width == self.width
+  }
+
+  func toString(self) -> string {
+    if self.isSigned {
+      return "i%u32" % self.width
+    } 
+    return "u%u32" % self.width
+  }
+}
+
+class AnyIntType(self, isSigned: bool) {
+  self.isSigned = isSigned
+
+  operator == (self, other: AnyIntType) -> bool {
+    return other.isSigned == self.isSigned
+  }
+
+  func toString(self) -> string {
+    if self.isSigned {
+      return "int"
+    } 
+    return "uint"
+  }
+}
+
+class FloatType(self, width: u32) {
+  self.width = width
+
+  operator == (self, other: FloatType) -> bool {
+    return self.width == other.width
+  }
+
+  func toString(self) -> string {
+    return "f%u32" % self.width
+  }
+}
+
+class TypeName(self, name: string) {
+  self.name = name
+
+  operator == (self, other: TypeName) -> bool {
+    return self.name == other.name
+  }
+
+  func toString(self) -> string {
+    return self.name
+  }
+}
+
+class TupleType(self, elements: [Type]) {
+  self.elements = elements
+
+  operator == (self, other: TupleType) -> bool {
+    if self.elements.length() != other.elements.length() {
+      return false
+    }
+    for i = 0, i < self.elements.length(), i += 1 {
+      if self.elements[i] != other.elements[i] {
+        return false
+      }
+    }
+    return true
+  }
+
+  func toString(self) -> string {
+    value = "("
+    first = true
+    for ty in self.elements {
+      if !first {
+        value += ", "
+      }
+      value += ty.toString()
+      first = false
+    }
+    return value + ")"
+  }
+
+  func replaceVar(self, vold: TypeVar, vnew: TypeVar) -> Type {
+    elements = arrayof(Type)
+    for ty in self.elements {
+      elements.append(ty.replaceVar(vold, vnew))
+    }
+    return Type(TupleType(elements))
+  }
+}
+
+// Represents the combination of alternative types.
+class ChoiceType(self, choices: [Type]) {
+  self.choices = choices
+
+  operator == (self, other: ChoiceType) -> bool {
+    if self.choices.length() != other.choices.length() {
+      return false
+    }
+    for i = 0, i < self.choices.length(), i += 1 {
+      if self.choices[i] != other.choices[i] {
+        return false
+      }
+    }
+    return true
+  }
+
+  func toString(self) -> string {
+    value = ""
+    first = true
+    for ty in self.choices {
+      if !first {
+        value += "|"
+      }
+      value += ty.toString()
+      first = false
+    }
+    return value
+  }
+
+  func replaceVar(self, vold: TypeVar, vnew: TypeVar) -> Type {
+    choices = arrayof(Type)
+    for ty in self.choices {
+      choices.append(ty.replaceVar(vold, vnew))
+    }
+    return Type(ChoiceType(choices))
+  }
+}
+
+class FunctionType(self, params: Type, result: Type) {
+  self.params = params
+  self.result = result
+
+  operator == (self, other: FunctionType) -> bool {
+    return self.params == other.params && self.result == other.result
+  }
+
+  func toString(self) -> string {
+    // TODO: precedence in typing...
+    return "%s -> %s" % (self.params.toString(), self.result.toString())
+  }
+
+  func replaceVar(self, vold: TypeVar, vnew: TypeVar) -> Type {
+    return Type(FunctionType(self.params.replaceVar(vold, vnew), self.result.replaceVar(vold, vnew)))
+  }
+}
+
+class PolymorphicType(self, v: TypeVar, scope: Type) {
+  self.v = v
+  self.scope = scope
+
+  operator == (self, other: PolymorphicType) -> bool {
+    return self.v == other.v && self.scope == other.scope
+  }
+
+  func toString(self) -> string {
+    return "Poly(%s)[%s]" % (self.v.toString(), self.scope.toString())
+  }
+
+  func open(self, v: i32) -> Type {
+    tv = TypeVar(v, self.v.constraint)
+    return self.scope.replaceVar(self.v, tv)
+  }
+
+  func replaceVar(self, vold: TypeVar, vnew: TypeVar) -> Type {
+    if vold.id == self.v.id {
+      // We cannot replace a variable within the scope of a binding, if that
+      // var is being bound.
+      return Type(self)
+    }
+    return Type(PolymorphicType(self.v, self.scope.replaceVar(vold, vnew)))
+  }
+}
+
+relation OneToOne Type TypeVar cascade
+relation OneToOne Type TypeName cascade
+relation OneToOne TypeVar Type cascade
+relation OneToOne Type IntType cascade
+relation OneToOne Type AnyIntType cascade
+relation OneToOne Type FloatType cascade
+relation OneToOne Type ChoiceType cascade
+relation OneToOne Type TupleType cascade
+relation OneToOne Type FunctionType cascade
+relation OneToOne Type PolymorphicType cascade
+
+
+class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | ChoiceType | TupleType | FunctionType | PolymorphicType) {
+
+  enum TypeClass {
+    Var
+    Int
+    AnyInt
+    Float
+    Typename
+    Choice
+    Tuple
+    Function
+    Polymorphic
+  }
+
+  self.tyvar = null(TypeVar)
+  self.int = null(IntType)
+  self.anyInt = null(AnyIntType)
+  self.float = null(FloatType)
+  self.tyname = null(TypeName)
+  self.choice = null(ChoiceType)
+  self.tuple = null(TupleType)
+  self.function = null(FunctionType)
+  self.poly = null(PolymorphicType)
+
+  typeswitch ty {
+    TypeVar => {
+      self.type = TypeClass.Var
+      self.tyvar = ty
+    }
+    IntType => {
+      self.type = TypeClass.Int
+      self.int = ty
+    }
+    AnyIntType => {
+      self.type = TypeClass.AnyInt
+      self.anyInt = ty
+    }
+    FloatType => {
+      self.type = TypeClass.Float
+      self.float = ty
+    }
+    TypeName => {
+      self.type = TypeClass.Typename
+      self.tyname = ty
+    }
+    ChoiceType => {
+      self.type = TypeClass.Choice
+      self.choice = ty
+    }
+    TupleType => {
+      self.type = TypeClass.Tuple
+      self.tuple = ty
+    }
+    FunctionType => {
+      self.type = TypeClass.Function
+      self.function = ty
+    }
+    PolymorphicType => {
+      self.type = TypeClass.Polymorphic
+      self.poly = ty
+    }
+  }
+
+  operator == (self, other: Type) -> bool {
+    if self.type != other.type {
+      return false
+    }
+    switch self.type {
+      Type.TypeClass.Var => return self.tyvar! == other.tyvar!
+      Type.TypeClass.Int => return self.int! == other.int!
+      Type.TypeClass.AnyInt => return self.anyInt! == other.anyInt!
+      Type.TypeClass.Float => return self.float! == other.float!
+      Type.TypeClass.Typename => return self.tyname! == other.tyname!
+      Type.TypeClass.Choice => return self.choice! == other.choice!
+      Type.TypeClass.Tuple => return self.tuple! == other.tuple!
+      Type.TypeClass.Function => return self.function! == other.function!
+      Type.TypeClass.Polymorphic => return self.poly! == other.poly!
+    }
+  }
+
+  operator != (self, other: Type) -> bool {
+    return !(self == other)
+  }
+
+  func toString(self) -> string {
+    switch self.type {
+      Type.TypeClass.Var => return self.tyvar.toString()
+      Type.TypeClass.Int => return self.int.toString()
+      Type.TypeClass.AnyInt => return self.anyInt.toString()
+      Type.TypeClass.Float => return self.float.toString()
+      Type.TypeClass.Typename => return self.tyname.toString()
+      Type.TypeClass.Choice => return self.choice.toString()
+      Type.TypeClass.Tuple => return self.tuple.toString()
+      Type.TypeClass.Function => return self.function.toString()
+      Type.TypeClass.Polymorphic => return self.poly.toString()
+    }
+  }
+
+  func replaceVar(self, vold: TypeVar, vnew: TypeVar) -> Type {
+    switch self.type {
+      Type.TypeClass.Var => return self.tyvar.replaceVar(vold, vnew)
+      Type.TypeClass.Int => return Type(self.int!)
+      Type.TypeClass.AnyInt => return Type(self.anyInt!)
+      Type.TypeClass.Float => return Type(self.float!)
+      Type.TypeClass.Typename => return Type(self.tyname!)
+      Type.TypeClass.Choice => return self.choice.replaceVar(vold, vnew)
+      Type.TypeClass.Tuple => return self.tuple.replaceVar(vold, vnew)
+      Type.TypeClass.Function => return self.function.replaceVar(vold, vnew)
+      Type.TypeClass.Polymorphic => return self.poly.replaceVar(vold, vnew)
+    }
+  }
+
+  func isSigned(self) -> bool {
+    switch self.type {
+      Type.TypeClass.Int => return self.int!.isSigned
+      Type.TypeClass.AnyInt => return self.anyInt!.isSigned
+      default => return false
+    }
+  }
+
+  func width(self) -> u32 {
+    switch self.type {
+      Type.TypeClass.Int => return self.int!.width
+      Type.TypeClass.AnyInt => return 64u32
+      Type.TypeClass.Float => return self.float!.width
+      default => return 0u32
+    }
+  }
+
+}
+

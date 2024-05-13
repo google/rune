@@ -2246,6 +2246,7 @@ static void moveTupleOrObject(llElement dest, llElement source) {
   deDatatype destType = llElementGetDatatype(dest);
   utAssert(datatype == llElementGetDatatype(dest) ||
       deDatatypeGetType(destType) == DE_TYPE_STRUCT ||
+      deDatatypeGetType(destType) == DE_TYPE_CLASS ||
       deDatatypeNullable(destType));
   char *type = llGetTypeString(datatype, true);
   char *location = locationInfo();

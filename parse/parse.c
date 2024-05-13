@@ -102,53 +102,22 @@ static void importModuleIdentifiers(deBlock destBlock, deBlock sourceBlock, deLi
   } deEndBlockIdent;
 }
 
-// Find an existing module that has already been imported.
-static deBlock findExistingModule(deBlock packageBlock, deExpression pathExpr) {
-  deIdent ident = deFindIdentFromPath(packageBlock, pathExpr);
-  deLine line = deExpressionGetLine(pathExpr);
-  if (ident == deIdentNull) {
-    return deBlockNull;  // Not yet loaded.
-  }
-  if (deIdentGetType(ident) != DE_IDENT_FUNCTION) {
-    deError(line, "Identifier %s exists, but is not a module",
-        deIdentGetName(ident));
-  }
-  deFunction function = deIdentGetFunction(ident);
-  if (deFunctionGetType(function) == DE_FUNC_PACKAGE) {
-    // Look for the module named package.
-    utSym packageSym = utSymCreate("package");
-    deIdent packageIdent = deBlockFindIdent(deFunctionGetSubBlock(function), packageSym);
-    if (packageIdent == deIdentNull || deIdentGetType(packageIdent) != DE_IDENT_FUNCTION) {
-      deError(line, "Identifier %s exists, but is not a module",
-          deIdentGetName(ident));
-    }
-    function = deIdentGetFunction(packageIdent);
-  }
-  if (deFunctionGetType(function) != DE_FUNC_MODULE) {
-    deError(line, "Identifier %s exists, but is not a module",
-        deIdentGetName(ident));
-  }
-  return deFunctionGetSubBlock(function);
-}
-
 // Handle a use statement.
 static void loadUseStatement(deStatement statement, deBlock packageBlock) {
   deExpression pathExpr = deStatementGetExpression(statement);
   deBlock functionBlock = deStatementGetBlock(statement);
-  deBlock moduleBlock = findExistingModule(packageBlock, pathExpr);
   deLine line = deStatementGetLine(statement);
-  if (moduleBlock == deBlockNull) {
-    deFilepath filepath = deBlockGetFilepath(functionBlock);
-    char *fileName = utSprintf("%s/%s.rn", utDirName(deFilepathGetName(filepath)),
+  deFilepath filepath = deBlockGetFilepath(functionBlock);
+  char *fileName = utSprintf("%s/%s.rn", utDirName(deFilepathGetName(filepath)),
+      utSymGetName(deExpressionGetName(pathExpr)));
+  deBlock moduleBlock;
+  if (utFileExists(fileName)) {
+    moduleBlock = deParseModule(fileName, packageBlock, false, line);
+  } else {
+    // Try looking in the std module.
+    char *fileName = utSprintf("%s/std/%s.rn", deRunePackageDir,
         utSymGetName(deExpressionGetName(pathExpr)));
-    if (utFileExists(fileName)) {
-      moduleBlock = deParseModule(fileName, packageBlock, false, line);
-    } else {
-      // Try looking in the std module.
-      char *fileName = utSprintf("%s/std/%s.rn", deRunePackageDir,
-          utSymGetName(deExpressionGetName(pathExpr)));
-      moduleBlock = deParseModule(fileName, deRootGetBlock(deTheRoot), false, line);
-    }
+    moduleBlock = deParseModule(fileName, deRootGetBlock(deTheRoot), false, line);
   }
   importModuleIdentifiers(functionBlock, moduleBlock, deStatementGetLine(statement));
 }
@@ -209,13 +178,6 @@ static char *findModuleFile(deBlock packageBlock, deExpression pathExpr, bool *i
   // Check relative to current package.
   char *path = findPathUnderFilepath(deFilepathGetName(
       deBlockGetFilepath(packageBlock)), commonPath, isPackageDir);
-  if (path  != NULL) {
-    utFree(commonPath);
-    return utAllocString(path);
-  }
-  // Check if it is a sibling directory to the current package.
-  char *sibling=dirname(deFilepathGetName(deBlockGetFilepath(packageBlock)));
-  path = findPathUnderFilepath(sibling, commonPath, isPackageDir);
   if (path  != NULL) {
     utFree(commonPath);
     return utAllocString(path);
@@ -332,13 +294,11 @@ static void loadImportStatement(deStatement statement, deBlock packageBlock) {
   deLine importLine = deStatementGetLine(statement);
   deExpression pathExpr;
   utSym alias = getPathExpressionAndAlias(deStatementGetExpression(statement), &pathExpr);
-  deBlock moduleBlock = findExistingModule(packageBlock, pathExpr);
-  if (moduleBlock == deBlockNull) {
-    deBlock destPackageBlock;
-    char *fileName = createPackagePathToModule(packageBlock, pathExpr, &destPackageBlock);
-    moduleBlock = deParseModule(fileName, destPackageBlock, false, importLine);
-    utFree(fileName);
-  }
+  deBlock moduleBlock;
+  deBlock destPackageBlock;
+  char *fileName = createPackagePathToModule(packageBlock, pathExpr, &destPackageBlock);
+  moduleBlock = deParseModule(fileName, destPackageBlock, false, importLine);
+  utFree(fileName);
   // Now import just one identifier.
   deBlock destBlock = deStatementGetBlock(statement);
   deFunction moduleFunction = deBlockGetOwningFunction(moduleBlock);
@@ -409,7 +369,13 @@ deBlock deParseModule(char *fileName, deBlock packageBlock, bool isMainModule, d
   }
   deFilepath parentFilepath = deBlockGetFilepath(packageBlock);
   utAssert(deFilepathIsPackage(parentFilepath));
-  deFilepath filepath = deFilepathCreate(fullName, parentFilepath, false);
+  deFilepath filepath = deRootFindFilepath(deTheRoot, utSymCreate(fullName));
+  if (filepath != deFilepathNull) {
+    // Already loaded this module.
+    utFree(fullName);
+    return deFilepathGetModuleBlock(filepath);
+  }
+  filepath = deFilepathCreate(fullName, parentFilepath, false);
   deCurrentFilepath = filepath;
   utSym moduleName = utSymCreate(utReplaceSuffix(utBaseName(fileName), ""));
   if (!deIsLegalIdentifier(utSymGetName(moduleName))) {

@@ -39,34 +39,50 @@ class Location(self, filepath: Filepath, pos:u32, len: u32, line: u32) {
       println "File %s, line %u:" % (path, self.line)
     }
     if filepath.text.length() > 0 {
-      self.printLocationAndCarots()
+      self.printLocationAndCarets()
+      println
     }
   }
 
   // Like dump(), but prints msg.
-  func error(self, msg) {
+  func error(self, msg, dumpText: bool = true, prefix: string = "") {
     filepath = self.filepath
     assert !isnull(filepath)
     path = filepath.getRelativePath()
     if path.length() > 0 {
-      println "%s:%u: %s" % (path, self.line, msg)
+      println prefix + "%s:%u: %s" % (path, self.line, msg)
     }
-    if filepath.text.length() > 0 {
-      self.printLocationAndCarots()
+    if dumpText && filepath.text.length() > 0 {
+      self.printLocationAndCarets(prefix)
+      println
     }
   }
 
-  func printLocationAndCarots(self) {
+  func annotation(self, title: string, prefix: string) {
+    filepath = self.filepath
+    assert !isnull(filepath)
+    path = filepath.getRelativePath()
+    if path.length() > 0 {
+      println "%s%s:%u" % (title, path, self.line)
+    }
+    if filepath.text.length() > 0 {
+      self.printLocationAndCarets(prefix)
+      println
+    }
+  }
+
+  func printLocationAndCarets(self, prefix: string = "") {
     start = self.findLocationStart()
     end = self.findLocationEnd()
+    print prefix
     println self.filepath.text[start:end]
+    print prefix
     for i in range(self.pos - start) {
       print " "
     }
     for i in range(self.len) {
       print "^"
     }
-    println
   }
 
   func findLocationStart(self) -> u32 {
