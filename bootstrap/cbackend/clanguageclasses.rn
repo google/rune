@@ -829,7 +829,7 @@ class CStatement(self, statement: CExpr) {
 // A CBlock is a list of C Statements, the following relation will add
 // methods to insert and append statements into that block.
 relation DoublyLinked CBlock CStatement cascade
-relation HashedClass CBlock CIdentifier cascade 
+relation HashedClass CBlock CIdentifier cascade
 
 class CBlock(self, location: db.Location) {
    self.location = location

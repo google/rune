@@ -96,7 +96,7 @@ class TypeChecker(self) {
   }
 
   func closeScope(self) -> BindingScope {
-    scope = self.lastBindingScope!    
+    scope = self.lastBindingScope!
     self.removeBindingScope(scope)
     return scope
   }
@@ -176,7 +176,7 @@ class TypeChecker(self) {
       Type.TypeClass.Function => {
         te = self.unifier.unify(function.function!.params, args, location)
         if !isnull(te) {
-          self.typeError("could not unify\n%s    parameters of function %s\n%s    with args %s:\n%s%s" 
+          self.typeError("could not unify\n%s    parameters of function %s\n%s    with args %s:\n%s%s"
                           % (TypeErrorPrefix, function.toString(),
                              TypeErrorPrefix, args.toString(), TypeErrorPrefix, te.msg),
                          location)

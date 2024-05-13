@@ -172,7 +172,7 @@ class CRuntime(self) {
     self.needIntAddFn = true
     return self.intadd.needWidth(width)
   }
-  
+
   func needIntSub(self, width: u32) -> string {
     self.needRaiseError()
     self.needIntSubFn = true

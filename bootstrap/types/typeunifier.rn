@@ -113,7 +113,7 @@ class TypeUnifier(self) {
     if isnull(exists) {
       self.setVar(tyvar, ty)
       return null(TypeError)
-    } 
+    }
     return self.unify(exists!, ty, location)
   }
 
@@ -266,7 +266,7 @@ class TypeUnifier(self) {
         self.dumpmapping(m2)
       }
     }
-  }      
+  }
 
   func dump(self) {
     for mapping in self.mappings() {

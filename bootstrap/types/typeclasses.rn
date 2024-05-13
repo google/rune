@@ -47,7 +47,7 @@ class IntType(self, isSigned: bool, width: u32) {
   func toString(self) -> string {
     if self.isSigned {
       return "i%u32" % self.width
-    } 
+    }
     return "u%u32" % self.width
   }
 }
@@ -62,7 +62,7 @@ class AnyIntType(self, isSigned: bool) {
   func toString(self) -> string {
     if self.isSigned {
       return "int"
-    } 
+    }
     return "uint"
   }
 }

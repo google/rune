@@ -15,7 +15,7 @@
 func inc(var a) {
   a += 1
 }
- 
+
 foo = 1
 inc(foo)
 println foo == 2? "passed" : "failed"
