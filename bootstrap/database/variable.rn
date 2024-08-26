@@ -22,6 +22,7 @@ use datatype
 use expr
 
 import cbackend as c
+import types
 
 class Variable(self, function: Function, isParam: bool, isConst: bool, sym: Sym,
     initializer: Expr?, typeExpr: Expr?, generated: bool, location: Location) {
@@ -103,10 +104,9 @@ class Variable(self, function: Function, isParam: bool, isConst: bool, sym: Sym,
     }
   }
 
-  func genCParameter(self, builder: c.CBuilder) -> c.CParameter {
-    // TODO: convert self.typeExpr into a CTypeExpr
-    type = builder.cVoidType(self.location)
-    return builder.cParameter(self.location, self.sym.name, type)
+  func genCParameter(self, builder: c.CBuilder,
+                     instance: types.Type? = null(types.Type)) -> c.CParameter {
+    return builder.cParameter(self.location, self.sym, instance)
   }
 }
 

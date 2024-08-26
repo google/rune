@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use root
+use datatype
 use filepath
 use location
 use block
@@ -21,6 +22,7 @@ use rel
 use value
 
 import cbackend as c
+import types
 
 enum StateType {
   Assert
@@ -191,7 +193,12 @@ class Statement(self, block: Block, type: StateType, location: Location) {
   func genC(self, builder: c.CBuilder) {
     switch self.type {
       StateType.Assign => self.genCAssign(builder)
-      StateType.Println => self.genCPrintln(builder)
+      StateType.Print => self.genCPrint(builder, newline=false)
+      StateType.Println => self.genCPrint(builder, newline=true)
+      StateType.If => self.genCIf(builder)
+      StateType.Else => self.genElse(builder)
+      StateType.ElseIf => self.genElseIf(builder)
+      StateType.Return => self.genCReturn(builder)
       default => raise Status.Unimplemented, "Statement type not yet supported by C backend builder ", self.type
     }
   }
@@ -200,25 +207,116 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     assert isnull(self.subBlock)
     assert !isnull(self.expr)
     cexpr = self.expr.genC(builder)
-    builder.addStatement(c.CStatement(cexpr))
+    builder.addStatement(self.location, c.CStatement(self.location, c.CStatementType.Assignment, cexpr))
   }
 
-  func genCPrintln(self, builder: c.CBuilder) {
+  func genCCall(self, builder: c.CBuilder, fn: c.CExpr | c.CRuntimeFunction, args: c.CExpr?) {
+    builder.addStatement(self.location, builder.cCall(self.location, fn, args))
+  }
+
+  func genCPrint(self, builder: c.CBuilder, newline: bool) {
     assert isnull(self.subBlock)
     assert !isnull(self.expr)
 
-    // This expr will be a list of parameters.
-    args = self.expr.genC(builder)
-    assert args.type == c.CExpr.Type.List
+    // Println can write a list of expressions to standard out. Each
+    // expression is printed immediately after one another. It is able to
+    // generate string representations of many expressions, in particular
+    // the values of built-in types and tuples.
+    //
+    // A special case is where the expression is an instance of the modulus
+    // operator where the first argument is a string: in this case, it is
+    // a printf-like expression, and we should generate an individual
+    // printf format string.
 
-    // Add a trailing newline to 1st element of the list
-    firstElement = args.cExprList.index(0)
-    // TODO: handle case where first element is not a format string.
-    // e.g., println 1
-    assert firstElement.type == c.CExpr.Type.Literal
-    assert firstElement.cLiteral.type == c.CLiteral.Type.String
-    firstElement.cLiteral.stringValue += "\\n"
-    builder.addStatement(builder.cPrintlnStatement(self.location, args))
+    assert self.expr.type == ExprType.List
+
+    self.genCCall(builder, c.CRuntimeFunction.GlobalStringWriterReset, null(c.CExpr))
+
+    // Special case -- when argument is a single string.
+    if (self.expr.countChildExprs() == 1
+        && self.expr.indexChildExpr(0).type == ExprType.Constant
+        && self.expr.indexChildExpr(0).val.type == DatatypeType.String) {
+      // println/print with a single string should just printf that string.
+      args = c.CExprList()
+      args.appendCExpr(self.expr.indexChildExpr(0).genC(builder))
+      cexpr = c.CExpr(args)
+      call = builder.cCall(self.location, "tostring_string", cexpr)
+      builder.addStatement(self.location, call)
+    } else {
+      for expr in self.expr.childExprs() {
+        cexpr = null(c.CExpr)
+        if expr.type == ExprType.Mod {
+          left = expr.firstChildExpr!
+          right = left.nextExprChildExpr!
+          if left.type == ExprType.Constant && left.val.type == DatatypeType.String {
+            args = c.CExprList()
+            args.appendCExpr(builder.cStringLiteral(left.val.stringVal, printf=true))
+            rgen = right.genC(builder)
+            args.appendCExpr(rgen)
+            cexpr = c.CExpr(args)
+            self.genCCall(builder, c.CRuntimeFunction.GlobalStringWriterWrite, cexpr)
+          }
+        }
+        if isnull(cexpr) {
+          cexpr = expr.genC(builder)
+          ctype = builder.genCType(expr.typedValue)
+          assert !isnull(ctype)
+          ctypename = ctype.toString()
+
+          if ctypename == "string" {
+            // String values need to be emitted with quotes.
+            printfArgs = c.CExprList()
+            printfArgs.append(builder.cStringLiteral("%s"))
+            printfArgs.append(cexpr!)
+            call = builder.cCall(self.location, "tostring_string", c.CExpr(printfArgs))
+          } else {
+            call = builder.cCall(self.location, "tostring_%s" % ctypename, cexpr)
+          }
+          builder.addStatement(self.location, call)
+        }
+      }
+    }
+    if newline {
+      self.genCCall(builder, c.CRuntimeFunction.GlobalStringWriterWrite,
+                    builder.cStringLiteral("\\n"))
+    }
+    // Finally generate the call to printf: printf("%s", GlobalStringWriterString())
+    printfArgs = c.CExprList()
+    printfArgs.append(builder.cStringLiteral("%s"))
+    printfArgs.append(
+        builder.cCall(self.location, c.CRuntimeFunction.GlobalStringWriterString,
+                      null(c.CExpr)))
+    self.genCCall(builder, c.CRuntimeFunction.Printf, c.CExpr(printfArgs))
+  }
+
+  func genCIf(self, builder: c.CBuilder) {
+    assert !isnull(self.expr)
+    assert !isnull(self.subBlock)
+    ifStmt = builder.cIfStatement(
+       self.location, self.expr.genC(builder), self.subBlock.genC(builder))
+    builder.addStatement(self.location, ifStmt)
+  }
+
+  func genElse(self, builder: c.CBuilder) {
+    assert isnull(self.expr)
+    assert !isnull(self.subBlock)
+    elseStmt = builder.cElseStatement(self.location, self.subBlock.genC(builder))
+    builder.addStatement(self.location, elseStmt)
+  }
+
+  func genElseIf(self, builder: c.CBuilder) {
+    assert !isnull(self.expr)
+    assert !isnull(self.subBlock)
+    elseIfStmt = builder.cElseIfStatement(
+       self.location, self.expr.genC(builder), self.subBlock.genC(builder))
+    builder.addStatement(self.location, elseIfStmt)
+  }
+
+  func genCReturn(self, builder: c.CBuilder) {
+    assert isnull(self.subBlock)
+    assert !isnull(self.expr)
+    returnStmt = builder.cReturnStatement(self.location, self.expr.genC(builder))
+    builder.addStatement(self.location, returnStmt)
   }
 }
 

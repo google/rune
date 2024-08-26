@@ -1,0 +1,8 @@
+This is a string: "hello"
+This is an int: -1
+This is an unsigned int: 65535
+This is a hex value: 0xdeadbeef
+This is a 64-bit int: 1
+This is a 64-bit signed int: -1
+This is a float: 2.71828175
+This is a negative float: -3.1415926535897931

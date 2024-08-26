@@ -20,6 +20,7 @@ use function
 use location
 use statement
 
+import types
 import cbackend as c
 
 
@@ -29,6 +30,7 @@ class Block(self, location: Location) {
   // For dead code analysis.
   self.canReturn = false
   self.canContinue = false
+  self.returnType = null(types.Type)
 
   // Dump the block to the end of |text| for debugging.
   func dumpToString(self, var text: string) {
@@ -100,11 +102,11 @@ class Block(self, location: Location) {
   }
 
   func genC(self, builder: c.CBuilder) -> c.CBlock {
-     builder.openBlock(self.location)
-     for statement in self.statements() {
-       statement.genC(builder)
-     }
-     return builder.closeBlock()
+    builder.openBlock(self.location)
+    for statement in self.statements() {
+      statement.genC(builder)
+    }
+    return builder.closeBlock()
   }
 }
 

@@ -107,8 +107,25 @@ class CIntFunction(self, name: string) {
 }
 
 
+/**
+ * @brief a filename whose contents need to be merged into the C output.
+ */
+class MergeFile(self, filename: string) {
+  self.filename = filename
+
+  func hash(self) -> u64 {
+    return hashValue(self.filename)
+  }
+
+  func equals(self, other: MergeFile) -> bool {
+    return self.filename == other.filename
+  }
+}
+
+
 relation HashedClass CRuntime CInclude cascade
 relation HashedClass CRuntime CDefine cascade
+relation HashedClass CRuntime MergeFile cascade
 
 /**
  * Encapsulate those 'special definitions' that may be requested multiple
@@ -116,6 +133,9 @@ relation HashedClass CRuntime CDefine cascade
  * in the header of the generated C file.
  */
 class CRuntime(self) {
+  self.needBoolType = false
+  self.needStringType = false
+  self.needStringWriter = false
   self.needStringifyMacro = false
   self.needIntAddFn = false
   self.needIntSubFn = false
@@ -162,7 +182,15 @@ class CRuntime(self) {
     }
   }
 
+  func mergeFile(self, filename: string) {
+    mf = MergeFile(filename)
+    if isnull(self.findMergeFile(mf)) {
+      self.insertMergeFile(mf)
+    }
+  }
+
   func needRaiseError(self) {
+    self.include("<stdio.h>")
     self.include("<stdlib.h>")
     self.raiseError = true
   }
@@ -337,8 +365,19 @@ class CRuntime(self) {
       e.writeln("#include " + include.name)
     }
     e.newline()
+    if self.needBoolType {
+      e.writeln("typedef uint8_t bool;")
+      e.writeln("#define FALSE (0)")
+      e.writeln("#define TRUE (1)")
+      e.newline()
+    }
+    if self.needStringType {
+      e.writeln("typedef char* string;")
+      e.newline()
+    }
     if self.needStringifyMacro {
       e.writeln("#define STRINGIFY(s) STR(s)\n#define STR(s) #s")
+      e.newline()
     }
     for define in self.cDefines() {
       e.newline()
@@ -350,6 +389,10 @@ class CRuntime(self) {
       e.writeln("  printf(\"%s Exception Raised, aborting\\n\", error);")
       e.writeln("  abort();")
       e.writeln("}")
+    }
+    for mergefile in self.mergeFiles() {
+      e.newline()
+      e.writeFileContents(mergefile.filename)
     }
     if self.needIntAddFn {
       e.newline()

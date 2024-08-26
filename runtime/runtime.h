@@ -165,6 +165,9 @@ void runtime_hexToString(runtime_array *destBinString, const runtime_array *sour
 uint64_t runtime_stringFind(const runtime_array *haystack, const runtime_array *needle, uint64_t offset);
 uint64_t runtime_stringRfind(const runtime_array *haystack, const runtime_array *needle, uint64_t offset);
 
+// Operating system function wrappers.
+int32_t os_system(runtime_array *command);
+
 // Interface to TRNG.  On Linux, this should be a CPRNG initialized from
 // /dev/urandom, or even better, using the getrandom syscall.
 uint64_t runtime_generateTrueRandomValue(uint32_t width);

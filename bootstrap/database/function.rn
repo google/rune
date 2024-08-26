@@ -26,7 +26,7 @@ use block
 use variable
 
 import cbackend as c
-
+import types
 
 enum FuncType {
   Plain  // Includes methods.
@@ -182,6 +182,9 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   }
 
   func genModule(self: Function, builder: c.CBuilder) {
+    for childfunc in self.childFunctions() {
+       childfunc.genCPlainFunc(builder)
+    }
     for statement in self.subBlock.statements() {
       // Note that a Rune statement may correspond to a C statement in main()
       // or a C top-level declaration.
@@ -189,27 +192,69 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     }
   }
 
+
   func genCPlainFunc(self: Function, builder: c.CBuilder) {
     // TODO: figure out storage types.....
 
-    if isnull(self.typeExpr) {
-      returnType = builder.cVoidType(self.location)
+    // Is this a polymorphic type?  polymorphic type variables do not
+    // correspond to anything in C (though we could try void*). Instead
+    // we must iterate over all known instantiations -- this only works
+    // because we are doing whole-program analysis before we generate
+    // the C.  (i.e., it is not clear how this would work if we try to
+    // compile different packages into separate C files).
+
+    fntype = self.sym.typedValue
+    assert !isnull(fntype)
+
+    if fntype.type == types.Type.TypeClass.Polymorphic {
+      /******** Polymorphic function: iterate over instantiations *********/
+       pi = fntype.poly.instantiations
+       if !isnull(pi) {
+         for instantiation in pi {
+           builder.resolveInstantiation(instantiation)
+           builder.openScope()
+           builder.openParamList()
+           index = 0
+           for variable in self.variables() {
+             param = variable.genCParameter(builder, instantiation.varBindings[index])
+             builder.addParam(param)
+             index += 1
+           }
+           paramList = builder.closeParamList()
+           builder.instantiate(fntype.poly!, instantiation)
+           // The function block may generate dependencies, e.g., inner
+           // functions or tuples or structs. Ensure that these are listed
+           // as depedencies of this function.
+           builder.openDependencyList();
+           body = self.subBlock.genC(builder)
+           builder.deInstantiate(fntype.poly!)
+           builder.closeScope()
+           newsym = builder.specialize(self.sym, instantiation)
+           fundec = builder.cFunDef(self.location, newsym, paramList, body)
+           fundec.addDependencies(builder.topDependencyList().names)
+           builder.closeDependencyList()
+           builder.addDeclaration(fundec)
+         }
+      }
     } else {
-      returnType = self.typeExpr.genCType(builder)
+      /******************* Monomorphic function *************************/
+      // open new scope - new parameter bindings are added to the scope
+      // automatically
+      builder.openScope()
+      builder.openParamList()
+      for variable in self.variables() {
+        param = variable.genCParameter(builder)  // param is added to new scope
+        builder.addParam(param)
+      }
+      paramList = builder.closeParamList()
+      builder.openDependencyList();
+      body = self.subBlock.genC(builder)
+      builder.closeScope()
+      fundec = builder.cFunDef(self.location, self.sym, paramList, body)
+      fundec.addDependencies(builder.topDependencyList().names)
+      builder.closeDependencyList()
+      builder.addDeclaration(fundec)
     }
-    // open new scope - new parameter bindings are added to the scope
-    // automatically
-    builder.openScope()
-    builder.openParamList()
-    for variable in self.variables() {
-      param = variable.genCParameter(builder)  // param is added to new scope
-      builder.addParam(param)
-    }
-    paramList = builder.closeParamList()
-    body = self.subBlock.genC(builder)
-    builder.closeScope()
-    fundec = builder.cFunDef(self.location, self.name(), returnType, paramList, body)
-    builder.addDeclaration(fundec)
   }
 
   // Dump the function to stdout for debugging purposes.

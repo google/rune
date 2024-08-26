@@ -26,6 +26,7 @@ INT = INTEGER()
 UINT = UINTEGER()
 ANYINT = ANYINTEGER()
 NUM = NUMBER()
+NONE = NONETY()
 
 func builtinType(op: db.ExprType) -> Type {
   v = V(1)

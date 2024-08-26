@@ -7,6 +7,7 @@ array.c \
 bigint.c \
 io.c \
 float.c \
+os.c \
 random.c \
 runtime.c
 

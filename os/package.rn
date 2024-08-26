@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use builtins
-use typebuilder
-use typechecker
-use typeclasses
-use typeerror
-use typeunifier
+// Operationg system utilities.
+
+extern "C" func system(command: string) -> i32

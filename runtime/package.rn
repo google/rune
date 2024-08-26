@@ -36,6 +36,7 @@ extern "C" func f64tostring(dest: string, value: f64)
 
 extern "C" func integerToBigint(value: u64, width: u32,
     isSigned: bool, isSecret: bool) -> BigintArray
+extern "C" func bigintToInteger(value: BigintArray) -> u64
 extern "C" func bigintWidth(value: BigintArray) -> u32
 extern "C" func bigintSigned(bigint: BigintArray) -> bool
 extern "C" func bigintSecret(value: BigintArray) -> bool

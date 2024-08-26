@@ -18,6 +18,7 @@ import types
 use clanguageclasses
 use ctypegen
 use escapestring
+use int2cstring
 use sym
 
 relation HashedClass CurrentScope CIdentifier cascade
@@ -32,19 +33,72 @@ class CurrentScope(self) {
     // todo
   }
 
-  func getIdentifier(self, name: Sym, type: CTypeExpr?, bindingInstance: bool) -> CIdentifier {
-    // todo: handle the case where the definition was in an outer scope.
-    id = CIdentifier(name, type, false, bindingInstance)
+  func getIdentifier(self, name: Sym, type: CTypeExpr?, bindingInstance: bool, isLocal: bool) -> CIdentifier {
+    // TODO: isLocal must be set when name is a variable bound in the current scope
+    // i.e., first assigned in the current function body.
+    id = CIdentifier(name, type, false, bindingInstance, isLocal)
     exists = self.findCIdentifier(id)
     if isnull(exists) {
       id.firstInstance = true
       self.insertCIdentifier(id)
+    } else {
+      id.isParameter = exists.isLocal
     }
     return id
   }
 }
 
+
+/**
+ * @brief list of declarations
+ *
+ * When generating code for a function, add any declaration that is created
+ * or used inside the function body to a list, which can be added to the
+ * enclosing function declaration.
+ */
+class DependencyList(self) {
+  self.names = arrayof(string)
+
+  func append(self, decname: string) {
+    self.names.append(decname)
+  }
+}
+
+
+/**
+ * @brief a stack of dependency lists
+ *
+ * Functions may be nested, so we maintain a stack of dependency lists,
+ * where lists higher up the stack correspond to enclosing function
+ * definitions.
+ */
+relation DoublyLinked DependencyStack DependencyList cascade
+class DependencyStack(self) {
+  self.open()
+
+  func open(self) {
+    self.appendDependencyList(DependencyList())
+  }
+
+  func append(self, dec: string | CDeclaration) {
+    typeswitch dec {
+      string => self.lastDependencyList.append(dec)
+      CDeclaration => self.lastDependencyList.append(dec.name())
+    }
+  }
+
+  func top(self) -> DependencyList {
+    return self.lastDependencyList!
+  }
+
+  func close(self) {
+    top = self.lastDependencyList!
+    self.removeDependencyList(top)
+  }
+}
+
 relation DoublyLinked CBuilder CBlock cascade
+relation OneToOne CBuilder DependencyStack cascade
 
 class CBuilder(self, tc: types.TypeChecker) {
   self.currentParamList = null(CParamList)
@@ -54,14 +108,65 @@ class CBuilder(self, tc: types.TypeChecker) {
   self.identifierScope = CurrentScope()
   self.typechecker = tc
   self.typeGenerator = CTypeGenerator(tc)
+  self.insertDependencyStack(DependencyStack())
 
   func build(self, module: db.Function) -> CProgram {
     module.genC(self)
     return self.program
   }
 
+  func openDependencyList(self) {
+    self.dependencyStack.open()
+  }
+
+  func topDependencyList(self) -> DependencyList {
+    return self.dependencyStack.top()
+  }
+
+  func closeDependencyList(self) {
+    self.dependencyStack.close()
+  }
+
   func addDeclaration(self, dec: CDeclaration) {
+    self.dependencyStack.append(dec)
     self.program.insertCDeclaration(dec)
+  }
+
+  func findDeclaration(self, name: string) -> CDeclaration? {
+    return self.program.findCDeclaration(name)
+  }
+
+  func resolveInstantiation(self, inst: types.TyvarInstantiation) {
+    // Update a TyvarInstantiation to remove variables: it should be a fully
+    // concrete type.
+    for index in range(inst.varBindings.length()) {
+      inst.varBindings[index] = self.typechecker.resolve(inst.varBindings[index])
+    }
+    inst.type = self.typechecker.resolve(inst.type)
+  }
+
+  func instantiate(self, poly: types.PolymorphicType, inst: types.TyvarInstantiation) {
+    self.typechecker.instantiate(poly, inst);
+  }
+
+  func deInstantiate(self, poly: types.PolymorphicType) {
+    self.typechecker.deInstantiate(poly);
+  }
+
+  func specialize(self, sym: Sym, inst: types.TyvarInstantiation) -> Sym {
+    // generate a new name including the specializations of the var bindings.
+    // Note, we assume that resolveInstantiation() has been called on the
+    // inst parameter beforehand.
+    name = sym.name
+    for binding in inst.varBindings {
+      name += "_" + binding.toString()
+    }
+    newsym = Sym.new(name)
+    newsym.typedValue = inst.type
+    // Ensure that this new specialized symbol is in identifier scope.
+    ctype = self.typeGenerator.genCType(inst.type)
+    self.identifierScope.getIdentifier(newsym, ctype, false, false)
+    return newsym
   }
 
   func openScope(self) {
@@ -74,25 +179,25 @@ class CBuilder(self, tc: types.TypeChecker) {
 
   func openBlock(self, location: db.Location?) {
     self.currentBlock = CBlock(location)
-    //self.cblocks().appendCBlock(block)
-    //self.appendCBlock(block)
-    self.appendCBlock(CBlock(location))
+    self.appendCBlock(self.currentBlock!)
   }
 
   func closeBlock(self) -> CBlock {
-    //block = self.currentCBlock
     block = self.lastCBlock!
-    //self.currentCBlock = block.prevCBlockCBuilder
-    //self.cblocks().removeCBlock(block)
     self.removeCBlock(block)
+    self.currentBlock = self.lastCBlock
     return block
   }
 
-  func addStatement(self, statement: CStatement) {
-    if isnull(self.currentBlock) {
-      self.program.addStatementToMain(statement)
+  func addStatement(self, location: db.Location, statement: CStatement | CExpr) {
+    typeswitch statement {
+      CStatement => s = statement
+      CExpr => s = CStatement(location, CStatementType.Expr, statement)
+    }
+    if isnull(self.lastCBlock) {
+      self.program.addStatementToMain(s)
     } else {
-      self.currentBlock.appendCStatement(statement)
+      self.lastCBlock.appendCStatement(s)
     }
   }
 
@@ -113,24 +218,52 @@ class CBuilder(self, tc: types.TypeChecker) {
     self.currentParamList.appendCParameter(param)
   }
 
-  func cParameter(self, location: db.Location, name: string, type: CTypeExpr) -> CParameter {
-    return CParameter(location, name, type)
+  func genCType(self, ty: types.Type?) -> CTypeExpr? {
+    if isnull(ty) {
+      return null(CTypeExpr)
+    }
+    return self.typeGenerator.genCType(ty!)
+  }
+
+  // specializedType is used when generating specific instances of a
+  // polymorphic type.
+  func cParameter(self, location: db.Location, sym: Sym,
+                  specializedType: types.Type? = null(types.Type)) -> CParameter {
+    if isnull(specializedType) {
+      assert !isnull(sym.typedValue)
+      ty = self.typechecker.resolve(sym.typedValue!)
+      sym.typedValue = ty
+      ctype = self.typeGenerator.genCType(ty)
+    } else {
+      ctype = self.typeGenerator.genCType(specializedType!)
+    }
+    // Add this parameter to the current scope (otherwise next time we
+    // see it, it will appear to be 1st occurrence, and we'll try to
+    // declare it).
+    self.identifierScope.getIdentifier(sym, ctype, true, true)
+    return CParameter(location, sym.name, ctype!)
   }
 
   func cIdentifier(self, symbol: Sym, bindingInstance: bool) -> CExpr {
     type = self.typechecker.symbol(symbol)
-    if isnull(type) {
-      ctype = null(CTypeExpr)
-    } else {
-      ctype = self.typeGenerator.genCType(type!)
+    ctype = null(CTypeExpr)
+    if !isnull(type) {
+      ty = self.typechecker.resolve(type!)
+      ctype = self.typeGenerator.genCType(ty)
     }
-    id = self.identifierScope.getIdentifier(symbol, ctype, bindingInstance)
-    if id.firstInstance {
+    id = self.identifierScope.getIdentifier(symbol, ctype, bindingInstance, false)
+    if !isnull(ctype) && id.firstInstance {
       if !isnull(self.currentBlock) {
         self.currentBlock.declare(id)
       } else {
         self.program.mainCBlock.declare(id)
       }
+    }
+    // Add this to the list of the current scope dependencies, unless it
+    // is a parameter, or a local definition.
+    if !id.isParameter {
+      // TODO: figure out how to track local definition.
+      self.dependencyStack.append(id.symbol.name)
     }
     return CExpr(id)
   }
@@ -208,51 +341,165 @@ class CBuilder(self, tc: types.TypeChecker) {
     self.currentExprList.appendCExpr(expr)
   }
 
-  func cStringLiteral(self, value: string) -> CExpr {
-    return CExpr(CLiteral(value))
+  func cStringLiteral(self, value: string, printf: bool = false) -> CExpr {
+    return CExpr(CLiteral(value, printf))
   }
 
   func cBoolLiteral(self, value: bool) -> CExpr {
-    return CExpr(CLiteral(value))
+    return CExpr(CLiteral(value, false))
   }
 
   func cIntLiteral(self, value: db.Bigint) -> CExpr {
-    return CExpr(CLiteral(value))
+    return CExpr(CLiteral(value, false))
   }
 
   func cUintLiteral(self, value: Uint) -> CExpr {
-    return CExpr(CLiteral(value))
+    return CExpr(CLiteral(value, false))
   }
 
   func cFloatLiteral(self, value: Float) -> CExpr {
-    return CExpr(CLiteral(value))
+    return CExpr(CLiteral(value, false))
   }
 
   func cUnaryMinus(self, location: db.Location, arg: CExpr) -> CExpr {
     return CExpr(CPrefixOperator(location, CPrefixOperator.Type.UnaryMinus, arg))
   }
 
+  func cUnaryBitnot(self, location: db.Location, arg: CExpr) -> CExpr {
+    return CExpr(CPrefixOperator(location, CPrefixOperator.Type.BitNot, arg))
+  }
+
   func cBinaryOperator(self, location: db.Location, op: CBinaryOperator.Type,
-                       left: CExpr, right: CExpr) -> CExpr {
-    return CExpr(CBinaryOperator(location, op, left, right))
+                       type: types.Type?, left: CExpr, right: CExpr) -> CExpr {
+    ctype = self.genCType(type)
+    return CExpr(CBinaryOperator(location, op, ctype, left, right))
   }
 
-  func cCall(self, location: db.Location, name: string | CRuntimeFunction, args: CExpr) -> CExpr {
-    return CExpr(CCall(location, name, args))
+  func cCall(self, location: db.Location, fn: string | CExpr | CRuntimeFunction, args: CExpr?) -> CExpr {
+    typeswitch fn {
+      string => {
+        call = CCall(location, CRuntimeFunction.UserDefined, args,
+                     CExpr(CIdentifier(Sym.new(fn), null(CTypeExpr), false, false, false)))
+        depdec = self.findDeclaration(fn)
+        if !isnull(depdec) {
+          self.dependencyStack.append(depdec!)
+        }
+      }
+      CExpr => call = CCall(location, CRuntimeFunction.UserDefined, args, fn)
+      CRuntimeFunction => call = CCall(location, fn, args)
+    }
+    return CExpr(call)
   }
 
+  // Tuples are special because they have no name, and different instances of the
+  // type should match without difficulty. The idea is to generate a C structure type for
+  // each different shape (or _type_) of tuple. We need to remember the definitions
+  // we create for each separate tuple type, so that we can reuse them the next time
+  // this tuple appears. To do this, we use a hash table, and the tuple type as a key.
+  //
+  // NOTE: tuples with element types with unbound type variables are not supported.
+  func cTuple(self, location: db.Location, type: types.Type?, elements: CExprList) -> CExpr {
+    ty = self.typechecker.resolve(type!);
+    assert ty.type == types.Type.TypeClass.Tuple
+    def = CTupleDefinition(ty.tuple, "")
+    exists = self.typeGenerator.findCTupleDefinition(def)
 
+    if isnull(exists) {
+      // generate a new type
+      ctype = self.typeGenerator.genCTuple(ty.tuple)
+      assert !isnull(ctype)
+      exists = self.typeGenerator.findCTupleDefinition(def)
+      assert !isnull(exists)
+    }
+
+    if !exists.defined {
+      // Create the C struct definition -------------
+      params = CParamList()
+      deps = arrayof(string)
+      for pair in def.type.elements.items() {
+        ctype = self.typeGenerator.genCType(pair[1])
+        if ctype.type == CTypeExpr.Type.Defined {
+          deps.append(ctype.toString())
+        }
+        params.append(CParameter(location, "el%s" % int2cstring(pair[0]), ctype!))
+      }
+
+      // The struct declaration will emit as 'typedef struct <exists.name> {...} <exists.name>'
+      // It will also emit:
+      //    'make_<exists.name>(<params>)' and
+      //    'tostring_<exists.name>'(<exists.name> tuple) method
+      //    'isequal_<exists.name>'(<exists.name> t1, <exists.name> t2) method.
+      //
+      dec = CDeclaration(CStructDeclaration(location, exists.name, params))
+
+      // Walk through the list of dependent type names to add dependent declarations to
+      // dec, so that they will be emitted before this one.
+      for name in deps {
+        depdec = self.findDeclaration(name)
+        if !isnull(depdec) {
+          dec.addDependency(depdec!)
+        }
+      }
+      self.addDeclaration(dec)
+      exists.defined = true
+    }
+
+    constructorName = CIdentifier(Sym.new("make_%s" % exists.name), null(CTypeExpr),
+                                  false, false, false)
+    return CExpr(CCall(location, CRuntimeFunction.UserDefined, CExpr(elements),
+                       CExpr(constructorName)))
+  }
+
+  func cIndex(self, location: db.Location, indexee: CExpr, index: CExpr) -> CExpr {
+    return CExpr(CIndexExpr(location, indexee, index))
+  }
+
+  func cTupleIndex(self, location: db.Location, indexee: CExpr, index: u64) -> CExpr {
+    return CExpr(CDotExpr(location, indexee, "el%s" % int2cstring(index)))
+  }
 
   /* Rune statements *******************************************************************/
 
   func cPrintlnStatement(self, location: db.Location, args: CExpr) -> CStatement {
-    return CStatement(self.cCall(location, CRuntimeFunction.Printf, args))
+    return CStatement(CStatementType.Call, self.cCall(location, CRuntimeFunction.Printf, args))
   }
 
-  func cFunDef(self, location: db.Location, name: string, returnType: CTypeExpr,
-               params: CParamList, body: CBlock) -> CDeclaration {
-    return CDeclaration(CFunctionDeclaration(
-       location, name, returnType, params, body))
+  func cIfStatement(self, location: db.Location, expr: CExpr, body: CBlock) -> CStatement {
+    return CStatement(location, CStatementType.If,expr, body)
+  }
+
+  func cElseStatement(self, location: db.Location, body: CBlock) -> CStatement {
+    return CStatement(location, CStatementType.Else, null(CExpr), body)
+  }
+
+  func cElseIfStatement(self, location: db.Location, expr: CExpr, body: CBlock) -> CStatement {
+    return CStatement(location, CStatementType.ElseIf, expr, body)
+  }
+
+  func cReturnStatement(self, location: db.Location, expr: CExpr?) -> CStatement {
+    return CStatement(location, CStatementType.Return, expr)
+  }
+
+  /* Rune declarations *****************************************************************/
+
+  // specializedType is used when generating specific instances of a
+  // polymorphic type.
+  func cFunDef(self, location: db.Location, id: Sym, params: CParamList,
+               body: CBlock) -> CDeclaration {
+    type = id.typedValue
+    switch type.type {
+      types.Type.TypeClass.Function => {
+        returnType = self.genCType(type.function.result!)
+      }
+      types.Type.TypeClass.Polymorphic => {
+        raise Status.InvalidArgument, "Polymorphic functions should be specialized by now."
+      }
+      default => {
+        raise Status.InvalidArgument, "The type of function ", id.name, " should be a function"
+      }
+    }
+    returntype = self.genCType(type)
+    return CDeclaration(CFunctionDeclaration(location, id, params, returnType!, body))
   }
 
 }

@@ -25,6 +25,7 @@ use variable
 use function
 
 import cbackend as c
+import types
 
 
 enum ExprType {
@@ -340,6 +341,7 @@ class Expr(self, type: ExprType, location: Location) {
   // self.datatype = null(Datatype)
   self.val = null(Value(0u32))
   self.bindingInstance = false
+  self.typedValue = null(types.Type)
 
   func newConstant(value: Value, location: Location) -> Expr {
     expr = Expr(ExprType.Constant, location)
@@ -363,6 +365,14 @@ class Expr(self, type: ExprType, location: Location) {
   func newIdent(sym: Sym, location: Location) -> Expr {
     expr = Expr(ExprType.Ident, location)
     expr.val = Value(sym)
+    return expr
+  }
+
+  func newTuple(children, location) -> Expr {
+    expr = Expr(ExprType.Tuple, location)
+    for child in children {
+      expr.appendChildExpr(child)
+    }
     return expr
   }
 
@@ -679,8 +689,7 @@ class Expr(self, type: ExprType, location: Location) {
     return newExpr
   }
 
-
-  // C Generator
+  // C Generator ------------------------------------------------------------------
 
   func genC(self, builder: c.CBuilder) -> c.CExpr {
     switch self.type {
@@ -697,6 +706,7 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Bitand => return self.genCBinaryOp(builder)
       ExprType.Bitor => return self.genCBinaryOp(builder)
       ExprType.Bitxor => return self.genCBinaryOp(builder)
+      ExprType.Bitnot => return self.genCPrefixOp(builder)
       ExprType.Shl => return self.genCBinaryOp(builder)
       ExprType.Shr => return self.genCBinaryOp(builder)
       ExprType.SubTrunc => return self.genCBinaryOp(builder)
@@ -716,8 +726,25 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Rotr => return self.genCBinaryOp(builder)
       ExprType.Sub => return self.genCBinaryOp(builder)
 
+      ExprType.Call => return self.genCCall(builder)
+
       // Assignment
       ExprType.Equals => return self.genCBinaryOp(builder)
+
+      // Types
+      ExprType.UintType => return c.CExpr(self.genCType(builder))
+      ExprType.IntType => return c.CExpr(self.genCType(builder))
+      ExprType.FloatType => return c.CExpr(self.genCType(builder))
+      ExprType.StringType => return c.CExpr(self.genCType(builder))
+      ExprType.BoolType => return c.CExpr(self.genCType(builder))
+      ExprType.NoneType => return c.CExpr(self.genCType(builder))
+      ExprType.Typeindex => return c.CExpr(self.genCType(builder))
+      ExprType.Namedparam => return c.CExpr(self.genCType(builder))
+
+      // Tuples
+      ExprType.Tuple => return self.genCTuple(builder)
+      ExprType.Index => return self.genCIndex(builder)
+
       default => raise Status.Unimplemented, "Expression type not yet supported by C backend: ", getExprTypeName(self.type)
     }
   }
@@ -740,6 +767,10 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Negate => {
         return builder.cUnaryMinus(self.location, left.genC(builder))
       }
+      ExprType.Bitnot => {
+        return builder.cUnaryBitnot(self.location, left.genC(builder))
+      }
+
       default => raise Status.Unimplemented, "Unary expression operator not yet supported by C backend: ", getExprTypeName(self.type)
     }
   }
@@ -796,18 +827,74 @@ class Expr(self, type: ExprType, location: Location) {
         return builder.cCall(self.location, fn, c.CExpr(list))
       }
     }
+    return builder.cBinaryOperator(self.location, op, left.typedValue, l, r)
+  }
 
-    if op == c.CBinaryOperator.Type.Modulus {
-      // The mod operator, %, can be either an arithmetic expression, or providing the args
-      // to a string format expression.
-      if l.type == c.CExpr.Type.Literal && l.cLiteral.type == c.CLiteral.Type.String {
-        // The first argument is a string literal, so we shall assume '%' is being used
-        // to replace format specifiers with arguments.
-        builder.addExpr(l)
-        return r
-      }
+  func genCTuple(self, builder: c.CBuilder) -> c.CExpr {
+    elements = c.CExprList()
+    for child in self.childExprs() {
+      cexpr = child.genC(builder)
+      elements.appendCExpr(child.genC(builder))
     }
-    return builder.cBinaryOperator(self.location, op, l, r)
+    // Tuple types should not be null (if they are, they contain an expression not yet
+    // supported by the typechecker, and therefore not the c backend either).
+    // self.typedValue should have been set by the typechecker before C generation
+    // begins.
+    return builder.cTuple(self.location, self.typedValue, elements)
+  }
+
+  func genCIndex(self, builder: c.CBuilder) -> c.CExpr {
+    indexee = self.firstChildExpr!
+    index = indexee.nextExprChildExpr!
+
+    left = indexee.genC(builder)
+    if indexee.typedValue.type == types.Type.TypeClass.Tuple {
+      // We know from typechecking that index is a u64.
+      assert index.type == ExprType.Constant && index.val.type == DatatypeType.Uint
+      i = index.val.intVal.uint64()
+      return builder.cTupleIndex(self.location, left, i)
+    } else {
+      raise Status.Unimplemented, "Indexing into non-tuple types."
+    }
+  }
+
+  func genCCall(self, builder: c.CBuilder) -> c.CExpr {
+    left = self.firstChildExpr!
+    right = left.nextExprChildExpr!
+    fntype = left.typedValue
+    assert !isnull(fntype)
+    if fntype.type == types.Type.TypeClass.Polymorphic {
+      // A function expression need not be a simple identifier; it may be the
+      // result of an expression, for example, a higher-order function that
+      // returns a function. Moreover, that function may be polymorphic, and
+      // only specialize at this call point. We do not currently handle such a
+      // case.
+      // Right now, we only handle the case where the polymorphic function
+      // expression is an identifier.
+      if left.type != ExprType.Ident {
+        raise Status.Unimplemented, "Can't generate code for polymorphic function expression ", left.toString()
+      }
+      // Append the instantiated types to the name (its specialization).
+      specializedName = right.typedValue.genSpecializationName(left.val.symVal.name)
+      specialization = Sym.new(specializedName)
+      cfn = builder.cIdentifier(specialization, false)
+    } else {
+      cfn = left.genC(builder)
+    }
+    if right.typedValue.type == types.Type.TypeClass.Tuple {
+      // Special case -- if right is a tuple, we need to encode cargs as a
+      // CExprList of parameters, not as an actual tuple object. Otherwise,
+      // instead of generating "f(a1, a2, ...)" we'll generate
+      // "f(make_tupleX(a1, a2, ...))".
+      builder.openExprList()
+      for child in right.childExprs() {
+        builder.addExpr(child.genC(builder))
+      }
+      cargs = builder.closeExprList()
+    } else {
+      cargs = right.genC(builder)
+    }
+    return builder.cCall(self.location, cfn, cargs)
   }
 
   func genCType(self, builder: c.CBuilder) -> c.CTypeExpr {

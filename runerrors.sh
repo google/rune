@@ -14,7 +14,7 @@
 #
 #!/bin/bash
 for test in errortests/*.rn; do
-  result=$(./runl "$test" | grep -E "(Exiting due to error|Exception)")
+  result=$(./runl "$test" | egrep "(Exiting due to error|Exception)")
   if [[ "$result" != "" ]]; then
     echo "$test passed"
   else

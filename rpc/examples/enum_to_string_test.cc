@@ -15,6 +15,7 @@
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
 #include "third_party/rune/rpc/examples/enum_to_string_proto.h"
+#include "third_party/sealedcomputing/wasm3/logging.h"
 
 namespace sealed::enum_to_string_service {
 

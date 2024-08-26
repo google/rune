@@ -36,10 +36,53 @@ class CEmitter(self, filename: string) {
     self.runtime.define(text)
   }
 
+  func merge(self, filename: string) {
+    self.runtime.mergeFile(filename)
+  }
+
   /* C feature support *******************************************************/
+
+  func needBoolType(self) {
+    self.include("<stdbool.h>")
+  }
+
+  func needStringType(self) {
+    self.runtime.needStringType = true
+  }
+
+  func needStringWriter(self) {
+    self.needBoolType()
+    self.needStringType()
+    self.needStringifyMacro()
+    self.needFloatPrintfMacros()
+    self.merge("cbackend/cruntime/global_string_writer.inc")
+    self.runtime.needStringWriter = true
+  }
+
+  func needPrimitiveTypeEqualities(self) {
+    self.include("<inttypes.h>")
+    self.needBoolType()
+    self.needStringType()
+    self.merge("cbackend/cruntime/primitive_type_equalities.inc")
+  }
 
   func needStringifyMacro(self) {
     self.runtime.needStringifyMacro = true
+  }
+
+  func needFloatPrintfMacros(self) {
+    self.include("<float.h>")
+    self.needStringifyMacro()
+    self.define("#if defined(DBL_DECIMAL_DIG)\n" +
+                "#  define DBL_SIG_DIGITS STRINGIFY(DBL_DECIMAL_DIG)\n" +
+                "#  define FLT_SIG_DIGITS STRINGIFY(FLT_DECIMAL_DIG)\n" +
+                "#elif defined(DECIMAL_DIG)\n" +
+                "#  define DBL_SIG_DIGITS STRINGIFY(DECIMAL_DIG)\n" +
+                "#  define FLT_SIG_DIGITS STRINGIFY(DECIMAL_DIG)\n" +
+                "#else\n" +
+                "#  define DBL_SIG_DIGITS STRINGIFY(DBL_DIG + 3)\n" +
+                "#  define FLT_SIG_DIGITS STRINGIFY(FLT_DIG + 3)\n" +
+                "#endif\n")
   }
 
   func needIntAdd(self, isSigned: bool, width: u32) -> string {
@@ -110,6 +153,26 @@ class CEmitter(self, filename: string) {
 
   func writeln(self, stuff: string) {
     self.write(stuff)
+    self.newline()
+  }
+
+  func writeopenln(self, stuff: string) {
+    self.write(stuff)
+    self.indent()
+    self.newline()
+  }
+
+  func writecloseln(self, stuff: string) {
+    self.deindent()
+    self.newline()
+    self.write(stuff)
+    self.newline()
+  }
+
+  func writeFileContents(self, filename: string) {
+    filepath = db.Filepath.new(db.getRoot().packageDir + filename, null(db.Filepath), false)
+    filepath.readFile()
+    self.write(filepath.text)
     self.newline()
   }
 

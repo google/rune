@@ -1,0 +1,110 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// TODO: currently all parameters must be distinct, because they are
+// mapped to symbols in the compiler.  Instead, they must be mapped
+// to db.Ident.
+
+// First, a simple monomorphic function of type u64 -> u64.
+func inc(a) {
+  return a + 1
+}
+
+println "inc(1) = ", inc(1)
+println "inc(10000) = ", inc(10000)
+
+func dec(b: u64) {
+  return b - 1
+}
+
+println "dec(1) = ", dec(1)
+println "dec(10000) = ", dec(10000)
+
+func sum(c, d) -> u64 {
+  return c + d
+}
+
+println "sum(1000, 2000) = ", sum(1000, 2000)
+
+
+// Second, a simple polymorphic function of type Poly[v1](v1 -> v1)
+func id(e) {
+  return e
+}
+
+println "id(1) = ", id(1)
+println "id(1.1) = ", id(1.1)
+println "id(\"hello\") = ", id("hello")
+
+// Multiple arguments
+func first(f, g) {
+  return f
+}
+
+println "first(1, 2.0) = ",  first(1, 2.0)
+println "first(true, 3u3) = ", first(true, 3u3)
+
+func second(h, i) {
+  return i
+}
+
+println "second(1, 2.1) = ",  second(1, 2.1)
+println "second(true, 3u3) = ", second(true, 3u3)
+
+func pair(j, k) {
+  return (j, k)
+}
+
+println "pair(1, 2.1) = ",  pair(1, 2.1)
+println "pair(true, 3u3) = ", pair(true, 3u3)
+
+// Simple recursive function definition: Fibonacci sequences.
+
+func fib (n) {
+  if n == 0 {
+    return 0
+  } else if n == 1 {
+    return 1
+  } else {
+    return fib(n - 1) + fib(n - 2)
+  }
+}
+
+println "fib(7) = ", fib(7)
+println "fib(10) = ", fib(10)
+
+// Two mutually recursive functions. Trivial (and unrealistic) example taken from
+// https://en.wikipedia.org/wiki/Mutual_recursion
+func is_even(n) {
+  x = 1  // make sure that local variables are not treated as dependencies.
+  if n == 0 {
+    return true
+  } else {
+    return is_odd(n - 1)
+  }
+}
+
+func is_odd(n) {
+  if n == 0 {
+    return false
+  } else {
+    return is_even(n - 1)
+  }
+}
+
+
+println "is_even(3) = ", is_even(3)
+println "is_even(4) = ", is_even(4)
+println "is_odd(3) = ", is_odd(3)
+println "is_odd(4) = ", is_odd(4)

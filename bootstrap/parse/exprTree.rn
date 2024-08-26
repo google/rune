@@ -60,6 +60,10 @@ transformer ExprTree() {
         self.modExprSym => return self.buildBinaryExpr(node, db.ExprType.Modint)
 
         self.negateExprSym => return self.buildPrefixExpr(node, db.ExprType.Negate)
+        self.bitnotExprSym => return self.buildPrefixExpr(node, db.ExprType.Bitnot)
+        self.indexSuffixSym => return self.buildPostfixExpr(node)
+
+        self.tupleExprSym => return self.buildTupleExpr(node)
 
         default => return db.Expr.newIdent(Sym.new("ident"), db.Location.emptyLocation())
       }
@@ -171,8 +175,8 @@ return db.Expr.newIdent(Sym.new("temp"), node.location)
 
     func buildPrefixExpr(self: HirBuilder, node: Node, opType: db.ExprType) -> db.Expr {
       child = node.firstChildNode!
-      return db.Expr.newUnary(db.ExprType.Negate,
-      	      self.buildExprTree(child), node.location)
+      return db.Expr.newUnary(opType,
+                    self.buildExprTree(child), node.location)
     }
 
     // Format: postfixExpr(<expr> <suffix>)
@@ -193,14 +197,43 @@ return db.Expr.newIdent(Sym.new("temp"), node.location)
         }
       }
       switch postfixNode.getRuleSym()! {
-        self.callParametersSym,
-        self.indexSuffixSym,
+        self.callParametersSym => {
+          child = firstChild.nextNodeChildNode.firstChildNode!
+          if isnull(child.nextNodeChildNode) {
+            args = self.buildExprTree(child)
+          } else {
+            children = arrayof(db.Expr)
+            while !isnull(child) {
+              children.append(self.buildExprTree(child!))
+              child = child.nextNodeChildNode
+            }
+            args = db.Expr.newTuple(children, node.location)
+          }
+          return db.Expr.newBinary(
+             db.ExprType.Call, self.buildExprTree(firstChild), args, node.location)
+        }
+        self.indexSuffixSym => {
+          lastChild = firstChild.nextNodeChildNode!
+          return db.Expr.newBinary(
+             db.ExprType.Index, self.buildExprTree(firstChild),
+             self.buildExprTree(lastChild.firstChildNode!), node.location)
+        }
         self.sliceSuffixSym => {
-          // TODO: Writ these.
+          // TODO: Write these.
         }
       }
 // temp
 return db.Expr.newIdent(Sym.new("temp"), node.location)
+    }
+
+    func buildTupleExpr(self: HirBuilder, node: Node) -> db.Expr {
+      children = arrayof(db.Expr)
+      child = node.firstChildNode
+      while !isnull(child) {
+        children.append(self.buildExprTree(child!))
+        child = child.nextNodeChildNode
+      }
+      return db.Expr.newTuple(children, node.location)
     }
 
     func buildTypeOfExpr(self: HirBuilder, node: Node) -> db.Expr {
@@ -216,6 +249,7 @@ return db.Expr.newIdent(Sym.new("temp"), node.location)
       self.bitandExprSym = Sym.new("bitandExpr")
       self.bitorExprSym = Sym.new("bitorExpr")
       self.bitxorExprSym = Sym.new("bitxorExpr")
+      self.bitnotExprSym = Sym.new("bitNotExpr")
       self.callParametersSym = Sym.new("callParameters")
       self.callParametersSym = Sym.new("callParameters")
       self.equalExprSym = Sym.new("equalExpr")
@@ -243,6 +277,7 @@ return db.Expr.newIdent(Sym.new("temp"), node.location)
       self.shlExprSym = Sym.new("shlExpr")
       self.shrExprSym = Sym.new("shrExpr")
       self.sliceSuffixSym = Sym.new("sliceSuffix")
+      self.tupleExprSym = Sym.new("tupleExpr")
       self.typeofExprSym = Sym.new("typeofExpr")
       self.xorExprSym = Sym.new("xorExpr")
 
@@ -255,6 +290,7 @@ return db.Expr.newIdent(Sym.new("temp"), node.location)
       self.bitandSym = Sym.new("&")
       self.bitorSym = Sym.new("|")
       self.bitxorSym = Sym.new("^")
+      self.bitnotSym = Sym.new("~")
       self.boolSym = Sym.new("bool")
       self.dividesSym = Sym.new("/")
       self.dotSym = Sym.new(".")

@@ -16,7 +16,7 @@
 // mapping is correct.
 
 println "Arithmetic binary operators:"
-println "This is a sum: %i" % (1i32 + 2i32)
+println "This is a sum: %i32" % (1i32 + 2i32)
 println "This is a difference: %i27" % (1i27 - 2i27)
 println "This is a multiplication: %i32" % (2i32 * 4i32)
 println "This is a division: %i32" % (8i32 / -2i32)
@@ -25,10 +25,10 @@ println "This is an exponentiation: %i" % (-2i64 ** 9)
 println "This is an exponentiation 2: %i" % ((-2i64) ** 9)
 println "This is an exponentiation 3: %i" % ((-2i64) ** 10)
 println ""
-println "This is an unsigned sum: %u" % (1u3 + 2u3)
-println "This is an unsigned difference: %u" % (100u7 - 33u7)
-println "This is an unsigned multiplication: %u" % (128u11 * 4u11)
-println "This is an unsigned division: %u" % (22u22 / 2u22)
+println "This is an unsigned sum: %u3" % (1u3 + 2u3)
+println "This is an unsigned difference: %u7" % (100u7 - 33u7)
+println "This is an unsigned multiplication: %u11" % (128u11 * 4u11)
+println "This is an unsigned division: %u22" % (22u22 / 2u22)
 println "This is an unsigned exponentiation: %u" % (2 ** 9)
 println ""
 println "This is truncated sum: %i16" % (32767i16 !+ 1i16)
@@ -50,7 +50,7 @@ println "This is Logical Or: %b" % (false || false)
 println ""
 
 println "Bitwise binary operators:"
-println "This is Bitwise And: %u" % (16 & 0xf)
+println "This is Bitwise And: %u64" % (16 & 0xf)
 println "This is Bitwise Or: %u" % (7 | 0x8)
 println "This is Bitwise Xor: %u" % (48 ^ 48)
 println "This is Shift Left: %u" % (1 << 16)
@@ -60,10 +60,10 @@ println ""
 println "Rotate (non-built-in) operators:"
 println "This is rotate left: 0x%x" % (7 <<< 4)
 println "This is rotate right: 0x%x" % (7 >>> 8)
-println "This is rotate left with non-C width: 0x%x" % (7u41 <<< 4)
+println "This is rotate left with non-C width: 0x%x64" % (7u41 <<< 4)
 println "This is rotate right with non-C with: 0x%x" % (7u41 >>> 8)
-println "This is rotate left with non-C width 2: 0x%x" % (7u15 <<< 4)
-println "This is rotate right with non-C with 2: 0x%x" % (7u15 >>> 8)
+println "This is rotate left with non-C width 2: 0x%x15" % (7u15 <<< 4)
+println "This is rotate right with non-C with 2: 0x%x15" % (7u15 >>> 8)
 println ""
 
 println "Precedence tests:"

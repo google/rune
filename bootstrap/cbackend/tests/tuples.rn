@@ -1,4 +1,4 @@
-//  Copyright 2021 Google LLC.
+//  Copyright 2024 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use builtins
-use typebuilder
-use typechecker
-use typeclasses
-use typeerror
-use typeunifier
+println ()
+println (123,)
+println (12, "test")
+println (12, ("hello", true))
+println (12, ("test", (6.5f64, (~0i1,))))
+
+// indexes
+point = (1, 2)
+println "point=", point, " point[0]=%u" % point[0], ", point[1]=", point[1]
+
+t = (3*5 + 3 + 5, 3**2 + 5**2)
+println t[0], " ", t[1]
+
+// equality
+t1 = (1, false)
+t2 = (1, false)
+println t1, " == ", t2, "? ", t1 == t2
+t3 = (1, true)
+println t1, " == ", t3, "? ", t1 == t3
+
+
+/** TODO
+// To string
+s = ("Alice", 42).toString()
+println s
+*/

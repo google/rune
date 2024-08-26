@@ -164,6 +164,10 @@ class Bigint(self, value: Int | Uint | runtime.BigintArray, width: u32 = 0u32) {
     return Bigint(self.bigint)
   }
 
+  func uint64(self) -> u64{
+    return runtime.bigintToInteger(self.bigint)
+  }
+
   // Overload the + operator.
   operator + (a: Bigint, b: Bigint) -> Bigint {
     if a.width != b.width || a.isSigned != b.isSigned {

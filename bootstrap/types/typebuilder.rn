@@ -26,6 +26,10 @@ func BOOLEAN() -> Type {
   return Type(TypeName("bool"))
 }
 
+func NONETY() -> Type {
+  return Type(TypeName("none"))
+}
+
 func INTEGER() -> Type {
   return Type(AnyIntType(true))
 }
@@ -75,7 +79,7 @@ func FN(arg: Type, res:Type) -> Type {
 }
 
 func POLY(v: u64, scope: Type) -> Type {
-  return Type(PolymorphicType(TypeVar(<i32>v, null(Type)), scope))
+  return Type(PolymorphicType(Type(TypeVar(<i32>v, null(Type))), scope))
 }
 
 func BPOLY(v: u64, bounds: [Type], scope: Type) -> Type {
@@ -84,7 +88,6 @@ func BPOLY(v: u64, bounds: [Type], scope: Type) -> Type {
   } else {
     constraint = Type(ChoiceType(bounds))
   }
-  tv = TypeVar(<i32>v, constraint)
-  return Type(PolymorphicType(tv, scope))
+  return Type(PolymorphicType(Type(TypeVar(<i32>v, constraint)), scope))
 }
 

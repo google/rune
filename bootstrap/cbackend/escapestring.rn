@@ -15,7 +15,7 @@
 use stringstream
 use cemitter
 
-class Escaper(self, emitter: CEmitter, stuff: string) {
+class Escaper(self, emitter: CEmitter, stuff: string, printf: bool) {
 
   enum State {
     Copy
@@ -29,11 +29,18 @@ class Escaper(self, emitter: CEmitter, stuff: string) {
   self.formatChar = 'x'
   self.state = State.Copy
   self.value = ""
+  self.printf = printf
 
   func copy(self, c: u8) {
     switch c {
       '"' => self.value += "\\\""
-      '%' => self.state = Escaper.State.FormatSpecifier
+      '%' => {
+        if self.printf {
+          self.state = Escaper.State.FormatSpecifier
+        } else {
+          self.value += "%"
+        }
+      }
       default => self.value.append(c)
     }
   }
@@ -63,18 +70,7 @@ class Escaper(self, emitter: CEmitter, stuff: string) {
     if self.formatWidth > 64u32 {
       raise Status.Unimplemented, "Format Widths > 64 bits not yet supported by C backend: ", self.formatWidth
     } else if self.formatChar == 'f' {
-      self.emitter.include("<float.h>")
-      self.emitter.needStringifyMacro()
-      self.emitter.define("#if defined(DBL_DECIMAL_DIG)\n" +
-               "#  define DBL_SIG_DIGITS STRINGIFY(DBL_DECIMAL_DIG)\n" +
-               "#  define FLT_SIG_DIGITS STRINGIFY(FLT_DECIMAL_DIG)\n" +
-               "#elif defined(DECIMAL_DIG)\n" +
-               "#  define DBL_SIG_DIGITS STRINGIFY(DECIMAL_DIG)\n" +
-               "#  define FLT_SIG_DIGITS STRINGIFY(DECIMAL_DIG)\n" +
-               "#else\n" +
-               "#  define DBL_SIG_DIGITS STRINGIFY(DBL_DIG + 3)\n" +
-               "#  define FLT_SIG_DIGITS STRINGIFY(FLT_DIG + 3)\n" +
-               "#endif\n")
+      self.emitter.needFloatPrintfMacros()
       if self.formatWidth <= 32u32 && self.formatWidth != 0u32 {
         self.value += "%.\" FLT_SIG_DIGITS \"g"
       } else {
@@ -87,7 +83,7 @@ class Escaper(self, emitter: CEmitter, stuff: string) {
         'i' => self.value += "d"
         'u' => self.value += "u"
         'x' => self.value += "x"
-	default => println "Warning: found %" + chr(self.formatChar)
+        default => println "Warning: found %" + chr(self.formatChar)
       }
       if self.formatWidth == 0u32 {
         self.value += "64"
@@ -121,7 +117,7 @@ class Escaper(self, emitter: CEmitter, stuff: string) {
         Escaper.State.Copy => self.copy(c)
         Escaper.State.FormatSpecifier => self.readFormatSpecifier(c)
         Escaper.State.FormatWidth => self.readFormatWidth(c)
-	default => println "Warning: weird state ", self.state
+        default => println "Warning: weird state ", self.state
       }
     }
 
@@ -135,6 +131,6 @@ class Escaper(self, emitter: CEmitter, stuff: string) {
 }
 
 // Convert a Rune string to a C string
-func escapeString(e: CEmitter, stuff: string) -> string {
-  return Escaper(e, stuff).escape()
+func escapeString(e: CEmitter, stuff: string, printf: bool) -> string {
+  return Escaper(e, stuff, printf).escape()
 }

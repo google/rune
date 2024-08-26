@@ -1,4 +1,4 @@
-//  Copyright 2021 Google LLC.
+//  Copyright 2024 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use builtins
-use typebuilder
-use typechecker
-use typeclasses
-use typeerror
-use typeunifier
+if false {
+  println "never"
+} else {
+  println "space is the place"
+}
+if false {
+  println "never"
+} else {
+  // empty block
+}
+if true {
+  println "no else this time!"
+} else {
+  println "never"
+}
+a = 1
+b = 2
+if a + b != 3 {
+  println "never"
+} else {
+  println "a + b == 3"
+}
+if a + b - 1 >= 3 {
+  println "never"
+} else {
+  println "a + b - 1 < 3"
+}
+herp = "herp"
+derp = "derp"
+if derp == herp {
+  println "never"
+} else {
+  println herp, " ", derp
+}

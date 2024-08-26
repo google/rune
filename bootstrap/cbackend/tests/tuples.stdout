@@ -1,0 +1,9 @@
+()
+(123,)
+(12, "test")
+(12, ("hello", true))
+(12, ("test", (6.5, (-1,))))
+point=(1, 2) point[0]=1, point[1]=2
+23 34
+(1, false) == (1, false)? true
+(1, false) == (1, true)? false

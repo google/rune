@@ -1,4 +1,4 @@
-//  Copyright 2021 Google LLC.
+//  Copyright 2024 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use builtins
-use typebuilder
-use typechecker
-use typeclasses
-use typeerror
-use typeunifier
+#include "runtime.h"
+
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
+int32_t os_system(runtime_array *command) {
+  char *cmd = calloc(command->numElements + 1, sizeof(char));
+  memcpy(cmd, command->data, command->numElements);
+  int32_t result = system(cmd);
+  free(cmd);
+  return result;
+}

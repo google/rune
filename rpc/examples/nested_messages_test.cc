@@ -17,6 +17,7 @@
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
 #include "third_party/rune/rpc/examples/nested_messages_proto.h"
+#include "third_party/sealedcomputing/wasm3/logging.h"
 
 namespace sealed::nested_messages {
 

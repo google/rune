@@ -102,7 +102,7 @@ class Value(self: Value, value: string | bool | Int | Uint | Bigint | Float | Sy
       DatatypeType.Uint => return builder.cIntLiteral(self.intVal)
       DatatypeType.Float => return builder.cFloatLiteral(self.floatVal)
       DatatypeType.Sym => {
-        //println("gen symbol %s" % self.symVal.name)
+        // println("gen symbol %s" % self.symVal.name)
         return builder.cIdentifier(self.symVal!, bindingInstance)
       }
       default => raise Status.Unimplemented, "Value type not yet supported by C backend: ", self.type

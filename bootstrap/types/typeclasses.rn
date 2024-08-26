@@ -11,7 +11,40 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// Read the comment on typechecker.rn first to understand the general
+// typechecking algorithm.
 
+
+func hashCombine(hash1: u64, hash2: u64) -> u64 {
+  // From https://stackoverflow.com/questions/19195183/how-to-properly-hash-the-custom-struct
+  return hash1 ^ (0x9e3779b9 !+ (hash2 << 6) !+ (hash2 >> 2))
+}
+
+/**
+ * @brief Represents type variables.
+ *
+ * @param id a globally unique integral identifier of type variable instance.
+ * @param constraint: optional type constraint on the type variable
+ *         (implements bounded polymorphism).
+ *
+ * A type variable is uniquely identified by an integer. Type variables with
+ * positive integer ids are generated when the typechecker encounters a new
+ * variable. Type variables with negative ids are generated when a typescheme
+ * (a polymorphic or bounded polymorphic type, usually a function type) is
+ * _opened_ (i.e., the function is applied to a new type).
+ *
+ * In symbols, we would write vn for a variable, where n is an integer, e.g.,
+ * v1, v2, v-1, etc.
+ *
+ * Type variables can be unified; in this case, the unifier will always
+ * select the smallest integer.
+ *
+ * TODO: the unifier should always choose the smallest positive integer if it
+ * exists, which will correlate to a variable in the rune program. Otherwise it
+ * should choose the integer closest to 0, which is the earliest generated
+ * variable.
+ */
 class TypeVar(self, id: i32, constraint: Type?) {
   self.id = id
   self.constraint = constraint
@@ -34,8 +67,30 @@ class TypeVar(self, id: i32, constraint: Type?) {
     }
     return Type(self)
   }
+
+  func hash(self) -> u64 {
+    if isnull(self.constraint) {
+      return hashValue(self.id)
+    }
+    return hashCombine(hashValue(self.id), hashValue(self.constraint!))
+  }
+
+  func equals(self, other: TypeVar) -> bool {
+    return self == other
+  }
 }
 
+
+/**
+ * @brief represents a particular integer type.
+ *
+ * @param isSigned is this a u<?> or i<?> type?
+ * @param width the bitwidth of the integer type.
+ *
+ * In symbols, we write u3, i32, etc.
+ *
+ * This class represents types such as i32 and u3.
+ */
 class IntType(self, isSigned: bool, width: u32) {
   self.isSigned = isSigned
   self.width = width
@@ -50,8 +105,24 @@ class IntType(self, isSigned: bool, width: u32) {
     }
     return "u%u32" % self.width
   }
+
+  func hash(self) -> u64 {
+    h = self.isSigned ? 0xcafebabe : 0xbead1e
+    return hashCombine(h, hashValue(self.width))
+  }
+
+  func equals(self, other: IntType) -> bool {
+    return self == other
+  }
 }
 
+/**
+ * @brief represents the superclasses of all signed or unsigned integer types.
+ *
+ * @param isSigned does this represent the Int or Uint rune type?
+ *
+ * In symbols we write Int or Uint.
+ */
 class AnyIntType(self, isSigned: bool) {
   self.isSigned = isSigned
 
@@ -65,8 +136,25 @@ class AnyIntType(self, isSigned: bool) {
     }
     return "uint"
   }
+
+  func hash(self) -> u64 {
+    return self.isSigned ? 0xcafebabe : 0xbead1e
+  }
+
+  func equals(self, other: AnyIntType) -> bool {
+    return self == other
+  }
 }
 
+
+/**
+ * @brief Represents f32 and f64 Rune types.
+ *
+ * @param the width of the float type.
+ *
+ * NOTE, this should only be 32 or 64, to correspond to standard machine
+ * floating-point implementations, at least on x86 platforms.
+ */
 class FloatType(self, width: u32) {
   self.width = width
 
@@ -77,8 +165,34 @@ class FloatType(self, width: u32) {
   func toString(self) -> string {
     return "f%u32" % self.width
   }
+
+  func hash(self) -> u64 {
+    return hashValue(self.width)
+  }
+
+  func equals(self, other: FloatType) -> bool {
+    return self == other
+  }
 }
 
+
+/**
+ * @brief Represents named types.
+ *
+ * @param name the name of the type.
+ *
+ * Named types are typically those defined by the user in a type declaration
+ * (i.e., struct, rpc or class).
+ *
+ * There are two built-in type names: "string" and "bool".
+ *
+ * Apart from unbound type variables (or type variables where the
+ * typename is listed as one possible constraint), typenames will only
+ * unify with another type if that type has the same name.
+ *
+ * TODO: use integers to uniquely identify typenames, in case we allow
+ * multiple types to have the same name in different scopes.
+ */
 class TypeName(self, name: string) {
   self.name = name
 
@@ -89,8 +203,30 @@ class TypeName(self, name: string) {
   func toString(self) -> string {
     return self.name
   }
+
+  func hash(self) -> u64 {
+    return hashValue(self.name)
+  }
+
+  func equals(self, other: TypeName) -> bool {
+    return self == other
+  }
 }
 
+
+/**
+ * @brief Represents tuple types.
+ *
+ * @param elements array of types.
+ *
+ * Represents types of tuples. For example (1, "hello") has type
+ * (u64, string).
+ *
+ * Aside from unbound type variables, where the tuple meets the constraint, if any,
+ * tuples only unify with other tuples if
+ * (a) they have the same number of elements, and
+ * (b) the elements of each tuple unify pairwise.
+ */
 class TupleType(self, elements: [Type]) {
   self.elements = elements
 
@@ -106,17 +242,44 @@ class TupleType(self, elements: [Type]) {
     return true
   }
 
+  func numElements(self) -> u64 {
+    return self.elements.length()
+  }
+
+  func index(self, i: u64) -> Type {
+    assert i < self.elements.length()
+    return self.elements[i]
+  }
+
   func toString(self) -> string {
     value = "("
     first = true
     for ty in self.elements {
       if !first {
-        value += ", "
+        value += " "
       }
       value += ty.toString()
+      value += ","
       first = false
     }
     return value + ")"
+  }
+
+  // C does not support polymorphic types -- instead we generate a 'specialization'
+  // of the polymorphic function for each different set of types passed in. This amounts
+  // to adding a suffix to the function name consisting of the argument types at that
+  // call-time instance.
+  func specializationString(self) -> string {
+    specializationString = ""
+    first = true
+    for ty in self.elements {
+      if !first {
+        specializationString += "_"
+      }
+      specializationString += ty.toString()
+      first = false
+    }
+    return specializationString
   }
 
   func replaceVar(self, vold: TypeVar, vnew: TypeVar) -> Type {
@@ -126,9 +289,45 @@ class TupleType(self, elements: [Type]) {
     }
     return Type(TupleType(elements))
   }
+
+  func hash(self) -> u64 {
+    h = 0xdeadbeefdeadbeef
+    for ty in self.elements {
+      h = hashCombine(h, ty.hash())
+    }
+    return h
+  }
+
+  func equals(self, other: TupleType) -> bool {
+    return self == other
+  }
 }
 
-// Represents the combination of alternative types.
+
+/**
+ * @brief Represents the combination of alternative types.
+ *
+ * @param choices array of possible types.
+ *
+ * This class represents types of form 'T1 | T2 | ... | Tn' (for instance
+ *  Int | Unit | f32 | f64).
+ *
+ * A choice type Tc can unify with type T2 if:
+ * (a) T2 is an unbound type variable without constraint
+ *
+ * (b) T2 is an unbound type variable with constraint, such that the
+ *     constraint type "intersects" with the set of choices in Tc. The
+ *     variable is then bound to that intersection. For example, if Tc
+ *     is (Int | Unit | f32 | f64) and the constraint is (f32 | f64)
+ *     then T2 will be bound to (f32 | 64).  If the constraint were
+ *     (string | bool), then the unification attempt would fail.
+ *
+ * (c) T2 is an element of Tc.  For example, if T2 is Int in the above
+ *     example.
+ *
+ * (d) T2 is a choice type that intersects with Tc (see (b) above). The
+ *     resultant type will be that intersection.
+ */
 class ChoiceType(self, choices: [Type]) {
   self.choices = choices
 
@@ -164,8 +363,37 @@ class ChoiceType(self, choices: [Type]) {
     }
     return Type(ChoiceType(choices))
   }
+
+  func hash(self) -> u64 {
+    h = 0xbaff1edbabb1e
+    for ty in self.choices {
+      h = hashCombine(h, ty.hash())
+    }
+    return h
+  }
+
+  func equals(self, other: ChoiceType) -> bool {
+    return self == other
+  }
 }
 
+
+/**
+ * @brief represents the type of a function.
+ *
+ * @param params type of function inputs, may be a tuple type for multiple
+ *   parameters.
+ * @param result the type of the function result.
+ *
+ * In symbols, this type would be written with an arrow, for example, T1 -> T2
+ * where T1 is the type of params, and T2 the result.
+ *
+ * Function type T1 -> T2 will unify with
+ * (a) unbound type variables without constraint
+ * (b) unbound type variables with constraint where the function type unifies with
+ *     the constraint.
+ * (c) function type T3 -> T4 when T1 and T3 unify and T2 and T4 unify.
+ */
 class FunctionType(self, params: Type, result: Type) {
   self.params = params
   self.result = result
@@ -182,35 +410,178 @@ class FunctionType(self, params: Type, result: Type) {
   func replaceVar(self, vold: TypeVar, vnew: TypeVar) -> Type {
     return Type(FunctionType(self.params.replaceVar(vold, vnew), self.result.replaceVar(vold, vnew)))
   }
+
+  func hash(self) -> u64 {
+    return hashCombine(self.params.hash(), self.result.hash())
+  }
+
+  func equals(self, other: FunctionType) -> bool {
+    return self == other
+  }
 }
 
-class PolymorphicType(self, v: TypeVar, scope: Type) {
-  self.v = v
+
+/**
+ * @brief Remember the instantiations of the bound variables in a polymorphic type.
+ *
+ * Rune supports polymorphic functions, but C does not. The strategy for
+ * the C backend is to generate different specializations of the function,
+ * one for each instantiation of the polymorphic type's bound variables.
+ *
+ * Here, varBindings enumerates the tyvars that were generated when the
+ * polymorphic type was opened. These will be bound.
+ */
+class TyvarInstantiation(self, varBindings: [Type], type: Type) {
+  self.varBindings = varBindings
+  self.type = type
+}
+
+
+/**
+ * @brief Remember the instantiation of all bound vars of a polymorphic type.
+ *
+ * Rune supports polymorphic functions, but C does not. The strategy for
+ * the C backend is to generate different specializations of the function,
+ * one for each instantiation of the polymorphic type's bound variables.
+ */
+relation DoublyLinked PolyInstantiations TyvarInstantiation cascade
+class PolyInstantiations(self) {
+
+  func append(self, i: TyvarInstantiation) {
+    self.appendTyvarInstantiation(i)
+  }
+
+  iterator values(self) {
+    for child = self.firstTyvarInstantiation, !isnull(child), child = child.nextPolyInstantiationsTyvarInstantiation {
+      yield child!
+    }
+  }
+}
+
+
+/**
+ * @brief represents a polymorphically closed type.
+ *
+ * @param v a type variable that is polymorphically bound.
+ * @param scope the type over which the variable is bound.
+ *
+ * In type theory, this is known as a _type scheme_. Consider the identity
+ * function, 'func id(x) { return x }'.  This is polymorphic, in that it can
+ * take an input of any type and return a result (of the same type).
+ *
+ * Consider the program:
+ *  x = id(1)
+ *  y = id("string")
+ *
+ * Suppose we typed function id as function type v1 -> v1.  If we did not
+ * bind it polymorphically, then we would fail to typecheck our program.
+ * After the first statement, x would get type 'u64', but id would then be
+ * bound to type u64 -> u64.  The second statement would fail to unify because
+ * u64 does not unify with string.
+ *
+ * Instead, we need to polymorphically close the type variable. In type theory
+ * literature this is related to universal quantification of variables in
+ * first order predicate logic, and the type is "forall vx. vx -> vx".  Every
+ * time we try to apply the function type, the type is 'opened', and the bound
+ * variable vx replaced with a new type variable vy. (As noted above, these
+ * new types will have negative ids, to distinguish them from type variables
+ * generated to type first occurrences of a rune variable.
+ *
+ * In the above example, we would typecheck 'id(1)' as
+ *  open 'forall vx. vx -> vx'  to create type v-1 -> v-1.
+ *  unify parameter type v-1 with argument type u64. (succeeds)
+ *  result type is v-1 = u64.
+ *
+ * Then typechecking the second statement, 'id("string")', becomes:
+ *  open 'forall vx. vx -> vx'  to create type v-2 -> v-2.
+ *  unify parameter type v-2 with argument type string. (succeeds)
+ *  result type is v-2 = string.
+ *
+ * The process of creating a PolymorphicType (or generating the
+ * 'forall vx. ...' part of the above type) is called Type
+ * Generalization: it identifies those type variables that are
+ * polymorphic in a definition (i.e., not referred to outside the
+ * type) and 'binds' them.  In the above example, the only type
+ * variable is v1; it is introduced in the function argument.
+ */
+relation OneToOne PolymorphicType PolyInstantiations cascade
+class PolymorphicType(self, vars: Type | [Type], scope: Type,
+                      instantiations: PolyInstantiations? = null(PolyInstantiations)) {
+  if isnull(instantiations) {
+    self.instantiations = PolyInstantiations()
+  } else {
+    self.instantiations = instantiations
+  }
+
+  typeswitch vars {
+    Type => {
+      self.boundVars = arrayof(Type)
+      self.boundVars.append(vars)
+    }
+    [Type] => self.boundVars = vars
+  }
   self.scope = scope
 
   operator == (self, other: PolymorphicType) -> bool {
-    return self.v == other.v && self.scope == other.scope
+    // TODO: consider equivalence up to bound variable renaming
+    return self.boundVars == other.boundVars && self.scope == other.scope
   }
 
   func toString(self) -> string {
-    return "Poly(%s)[%s]" % (self.v.toString(), self.scope.toString())
+    varstring = ""
+    first = true
+    for boundVar in self.boundVars {
+      if !first {
+        varstring += ","
+      }
+      varstring += boundVar.toString()
+    }
+    return "Poly[%s](%s)" % (varstring, self.scope.toString())
   }
 
-  func open(self, v: i32) -> Type {
-    tv = TypeVar(v, self.v.constraint)
-    return self.scope.replaceVar(self.v, tv)
+  func open(self, object, varMaker) -> Type {
+    type = self.scope
+    bindings = arrayof(Type)
+    for boundVar in self.boundVars {
+      tyvar = boundVar.tyvar!
+      newFreeVar = TypeVar(varMaker(object), tyvar.constraint)
+      bindings.append(Type(newFreeVar))
+      type = type.replaceVar(tyvar, newFreeVar)
+    }
+    self.instantiations.append(TyvarInstantiation(bindings, type))
+    return type
   }
 
   func replaceVar(self, vold: TypeVar, vnew: TypeVar) -> Type {
-    if vold.id == self.v.id {
-      // We cannot replace a variable within the scope of a binding, if that
-      // var is being bound.
-      return Type(self)
+    for boundVar in self.boundVars {
+      if vold.id == boundVar.tyvar.id {
+        // We cannot replace a variable within the scope of a binding, if that
+        // var is being bound.
+        return Type(self)
+      }
     }
-    return Type(PolymorphicType(self.v, self.scope.replaceVar(vold, vnew)))
+    return Type(PolymorphicType(self.boundVars,
+                                self.scope.replaceVar(vold, vnew),
+				self.instantiations))
+  }
+
+  func hash(self) -> u64 {
+    h = 0xcafebabecafebabe
+    for boundVar in self.boundVars {
+      h = hashCombine(h, boundVar.hash())
+    }
+    return hashCombine(h, self.scope.hash())
+  }
+
+  func equals(self, other: PolymorphicType) -> bool {
+    return self == other
   }
 }
 
+
+/**
+ * @brief high-level container class of types.
+ */
 relation OneToOne Type TypeVar cascade
 relation OneToOne Type TypeName cascade
 relation OneToOne TypeVar Type cascade
@@ -221,7 +592,6 @@ relation OneToOne Type ChoiceType cascade
 relation OneToOne Type TupleType cascade
 relation OneToOne Type FunctionType cascade
 relation OneToOne Type PolymorphicType cascade
-
 
 class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | ChoiceType | TupleType | FunctionType | PolymorphicType) {
 
@@ -350,6 +720,57 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
       Type.TypeClass.Float => return self.float!.width
       default => return 0u32
     }
+  }
+
+  func hash(self) -> u64 {
+    switch self.type {
+      Type.TypeClass.Var => h1 = self.tyvar.hash()
+      Type.TypeClass.Int => h1 = self.int.hash()
+      Type.TypeClass.AnyInt => h1 = self.anyInt.hash()
+      Type.TypeClass.Float => h1 = self.float.hash()
+      Type.TypeClass.Typename => h1 = self.tyname.hash()
+      Type.TypeClass.Choice => h1 = self.choice.hash()
+      Type.TypeClass.Tuple => h1 = self.tuple.hash()
+      Type.TypeClass.Function => h1 = self.function.hash()
+      Type.TypeClass.Polymorphic => h1 = self.poly.hash()
+    }
+    return hashCombine(hashValue(self.type), h1)
+  }
+
+  func equals(self, other: Type) -> bool {
+    if self.type != other.type {
+      return false
+    }
+    switch self.type {
+      Type.TypeClass.Var => return self.tyvar.equals(other.tyvar!)
+      Type.TypeClass.Int => return self.int.equals(other.int!)
+      Type.TypeClass.AnyInt => return self.anyInt.equals(other.anyInt!)
+      Type.TypeClass.Float => return self.float.equals(other.float!)
+      Type.TypeClass.Typename => return self.tyname.equals(other.tyname!)
+      Type.TypeClass.Choice => return self.choice.equals(other.choice!)
+      Type.TypeClass.Tuple => return self.tuple.equals(other.tuple!)
+      Type.TypeClass.Function => return self.function.equals(other.function!)
+      Type.TypeClass.Polymorphic => return self.poly.equals(other.poly!)
+    }
+  }
+
+  func genSpecializationName(self, baseName: String) -> String {
+    newname = baseName
+    switch self.type {
+      Type.TypeClass.Var => newname = ""
+      Type.TypeClass.Int => newname += "_" + self.int.toString()
+      Type.TypeClass.AnyInt => newname += "_" + self.anyInt.toString()
+      Type.TypeClass.Float => newname += "_" + self.float.toString()
+      Type.TypeClass.Typename => newname += "_" + self.tyname.toString()
+      Type.TypeClass.Choice => newname = ""
+      Type.TypeClass.Tuple => newname += "_" + self.tuple.specializationString()
+      Type.TypeClass.Function => newname = ""
+      Type.TypeClass.Polymorphic => newname = ""
+    }
+    if newname == "" {
+      raise Status.Unimplemented, "Can't specialize to argument type ", self.toString()
+    }
+    return newname
   }
 
 }

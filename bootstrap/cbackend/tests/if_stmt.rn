@@ -1,4 +1,4 @@
-//  Copyright 2021 Google LLC.
+//  Copyright 2024 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use builtins
-use typebuilder
-use typechecker
-use typeclasses
-use typeerror
-use typeunifier
+if true {
+  println "true"
+}
+if true {
+  // empty block
+}
+if false {
+  println "false"
+}
+t = true
+if false == false {
+  println "false == false"
+  if t {
+    println "nested t == true"
+  }
+}
+a = 1
+b = 2
+if a + b == 3 {
+  println "a + b == 3"
+}
+if a + b - 1 < 3 {
+  println "a + b - 1 < 3"
+}
+derp = "derp"
+if derp == "derp" {
+  println derp, " derp"
+}

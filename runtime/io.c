@@ -950,7 +950,7 @@ void runtime_nativeIntToString(runtime_array *string, uint64_t value, uint32_t b
 //     print r,
 //     value = q
 //   print
-// 
+//
 void runtime_bigintToString(runtime_array *string, runtime_array *bigint, uint32_t base) {
   runtime_freeArray(string);
   if (runtime_rnBoolToBool(runtime_bigintZero(bigint))) {

@@ -1,0 +1,55 @@
+Arithmetic binary operators:
+This is a sum: 3
+This is a difference: -1
+This is a multiplication: 8
+This is a division: -4
+This is a remainder: 1
+This is an exponentiation: -512
+This is an exponentiation 2: -512
+This is an exponentiation 3: 1024
+
+This is an unsigned sum: 3
+This is an unsigned difference: 67
+This is an unsigned multiplication: 512
+This is an unsigned division: 11
+This is an unsigned exponentiation: 512
+
+This is truncated sum: -32768
+This is truncated difference: 65527
+This is truncated multiply: 0
+
+Relational binary operators:
+This is Equals: 0
+This is not-equals: 1
+This is Greater than: 0
+This is Greater than Equals: 0
+This is Less than: 1
+This is Less than Equals: 1
+
+Logical binary operators:
+This is Logical And: 1
+This is Logical Or: 0
+
+Bitwise binary operators:
+This is Bitwise And: 0
+This is Bitwise Or: 15
+This is Bitwise Xor: 0
+This is Shift Left: 65536
+This is Shift Right: 16
+
+Rotate (non-built-in) operators:
+This is rotate left: 0x70
+This is rotate right: 0x700000000000000
+This is rotate left with non-C width: 0x70
+This is rotate right with non-C with: 0xe00000000
+This is rotate left with non-C width 2: 0x70
+This is rotate right with non-C with 2: 0x380
+
+Precedence tests:
+Precedence test 1: 14
+Precedence test 2: 20
+Precedence test 3: 2
+Precedence test 4: 80
+Precedence test 5: 96
+Precedence test 6: 96
+Precedence test 7: 0

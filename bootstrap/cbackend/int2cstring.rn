@@ -35,9 +35,6 @@ func int2cstring(value: Int | Uint | db.Bigint) -> string {
     Int, Uint => width = widthof(value)
     db.Bigint => width = value.width
   }
-  if width > 16u32 {
-    suffix += "l"
-  }
   if width > 32u32 {
     suffix += "l"
   }

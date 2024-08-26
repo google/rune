@@ -13,5 +13,5 @@
 # limitations under the License.
 
 #!/bin/bash
-files=$(find ../.. -name '*.rn' | grep -E -v 'escapeatend|syntaxError')
+files=$(find ../.. -name '*.rn' | egrep -v 'escapeatend|syntaxError')
 ./pegparser $files

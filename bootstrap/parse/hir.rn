@@ -145,7 +145,7 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
   // Format: elseStatement(block(...))
   func buildElseStatement(self: HirBuilder, statementNode: Node) {
     blockNode = statementNode.firstChildNode
-    self.newStatement(statementNode, db.StateType.ElseIf, null(Node), blockNode)
+    self.newStatement(statementNode, db.StateType.Else, null(Node), blockNode)
   }
 
   // Format: switchStatement(expr(...) switchCase(...)* defaultCase(statement | Block)?)
@@ -576,6 +576,9 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
 
   // Format: function(<exportSym>? IDENT parameters(...) optFuncTypeConstraint(...) block(...))
   func buildFunction(self: HirBuilder, type: db.FuncType, statementNode: Node) {
+    // TODO: don't use Sym objects for parameters, use db.Ident, otherwise different
+    // functions with the same parameter names will share symbol objects, and therefore
+    // types.
     funcValues = self.findFunctionValues(type, statementNode)
     exportTypeSym = funcValues[0]
     identSym = funcValues[1]

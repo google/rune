@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// The TypeUnifier class implements the type unification algorithm for
+// each type specified in typeclasses.rn.  The TypeUnifier itself is just
+// a mapping from type variables to their bound type. As such it is just a
+// hashtable mapping type variable identifiers to types.
+
+
 import database as db
 use typeclasses
 use typebuilder
@@ -26,7 +32,9 @@ NUM = NUMBER()
 
 relation HashedClass TypeUnifier TypeUnifier.Mapping cascade
 
-// Type unifiers map identifiers to types
+/**
+ * @brief Type unification algorithm, maps type variables to types.
+ */
 class TypeUnifier(self) {
   /* nextFreshVar is required when the unifier needs to generate a new, unique
    * variable in order to unify a bound type. The bound variable needs to be
@@ -41,6 +49,11 @@ class TypeUnifier(self) {
     return result
   }
 
+  /**
+   * @brief Maps a type variable to a type, or null if it is uninstantiated.
+   *
+   * This is the type that is stored in the hashtable.
+   */
   class Mapping(self, key: TypeVar, value: Type?) {
     self.key = key
     self.value = value
@@ -50,14 +63,35 @@ class TypeUnifier(self) {
     }
 
     func equals(self, other: Mapping) -> bool {
-      return self.key == other.key
+      return self.key.id == other.key.id
     }
   }
 
-  func setVar(self, tyvar: TypeVar, ty: Type) {
+  /**
+   * @brief associate a type variable to a type.
+   */
+  func bindVar(self, tyvar: TypeVar, ty: Type) {
     self.insertMapping(Mapping(tyvar, ty))
+    e = Mapping(tyvar, null(Type))
+    found = self.findMapping(e)
+    assert !isnull(found)
   }
 
+  /**
+   * @brief unbind the typevariable, if it is bound.
+   */
+  func unbindVar(self, tyvar: TypeVar) {
+    e = Mapping(tyvar, null(Type))
+    found = self.findMapping(e)
+    if !isnull(found) {
+      self.removeMapping(found!)
+      assert isnull(self.findMapping(found!))
+    }
+  }
+
+  /**
+   * @brief look up the type (if any) associated to a type variable id.
+   */
   func lookupVar(self, id: i32) -> Type? {
     e = Mapping(TypeVar(id, null(Type)), null(Type))
     found = self.findMapping(e)
@@ -67,6 +101,19 @@ class TypeUnifier(self) {
     return found.value
   }
 
+  /**
+   * @brief unify two types
+   *
+   * @param a left-hand type to unify
+   * @param b right-hand type to unify
+   * @param location - current location in rune program, used to make type errors
+   *
+   * @return optional TypeError; returns null if unification succeeds, otherwise
+   *  it returns a TypeError message. These are aggregated and printed at the
+   *  end (or as part of type checker trace if tracing is enabled).
+   *
+   * The algorithm recurses on the structure of type a.
+   */
   func unify(self, a: Type, b: Type, location: db.Location? = null(db.Location)) -> TypeError? {
     if a.type == Type.TypeClass.Var {
       if b.type == Type.TypeClass.Var {
@@ -77,10 +124,9 @@ class TypeUnifier(self) {
     } else if b.type == Type.TypeClass.Var {
       return self.instantiateVar(b.tyvar!, a, location)
     } else if a.type == Type.TypeClass.Choice {
-      te = self.unifyChoice(a.choice!, b, location)
-      if !isnull(te) {
-        return te
-      }
+      return self.unifyChoice(a.choice!, b, location)
+    } else if b.type == Type.TypeClass.Choice {
+      return self.unifyChoice(b.choice!, a, location)
     } else if a.type == Type.TypeClass.Tuple {
       return self.unifyTuple(a.tuple!, b, location)
     } else if a.type == Type.TypeClass.Function {
@@ -97,6 +143,18 @@ class TypeUnifier(self) {
   }
 
 
+  /**
+   * @brief unify a typevariable with a non-type variable.
+   *
+   * @param tyvar The typevariable to bind.
+   * @param ty The type to bind it to.
+   * @param location Location in Rune program.
+   *
+   * @return optional TypeError, where null(TypeError) means no error.
+   *
+   * If the type variable is already instantiated, this boils down to
+   * unification of the existing binding with the new type.
+   */
   func instantiateVar(self, tyvar: TypeVar, ty: Type,
                       location: db.Location? = null(db.Location)) -> TypeError? {
     assert ty.type != Type.TypeClass.Var
@@ -111,13 +169,27 @@ class TypeUnifier(self) {
     }
     exists = self.lookupVar(tyvar.id)
     if isnull(exists) {
-      self.setVar(tyvar, ty)
+      self.bindVar(tyvar, ty)
       return null(TypeError)
     }
     return self.unify(exists!, ty, location)
   }
 
 
+  /**
+   * @brief unify a typevariable with a non-type variable.
+   *
+   * @param tyvar The typevariable to bind.
+   * @param ty The type to bind it to.
+   * @param location Location in Rune program.
+   *
+   * @return optional TypeError, where null(TypeError) means no error.
+   *
+   * If either type variable is already bound, this boils down to
+   * unifying the type of that variable with the other type variable
+   * (which also may be bound, and if so will be recursively handled
+   * in the unify() function).
+   */
   func unifyTwoVars(self, v1: TypeVar, v2: TypeVar,
                     location: db.Location? = null(db.Location)) -> TypeError? {
     if v1.id == v2.id {
@@ -155,16 +227,32 @@ class TypeUnifier(self) {
     assert isnull(exists1) && isnull(exists2)
 
     if v1.id > v2.id {
-      self.setVar(v1, Type(v2))
+      self.bindVar(v1, Type(v2))
     } else {
-      self.setVar(v2, Type(v1))
+      self.bindVar(v2, Type(v1))
     }
     return null(TypeError)
   }
 
 
+  /**
+   * @brief Unify a ChoiceType with another type.
+   *
+   * @param t1 The ChoiceType to unify.
+   * @param b The type to unify with the ChoiceType.
+   * @param location The Location in the Rune program.
+   *
+   * @returns optional TypeError, where null(TypeError) means no error.
+   *
+   * We only call this function when we know that b is not a type
+   * variable.  Therefore, there are two cases: either b is a
+   * ChoiceType or it isn't. If not, all we have to do is unify b
+   * against any element of the ChoiceType. If it is, then all we
+   * need to do is unify any element of b with any element of the
+   * ChoiceType.
+   */
   func unifyChoice(self, t1: ChoiceType, b: Type,
-                  location: db.Location? = null(db.Location)) -> TypeError? {
+                   location: db.Location? = null(db.Location)) -> TypeError? {
     if b.type == Type.TypeClass.Choice {
       t2 = b.choice!
       for i = 0, i < t2.choices.length(), i += 1 {
@@ -186,6 +274,20 @@ class TypeUnifier(self) {
   }
 
 
+  /**
+   * @brief Unify a TupleType with another type.
+   *
+   * @param t1 The TupleType to unify.
+   * @param b The type to unify with the TupleType.
+   * @param location The Location in the Rune program.
+   *
+   * @returns optional TypeError, where null(TypeError) means no error.
+   *
+   * We only call this function when we know that b is neither a type
+   * variable nor a ChoiceType. b will only unify with another
+   * TupleType. b must be of the same length as t1, and each element
+   * of t1 must unify with the same element of b.
+   */
   func unifyTuple(self, t1: TupleType, b: Type,
                   location: db.Location? = null(db.Location)) -> TypeError? {
     if b.type != Type.TypeClass.Tuple {
@@ -208,6 +310,20 @@ class TypeUnifier(self) {
   }
 
 
+  /**
+   * @brief Unify a FunctionType with another type.
+   *
+   * @param t1 The FunctionType to unify.
+   * @param b The type to unify with the FunctionType.
+   * @param location The Location in the Rune program.
+   *
+   * @returns optional TypeError, where null(TypeError) means no error.
+   *
+   * We only call this function when we know that b is neither a type
+   * variable nor a ChoiceType. b will only unify with another
+   * FunctionType. In this case, we unify b's parameter type with
+   * t1's parameter type, and b's return type with t1's return type.
+   */
   func unifyFunction(self, t1: FunctionType, b: Type,
                   location: db.Location? = null(db.Location)) -> TypeError? {
     if b.type != Type.TypeClass.Function {
@@ -224,16 +340,47 @@ class TypeUnifier(self) {
   }
 
 
+  /**
+   * @brief Unify a PolymorphicType with another type.
+   *
+   * @param t1 The PolymorphicType to unify.
+   * @param b The type to unify with the PolymorphicType.
+   * @param location The Location in the Rune program.
+   *
+   * @returns optional TypeError, where null(TypeError) means no error.
+   *
+   * We only call this function when we know that b is neither a type
+   * variable nor a ChoiceType.
+   *
+   * In this case, we open the PolymorphicType to allow us to unify
+   * forall vx, vx -> T(vx) against a non-polymorphically bound type
+   * t1 -> t2.
+   */
   func unifyPolymorphic(self, t1: PolymorphicType, b: Type,
-                  location: db.Location? = null(db.Location)) -> TypeError? {
+                        location: db.Location? = null(db.Location)) -> TypeError? {
     if b.type == Type.TypeClass.Polymorphic {
       raise Status.Unimplemented, "Unification of two bound types, %s and %s" % (t1.toString(), b.toString())
     }
-    t2 = t1.open(self.newVar())
-    return self.unify(t1.open(self.newVar()), b, location)
+    return self.unify(t1.open(self, &self.newVar()), b, location)
   }
 
 
+  /**
+   * @brief Unify an AnyIntType with another type.
+   *
+   * @param t1 The AnyIntType to unify.
+   * @param b The type to unify with the AnyIntType.
+   * @param location The Location in the Rune program.
+   *
+   * @returns optional TypeError, where null(TypeError) means no error.
+   *
+   * We only call this function when we know that b is neither a type
+   * variable nor a ChoiceType.
+   *
+   * This type is interesting because AnyInt is allowed to unify with itself,
+   * but also normal integer types that have the same signedness. I.e., u32, u1,
+   * u2048 all unify with Uint, and i32, i1, i2048, etc. all unify with Int.
+   */
   func unifyAnyInt(self, t1: AnyIntType, b: Type,
                   location: db.Location? = null(db.Location)) -> TypeError? {
     switch b.type {
@@ -252,6 +399,9 @@ class TypeUnifier(self) {
   }
 
 
+  /**
+   * @brief Dump a TypeUnifier mapping to standard output.
+   */
   func dumpmapping(self, mapping) {
     print "v%i32 --> " % mapping.key.id
     if isnull(mapping.value) {
@@ -268,12 +418,18 @@ class TypeUnifier(self) {
     }
   }
 
+  /**
+   * @brief Dump all TypeUnifier mappings to standard output.
+   */
   func dump(self) {
     for mapping in self.mappings() {
       self.dumpmapping(mapping)
     }
   }
 
+  /**
+   * @brief apply the type unifier to the given type variable.
+   */
   func resolveVar(self, v: i32) -> Type? {
     ty = self.lookupVar(v)
     if isnull(ty) || ty.type != Type.TypeClass.Var {

@@ -143,7 +143,7 @@ static llTag createArrayTypeTag(deDatatype datatype) {
   return tag;
 }
 
-// Generate a class type tag as a structure of 
+// Generate a class type tag as a structure of
 //   !3 = !DIDerivedType(tag: DW_TAG_typedef, name: "BlaType", file: !1, line: 1, baseType: !4)
 //   !4 = !DIBasicType(name: "int", size: 32, encoding: DW_ATE_signed)
 static llTag createClassTypeTag(deDatatype datatype) {

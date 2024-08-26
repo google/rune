@@ -15,8 +15,29 @@
 import types
 use clanguageclasses
 
+class CTupleDefinition(self, type: types.TupleType, name: string) {
+  self.type = type
+  self.name = name
+  self.defined = false
+  self.ctype = null(CTypeExpr)
+
+  func hash(self) -> u64 {
+    return self.type.hash()
+  }
+
+  // We use the self.type as a key in the hashtable, so we only need to compare
+  // the types.
+  func equals(self, other: CTupleDefinition) -> bool {
+    return ((isnull(self.type) && isnull(other.type))
+            || (!isnull(self.type) && !isnull(other.type) && self.type!.equals(other.type!)))
+  }
+}
+
+relation HashedClass CTypeGenerator CTupleDefinition cascade
+
 class CTypeGenerator(self, typechecker: types.TypeChecker) {
   self.typechecker = typechecker
+  self.nextTupleNumber = 1
 
   func genCInt(self, ty: types.IntType) -> CTypeExpr? {
     if ty.width <= 8u32 {
@@ -52,22 +73,33 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
   }
 
   func genCChoice(self, ty: types.ChoiceType) -> CTypeExpr? {
-    println "TODO: gen choice types"
     return null(CTypeExpr)
   }
 
-  func genCTuple(self, ty: types.TupleType) -> CTypeExpr? {
-    println "TODO: gen tuple types"
-    return null(CTypeExpr)
+  func genCTuple(self, type: types.TupleType) -> CTypeExpr? {
+    // Does the definition already exist?
+    def = CTupleDefinition(type, "")
+    exists = self.findCTupleDefinition(def)
+
+    if !isnull(exists) {
+      return exists.ctype
+    }
+    def.name = "tuple%u64" % self.nextTupleNumber
+    self.nextTupleNumber += 1
+    def.ctype = CTypeExpr(CDefinedType(def.name))
+    self.insertCTupleDefinition(def)
+    return def.ctype
   }
 
   func genCFunction(self, ty: types.FunctionType) -> CTypeExpr? {
-    println "TODO: gen function types"
     return null(CTypeExpr)
   }
 
   func genCPolymorphic(self, ty: types.PolymorphicType) -> CTypeExpr? {
-    println "TODO: gen polymorphic types"
+    // keep track of the variables that are generated when a polytype is opened
+    // their instantiations will provide the set of types we need to generate
+    // for each function, using suffix for the type name.  Get the tuples in
+    // first! because they do this already for tostring_....
     return null(CTypeExpr)
   }
 

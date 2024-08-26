@@ -1,4 +1,4 @@
-//  Copyright 2021 Google LLC.
+//  Copyright 2024 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,10 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+s = "hello"
 
-use builtins
-use typebuilder
-use typechecker
-use typeclasses
-use typeerror
-use typeunifier
+println s
+println -1i8
+println 65535u16
+println 0xdeadbeefu32
+println 1
+println -1
+
+println 2.71828175f32
+println -3.1415926535897931
+
+println "this ", "is a bool:", true, "|", false, " ", -1, ", ", 3.141
+
+print "boo: "
+println 3
