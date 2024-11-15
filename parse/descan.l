@@ -460,7 +460,7 @@ static void logMsg(char *format, ...) {
                                   delval.bigintVal = deBigintParse(detext, deCurrentLine);
                                   logMsg("%s\n", detext);
                                   return INTEGER; }
-<INITIAL>"0x"[0-9a-fA-F]+(("u"|"i")[0-9][0-9_]*)? {
+<INITIAL>"0x"[0-9a-fA-F_]+(("u"|"i")[0-9][0-9_]*)? {
                                   strip(detext);
                                   delval.bigintVal = deBigintParse(detext, deCurrentLine);
                                   logMsg("%s\n", detext);

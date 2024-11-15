@@ -1,1 +1,2 @@
 println 123_456_789
+println "%x" % 0x1234_abcd
