@@ -22,6 +22,7 @@
 #include "llexport.h"
 
 static char *deClangPath = "clang";
+static char *deExtraClangParams = NULL;
 
 // Run the Clang compiler on the LLVM code we generated.
 static int runClangCompiler(char *llvmFileName, bool debugMode, bool optimized) {
@@ -32,6 +33,9 @@ static int runClangCompiler(char *llvmFileName, bool debugMode, bool optimized) 
   }
   char *command = utSprintf("%s %s -fPIC -o %s %s %s/librune.a %s/libcttk.a",
       deClangPath, optFlag, outFileName, llvmFileName, deLibDir, deLibDir);
+  if (deExtraClangParams != NULL) {
+    command = utSprintf("%s %s", command, deExtraClangParams);
+  }
   utDebug("Executing: %s\n", command);
   return system(command);
 }
@@ -40,6 +44,7 @@ static int runClangCompiler(char *llvmFileName, bool debugMode, bool optimized) 
 static void usage(void) {
   printf("Usage: rune [options] file\n"
          "    -b        - Don't load builtin Rune files.\n"
+         "    -e <extra params> - Pass extra parameters to clang, such as a .a or .o file name.\n"
          "    -g        - Include debug information for gdb.  Implies -l.\n"
          "    -l <llvmfile> - Write LLVM IR to <llvmfile>.\n"
          "    -L        - Log tokens parsed to rune.log.\n"
@@ -75,6 +80,12 @@ int main(int argc, char** argv) {
       deDebugMode = true;
     } else if (!strcmp(argv[xArg], "-b")) {
       parseBuiltinFunctions = false;
+    } else if (!strcmp(argv[xArg], "-e")) {
+      if (++xArg == argc) {
+        printf("-e must be followed by a clang parameter");
+        return 1;
+      }
+      deExtraClangParams = argv[xArg];
     } else if (!strcmp(argv[xArg], "-t")) {
       deTestMode = true;
     } else if (!strcmp(argv[xArg], "-O")) {
