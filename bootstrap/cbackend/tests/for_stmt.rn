@@ -1,4 +1,4 @@
-//  Copyright 2021 Google LLC.
+//  Copyright 2024 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,10 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use cbuilder
-use cemitter
-use cfragment
-use clanguageclasses
-use cruntime
-use escapestring
-use int2cstring
+println "Basic for loop:"
+for i = 1, i <= 4, i = i + 1 {
+    println i
+}
+
+/* TODO
+println
+println "Simple Range iterator:"
+for i in range(10) {
+  println i
+}
+
+println
+println "Simple Range iterator starting at non-zero:"
+for i in range(1, 10) {
+  println i
+}
+
+println
+println "Simple Range iterator starting at non-zero and non-default increment:"
+for i in range(1, 10, 2) {
+  println i
+}
+
+println
+println "Iterate over arrays:"
+for i in ["alpha", "beta", "gamma"] {
+  println i
+}
+*/
+

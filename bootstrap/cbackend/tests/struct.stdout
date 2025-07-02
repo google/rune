@@ -1,0 +1,13 @@
+Point(1, 2)
+p.x=1
+p.y=2
+p[0]=1
+p[1]=2
+Point(3, 2)
+Point(3, 3)
+s1.x = 1
+s1.y = 2
+s2.x = 3
+s2.y = 4
+Person a = Person_string_u64("Bob", 32)
+Person b = Person_u64_string(123, "old")

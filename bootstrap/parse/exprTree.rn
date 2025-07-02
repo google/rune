@@ -59,6 +59,8 @@ transformer ExprTree() {
         self.inExprSym => return self.buildBinaryExpr(node, db.ExprType.In)
         self.modExprSym => return self.buildBinaryExpr(node, db.ExprType.Modint)
 
+        self.arrayExprSym => return self.buildArrayExpr(node)
+        self.arrayofExprSym => return self.buildPrefixExpr(node, db.ExprType.Arrayof)
         self.negateExprSym => return self.buildPrefixExpr(node, db.ExprType.Negate)
         self.bitnotExprSym => return self.buildPrefixExpr(node, db.ExprType.Bitnot)
         self.indexSuffixSym => return self.buildPostfixExpr(node)
@@ -173,6 +175,17 @@ return db.Expr.newIdent(Sym.new("temp"), node.location)
       return db.Expr.newIdent(Sym.new("temp"), node.location)
     }
 
+    func buildArrayExpr(self: HirBuilder, node: Node) -> db.Expr {
+      exprlist = node.firstChildNode!  // this should be an exprList
+      elements = arrayof(db.Expr)
+      child = exprlist.firstChildNode!
+      while !isnull(child) {
+        elements.append(self.buildExprTree(child!))
+	child = child.nextNodeChildNode
+      }
+      return db.Expr.newArray(elements, node.location)
+    }
+
     func buildPrefixExpr(self: HirBuilder, node: Node, opType: db.ExprType) -> db.Expr {
       child = node.firstChildNode!
       return db.Expr.newUnary(opType,
@@ -198,9 +211,9 @@ return db.Expr.newIdent(Sym.new("temp"), node.location)
       }
       switch postfixNode.getRuleSym()! {
         self.callParametersSym => {
-          child = firstChild.nextNodeChildNode.firstChildNode!
-          if isnull(child.nextNodeChildNode) {
-            args = self.buildExprTree(child)
+          child = firstChild.nextNodeChildNode.firstChildNode
+          if !isnull(child) && isnull(child.nextNodeChildNode) {
+            args = self.buildExprTree(child!)
           } else {
             children = arrayof(db.Expr)
             while !isnull(child) {
@@ -246,13 +259,15 @@ return db.Expr.newIdent(Sym.new("temp"), node.location)
       // nonterminal symbols
       self.addExprSym = Sym.new("addExpr")
       self.andExprSym = Sym.new("andExpr")
+      self.arrayExprSym = Sym.new("arrayExpr")
+      self.arrayofExprSym = Sym.new("arrayofExpr")
       self.bitandExprSym = Sym.new("bitandExpr")
       self.bitorExprSym = Sym.new("bitorExpr")
       self.bitxorExprSym = Sym.new("bitxorExpr")
       self.bitnotExprSym = Sym.new("bitNotExpr")
       self.callParametersSym = Sym.new("callParameters")
-      self.callParametersSym = Sym.new("callParameters")
       self.equalExprSym = Sym.new("equalExpr")
+      self.exprListSym = Sym.new("exprList")
       self.geExprSym = Sym.new("geExpr")
       self.indexSuffixSym = Sym.new("indexSuffix")
       self.gtExprSym = Sym.new("gtExpr")

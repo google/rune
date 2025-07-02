@@ -193,7 +193,7 @@ const char *GlobalStringWriter_string(void) {
 }
 
 
-#define tostring_string GlobalStringWriter_write
+#define tostring_string_t GlobalStringWriter_write
 
 
 /*
@@ -203,7 +203,7 @@ const char *GlobalStringWriter_string(void) {
  * methods, e.g., when generating a tostring_<tupletype> method out of
  * its component types.
  */
-static inline void tostring_bool(bool b) {
+static inline void tostring_bool_t(bool_t b) {
   StringWriter_write(&globalStringWriter, b ? "true" : "false");
 }
 
@@ -239,10 +239,10 @@ static inline void tostring_uint64_t(uint64_t u) {
   StringWriter_write(&globalStringWriter, "%" PRIu64, u);
 }
 
-static inline void tostring_float(float f) {
+static inline void tostring_float_t(float f) {
   StringWriter_write(&globalStringWriter, "%." FLT_SIG_DIGITS "g", f);
 }
 
-static inline void tostring_double(double d) {
+static inline void tostring_double_t(double d) {
   StringWriter_write(&globalStringWriter, "%." DBL_SIG_DIGITS "g", d);
 }

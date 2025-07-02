@@ -127,6 +127,8 @@ class TypeUnifier(self) {
       return self.unifyChoice(a.choice!, b, location)
     } else if b.type == Type.TypeClass.Choice {
       return self.unifyChoice(b.choice!, a, location)
+    } else if a.type == Type.TypeClass.Array {
+      return self.unifyArray(a.array!, b, location)
     } else if a.type == Type.TypeClass.Tuple {
       return self.unifyTuple(a.tuple!, b, location)
     } else if a.type == Type.TypeClass.Function {
@@ -135,6 +137,8 @@ class TypeUnifier(self) {
       return self.unifyPolymorphic(a.poly!, b, location)
     } else if a.type == Type.TypeClass.AnyInt {
       return self.unifyAnyInt(a.anyInt!, b, location)
+    } else if b.type == Type.TypeClass.AnyInt {
+      return self.unifyAnyInt(b.anyInt!, a, location)
     } else if a != b {
       return TypeError("Failed to unify %s and %s." % (a.toString(), b.toString()),
                        location)
@@ -158,7 +162,6 @@ class TypeUnifier(self) {
   func instantiateVar(self, tyvar: TypeVar, ty: Type,
                       location: db.Location? = null(db.Location)) -> TypeError? {
     assert ty.type != Type.TypeClass.Var
-
     if !isnull(tyvar.constraint) {
       te = self.unify(tyvar.constraint!, ty, location)
       if !isnull(te) {
@@ -216,8 +219,8 @@ class TypeUnifier(self) {
       te = self.unify(v1.constraint!, v2.constraint!)
       if !isnull(te) {
         return TypeError("Type variable constraints %s and %s do not unify."
-	                 % (v1.constraint.toString(), v2.constraint.toString()),
-			 location)
+                         % (v1.constraint.toString(), v2.constraint.toString()),
+                         location)
       }
     }
 
@@ -232,6 +235,25 @@ class TypeUnifier(self) {
       self.bindVar(v2, Type(v1))
     }
     return null(TypeError)
+  }
+
+
+  /**
+   * @brief Unify an ArrayType with another type.
+   *
+   * @param a The ArrayType to unify
+   * @param b The type t unify with the ArrayType
+   * @param location The location in the Rune program
+   *
+   * @returns optional TypeError, where null(TypeError) means no error.
+   */
+  func unifyArray(self, a: ArrayType, b: Type,
+                  location: db.Location? = null(db.Location)) -> TypeError? {
+    if b.type != Type.TypeClass.Array {
+      return TypeError("Unifying array %s with non-array %s" % (a.toString(), b.toString()),
+                       location)
+    }
+    return self.unify(a.elementType, b.array.elementType, location)
   }
 
 
@@ -264,8 +286,8 @@ class TypeUnifier(self) {
     } else {
       for i = 0, i < t1.choices.length(), i += 1 {
         te = self.unify(t1.choices[i], b, location)
-	if isnull(te) {
-	  return te
+        if isnull(te) {
+          return te
         }
       }
     }
@@ -298,7 +320,7 @@ class TypeUnifier(self) {
     if t1.elements.length() != t2.elements.length() {
       return TypeError("Unifying tuple %s against tuple %s of different length."
                        % (t1.toString(), t2.toString()),
-		       location)
+                       location)
     }
     for i = 0, i < t1.elements.length(), i += 1 {
       te = self.unify(t1.elements[i], t2.elements[i], location)
@@ -329,7 +351,7 @@ class TypeUnifier(self) {
     if b.type != Type.TypeClass.Function {
       return TypeError("Unifying a function type %s against non-function type %s."
                        % (t1.toString(), b.toString()),
-		       location)
+                       location)
     }
     t2 = b.function!
     te = self.unify(t1.params, t2.params, location)
@@ -388,7 +410,7 @@ class TypeUnifier(self) {
       Type.TypeClass.Int => success = (t1.isSigned == b.int.isSigned)
       default => return TypeError("Unifying type %s against non-integer type %s."
                                   % (t1.toString(), b.toString()),
-				  location)
+                                  location)
     }
     if success {
       return null(TypeError)

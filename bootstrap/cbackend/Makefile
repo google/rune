@@ -22,15 +22,18 @@ RUNE=../rune
 ROOT:=$(dir $(realpath $(MAKEFILE_LIST)))../
 
 RUNE_TESTS=\
-        assignments.test\
+	arrays.test\
+	assignments.test\
 	binary_operators.test\
 	else_if_stmt.test\
 	else_stmt.test\
+	for_stmt.test\
 	functions.test\
 	helloworld.test\
 	if_stmt.test\
 	println_format_specifier.test\
 	println_values.test\
+	struct.test\
 	tuples.test
 
 runtests: $(RUNE_TESTS)
@@ -41,3 +44,7 @@ runtests: $(RUNE_TESTS)
 	@diff <(tests/$*) tests/$*.stdout
 
 
+clean: $(RUNE_TESTS:%.test=%.clean)
+
+%.clean: tests/%.rn
+	@rm tests/$* tests/$*.c

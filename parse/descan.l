@@ -143,20 +143,6 @@ static char hexToChar(char hi, char low) {
   return (hexDigit(hi) << 4) | hexDigit(low);
 }
 
-// Remove underscore characters from the text in-place.
-static char *strip(char *text) {
-  char *p = text;
-  char *q = text;
-  while (*p != '\0') {
-    if (*p != '_') {
-      *q++ = *p;
-    }
-    p++;
-  }
-  *q = '\0';
-  return text;
-}
-
 static deString unescape(char *string) {
   char *buffer = utMakeString(strlen(string));
   char *p = buffer;
@@ -238,7 +224,6 @@ static inline void checkIdentifierChars(char *text) {
 
 // Call strtod and make sure that the conversion did not overflow.
 static double safeAtof(char *text, uint32 width) {
-  strip(text);
   if (width == 32) {
     float floatVal = strtof(text, NULL);
     if (floatVal == HUGE_VALF) {
@@ -432,41 +417,37 @@ static void logMsg(char *format, ...) {
                     logMsg("hex char"); return INTEGER;
                   }
 
-<INITIAL>[0-9][0-9_]*"e"("-")?[0-9][0-9_]*"f32" { delval.floatVal = deFloatCreate(DE_FLOAT_SINGLE, safeAtof(detext, 32));
+<INITIAL>[0-9]+"e"("-")?[0-9]+"f32" { delval.floatVal = deFloatCreate(DE_FLOAT_SINGLE, safeAtof(detext, 32));
                                   logMsg("%s\n", detext);
                                   return FLOAT; }
-<INITIAL>[0-9][0-9_]*"."("e"("-")?[0-9][0-9_]*)?"f32" { delval.floatVal = deFloatCreate(DE_FLOAT_SINGLE, safeAtof(detext, 32));
+<INITIAL>[0-9]+"."("e"("-")?[0-9]+)?"f32" { delval.floatVal = deFloatCreate(DE_FLOAT_SINGLE, safeAtof(detext, 32));
                                   logMsg("%s\n", detext);
                                   return FLOAT; }
-<INITIAL>[0-9]*"."[0-9][0-9_]*("e"("-")?[0-9][0-9_]*)?"f32" {
+<INITIAL>[0-9]*"."[0-9]+("e"("-")?[0-9]+)?"f32" {
                                   delval.floatVal = deFloatCreate(DE_FLOAT_SINGLE, safeAtof(detext, 32));
                                   logMsg("%s\n", detext);
                                   return FLOAT; }
-<INITIAL>[0-9][0-9_]*"e"("-")?[0-9][0-9_]*("f64")? { delval.floatVal = deFloatCreate(DE_FLOAT_DOUBLE, safeAtof(detext, 64));
+<INITIAL>[0-9]+"e"("-")?[0-9]+("f64")? { delval.floatVal = deFloatCreate(DE_FLOAT_DOUBLE, safeAtof(detext, 64));
                                   logMsg("%s\n", detext);
                                   return FLOAT; }
-<INITIAL>[0-9][0-9_]*"."("e"("-")?[0-9][0-9_]*)?("f64")? { delval.floatVal = deFloatCreate(DE_FLOAT_DOUBLE, safeAtof(detext, 64));
+<INITIAL>[0-9]+"."("e"("-")?[0-9]+)?("f64")? { delval.floatVal = deFloatCreate(DE_FLOAT_DOUBLE, safeAtof(detext, 64));
                                   logMsg("%s\n", detext);
                                   return FLOAT; }
-<INITIAL>[0-9]*"."[0-9][0-9_]*("e"("-")?[0-9][0-9_]*)?("f64")? {
+<INITIAL>[0-9]*"."[0-9]+("e"("-")?[0-9]+)?("f64")? {
                                   delval.floatVal = deFloatCreate(DE_FLOAT_DOUBLE, safeAtof(detext, 64));
                                   logMsg("%s\n", detext);
                                   return FLOAT; }
 <INITIAL>"'"[ -~]"'"            { delval.bigintVal = deUint8BigintCreate(detext[1]);
                                   logMsg("'%c'\n", detext[1]);
                                   return INTEGER; }
-<INITIAL>[0-9][0-9_]*(("u"|"i")[0-9][0-9_]*)? {
-                                  strip(detext);
+<INITIAL>[0-9]+(("u"|"i")[0-9]+)? { delval.bigintVal = deBigintParse(detext, deCurrentLine);
+                                  logMsg("%s\n", detext);
+                                  return INTEGER; }
+<INITIAL>"0x"[0-9a-fA-F]+(("u"|"i")[0-9]+)? {
                                   delval.bigintVal = deBigintParse(detext, deCurrentLine);
                                   logMsg("%s\n", detext);
                                   return INTEGER; }
-<INITIAL>"0x"[0-9a-fA-F_]+(("u"|"i")[0-9][0-9_]*)? {
-                                  strip(detext);
-                                  delval.bigintVal = deBigintParse(detext, deCurrentLine);
-                                  logMsg("%s\n", detext);
-                                  return INTEGER; }
-<INITIAL>"rand"[0-9][0-9_]*     { char *end;
-                                  strip(detext);
+<INITIAL>"rand"[0-9]+           { char *end;
                                   uint32 width = strtol(detext + 4, &end, 10);
                                   if (*end != '\0' || width > UINT16_MAX) {
                                     deerror("Random integer is too large");
@@ -477,8 +458,7 @@ static void logMsg(char *format, ...) {
                                   delval.uint16Val = width;
                                   logMsg("%s\n", detext);
                                   return RANDUINT; }
-<INITIAL>"u"[0-9][0-9_]*              { char *end;
-                                  strip(detext);
+<INITIAL>"u"[0-9]+              { char *end;
                                   uint32 width = strtol(detext + 1, &end, 10);
                                   if (*end != '\0' || width > UINT16_MAX) {
                                     deerror("Random integer is too large");
@@ -489,8 +469,7 @@ static void logMsg(char *format, ...) {
                                   delval.uint16Val = width;
                                   logMsg("%s\n", detext);
                                   return UINTTYPE; }
-<INITIAL>"i"[0-9][0-9_]*              { char *end;
-                                  strip(detext);
+<INITIAL>"i"[0-9]+              { char *end;
                                   uint32 width = strtol(detext + 1, &end, 10);
                                   if (*end != '\0' || width > UINT16_MAX) {
                                     deerror("Random integer is too large");

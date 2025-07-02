@@ -30,10 +30,11 @@ NONE = NONETY()
 
 func builtinType(op: db.ExprType) -> Type {
   v = V(1)
+  v2 = V(2)
   switch op {
     // arithmetic
     db.ExprType.Add => {
-      return BPOLY(1, [STR, NUM], FN(TUPLE([v, v]), v))
+      return BPOLY([1,2], [STR, NUM, ARRAY(v2)], FN(TUPLE([v, v]), v))
     }
 
     db.ExprType.Sub, db.ExprType.Mul, db.ExprType.Div => {
@@ -100,6 +101,10 @@ func builtinType(op: db.ExprType) -> Type {
 
     db.ExprType.Equals => {
       return POLY(1, FN(TUPLE([v, v]), v))
+    }
+
+    db.ExprType.Arrayof => {
+      return POLY(1, ARRAY(v))
     }
 
     default => {

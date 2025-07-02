@@ -1,0 +1,110 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Implementation of Knuth-Morris-Pratt string search.
+//
+// see https://en.wikipedia.org/wiki/Knuth%E2%80%93Morris%E2%80%93Pratt_algorithm
+
+
+// A very large number used to denote 'unset'
+unsetVal = ~0
+
+/** Knuth-Morris-Pratt string search for a single pattern */
+class KmpSearch(self, needle: string, haystack: string) {
+  self.needle = needle
+  self.haystack = haystack
+  self.table = arrayof(u64)
+  self.nextStartPosition = 0
+  self.createPartialMatchTable()
+  self.done = false
+
+  func createPartialMatchTable(self) {
+    j = 0
+    cnd = 0  // Current Candidate Substring.
+    self.table.append(unsetVal)
+    while j < self.needle.length() {
+      if self.needle[j] == self.needle[cnd] {
+        self.table.append(self.table[cnd])
+      } else {
+        self.table.append(cnd)
+        while cnd >= 0 && self.needle[j] != self.needle[cnd] {
+          cnd = self.table[cnd]
+        }
+      }
+      j += 1
+      cnd += 1
+    }
+    self.table.append(cnd)
+  }
+
+  func findNext(self) -> (string, u64) {
+    if self.done {
+      return ("", unsetVal)
+    }
+    j = self.nextStartPosition
+    k = 0
+
+    while j < self.haystack.length() {
+      if self.needle[k] == self.haystack[j] {
+        j += 1
+        k += 1
+        if k == self.needle.length() {
+          result = j - k
+          self.nextStartPosition = result + 1
+          return (self.needle, result)
+        }
+      } else {
+        if self.table[k] == unsetVal {
+          j += 1
+          k = 0
+        } else {
+          k = self.table[k]
+        }
+      }
+    }
+    self.done = true
+    return ("", unsetVal)
+  }
+}
+
+
+unittest notFound {
+  kmps = KmpSearch("needle", "haystack")
+  assert kmps.findNext() == ("", unsetVal)
+}
+
+unittest findMultiple {
+  kmps = KmpSearch("$a$", "void module_$a$($a$ x) {\n  $a$ y = x;\n}")
+  assert kmps.findNext() == ("$a$", 12)
+  assert kmps.findNext() == ("$a$", 16)
+  assert kmps.findNext() == ("$a$", 27)
+  assert kmps.findNext() == ("", unsetVal)
+}
+
+unittest findAtStart {
+  kmps = KmpSearch("rabbit", "rabbit run!")
+  assert kmps.findNext() == ("rabbit", 0)
+  assert kmps.findNext() == ("", unsetVal)
+}
+
+unittest findAtEnd {
+  kmps = KmpSearch("rabbit!", "run rabbit!")
+  assert kmps.findNext() == ("rabbit!", 4)
+  assert kmps.findNext() == ("", unsetVal)
+}
+
+unittest dontFindAtEnd {
+  kmps = KmpSearch("rabbit!", "run rabbit")
+  assert kmps.findNext() == ("", unsetVal)
+}

@@ -177,13 +177,14 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     switch self.type {
       FuncType.Module => self.genModule(builder)
       FuncType.Plain => self.genCPlainFunc(builder)
+      FuncType.Struct => self.genCStruct(builder)
       default => raise Status.Unimplemented, "Function type not yet supported by C backend ", self.type
     }
   }
 
   func genModule(self: Function, builder: c.CBuilder) {
     for childfunc in self.childFunctions() {
-       childfunc.genCPlainFunc(builder)
+       childfunc.genC(builder)
     }
     for statement in self.subBlock.statements() {
       // Note that a Rune statement may correspond to a C statement in main()
@@ -251,6 +252,61 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       body = self.subBlock.genC(builder)
       builder.closeScope()
       fundec = builder.cFunDef(self.location, self.sym, paramList, body)
+      fundec.addDependencies(builder.topDependencyList().names)
+      builder.closeDependencyList()
+      builder.addDeclaration(fundec)
+    }
+  }
+
+  func genCStruct(self: Function, builder: c.CBuilder) {
+    fntype = self.sym.typedValue
+    assert !isnull(fntype)
+
+    if fntype.type == types.Type.TypeClass.Polymorphic {
+      /******** Polymorphic function: iterate over instantiations *********/
+       pi = fntype.poly.instantiations
+       if !isnull(pi) {
+         for instantiation in pi {
+           builder.resolveInstantiation(instantiation)
+           builder.openScope()
+           builder.openParamList()
+           index = 0
+           for variable in self.variables() {
+             param = variable.genCParameter(builder, instantiation.varBindings[index])
+             builder.addParam(param)
+             index += 1
+           }
+           paramList = builder.closeParamList()
+           builder.instantiate(fntype.poly!, instantiation)
+           // The function block may generate dependencies, e.g., inner
+           // functions or tuples or structs. Ensure that these are listed
+           // as depedencies of this function.
+           builder.openDependencyList();
+           body = self.subBlock.genC(builder)
+           builder.deInstantiate(fntype.poly!)
+           builder.closeScope()
+           newsym = builder.specialize(self.sym, instantiation)
+           fundec = builder.cStruct(self.location, newsym, paramList, body)
+           fundec.addDependencies(builder.topDependencyList().names)
+           builder.closeDependencyList()
+           builder.addDeclaration(fundec)
+         }
+      }
+    } else {
+      /******************* Monomorphic function *************************/
+      // open new scope - new parameter bindings are added to the scope
+      // automatically
+      builder.openScope()
+      builder.openParamList()
+      for variable in self.variables() {
+        param = variable.genCParameter(builder)  // param is added to new scope
+        builder.addParam(param)
+      }
+      paramList = builder.closeParamList()
+      builder.openDependencyList();
+      body = self.subBlock.genC(builder)
+      builder.closeScope()
+      fundec = builder.cStruct(self.location, self.sym, paramList, body)
       fundec.addDependencies(builder.topDependencyList().names)
       builder.closeDependencyList()
       builder.addDeclaration(fundec)

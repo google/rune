@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use cemitter
 use int2cstring
 use cemitter
+use cfragment
+use clanguageclasses
 
 /**
  * Represents the set of #include directives that need to be added at the
@@ -107,25 +110,9 @@ class CIntFunction(self, name: string) {
 }
 
 
-/**
- * @brief a filename whose contents need to be merged into the C output.
- */
-class MergeFile(self, filename: string) {
-  self.filename = filename
-
-  func hash(self) -> u64 {
-    return hashValue(self.filename)
-  }
-
-  func equals(self, other: MergeFile) -> bool {
-    return self.filename == other.filename
-  }
-}
-
-
 relation HashedClass CRuntime CInclude cascade
 relation HashedClass CRuntime CDefine cascade
-relation HashedClass CRuntime MergeFile cascade
+relation HashedClass CRuntime CFragment cascade
 
 /**
  * Encapsulate those 'special definitions' that may be requested multiple
@@ -135,7 +122,8 @@ relation HashedClass CRuntime MergeFile cascade
 class CRuntime(self) {
   self.needBoolType = false
   self.needStringType = false
-  self.needStringWriter = false
+  self.needFloatType = false
+  self.needDoubleType = false
   self.needStringifyMacro = false
   self.needIntAddFn = false
   self.needIntSubFn = false
@@ -182,17 +170,24 @@ class CRuntime(self) {
     }
   }
 
-  func mergeFile(self, filename: string) {
-    mf = MergeFile(filename)
-    if isnull(self.findMergeFile(mf)) {
-      self.insertMergeFile(mf)
+  func cFragment(self, name: string, filename: string) -> CFragment {
+    cf = CFragment(name, filename)
+    exists = self.findCFragment(cf)
+    if isnull(exists) {
+      self.insertCFragment(cf)
+      exists = self.findCFragment(cf)!
     }
+    return exists!
   }
 
   func needRaiseError(self) {
     self.include("<stdio.h>")
     self.include("<stdlib.h>")
     self.raiseError = true
+  }
+
+  func needStringWriter(self) {
+    self.cFragment("", "cbackend/cruntime/global_string_writer.inc")
   }
 
   func needIntAdd(self, width: u32) -> string {
@@ -254,6 +249,68 @@ class CRuntime(self) {
     self.needUintExpFn = true
     self.needUintMulFn = true
     return self.uintexp.needWidth(width)
+  }
+
+  func needPrimitiveEqualities(self) -> CFragment {
+    return self.cFragment("primtive_equalities", "cbackend/cruntime/primitive_type_equalities.inc")
+  }
+
+  func needArrayType(self) -> CFragment {
+    return self.cFragment("array_t", "cbackend/cruntime/arrays/type.inc")
+  }
+
+  func needArrayAlloc(self) -> CFragment {
+    self.include("<stdarg.h>")
+    self.include("<stdlib.h>")
+    self.needRaiseError()
+    cf = self.cFragment("array_alloc", "cbackend/cruntime/arrays/alloc.inc")
+    cf.addDependencies([self.needArrayType()])
+    return cf
+  }
+
+  func needArrayResize(self) -> CFragment {
+    self.include("<stdlib.h>")
+    self.needRaiseError()
+    cf = self.cFragment("array_resize", "cbackend/cruntime/arrays/resize.inc")
+    cf.addDependencies([self.needArrayType()])
+    return cf
+  }
+
+  func needArrayLength(self) -> CFragment {
+    self.include("<assert.h>")
+    self.include("<string.h>")
+    cf = self.cFragment("array_length", "cbackend/cruntime/arrays/length.inc")
+    cf.addDependencies([self.needArrayType(), self.needArrayResize()])
+    return cf
+  }
+
+  func needArrayAppend(self, type: CTypeExpr) -> string {
+    // args is a list containing list and element.
+    self.include("<assert.h>")
+    self.include("<string.h>")
+    self.needArrayType()
+    self.needArrayResize()
+    // TODO: use fragment parameters to set types, rather than auto-generate
+    //    cf = self.cFragment("array_append", "cbackend/cruntime/arrays/append.inc")
+    //    cf.addDependencies([self.needArrayType(), self.needArrayResize()])
+    //return cf
+    return "append_%s_array_t" % type.toString()
+  }
+
+  func needArrayConcat(self) -> CFragment {
+    self.include("<assert.h>")
+    self.include("<string.h>")
+    cf = self.cFragment("array_concat", "cbackend/cruntime/arrays/concat.inc")
+    cf.addDependencies([self.needArrayType(), self.needArrayResize()])
+    return cf
+  }
+
+  func needArrayReverse(self) -> CFragment {
+    self.include("<assert.h>")
+    self.include("<string.h>")
+    cf = self.cFragment("array_reverse", "cbackend/cruntime/arrays/reverse.inc")
+    cf.addDependencies([self.needArrayType()])
+    return cf
   }
 
   /** Runtime Feature Emission **********************************************************/
@@ -366,13 +423,21 @@ class CRuntime(self) {
     }
     e.newline()
     if self.needBoolType {
-      e.writeln("typedef uint8_t bool;")
-      e.writeln("#define FALSE (0)")
-      e.writeln("#define TRUE (1)")
+      e.writeln("typedef uint8_t bool_t;")
+      e.writeln("#define false (0)")
+      e.writeln("#define true (1)")
       e.newline()
     }
     if self.needStringType {
-      e.writeln("typedef char* string;")
+      e.writeln("typedef char* string_t;")
+      e.newline()
+    }
+    if self.needFloatType {
+      e.writeln("typedef float float_t;")
+      e.newline()
+    }
+    if self.needDoubleType {
+      e.writeln("typedef double double_t;")
       e.newline()
     }
     if self.needStringifyMacro {
@@ -390,9 +455,8 @@ class CRuntime(self) {
       e.writeln("  abort();")
       e.writeln("}")
     }
-    for mergefile in self.mergeFiles() {
-      e.newline()
-      e.writeFileContents(mergefile.filename)
+    for cfragment in self.cFragments() {
+      cfragment.emit(e)
     }
     if self.needIntAddFn {
       e.newline()

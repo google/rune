@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use stringstream
+import utils
 use cemitter
 
 class Escaper(self, emitter: CEmitter, stuff: string, printf: bool) {
@@ -24,7 +24,7 @@ class Escaper(self, emitter: CEmitter, stuff: string, printf: bool) {
   }
 
   self.emitter = emitter
-  self.stream = StringStream(stuff)
+  self.stream = utils.StringStream(stuff)
   self.formatWidth = 0u32
   self.formatChar = 'x'
   self.state = State.Copy

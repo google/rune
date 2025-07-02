@@ -15,6 +15,27 @@
 import types
 use clanguageclasses
 
+func hashCombine(hash1: u64, hash2: u64) -> u64 {
+  // From https://stackoverflow.com/questions/19195183/how-to-properly-hash-the-custom-struct
+  return hash1 ^ (0x9e3779b9 !+ (hash2 << 6) !+ (hash2 >> 2))
+}
+
+class CArrayDefinition(self, elementType: types.Type, typeName: string) {
+  self.elementType = elementType
+  self.typeName = typeName
+  self.cElementType = null(CTypeExpr)
+  self.ctype = null(CTypeExpr)
+
+
+  func hash(self) -> u64 {
+    return hashCombine(hashValue(self.typeName), self.elementType.hash())
+  }
+
+  func equals(self, other: CArrayDefinition) -> bool {
+    return self.typeName == other.typeName && self.elementType.equals(other.elementType)
+  }
+}
+
 class CTupleDefinition(self, type: types.TupleType, name: string) {
   self.type = type
   self.name = name
@@ -33,6 +54,7 @@ class CTupleDefinition(self, type: types.TupleType, name: string) {
   }
 }
 
+relation HashedClass CTypeGenerator CArrayDefinition cascade
 relation HashedClass CTypeGenerator CTupleDefinition cascade
 
 class CTypeGenerator(self, typechecker: types.TypeChecker) {
@@ -69,26 +91,43 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
   }
 
   func genCTypename(self, ty: types.TypeName) -> CTypeExpr? {
-    return CTypeExpr(CDefinedType(ty.name))
+    if isnull(ty.params) {
+       tyname = ty.name.name
+    } else {
+       tyname = "%s_%s" % (ty.name.name, ty.specializationString())
+    }
+    return CTypeExpr(CDefinedType(tyname))
+  }
+
+  func genCArray(self, elementType: types.Type) -> CArrayDefinition {
+    def = CArrayDefinition(elementType, "")
+    exists = self.findCArrayDefinition(def)
+    if !isnull(exists) {
+      return exists!
+    }
+    def.cElementType = self.genCType(elementType)!
+    def.typeName = "%s_array" % def.cElementType.toString()
+    def.ctype = CTypeExpr(CArrayType(def.cElementType))
+    self.insertCArrayDefinition(def)
+    return self.findCArrayDefinition(def)!
   }
 
   func genCChoice(self, ty: types.ChoiceType) -> CTypeExpr? {
     return null(CTypeExpr)
   }
 
-  func genCTuple(self, type: types.TupleType) -> CTypeExpr? {
+  func genCTuple(self, type: types.TupleType) -> CTupleDefinition {
     // Does the definition already exist?
     def = CTupleDefinition(type, "")
     exists = self.findCTupleDefinition(def)
-
     if !isnull(exists) {
-      return exists.ctype
+      return exists!
     }
     def.name = "tuple%u64" % self.nextTupleNumber
     self.nextTupleNumber += 1
     def.ctype = CTypeExpr(CDefinedType(def.name))
     self.insertCTupleDefinition(def)
-    return def.ctype
+    return self.findCTupleDefinition(def)!
   }
 
   func genCFunction(self, ty: types.FunctionType) -> CTypeExpr? {
@@ -117,8 +156,9 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
       types.Type.TypeClass.AnyInt => return self.genCAnyInt(ty.anyInt!)
       types.Type.TypeClass.Float => return self.genCFloat(ty.float!)
       types.Type.TypeClass.Typename => return self.genCTypename(ty.tyname!)
+      types.Type.TypeClass.Array => return self.genCArray(ty.array.elementType!).ctype
       types.Type.TypeClass.Choice => return self.genCChoice(ty.choice!)
-      types.Type.TypeClass.Tuple => return self.genCTuple(ty.tuple!)
+      types.Type.TypeClass.Tuple => return self.genCTuple(ty.tuple!).ctype
       types.Type.TypeClass.Function => return self.genCFunction(ty.function!)
       types.Type.TypeClass.Polymorphic => return self.genCPolymorphic(ty.poly!)
     }

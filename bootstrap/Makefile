@@ -45,14 +45,13 @@ parse/rule.rn\
 parse/token.rn\
 cbackend/cbuilder.rn\
 cbackend/cemitter.rn\
+cbackend/cfragment.rn\
 cbackend/clanguageclasses.rn\
 cbackend/cruntime.rn\
+cbackend/ctypegen.rn\
 cbackend/escapestring.rn\
-cbackend/float2string.rn\
 cbackend/int2cstring.rn\
 cbackend/package.rn\
-cbackend/stringstream.rn\
-cbackend/stringwriter.rn\
 types/builtins.rn\
 types/package.rn\
 types/typebuilder.rn\
@@ -60,6 +59,13 @@ types/typechecker.rn\
 types/typeclasses.rn\
 types/typeerror.rn\
 types/typeunifier.rn\
+utils/cwstringsearch.rn\
+utils/float2string.rn\
+utils/intmath.rn\
+utils/kmpstringsearch.rn\
+utils/stringfinder.rn\
+utils/stringstream.rn\
+utils/stringwriter.rn\
 rune.rn
 
 rune: $(SRC)

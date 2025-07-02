@@ -1,0 +1,73 @@
+println "concat array of integers: ",   [1] + [2, 3, 4]
+println "concat array of strings: ",    ["a", "b"] + ["c", "d", "e"]
+println "concat array of tuples: ",     [(1, "a")] + [(2, "b"), (3, "c"), (4, "d")]
+println "concat array of arrays: ",     [[1]] + [[2], [3], [4]]
+
+l = arrayof(u64)
+l.append(123)
+l.append(456)
+println "result of two appends: ", l
+println "l.length() = ", l.length()
+println "l[0] = ", l[0]
+println "l[1] = ", l[1]
+
+l.concat([789])
+println "l = ", l
+println "l.length() = ", l.length()
+
+l.reverse()
+println "l = ", l
+println "l[0] = ", l[0]
+println "l[1] = ", l[1]
+println "l[2] = ", l[2]
+
+// Verify that we can use expressions to index into arrays
+a = 1
+println "l[a] = ", l[a]
+println "l[a+1] = ", l[a + 1]
+
+
+// arrays of strings
+l2 = ["a", "b"]
+println "l2 = ", l2
+l2.append("c")
+println "l2 = ", l2
+l2.concat(["d", "e", "f"])
+println "l2 = ", l2
+l2.reverse()
+println "l2 = ", l2
+println "l2.length() = ", l2.length()
+
+// arrays of structs
+struct Foo {
+  name: string
+}
+
+l3 = arrayof(Foo)
+l3.append(Foo("foo1"))
+l3.append(Foo("foo2"))
+println "l3 = ", l3
+l3.concat([Foo("foo3")])
+println "l3 = ", l3
+l3.reverse()
+println "l3 = ", l3
+println "l3.length() = ", l3.length()
+
+// arrays of tuples
+l4 = [(1, "a"), (2, "b"), (3, "c")]
+l4.append((4, "d"))
+println "l4 = ", l4
+l4.concat([(5, "e"), (6, "f")])
+println "l4 = ", l4
+l4.reverse()
+println "l4 = ", l4
+println "l4.length() = ", l4.length()
+
+// arrays of arrays
+l5 = [[(1, "a"), (2, "b")], [(3, "c")]]
+println "l5 = ", l5
+l5.append([(4, "d"), (5, "e"), (6, "f")])
+println "l5 = ", l5
+l5.reverse()
+println "l5 = ", l5
+println "l5.length() = ", l5.length()

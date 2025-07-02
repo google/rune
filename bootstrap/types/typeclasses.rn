@@ -15,6 +15,8 @@
 // Read the comment on typechecker.rn first to understand the general
 // typechecking algorithm.
 
+use sym
+
 
 func hashCombine(hash1: u64, hash2: u64) -> u64 {
   // From https://stackoverflow.com/questions/19195183/how-to-properly-hash-the-custom-struct
@@ -64,6 +66,9 @@ class TypeVar(self, id: i32, constraint: Type?) {
   func replaceVar(self, vold: TypeVar, vnew: TypeVar) -> Type {
     if self.id == vold.id {
       return Type(vnew)
+    }
+    if !isnull(self.constraint) {
+       self.constraint = self.constraint.replaceVar(vold, vnew)
     }
     return Type(self)
   }
@@ -132,9 +137,9 @@ class AnyIntType(self, isSigned: bool) {
 
   func toString(self) -> string {
     if self.isSigned {
-      return "int"
+      return "Int"
     }
-    return "uint"
+    return "Uint"
   }
 
   func hash(self) -> u64 {
@@ -190,25 +195,82 @@ class FloatType(self, width: u32) {
  * typename is listed as one possible constraint), typenames will only
  * unify with another type if that type has the same name.
  *
+ * Typenames can also represent polymorphic types. In this case we
+ * say that the typename has parameters.
+ *
  * TODO: use integers to uniquely identify typenames, in case we allow
  * multiple types to have the same name in different scopes.
  */
-class TypeName(self, name: string) {
+class TypeName(self, name: Sym, params: TupleType? = null(TupleType)) {
   self.name = name
+  self.params = params
 
   operator == (self, other: TypeName) -> bool {
-    return self.name == other.name
+    return self.name == other.name && self.params == other.params
   }
 
   func toString(self) -> string {
-    return self.name
+    if isnull(self.params) {
+      return self.name.name
+    }
+    return self.name.name + self.params.toString()
+  }
+
+  func replaceVar(self, vold: TypeVar, vnew: TypeVar) -> Type {
+     if isnull(self.params) {
+       return Type(self)
+     }
+     newParams = self.params.replaceVar(vold, vnew)
+     return Type(TypeName(self.name, newParams.tuple!))
   }
 
   func hash(self) -> u64 {
-    return hashValue(self.name)
+    h = hashValue(self.name)
+    if !isnull(self.params) {
+      h = hashCombine(h, self.params.hash())
+    }
+    return h
   }
 
   func equals(self, other: TypeName) -> bool {
+    return self == other
+  }
+
+  func specializationString(self) -> string {
+    if isnull(self.params) {
+      return ""
+    }
+    return self.params.specializationString()
+  }
+}
+
+
+/**
+ * @brief Represents array types.
+ *
+ * @param type of elements in the array
+ */
+class ArrayType(self, elementType: Type) {
+  self.elementType = elementType
+
+  operator == (self, other: ArrayType) -> bool {
+    return self.elementType == other.elementType
+  }
+
+  func toString(self) -> string {
+    return "[%s]" % self.elementType.toString()
+  }
+
+  func replaceVar(self, vold: TypeVar, vnew: TypeVar) -> Type {
+    elementType2 = self.elementType.replaceVar(vold, vnew)
+    return Type(ArrayType(elementType2))
+  }
+
+  func hash(self) -> u64 {
+    return hashCombine(0xfeeddeba11002000, self.elementType.hash())
+  }
+
+  func equals(self, other: ArrayType) -> bool {
     return self == other
   }
 }
@@ -228,7 +290,10 @@ class TypeName(self, name: string) {
  * (b) the elements of each tuple unify pairwise.
  */
 class TupleType(self, elements: [Type]) {
-  self.elements = elements
+  self.elements = arrayof(Type)
+  for e in elements {
+    self.elements.append(e)
+  }
 
   operator == (self, other: TupleType) -> bool {
     if self.elements.length() != other.elements.length() {
@@ -300,6 +365,126 @@ class TupleType(self, elements: [Type]) {
 
   func equals(self, other: TupleType) -> bool {
     return self == other
+  }
+}
+
+
+/**
+ * @brief Represents struct types.
+ *
+ * @param elements array of types.
+ *
+ * Represents types of structs. For example struct {a=1, b="hello"} has type
+ * StructType(a:u64, b:string).
+ *
+ * Aside from unbound type variables, where the struct meets the constraint, if any,
+ * structs only unify with other structs if
+ * (a) they have the same list of fieldnames in order, and
+ * (b) the types of each field name unify pairwise.
+ */
+class StructType(self, fieldnames: [Sym], fieldtypes: [Type]) {
+  assert(fieldnames.length() == fieldtypes.length())
+  self.fieldnames = fieldnames
+  self.fieldtypes = fieldtypes
+
+  operator == (self, other: StructType) -> bool {
+    if self.fieldnames.length() != other.fieldnames.length() {
+      return false
+    }
+    for i = 0, i < self.fieldnames.length(), i += 1 {
+      if self.fieldnames[i] != other.fieldnames[i] {
+        return false
+      }
+      if self.fieldtypes[i] != other.fieldtypes[i] {
+        return false
+      }
+    }
+    return true
+  }
+
+  func numElements(self) -> u64 {
+    return self.fieldnames.length()
+  }
+
+  func select(self, field: string) -> Type? {
+    for i in range(self.fieldnames.length()) {
+      if field == self.fieldnames[i].name {
+        return self.fieldtypes[i]
+      }
+    }
+    return null(Type)
+  }
+
+  func index(self, i: u64) -> Type {
+    assert i < self.fieldnames.length()
+    return self.fieldtypes[i]
+  }
+
+  func toString(self) -> string {
+    value = "struct {"
+    first = true
+    for i in range(self.fieldnames.length()) {
+      if !first {
+        value += " "
+      }
+      value += self.fieldnames[i].name
+      value += ":"
+      value += self.fieldtypes[i].toString()
+      value += ","
+      first = false
+    }
+    return value + "}"
+  }
+
+  // C does not support polymorphic types -- instead we generate a 'specialization'
+  // of the polymorphic function for each different set of types passed in. This amounts
+  // to adding a suffix to the function name consisting of the argument types at that
+  // call-time instance.
+  func specializationString(self) -> string {
+    specializationString = ""
+    first = true
+    for i in range(self.fieldnames.length()) {
+      if !first {
+        specializationString += "_"
+      }
+      specializationString += self.fieldtypes[i].toString()
+      first = false
+    }
+    return specializationString
+  }
+
+  func replaceVar(self, vold: TypeVar, vnew: TypeVar) -> Type {
+    fieldnames = arrayof(Sym)
+    fieldtypes = arrayof(Type)
+    for i in range(self.fieldnames.length()) {
+      fieldnames.append(self.fieldnames[i])
+      fieldtypes.append(self.fieldtypes[i].replaceVar(vold, vnew))
+    }
+    return Type(StructType(fieldnames, fieldtypes))
+  }
+
+  func hash(self) -> u64 {
+    h = 0xdebeefeddebeefed
+    for i in range(self.fieldnames.length()) {
+      h = hashCombine(hashCombine(h, hashValue(self.fieldnames[i])),
+                      self.fieldtypes[i].hash())
+    }
+    return h
+  }
+
+  func equals(self, other: StructType) -> bool {
+    if self.fieldnames.length() != other.fieldnames.length() {
+      return false
+    }
+    for i in range(self.fieldnames.length()) {
+      if self.fieldnames[i] != other.fieldnames[i] {
+        return false
+      }
+      if self.fieldtypes[i] != other.fieldtypes[i] {
+        return false
+      }
+    }
+    return true
   }
 }
 
@@ -588,12 +773,14 @@ relation OneToOne TypeVar Type cascade
 relation OneToOne Type IntType cascade
 relation OneToOne Type AnyIntType cascade
 relation OneToOne Type FloatType cascade
+relation OneToOne Type ArrayType cascade
 relation OneToOne Type ChoiceType cascade
 relation OneToOne Type TupleType cascade
+relation OneToOne Type StructType cascade
 relation OneToOne Type FunctionType cascade
 relation OneToOne Type PolymorphicType cascade
 
-class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | ChoiceType | TupleType | FunctionType | PolymorphicType) {
+class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | ChoiceType | TupleType | ArrayType | StructType | FunctionType | PolymorphicType) {
 
   enum TypeClass {
     Var
@@ -601,8 +788,10 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
     AnyInt
     Float
     Typename
+    Array
     Choice
     Tuple
+    Struct
     Function
     Polymorphic
   }
@@ -612,8 +801,10 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
   self.anyInt = null(AnyIntType)
   self.float = null(FloatType)
   self.tyname = null(TypeName)
+  self.array = null(ArrayType)
   self.choice = null(ChoiceType)
   self.tuple = null(TupleType)
+  self.strct = null(StructType)
   self.function = null(FunctionType)
   self.poly = null(PolymorphicType)
 
@@ -638,6 +829,10 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
       self.type = TypeClass.Typename
       self.tyname = ty
     }
+    ArrayType => {
+      self.type = TypeClass.Array
+      self.array = ty
+    }
     ChoiceType => {
       self.type = TypeClass.Choice
       self.choice = ty
@@ -645,6 +840,10 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
     TupleType => {
       self.type = TypeClass.Tuple
       self.tuple = ty
+    }
+    StructType => {
+      self.type = TypeClass.Struct
+      self.strct = ty
     }
     FunctionType => {
       self.type = TypeClass.Function
@@ -666,8 +865,10 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
       Type.TypeClass.AnyInt => return self.anyInt! == other.anyInt!
       Type.TypeClass.Float => return self.float! == other.float!
       Type.TypeClass.Typename => return self.tyname! == other.tyname!
+      Type.TypeClass.Array => return self.array! == other.array!
       Type.TypeClass.Choice => return self.choice! == other.choice!
       Type.TypeClass.Tuple => return self.tuple! == other.tuple!
+      Type.TypeClass.Struct => return self.strct! == other.strct!
       Type.TypeClass.Function => return self.function! == other.function!
       Type.TypeClass.Polymorphic => return self.poly! == other.poly!
     }
@@ -684,8 +885,10 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
       Type.TypeClass.AnyInt => return self.anyInt.toString()
       Type.TypeClass.Float => return self.float.toString()
       Type.TypeClass.Typename => return self.tyname.toString()
+      Type.TypeClass.Array => return self.array.toString()
       Type.TypeClass.Choice => return self.choice.toString()
       Type.TypeClass.Tuple => return self.tuple.toString()
+      Type.TypeClass.Struct => return self.strct.toString()
       Type.TypeClass.Function => return self.function.toString()
       Type.TypeClass.Polymorphic => return self.poly.toString()
     }
@@ -697,9 +900,11 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
       Type.TypeClass.Int => return Type(self.int!)
       Type.TypeClass.AnyInt => return Type(self.anyInt!)
       Type.TypeClass.Float => return Type(self.float!)
-      Type.TypeClass.Typename => return Type(self.tyname!)
+      Type.TypeClass.Typename => return self.tyname.replaceVar(vold, vnew)
+      Type.TypeClass.Array => return self.array.replaceVar(vold, vnew)
       Type.TypeClass.Choice => return self.choice.replaceVar(vold, vnew)
       Type.TypeClass.Tuple => return self.tuple.replaceVar(vold, vnew)
+      Type.TypeClass.Struct => return self.strct.replaceVar(vold, vnew)
       Type.TypeClass.Function => return self.function.replaceVar(vold, vnew)
       Type.TypeClass.Polymorphic => return self.poly.replaceVar(vold, vnew)
     }
@@ -729,8 +934,10 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
       Type.TypeClass.AnyInt => h1 = self.anyInt.hash()
       Type.TypeClass.Float => h1 = self.float.hash()
       Type.TypeClass.Typename => h1 = self.tyname.hash()
+      Type.TypeClass.Array => h1 = self.array.hash()
       Type.TypeClass.Choice => h1 = self.choice.hash()
       Type.TypeClass.Tuple => h1 = self.tuple.hash()
+      Type.TypeClass.Struct => h1 = self.strct.hash()
       Type.TypeClass.Function => h1 = self.function.hash()
       Type.TypeClass.Polymorphic => h1 = self.poly.hash()
     }
@@ -747,28 +954,44 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
       Type.TypeClass.AnyInt => return self.anyInt.equals(other.anyInt!)
       Type.TypeClass.Float => return self.float.equals(other.float!)
       Type.TypeClass.Typename => return self.tyname.equals(other.tyname!)
+      Type.TypeClass.Array => return self.array.equals(other.array!)
       Type.TypeClass.Choice => return self.choice.equals(other.choice!)
       Type.TypeClass.Tuple => return self.tuple.equals(other.tuple!)
+      Type.TypeClass.Struct => return self.strct.equals(other.strct!)
       Type.TypeClass.Function => return self.function.equals(other.function!)
       Type.TypeClass.Polymorphic => return self.poly.equals(other.poly!)
     }
   }
 
-  func genSpecializationName(self, baseName: String) -> String {
-    newname = baseName
+  func numElements(self) -> u64 {
     switch self.type {
-      Type.TypeClass.Var => newname = ""
-      Type.TypeClass.Int => newname += "_" + self.int.toString()
-      Type.TypeClass.AnyInt => newname += "_" + self.anyInt.toString()
-      Type.TypeClass.Float => newname += "_" + self.float.toString()
-      Type.TypeClass.Typename => newname += "_" + self.tyname.toString()
-      Type.TypeClass.Choice => newname = ""
-      Type.TypeClass.Tuple => newname += "_" + self.tuple.specializationString()
-      Type.TypeClass.Function => newname = ""
-      Type.TypeClass.Polymorphic => newname = ""
+      Type.TypeClass.Tuple => return self.tuple.numElements()
+      Type.TypeClass.Struct => return self.strct.numElements()
+      default => return 0
     }
-    if newname == "" {
-      raise Status.Unimplemented, "Can't specialize to argument type ", self.toString()
+  }
+
+  func index(self, idx: u64) -> Type? {
+    switch self.type {
+      Type.TypeClass.Tuple => return self.tuple.index(idx)
+      Type.TypeClass.Struct => return self.strct.index(idx)
+      default => return null(Type)
+    }
+  }
+
+  func genSpecializationName(self, baseName: String) -> String {
+    switch self.type {
+      Type.TypeClass.Var => newname = baseName
+      Type.TypeClass.Int => newname = baseName + "_" + self.int.toString()
+      Type.TypeClass.AnyInt => newname = baseName + "_" + self.anyInt.toString()
+      Type.TypeClass.Float => newname = baseName + "_" + self.float.toString()
+      Type.TypeClass.Typename => newname = baseName + "_" + self.tyname.toString()
+      Type.TypeClass.Array => newname = baseName
+      Type.TypeClass.Choice => newname = baseName
+      Type.TypeClass.Tuple => newname = baseName + "_" + self.tuple.specializationString()
+      Type.TypeClass.Struct => newname = baseName + "_" + self.strct.specializationString()
+      Type.TypeClass.Function => newname = baseName
+      Type.TypeClass.Polymorphic => newname = baseName
     }
     return newname
   }

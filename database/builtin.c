@@ -361,7 +361,7 @@ static deDatatype bindJustToStringBuiltinMethod(deFunction function,
     }
     return deStringDatatypeCreate();
   }
-  utExit("Unknown builtin Tuple method");
+  deExprError(expression, "Unknown builtin Tuple method");
   return deDatatypeNull;  // Dummy return;
 }
 

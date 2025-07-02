@@ -14,11 +14,11 @@
 
 import database as db
 import types
+import utils
 
 use cemitter
 use ctypegen
 use escapestring
-use float2string
 use int2cstring
 use sym
 
@@ -119,7 +119,7 @@ class CPrimitiveType(self, ty: Type) {
 
   func toString(self) -> string {
     // This is mainly used to generate function names (a sort of compile-time
-    // dispatch) for function calls like 'tostring_<type>(<expression>'
+    // dispatch) for function calls like 'tostring_<type>_t(<expression>'
     switch self.type {
       CPrimitiveType.Type.Void => return "void"
       CPrimitiveType.Type.Char => return "char"
@@ -130,14 +130,14 @@ class CPrimitiveType(self, ty: Type) {
       CPrimitiveType.Type.Float => return "float"
       CPrimitiveType.Type.Double => return "double"
       CPrimitiveType.Type.LongDouble => return "longdouble"
-      CPrimitiveType.Type.Int8 => return "int8_t"
-      CPrimitiveType.Type.Uint8 => return "uint8_t"
-      CPrimitiveType.Type.Int16 => return "int16_t"
-      CPrimitiveType.Type.Uint16 => return "uint16_t"
-      CPrimitiveType.Type.Int32 => return "int32_t"
-      CPrimitiveType.Type.Uint32 => return "uint32_t"
-      CPrimitiveType.Type.Int64 => return "int64_t"
-      CPrimitiveType.Type.Uint64 => return "uint64_t"
+      CPrimitiveType.Type.Int8 => return "int8"
+      CPrimitiveType.Type.Uint8 => return "uint8"
+      CPrimitiveType.Type.Int16 => return "int16"
+      CPrimitiveType.Type.Uint16 => return "uint16"
+      CPrimitiveType.Type.Int32 => return "int32"
+      CPrimitiveType.Type.Uint32 => return "uint32"
+      CPrimitiveType.Type.Int64 => return "int64"
+      CPrimitiveType.Type.Uint64 => return "uint64"
     }
   }
 
@@ -149,8 +149,14 @@ class CPrimitiveType(self, ty: Type) {
       CPrimitiveType.Type.Short => e.write("short")
       CPrimitiveType.Type.Long => e.write("long")
       CPrimitiveType.Type.LongLong => e.write("long long")
-      CPrimitiveType.Type.Float => e.write("float")
-      CPrimitiveType.Type.Double => e.write("double")
+      CPrimitiveType.Type.Float => {
+        e.needFloatType()
+        e.write("float_t")
+      }
+      CPrimitiveType.Type.Double => {
+        e.needDoubleType()
+        e.write("double_t")
+      }
       CPrimitiveType.Type.LongDouble => e.write("long double")
 
       CPrimitiveType.Type.Int8 => {
@@ -202,6 +208,20 @@ class CPointerType(self, type: CTypeExpr) {
 }
 
 
+class CArrayType(self, elementType: CTypeExpr) {
+  self.elementType = elementType
+  self.name = "%s_array" % self.elementType.toString()
+
+  func toString(self) -> string {
+    return self.name
+  }
+
+  func emit(self, e: CEmitter) {
+    e.write("%s_t" % self.name)
+  }
+}
+
+
 class CDefinedType(self, name: string) {
   self.name = name
 
@@ -210,13 +230,13 @@ class CDefinedType(self, name: string) {
   }
 
   func emit(self, e: CEmitter) {
-    if self.name == "bool" {
+    if self.name == "bool_t" {
       e.needBoolType()
     }
-    if self.name == "string" {
+    if self.name == "string_t" {
       e.needStringType()
     }
-    e.write("%s" % self.name)
+    e.write("%s_t" % self.name)
   }
 }
 
@@ -224,13 +244,15 @@ class CDefinedType(self, name: string) {
 relation OneToOne CTypeExpr CPrimitiveType cascade
 relation OneToOne CTypeExpr CPointerType cascade
 relation OneToOne CTypeExpr CDefinedType cascade
+relation OneToOne CTypeExpr CArrayType cascade
 
 
-class CTypeExpr(self, type: CPrimitiveType | CPointerType | CDefinedType) {
+class CTypeExpr(self, type: CPrimitiveType | CPointerType | CArrayType | CDefinedType) {
 
   enum Type {
     Primitive
     Pointer
+    Array
     Defined
   }
 
@@ -243,6 +265,10 @@ class CTypeExpr(self, type: CPrimitiveType | CPointerType | CDefinedType) {
       self.type = Type.Pointer
       self.insertCPointerType(type)
     }
+    CArrayType => {
+      self.type = Type.Array
+      self.insertCArrayType(type)
+    }
     CDefinedType => {
       self.type = Type.Defined
       self.insertCDefinedType(type)
@@ -253,6 +279,7 @@ class CTypeExpr(self, type: CPrimitiveType | CPointerType | CDefinedType) {
     switch self.type {
       CTypeExpr.Type.Primitive => return self.cPrimitiveType.width()
       CTypeExpr.Type.Defined => return 0u32
+      CTypeExpr.Type.Array => return 0u32
       default => raise Status.Unimplemented, "Width not defined for this type"
     }
   }
@@ -261,6 +288,7 @@ class CTypeExpr(self, type: CPrimitiveType | CPointerType | CDefinedType) {
     switch self.type {
       CTypeExpr.Type.Primitive => return self.cPrimitiveType.isSigned()
       CTypeExpr.Type.Defined => return false
+      CTypeExpr.Type.Array => return false
       default => raise Status.Unimplemented, "isSigned not defined for this type"
     }
   }
@@ -269,6 +297,7 @@ class CTypeExpr(self, type: CPrimitiveType | CPointerType | CDefinedType) {
     switch self.type {
       CTypeExpr.Type.Primitive => return self.cPrimitiveType.toString()
       CTypeExpr.Type.Defined => return self.cDefinedType.toString()
+      CTypeExpr.Type.Array => return self.cArrayType.toString()
     }
   }
 
@@ -276,6 +305,7 @@ class CTypeExpr(self, type: CPrimitiveType | CPointerType | CDefinedType) {
     switch self.type {
       CTypeExpr.Type.Primitive => self.cPrimitiveType.emit(e)
       CTypeExpr.Type.Defined => self.cDefinedType.emit(e)
+      CTypeExpr.Type.Array => self.cArrayType.emit(e)
     }
   }
 }
@@ -355,7 +385,7 @@ class CLiteral(self, value: string | bool | db.Bigint | f64, printf: bool) {
         e.write(int2cstring(self.intValue))
       }
       CLiteral.Type.Float => {
-        e.write(float2string(self.floatValue))
+        e.write(utils.float2string(self.floatValue))
       }
       default => raise Status.Unimplemented, "CLiteral type not yet supported"
     }
@@ -606,7 +636,7 @@ class CBinaryOperator(self, location: db.Location, type: CBinaryOperator.Type,
      }
 
      assert !isnull(self.ctype)
-     e.write("isequal_%s(" % self.ctype.toString())
+     e.write("isequal_%s_t(" % self.ctype.toString())
 
      self.leftCExpr.emit(e)
      e.write(", ")
@@ -650,8 +680,47 @@ class CDotExpr(self, location: db.Location, left: CExpr, field: string) {
     }
     e.write(".%s" % self.field)
   }
-
 }
+
+relation OneToOne CIndexExpr CExpr: "array" cascade
+relation OneToOne CIndexExpr CExpr: "index" cascade
+
+class CIndexExpr(self, location: db.Location, left: CExpr, index: CExpr) {
+  self.insertArrayCExpr(left)
+  self.insertIndexCExpr(index)
+
+  func precedence(self) -> u8 {
+    return 1u8
+  }
+
+  func isSigned(self) -> bool {
+    // TODO
+    return false
+  }
+
+  func width(self) -> u32 {
+    // TODO
+    return 0u32
+  }
+
+  func tostring(self) -> string {
+    return "[]"
+  }
+
+  func emit(self, e: CEmitter) {
+    if self.precedence() < self.cExpr.precedence() {
+      e.write("(")
+      self.arrayCExpr.emit(e)
+      e.write(")")
+    } else {
+      self.arrayCExpr.emit(e)
+    }
+    e.write("[")
+    self.indexCExpr.emit(e)
+    e.write("]")
+  }
+}
+
 
 
 enum CRuntimeFunction {
@@ -669,15 +738,29 @@ enum CRuntimeFunction {
    RotateLeft
    RotateRight
 
+   // String builtins
+   StringAppend
+
    // To-string builtins
    GlobalStringWriterReset
    GlobalStringWriterWrite
    GlobalStringWriterString
+
+   // Array builtins
+   ArrayAlloc
+   ArrayAppend
+   ArrayLength
+   ArrayReverse
+   ArrayValues
+   ArrayItems
+   ArrayConcat
 }
 
-class CCall(self, location: db.Location, fntype: CRuntimeFunction, args: CExpr?, fn: CExpr? = null(CExpr)) {
+class CCall(self, location: db.Location, fntype: CRuntimeFunction, args: CExpr?, fn: CExpr? = null(CExpr),
+relevantType: CTypeExpr?) {
   self.location = location
   self.fntype = fntype
+  self.relevantType = relevantType
   self.args = args
   self.fn = fn
   if isnull(args) {
@@ -707,18 +790,20 @@ class CCall(self, location: db.Location, fntype: CRuntimeFunction, args: CExpr?,
   func emit(self, e: CEmitter) {
     wasPrintf = e.printfArg
     switch self.fntype {
+      // User-defined function call.
+      CRuntimeFunction.UserDefined => {
+        assert !isnull(self.fn)
+        self.fn.emit(e)
+      }
+
+      // Well-known C Standard Library functions.
       CRuntimeFunction.Printf => {
         e.include("<stdio.h>")
         e.printfArg = true
         e.write("printf")
       }
 
-      // TODO: exponentiation should work with floats as well as ints. For now it
-      // is for ints only. We won't be able to fully handle these until type
-      // information is stored in the HIR.
-      CRuntimeFunction.Exponentiate => {
-        e.write(e.needIntExp(self.signedType, self.bitwidth))
-      }
+      // Rune built-in arithmetic operators.
       CRuntimeFunction.AddWithOverflowDetect => {
         e.write(e.needIntAdd(self.signedType, self.bitwidth))
       }
@@ -730,6 +815,12 @@ class CCall(self, location: db.Location, fntype: CRuntimeFunction, args: CExpr?,
       }
       CRuntimeFunction.DivWithOverflowDetect => {
         e.write(e.needIntDiv(self.signedType, self.bitwidth))
+      }
+      // TODO: exponentiation should work with floats as well as ints. For now it
+      // is for ints only. We won't be able to fully handle these until type
+      // information is stored in the HIR.
+      CRuntimeFunction.Exponentiate => {
+        e.write(e.needIntExp(self.signedType, self.bitwidth))
       }
       CRuntimeFunction.RotateLeft => {
         e.write(e.needRotl(self.bitwidth))
@@ -743,24 +834,51 @@ class CCall(self, location: db.Location, fntype: CRuntimeFunction, args: CExpr?,
         e.needStringWriter()
         e.write("GlobalStringWriter_reset")
       }
-
       CRuntimeFunction.GlobalStringWriterWrite => {
         e.needStringWriter()
         e.write("GlobalStringWriter_write")
       }
-
       CRuntimeFunction.GlobalStringWriterString => {
         e.needStringWriter()
         e.write("GlobalStringWriter_string")
       }
 
-      CRuntimeFunction.UserDefined => {
-        assert !isnull(self.fn)
-               self.fn.emit(e)
+      CRuntimeFunction.ArrayAlloc => {
+        e.write(e.needArrayAlloc())
       }
+      CRuntimeFunction.ArrayAppend => {
+        // ArrayAppend is always generated from a statement like
+        // l.append(e), we want to emit something like: "l = array_append(l, e)"
+	// because array_append can change the address in memory where the
+	// array lives.
+        array = self.args.cExprList.index(0)
+        if array.type == CExpr.Type.Identifier {
+          array.emit(e)
+          e.write(" = ")
+        }
+        e.write(e.needArrayAppend(self.relevantType!))
+      }
+      CRuntimeFunction.ArrayConcat => {
+        array = self.args.cExprList.index(0)
+        if array.type == CExpr.Type.Identifier {
+          array.emit(e)
+          e.write(" = ")
+        }
+        e.write(e.needArrayConcat())
+      }
+      CRuntimeFunction.ArrayLength => {
+        e.write(e.needArrayLength())
+      }
+      CRuntimeFunction.ArrayReverse => {
+        e.write(e.needArrayReverse())
+      }
+//      CRuntimeFunction.ArrayItems => {
+//      }
+//      CRuntimeFunction.ArrayValues => {
+//      }
 
       default => {
-        raise Status.Unimplemented, "C call is not yet supported by the C backend."
+        raise Status.Unimplemented, "C call is not yet supported by the C backend: ", self.fntype
       }
     }
     e.write("(")
@@ -779,11 +897,12 @@ relation OneToOne CExpr CLiteral cascade
 relation OneToOne CExpr CIdentifier cascade
 relation OneToOne CExpr CTypeExpr cascade
 relation OneToOne CExpr: "parent" CDotExpr: "child" cascade
+relation OneToOne CExpr CIndexExpr cascade
 relation OneToOne CExpr CCall cascade
 relation OneToOne CExpr: "parent" CPrefixOperator: "child" cascade
 relation OneToOne CExpr: "parent" CBinaryOperator: "child" cascade
 
-class CExpr(self, value: CLiteral | CIdentifier | CPrefixOperator | CBinaryOperator | CCall | CExprList | CTypeExpr | CDotExpr)  {
+class CExpr(self, value: CLiteral | CIdentifier | CPrefixOperator | CBinaryOperator | CCall | CExprList | CTypeExpr | CDotExpr | CIndexExpr)  {
 
   enum Type {
     Literal
@@ -833,6 +952,10 @@ class CExpr(self, value: CLiteral | CIdentifier | CPrefixOperator | CBinaryOpera
       self.type = Type.Field
       self.insertChildCDotExpr(value)
     }
+    CIndexExpr => {
+      self.type = Type.Index
+      self.insertCIndexExpr(value)
+    }
   }
 
   func emit(self, e: CEmitter) {
@@ -845,6 +968,7 @@ class CExpr(self, value: CLiteral | CIdentifier | CPrefixOperator | CBinaryOpera
       CExpr.Type.FunCall => self.cCall.emit(e)
       CExpr.Type.TypeExpr => self.cTypeExpr.emit(e)
       CExpr.Type.Field => self.childCDotExpr.emit(e)
+      CExpr.Type.Index => self.cIndexExpr.emit(e)
     }
   }
 
@@ -858,6 +982,7 @@ class CExpr(self, value: CLiteral | CIdentifier | CPrefixOperator | CBinaryOpera
       CExpr.Type.FunCall  => return 1u8
       CExpr.Type.TypeExpr => return 0u8
       CExpr.Type.Field    => return self.childCDotExpr.precedence()
+      CExpr.Type.Index    => return 1u8
     }
   }
 
@@ -871,6 +996,7 @@ class CExpr(self, value: CLiteral | CIdentifier | CPrefixOperator | CBinaryOpera
       CExpr.Type.FunCall  => return self.cCall.isSigned()
       CExpr.Type.TypeExpr => return false
       CExpr.Type.Field    => return self.childCDotExpr.isSigned()
+      CExpr.Type.Index    => return self.cIndexExpr.isSigned()
     }
   }
 
@@ -883,7 +1009,8 @@ class CExpr(self, value: CLiteral | CIdentifier | CPrefixOperator | CBinaryOpera
       CExpr.Type.BinaryOp => return self.childCBinaryOperator.width()
       CExpr.Type.FunCall  => return self.cCall.width()
       CExpr.Type.TypeExpr => return 0u32
-      CExpr.Type.Field =>   return self.childCDotExpr.width()
+      CExpr.Type.Field => return self.childCDotExpr.width()
+      CExpr.Type.Index => return self.cIndexExpr.width()
     }
   }
 }
@@ -1039,13 +1166,34 @@ class CStatement(self, location: db.Location, type: CStatementType,
         self.subCBlock.emit(e)
         e.writecloseln("}")
       }
+      CStatementType.For => {
+        // Right now, only handles for loops of the form
+        // for <assign>, <condition>, <increment> {
+        //  ...
+        // }
+        assert !isnull(self.subCBlock)
+        assert !isnull(self.cExpr)
+        e.write("for (")
+        assert self.cExpr.type == CExpr.Type.List
+        first = true
+        for child in self.cExpr.cExprList.cExprs() {
+            if (!first) {
+              e.write("; ")
+            }
+            first = false
+            child.emit(e)
+        }
+        e.writeopenln(") {")
+        self.subCBlock.emit(e)
+        e.writecloseln("}")
+      }
       CStatementType.Return => {
         assert isnull(self.subCBlock)
         assert !isnull(self.cExpr)
         e.write("return")
         if !isnull(self.cExpr) {
           e.space()
-         self.cExpr.emit(e)
+          self.cExpr.emit(e)
         }
         e.write(";")
       }
@@ -1093,12 +1241,118 @@ class CBlock(self, location: db.Location) {
 
 // Declarations ---------------------------------------------------------------
 
+class CArrayDeclaration(self, location: db.Location, typeName: string, elementType: CTypeExpr) {
+  self.location = location
+  self.typeName = typeName
+  self.elementType = elementType;
+  self.name = typeName
+
+  /* Emitting this class needs to define the array type (e.g., array_uint8_t) plus
+   * methods to initialize it and destroy it
+   */
+  func emit(self, e: CEmitter, proto: bool) {
+    e.include("<stdarg.h>")
+    e.needArrayAlloc()
+    e.needStringWriter()
+    e.needPrimitiveTypeEqualities()
+
+    elementTypeString = self.elementType.toString()
+    // Emit typedef ---------------------------------------------
+    e.writeln("typedef %s_t *%s_array_t;" % (elementTypeString, elementTypeString))
+    e.writeln("")
+
+    // Emit the init function -----------------------------------
+    e.write("%s_t *%s_init(size_t num_initializers, ...)" % (elementTypeString, self.typeName))
+
+    if proto {
+      e.writeln(";")
+    } else {
+      e.writeopenln(" {");
+      e.writeln("va_list ap;")
+      e.writeln("size_t i;")
+      e.writeln("")
+      e.writeln("%s_t *a = (%s_t*)array_alloc(sizeof(%s_t), num_initializers);" % (
+        elementTypeString, elementTypeString, elementTypeString))
+      e.writeln("va_start(ap, num_initializers);")
+      e.writeopenln("for (i = 0; i < num_initializers; ++i) {")
+      e.write("a[i] = va_arg(ap, %s_t);" % elementTypeString)
+      e.writecloseln("}")
+      e.write("return a;")
+      e.writecloseln("}")
+    }
+    e.writeln("")
+
+    // Emit the toString function -----------------------------------
+    e.write("void tostring_%s_t(%s_t a[])" % (self.typeName, elementTypeString))
+    if proto {
+      e.writeln(";")
+    } else {
+      e.writeopenln(" {")
+      e.writeln("array_t *array = ((array_t*)a) - 1;")
+      e.writeln("size_t i;");
+
+      e.writeln("tostring_string_t(\"[\");")
+      e.writeopenln("for(i = 0; i < array->used; ++i) {")
+      e.writeln("if (i > 0) tostring_string_t(\", \");")
+
+      if (self.elementType.type == CTypeExpr.Type.Defined
+          && self.elementType.cDefinedType.name == "string") {
+         e.write("tostring_string_t(\"\\\"%s\\\"\", a[i]);")
+      } else {
+         e.write("tostring_%s_t(a[i]);" % elementTypeString)
+      }
+      e.writecloseln("}")
+      e.write("tostring_string_t(\"]\");")
+      e.writecloseln("}")
+    }
+    e.writeln("")
+
+    // Emit the equality function -------------------------------
+    // TODO: use parameterized C fragments to avoid emitting this in code
+    e.write("bool isequal_%s_t(%s_t a1, %s_t a2)" % (self.typeName, self.typeName, self.typeName))
+    if proto {
+      e.writeln(";")
+    } else {
+      e.writeopenln(" {")
+      e.writeln("array_t *s1a = ((array_t*)a1) - 1;")
+      e.writeln("array_t *s2a = ((array_t*)a2) - 1;")
+      e.writeln("size_t i;");
+      e.writeln("")
+      e.writeln("if (s1a->used != s2a->used) return false;")
+      e.writeopenln("for (i = 0; i < s1a->used; ++i) {")
+      e.write("if (!isequal_%s_t(a1[i], a2[i])) return false;" % elementTypeString)
+      e.writecloseln("}")
+      e.write("return true;")
+      e.writecloseln("}")
+    }
+    e.writeln("")
+
+    // Emit the append function -------------------------------
+    // TODO: use parameterized c fragments to avoid emitting this here.
+    e.write("%s_t append_%s_t(%s_t a, %s_t e)" % (self.typeName, self.typeName, self.typeName, elementTypeString))
+    if proto {
+      e.writeln(";")
+    } else {
+      e.writeopenln(" {")
+      e.writeln("array_t *array = ((array_t*)a) - 1;")
+      e.writeln("array = array_resize(array, array->used + 1);")
+      e.writeln("a = (%s_t *)(array + 1);" % elementTypeString)
+      e.writeln("a[array->used] = e;")
+      e.writeln("array->used += 1;")
+      e.write("return a;")
+      e.writecloseln("}")
+    }
+  }
+}
+
 relation OneToOne CStructDeclaration CParamList cascade
 
-class CStructDeclaration(self, location: db.Location, name: string, fields: CParamList) {
+class CStructDeclaration(self, location: db.Location, name: string, fields: CParamList,
+                         isTuple: bool) {
   // Structs (inc. tuples) are allocated on the stack.
   self.location = location
   self.name = name
+  self.isTuple = isTuple
   self.insertCParamList(fields)
   self.protoEmitted = false
 
@@ -1111,13 +1365,13 @@ class CStructDeclaration(self, location: db.Location, name: string, fields: CPar
 
     // Emit the structure definition and typedef ----------------------
     if proto {
-      e.writeln("typedef struct %s %s;" % (self.name, self.name))
+      e.writeln("typedef struct %s_t %s_t;" % (self.name, self.name))
       self.protoEmitted = true
     } else {
       if self.protoEmitted {
-        e.writeln("struct %s" % self.name)
+        e.writeln("struct %s_t" % self.name)
       } else {
-        e.write("typedef struct %s {" % self.name)
+        e.write("typedef struct %s_t {" % self.name)
       }
       e.indent()
       for field in self.cParamList.cParameters() {
@@ -1125,12 +1379,12 @@ class CStructDeclaration(self, location: db.Location, name: string, fields: CPar
         field.emit(e)
         e.write(";")
       }
-      e.writecloseln("} %s;" % self.name)
+      e.writecloseln("} %s_t;" % self.name)
       e.newline()
     }
 
     // Emit the init function ----------------------------------
-    e.write("%s make_%s(" % (self.name, self.name))
+    e.write("%s_t %s(" % (self.name, self.name))
     first = true
     for field in self.cParamList.cParameters() {
       if !first {
@@ -1145,52 +1399,56 @@ class CStructDeclaration(self, location: db.Location, name: string, fields: CPar
     } else {
       e.writeopenln(") {")
       if self.cParamList.countCParameters() == 0 {
-        e.writeln("%s tuple;" % self.name)
+        e.writeln("%s_t str;" % self.name)
       } else {
-        e.writeln("%s tuple = {0};" % self.name)
+        e.writeln("%s_t str = {0};" % self.name)
       }
       for field in self.cParamList.cParameters() {
-        e.writeln("tuple.%s = %s;" % (field.name, field.name))
+        e.writeln("str.%s = %s;" % (field.name, field.name))
       }
-      e.write("return tuple;")
+      e.write("return str;")
       e.writecloseln("}")
       e.newline()
     }
 
     // Emit the toString function ----------------------------------
-    e.write("void tostring_%s(%s tuple)" % (self.name, self.name))
+    e.write("void tostring_%s_t(%s_t str)" % (self.name, self.name))
     if proto {
       e.writeln(";")
     } else {
       e.writeopenln(" {")
-      e.writeln("tostring_string(\"(\");")
+      e.write("tostring_string_t(\"")
+      if !self.isTuple {
+         e.write(self.name)
+      }
+      e.writeln("(\");")
       first = true
       for field in self.cParamList.cParameters() {
         if !first {
-          e.writeln("tostring_string(\", \");")
+          e.writeln("tostring_string_t(\", \");")
         }
         first = false
         if (field.type.type == CTypeExpr.Type.Defined
             && field.type.cDefinedType.name == "string") {
-          e.write("tostring_string(\"\\\"%s\\\"\", ")
+          e.write("tostring_string_t(\"\\\"%s\\\"\", ")
         } else {
           e.write("tostring_")
           field.type.emit(e)
           e.write("(")
         }
-        e.writeln("tuple.%s);" % field.name)
+        e.writeln("str.%s);" % field.name)
       }
       if self.cParamList.countCParameters() == 1 {
-        e.write("tostring_string(\",)\");")
+        e.write("tostring_string_t(\",)\");")
       } else {
-        e.write("tostring_string(\")\");")
+        e.write("tostring_string_t(\")\");")
       }
       e.writecloseln("}")
       e.newline()
     }
 
     // Emit the equality function -------------------------------
-    e.write("bool isequal_%s(%s t1, %s t2)" % (self.name, self.name, self.name))
+    e.write("bool isequal_%s_t(%s_t s1, %s_t s2)" % (self.name, self.name, self.name))
     if proto {
       e.writeln(";")
     } else {
@@ -1206,9 +1464,7 @@ class CStructDeclaration(self, location: db.Location, name: string, fields: CPar
             e.write("    && ")
           }
           first = false
-          e.write("isequal_")
-          field.type.emit(e)
-          e.write("(t1.%s, t2.%s)" % (field.name, field.name))
+          e.write("isequal_%s_t(s1.%s, s2.%s)" % (field.type.toString(), field.name, field.name))
         }
       }
       e.write(";")
@@ -1247,13 +1503,15 @@ class CFunctionDeclaration(self, location: db.Location, id: Sym,
 // eventually, pass in CFunDef | CTypeDef | CStructDef | ....
 relation OneToOne CDeclaration CFunctionDeclaration cascade
 relation OneToOne CDeclaration CStructDeclaration cascade
+relation OneToOne CDeclaration CArrayDeclaration cascade
 
-class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration) {
+class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration | CArrayDeclaration) {
   self.dependencies = arrayof(string)
 
   enum Type {
     Function
     Struct
+    Array
   }
 
   typeswitch declaration {
@@ -1265,6 +1523,10 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration)
       self.type = Type.Struct
       self.insertCStructDeclaration(declaration)
     }
+    CArrayDeclaration => {
+      self.type = Type.Array
+      self.insertCArrayDeclaration(declaration)
+    }
   }
   // Don't emit the declaration or its prototype more than once.
   self.emitted = false
@@ -1273,6 +1535,7 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration)
     switch self.type {
       CDeclaration.Type.Function => return self.cFunctionDeclaration.id.name
       CDeclaration.Type.Struct => return self.cStructDeclaration.name
+      CDeclaration.Type.Array => return self.cArrayDeclaration.typeName
     }
   }
 
@@ -1304,6 +1567,7 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration)
       switch self.type {
         CDeclaration.Type.Function => self.cFunctionDeclaration.emit(e, false)
         CDeclaration.Type.Struct => self.cStructDeclaration.emit(e, false)
+        CDeclaration.Type.Array => self.cArrayDeclaration.emit(e, false)
       }
       self.emitted = true
     }

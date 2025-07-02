@@ -1,4 +1,4 @@
-//  Copyright 2021 Google LLC.
+//  Copyright 2024 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,10 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use cbuilder
-use cemitter
-use cfragment
-use clanguageclasses
-use cruntime
-use escapestring
-use int2cstring
+use kmpstringsearch
+use cwstringsearch
+
+class StringFinder(self, haystack: string, needles: [string]) {
+  if needles.length() < 2 {
+    self.searcher1 = KmpSearch(needles[0], haystack)
+    self.searcher2 = null(CwSearch)
+  } else {
+    self.searcher1 = null(KmpSearch)
+    self.searcher2 = CwSearch(needles, haystack)  
+  }
+
+  func findNext(self) -> (string, u64) {
+    if !isnull(self.searcher1) {
+      return self.searcher1.findNext()
+    } else {
+      return self.searcher2.findNext()
+    }
+  }
+}

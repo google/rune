@@ -1,0 +1,355 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Implementation of Commentz-Walter string search (multiple simultaneous patterns)
+//
+// see https://en.wikipedia.org/wiki/Commentz-Walter_algorithm
+// and https://github.com/jakerachleff/commentzwalter
+
+// A very large number used to denote 'unset'
+unsetVal = ~0
+
+/** Commentz-Walter string matching (multiple patterns) */
+relation DoublyLinked Node Node:"Child" cascade
+class Node(self, char: u8, depth: u64, parent: Node?) {
+  self.char = char
+  self.depth = depth
+  self.word = ""
+  self.parent = parent
+  self.acSuffixLink = null(Node)  // Aho-Corsick suffix
+  self.acOutputLink = null(Node)  // Aho-Corsick output
+  self.cwSuffixLink = null(Node)  // Commentz-Walter suffix
+  self.cwOutputLink = null(Node)  // Commentz-Walter output
+  self.shift1 = unsetVal
+  self.shift2 = unsetVal
+  self.minDiffS1 = unsetVal
+  self.minDiffS2 = unsetVal
+  self.children = arrayof(Node)
+
+  func findChild(self, c: u8) -> Node? {
+    for child in self.childNodes() {
+      if child.char == c {
+        return child
+      }
+    }
+    return null(Node)
+  }
+}
+
+
+/**
+ * NodeQueue implements a simple queue, used for breadth-first search.
+ */
+class NodeQueue(self) {
+  self.nodes = [null(Node)].resize(16)
+  self.front = 0
+  self.back = 0
+  self.capacity = 16
+  self.count = 0
+
+  func resize(self) {
+    newCapacity = self.capacity * 2
+    self.nodes.resize(newCapacity)
+    if self.back < self.front {
+      // fixup back counter, move tail of queue after end of front 
+      i = 0
+      while i < self.back {
+        self.nodes[self.capacity + i] = self.nodes[i]
+        i += 1
+      }
+      self.back = self.capacity + i
+    }
+  }
+
+  func empty(self) {
+    return self.front == self.back
+  }
+
+  func push(self, node: Node) {
+    if self.count == self.capacity {
+      self.resize()
+    }
+    self.nodes[self.back] = node
+    self.back = self.back + 1
+    if self.back == self.nodes.length() {
+      self.back = 0
+    }
+    self.count += 1
+  }
+
+  func pop(self) -> Node? {
+    if self.count == 0 {
+      return null(Node)
+    }
+    node = self.nodes[self.front]
+    self.front += 1
+    if self.front == self.nodes.length() {
+      self.front = 0
+    }
+    self.count -= 1
+    return node
+  }
+}
+
+
+/**
+ * Implements the Trie data structure
+ */
+class Trie(self) {
+  self.size = 0
+  self.root = Node(0u8, 0, null(Node))
+
+  func addWord(self, word) {
+    node = self.root
+    depth = 1
+    for c in word.values() {
+      nextNode = node.findChild(c)
+      if isnull(nextNode) {
+        nextNode = Node(c, depth, node)
+        node.insertChildNode(nextNode!)
+      }
+      node = nextNode
+      depth += 1
+    }
+    if node.word != "" {
+      assert node.word == word
+      return
+    }
+    node.word = word
+    self.size += 1
+  }
+
+  func contains(self, word) {
+    node = self.root
+    for c in word.values() {
+       nextNode = node.findChild(c)
+       if isnull(nextNode) {
+         return false
+       }
+       node = nextNode
+    }
+    return true
+  }
+
+  func isRoot(self, node) {
+    return node.char == 0
+  }
+
+  func getAcSuffixLink(self, node) {
+    s = node.parent.acSuffixLink
+    while !self.isRoot(s) && !isnull(s.findChild(node.char)) {
+      s = s.acSuffixLink!
+    }
+    c = s.findChild(node.char)
+    if !isnull(c) {
+      return c
+    }
+    assert self.isRoot(s)
+    return s
+  }
+}
+
+unittest trie1 {
+  t = Trie()
+  t.addWord("hello")
+  t.addWord("help")
+  t.addWord("howdy")
+  t.addWord("james")
+  t.addWord("hello")
+  assert !t.contains("helpo")
+  assert t.contains("hello")
+  assert t.contains("help")
+  assert t.contains("howdy")
+}
+
+
+
+relation OneToOne CwSearch Trie cascade
+class CwSearch(self, needles:[string], haystack: string) {
+  self.needles = needles
+  self.haystack = haystack
+  self.minDepth = 0u64
+  self.nextStartPosition = 0
+  self.done = false
+  self.charLookupTable = [unsetVal].resize(256) // arbitrary large number > all expected needle lengths
+  self.insertTrie(Trie())
+  self.insertWords(needles)
+  self.createFailureLinks()
+
+  func insertWords(self, needles: [string]) {
+    self.minDepth = unsetVal
+    for needle in needles {
+      copy = needle
+      copy.reverse()
+      self.trie.addWord(copy)
+      pos = 1
+      for p in needle.items() {
+        pos = p[0]
+        c = p[1]
+        minCharDepth = self.charLookupTable[c]
+        if minCharDepth > pos {
+          self.charLookupTable[c] = pos
+        }
+      }
+      self.minDepth = min(self.minDepth, needle.length())
+    }
+  }
+
+  func lookup(self, word) {
+    return self.trie.lookup(word.reverse())
+  }
+
+  func initializeShiftValues(self) {
+    queue = NodeQueue()
+    root = self.trie.root
+    root.shift1 = 1
+    root.shift2 = self.minDepth
+
+    for child in root.childNodes() {
+      queue.push(child)
+    }
+
+    while !queue.empty() {
+      node = queue.pop()
+      if isnull(node.cwSuffixLink) {
+        node.shift1 = self.minDepth
+      } else {
+        node.shift1 = node.minDiffS1
+      }
+      if isnull(node.cwOutputLink) {
+        node.shift2 = node.parent.shift2
+      } else {
+        node.shift2 = node.minDiffS2
+      }
+      for child in node.childNodes() {
+        queue.push(child)
+      }
+    }
+  }
+
+  func createFailureLinks(self) {
+    queue = NodeQueue()
+    root = self.trie.root
+    for child in root.childNodes() {
+      child.acSuffixLink = root
+      for grandchild in child.childNodes() {
+        queue.push(grandchild)
+      }
+    }
+
+    while !queue.empty() {
+      node = queue.pop()
+      for child in node.childNodes() {
+        queue.push(child)
+      }
+      acSuffixNode = self.trie.getAcSuffixLink(node)
+      node.acSuffixLink = acSuffixNode
+      if node.acSuffixLink.word != "" {
+        node.acOutputLink = node.acSuffixLink
+      } else {
+        node.acOutputLink = node.acSuffixLink.acOutputLink
+      }
+      // set reverse suffix and output links.
+      isSet2 = node.word != ""
+      diff = node.depth - acSuffixNode.depth
+      if (acSuffixNode.minDiffS1 == unsetVal || acSuffixNode.minDiffS1 > diff) {
+        acSuffixNode.minDiffS1 = diff
+        acSuffixNode.cwSuffixLink = node
+      }
+      if isSet2 {
+        if acSuffixNode.minDiffS2 == unsetVal || acSuffixNode.minDiffS2 > diff {
+          acSuffixNode.minDiffS2 = diff
+          acSuffixNode.cwOutputLink = node
+        }
+      }
+    }
+    self.initializeShiftValues()
+  }
+
+  func shift(self, node, j) {
+     maxS1Char = 0
+     if node.char == 0 {
+       maxS1Char = node.shift1
+     } else {
+       minDepth = self.charLookupTable[node.char]
+       if minDepth == unsetVal {
+         minDepth = self.minDepth + 1
+       }
+       if minDepth < j + 1 {
+         maxS1Char =  node.shift1
+       } else {
+         maxS1Char = max(minDepth - j - 1, node.shift1)
+       }
+     }
+     return min(maxS1Char, node.shift2)
+  }
+
+  func findNext(self) -> (string, u64) {
+    if self.done {
+      return ("", unsetVal)
+    }
+
+    i = self.nextStartPosition
+    while i < self.haystack.length() {
+       v = self.trie.root
+       j = 0
+       nextv = v.findChild(self.haystack[i - j])
+       while !isnull(nextv) && i >= j {
+          v = nextv
+          if v.word != "" {
+             self.nextStartPosition = i + self.shift(v, j)
+             copy = v.word
+             copy.reverse()
+             return (copy, i - j)
+          }
+          j += 1
+          if i >= j {
+            nextv = v.findChild(self.haystack[i - j])
+          }
+       }
+       if j > i {
+         j = i
+       }
+       i += self.shift(v, j)
+    }
+    self.done = true
+    return ("", unsetVal)
+  }
+}
+
+unittest cwsNotFound {
+   cws = CwSearch(["needles", "oranges"], "haystack")
+   assert cws.findNext() == ("", unsetVal)
+}
+
+unittest cws1 {
+   cws = CwSearch(["cacbaa", "acb", "aba", "acbab", "ccbab", "babca", "aba", "cacbaa", "x"],
+                   "cacbaababababa")
+   assert cws.findNext() == ("acb", 1)
+   assert cws.findNext() == ("cacbaa", 0)
+   assert cws.findNext() == ("aba", 5)
+   assert cws.findNext() == ("aba", 7)
+   assert cws.findNext() == ("aba", 9)
+   assert cws.findNext() == ("aba", 11)
+   assert cws.findNext() == ("", ~0)
+   assert cws.findNext() == ("", ~0)
+   assert cws.findNext() == ("", ~0)
+}
+
+unittest cws2 {
+   cws = CwSearch(["$a$", "$b$", "$c$"], "We want to replace $c$ with another $a$.")
+   assert cws.findNext() == ("$c$", 19)
+   assert cws.findNext() == ("$a$", 36)
+   assert cws.findNext() == ("", ~0)
+}

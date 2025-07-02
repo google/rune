@@ -1,0 +1,126 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// ---
+// The C backend emitter generates a C file for the whole Rune program, that
+// includes all definitions required to implement builtin types and methods.
+// Rather than generating a lot of 'println' statements, instead the strategy
+// is to merge the content of 'file fragments' into the final program.
+//
+// This allows us to modify the way we implement features simply by adjusting
+// the content of related fragments, without having to navigate the depths
+// of the actual generator code.
+//
+// To make this useful, these fragments are like macros -- we can replace
+// arguments of the form $name$ with arbitrary text.  So, for example, we can
+// specialize (say) the implementation of an array with the argument type.
+
+import database as db
+use sym
+use cemitter
+
+class CFragmentParam(self, name: string, value: string) {
+  self.name = name
+  self.value = value
+
+  func hash(self) -> u64 {
+    return hashValue(self.name)
+  }
+
+  func equals(self, other: CFragmentParam) -> bool {
+    return self.name == other.name
+  }
+}
+
+
+/**
+ * @brief a filename whose contents need to be merged into the C output.
+ *
+ * Args:
+ *   name - the name of the C entity (function, type, etc.) being defined by this fragment
+ *   filename - the location of the fragment.
+ *   params - Fragment parameter instantiation
+ *   deps - C Fragments that must be merged into the C File before this one.
+ */
+relation HashedClass CFragment CFragmentParam cascade
+class CFragment(self, name: string, filename: string) {
+  self.name = name
+  self.filename = filename
+  self.dependencies = arrayof(CFragment)
+  self.paramNames = arrayof(string)
+  self.emitted = false
+
+  func addParams(self, params: [CFragmentParam]) -> CFragment {
+    for p in params.values() {
+      self.paramNames.append(p.name)
+      self.insertCFragmentParam(p)
+    }
+    return self
+  }
+
+  func addDependencies(self, deps: [CFragment]) -> CFragment {
+    for dep in deps.values() {
+      self.dependencies.append(dep)
+    }
+    return self
+  }
+
+  func hash(self) -> u64 {
+    return hashValue(self.name)
+  }
+
+  func equals(self, other: CFragment) -> bool {
+    return self.name == other.name
+  }
+
+  func emit(self, e: CEmitter) {
+    if self.emitted {
+      return
+    }
+    self.emitted = true
+    for dep in self.dependencies.values() {
+      dep.emit(e)
+      e.newline()
+    }
+
+    filepath = db.Filepath.new(db.getRoot().packageDir + self.filename, null(db.Filepath), false)
+    filepath.readFile()
+    if self.numCFragmentParams == 0 {
+      e.write(filepath.text)
+      return
+    }
+
+    e.write(filepath.text)
+/* TODO: handle fragments with textual replacement
+    sf = StringFinder(filepath.text, self.paramNames)
+    pos = 0
+    next = sf.findNext()
+    nextNeedle = next[0]
+    nextPos = next[1]
+    while nextPos > 0 {
+      e.write(filepath.text[pos:nextPos])
+      pos = nextPos + nextNeedle.length()
+      cfp = CFragmentParam(nextNeedle, "")
+      cfp = self.findCFragmentParam(cfp)!
+      e.write(cfp.value)
+      next = sf.findNext()
+      nextNeedle = next[0]
+      nextPos = next[1]
+    }
+*/
+    e.newline()
+  }
+
+}
+

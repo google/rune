@@ -16,18 +16,23 @@
  * Type builder - convenience functions to create Type objects
  */
 
+use sym
 use typeclasses
 
+func CHAR() -> Type {
+  return Type(TypeName(Sym.new("char")))
+}
+
 func STRING() -> Type {
-  return Type(TypeName("string"))
+  return Type(TypeName(Sym.new("string")))
 }
 
 func BOOLEAN() -> Type {
-  return Type(TypeName("bool"))
+  return Type(TypeName(Sym.new("bool")))
 }
 
 func NONETY() -> Type {
-  return Type(TypeName("none"))
+  return Type(TypeName(Sym.new("none")))
 }
 
 func INTEGER() -> Type {
@@ -70,6 +75,14 @@ func TUPLE(types: [Type]) -> Type {
   return Type(TupleType(types))
 }
 
+func STRUCT(fields: [(string, Type)]) -> Type {
+  return Type(StructType(fields))
+}
+
+func ARRAY(t: Type) -> Type {
+  return Type(ArrayType(t))
+}
+
 func OR(types: [Type]) -> Type {
   return Type(ChoiceType(types))
 }
@@ -78,16 +91,48 @@ func FN(arg: Type, res:Type) -> Type {
   return Type(FunctionType(arg, res))
 }
 
-func POLY(v: u64, scope: Type) -> Type {
-  return Type(PolymorphicType(Type(TypeVar(<i32>v, null(Type))), scope))
+func POLY(vars: u64 | [u64], scope: Type) -> Type {
+  typeswitch vars {
+    u64 => {
+      return Type(PolymorphicType(Type(TypeVar(<i32>vars, null(Type))), scope))
+    }
+    [u64] => {
+      boundvars = arrayof(Type)
+      for v in vars {
+        boundvars.append(Type(TypeVar(<i32>v, null(Type))))
+      }
+      return Type(PolymorphicType(boundvars, scope))
+    }
+  }
 }
 
-func BPOLY(v: u64, bounds: [Type], scope: Type) -> Type {
+/*
+ * Construct a bound polymorphic type -- where the typevariables are constrained
+ * to be one of a list of types.
+ *
+ * Note that in the case of mulitple type variables, only the first is bound,
+ * the remaining type variables are assumed to belong to one of the constraints.
+ */
+func BPOLY(vars: u64 | [u64], bounds: [Type], scope: Type) -> Type {
   if bounds.length() == 1 {
     constraint = bounds[0]
   } else {
     constraint = Type(ChoiceType(bounds))
   }
-  return Type(PolymorphicType(Type(TypeVar(<i32>v, constraint)), scope))
+  typeswitch vars {
+    u64 => {
+      return Type(PolymorphicType(Type(TypeVar(<i32>vars, constraint)), scope))
+    }
+    [u64] => {
+      boundvars = arrayof(Type)
+      // The constraint only applies to the first typevariable
+      for v in vars {
+        boundvars.append(Type(TypeVar(<i32>v, constraint)))
+        constraint = null(Type)
+      }
+      return Type(PolymorphicType(boundvars, scope))
+    }
+  }
+
 }
 

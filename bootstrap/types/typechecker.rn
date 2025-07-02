@@ -132,7 +132,7 @@ use typeunifier
 use typebuilder
 use typeerror
 
-TypeErrorPrefix = ": "
+TypeLoggingPrefix = ": "
 
 STR = STRING()
 BOOL = BOOLEAN()
@@ -141,6 +141,24 @@ UINT = UINTEGER()
 ANYINT = ANYINTEGER()
 NUM = NUMBER()
 
+// Associates a given tyname with its definition.
+// Note that this is probably too simple -- it may be that
+// we will want typename variables, and when that happens
+// we will need a unique tyname identifier.
+class TynameDefinition(self, tyname: Sym, ty:Type?) {
+  self.tyname = tyname
+  self.value = ty
+
+  func hash(self) -> u64 {
+    return hashValue(self.tyname.name)
+  }
+
+  func equals(self, other: TynameDefinition) -> bool {
+    return self.tyname == other.tyname
+  }
+}
+
+// Associates a given program variable with its type.
 class SymbolMapping(self, key: Sym, ty: Type?) {
   self.key = key
   self.value = ty
@@ -163,6 +181,7 @@ class BindingScope(self) {
 }
 
 relation HashedClass TypeChecker SymbolMapping cascade
+relation HashedClass TypeChecker TynameDefinition cascade
 relation DoublyLinked TypeChecker BindingScope cascade
 relation DoublyLinked TypeChecker TypeError cascade
 
@@ -229,6 +248,31 @@ class TypeChecker(self) {
     return tyvar
   }
 
+  func newTyname(self, tyname: Sym, def: Type) {
+    td = TynameDefinition(tyname, def)
+    self.insertTynameDefinition(td)
+    if db.getRoot().traceTypes {
+       println "%sDefine tyname %s = %s." % (TypeLoggingPrefix, tyname.name, def.toString())
+    }
+  }
+
+  func lookupTyname(self, tyname: Sym) -> Type? {
+    res = null(Type)
+    td = TynameDefinition(tyname, null(Type))
+    found = self.findTynameDefinition(td)
+    if !isnull(found) {
+       res = found.value
+    }
+    if db.getRoot().traceTypes {
+      if isnull(found) {
+        println "%sTyname %s is undefined." % (TypeLoggingPrefix, tyname.name)
+      } else {
+        println "%sTyname %s is %s" % (TypeLoggingPrefix, tyname.name, res.toString())
+      }
+    }
+    return res
+  }
+
   func unify(self, a: Type, b: Type) -> TypeError? {
     return self.unifier.unify(a, b)
   }
@@ -279,7 +323,17 @@ class TypeChecker(self) {
       Type.TypeClass.Int => return t
       Type.TypeClass.AnyInt => return t
       Type.TypeClass.Float => return t
-      Type.TypeClass.Typename => return t
+      Type.TypeClass.Typename => {
+        if isnull(t.tyname.params) {
+          return t
+        }
+        args = self.resolve(Type(t.tyname.params!))
+        return Type(TypeName(t.tyname.name, args.tuple))
+      }
+      Type.TypeClass.Array => {
+        et = self.resolve(t.array.elementType)
+        return Type(ArrayType(et))
+      }
       Type.TypeClass.Choice => {
         choices = arrayof(Type)
         for choice in t.choice!.choices {
@@ -338,8 +392,8 @@ class TypeChecker(self) {
         te = self.unifier.unify(ty.function!.params, args, location)
         if !isnull(te) {
           self.typeError("could not unify\n%s    parameters of function %s\n%s    with args %s:\n%s%s"
-                          % (TypeErrorPrefix, ty.toString(),
-                             TypeErrorPrefix, args.toString(), TypeErrorPrefix, te.msg),
+                          % (TypeLoggingPrefix, ty.toString(),
+                             TypeLoggingPrefix, args.toString(), TypeLoggingPrefix, te.msg),
                          location)
           return null(Type)
         }
@@ -381,6 +435,16 @@ class TypeChecker(self) {
 
   // ------------------------- Typecheck explicit type expressions ---------------------
 
+  func namedType(self, name: Sym) -> Type {
+    if name.name == "Int" {
+      return INTEGER()
+    } else if name.name == "Uint" {
+      return UINTEGER()
+    } else {
+      return Type(TypeName(name))
+    }
+  }
+
   func explicitType(self, typeExpr: db.Expr) -> Type {
     switch typeExpr.type {
       db.ExprType.UintType => return U(<u64>typeExpr.width)
@@ -389,6 +453,7 @@ class TypeChecker(self) {
       db.ExprType.StringType => return STR
       db.ExprType.BoolType => return BOOL
       db.ExprType.NoneType => return NONETY()
+      db.ExprType.Ident => return self.namedType(typeExpr.val.symVal!)
       default => raise Status.Unimplemented, "TypeExpression type not yet supported by C backend", typeExpr.type
     }
   }
@@ -428,8 +493,8 @@ class TypeChecker(self) {
     }
 
     if db.getRoot().traceTypes {
-       v.location.annotation("\n[Typecheck] ", TypeErrorPrefix)
-       println "%s%s" % (TypeErrorPrefix, ty.toString())
+       v.location.annotation("\n[Typecheck] ", TypeLoggingPrefix)
+       println "%s%s" % (TypeLoggingPrefix, ty.toString())
     }
     return ty
   }
@@ -478,44 +543,129 @@ class TypeChecker(self) {
      }
 
       db.ExprType.Index => {
-        left = self.expr(expr.firstChildExpr!)
+        leftChild = expr.firstChildExpr!
         rightChild = expr.firstChildExpr!.nextExprChildExpr!
+        left = self.expr(leftChild)
         right = self.expr(rightChild)
         if isnull(left) || isnull(right) {
           return left
         }
-        if left.type == Type.TypeClass.Tuple {
-          // Index must be an unsigned integer.
-          te = self.unify(right!, UINTEGER())
-          if isnull(te) {
+        // Index must be an unsigned integer.
+        te = self.unify(right!, UINTEGER())
+        if !isnull(te) {
+          self.typeError(
+            "Index expression must be an unsigned integer, not %s." % right.toString(),
+            expr.location)
+        } else if leftChild.typedValue.type == Type.TypeClass.Array {
+          // TODO: ARRAY INDEX STUFF HERE
+          result = leftChild.typedValue.array.elementType
+        } else if rightChild.type != db.ExprType.Constant {
+          self.typeError(
+           "Indexes must be unsigned integer literals, not %s." % rightChild.toString(),
+           expr.location)
+        } else {
+          indexval = rightChild.val.intVal
+          if indexval.width > 64u32 {
+            raise Status.Unimplemented, "Index widths greater than 64 bits are not supported"
+          }
+          index = indexval.uint64()
+          if left.type == Type.TypeClass.Typename {
+             lty = self.lookupTyname(left.tyname.name)
+             if isnull(lty) {
+               self.typeError(
+                 "Cannot index into undefined typename %s." % left.toString(), expr.location)
+             } else {
+               left = lty
+             }
+          }
+          if left.type != Type.TypeClass.Tuple && left.type != Type.TypeClass.Struct && left.type != Type.TypeClass.Array {
             self.typeError(
-             "Tuple index must be an unsigned integer, not %s." % right.toString(),
-              expr.location)
-          } else if rightChild.type != db.ExprType.Constant {
-            self.typeError(
-             "Tuples may only be indexed by unsigned integer literal, not %s." % rightChild.toString(),
-             expr.location)
+              "Cannot index into type %s." % left.toString(), expr.location)
           } else {
-            index = rightChild.val.intVal
-            if index.width <= 64u32 {
-              i = index.uint64()
-              if i < left.tuple.numElements() {
-                result = left.tuple.index(i)
-              }
-            }
-            if isnull(result) {
+            result = left.index(index)
+          }
+        }
+      }
+
+      db.ExprType.Dot => {
+        sty = self.expr(expr.firstChildExpr!)
+        field = expr.firstChildExpr!.nextExprChildExpr!
+        if sty.type == Type.TypeClass.Typename {
+          ty = self.lookupTyname(sty.tyname.name)
+          if isnull(ty) {
+            self.typeError(
+              "Field Selection on an undefined type name %s" % sty.tyname.name.name,
+              expr.location)
+            result = ty
+          }
+          sty = ty!
+        }
+
+        if sty.type == Type.TypeClass.Struct {
+          ty = sty.strct.select(field.toString())
+          if isnull(ty) {
+            self.typeError(
+              "Field %s does not exist in struct %s" % (field.toString(), sty.toString()),
+              expr.location)
+          }
+          result = ty
+        } else if sty.type == Type.TypeClass.Array {
+          // arrays have built-in methods 'append', 'length', 'values', 'items',
+          // 'concat', 'reverse' etc.
+          elementType = sty.array.elementType
+          nullTypes = arrayof(Type)
+          // Although the following methods technically take the array object
+          // as first parameter, we ignore that. If we add the array type in these
+          // types we shall need to update the code that typechecks the arguments
+          // passed in.
+          switch field.toString() {
+            "append" => result = FN(elementType, NONETY())
+            "length" => result = FN(TUPLE(nullTypes), U(64))
+            "reverse" => result = FN(TUPLE(nullTypes), NONETY())
+            "concat" => result = FN(ARRAY(elementType), NONETY())
+
+            // The following two require support for iterators:
+            // "values" => result = FN(TUPLE(nullTypes), ITERATOR(elementType))
+            //"items" => result = FN(TUPLE(nullTypes), ITERATOR(TUPLE(U(64), elementType))
+
+            default => {
               self.typeError(
-               "Tuple index %u is larger than size of tuple %s." % (index, left.toString()),
-               expr.location)
+                "Unsupported array method '%s'" % field.toString(), expr.location)
             }
           }
+
         } else {
           self.typeError(
-            "Cannot index into type %s." % left.toString(), expr.location)
+            "Field Selection on %s, which is neither an array nor a struct" % sty.toString(),
+            expr.location)
         }
       }
 
       // Unary expressions ----------------------------------------------------------
+      db.ExprType.Arrayof => {
+         elementType = self.explicitType(expr.firstChildExpr!)!
+         expr.firstChildExpr.typedValue = elementType
+         result = ARRAY(self.resolve(elementType!))
+      }
+
+      db.ExprType.Array => {
+        ty = Type(self.newTyvar())
+        for child in expr.childExprs() {
+          childType = self.expr(child)
+          if isnull(childType) {
+            return childType
+          }
+          te = self.unify(ty!, childType!)
+          if !isnull(te) {
+            self.typeError(
+              "Array Elements do not have the same type: %s and %s." % (
+                  ty.toString(), childType.toString()),
+              expr.location)
+          }
+        }
+        result = ARRAY(self.resolve(ty!))
+      }
+
       db.ExprType.Negate, db.ExprType.Bitnot, db.ExprType.Not => {
         childType = self.expr(expr.firstChildExpr!)
         if isnull(childType) {
@@ -526,9 +676,10 @@ class TypeChecker(self) {
       }
 
       db.ExprType.Call => {
+        fnchild = expr.firstChildExpr!
+        argchild = expr.firstChildExpr!.nextExprChildExpr
         fn = self.expr(expr.firstChildExpr!)
-        child = expr.firstChildExpr!.nextExprChildExpr
-        args = self.expr(child!)
+        args = self.expr(argchild!)
         if isnull(fn) || isnull(args) {
           return fn
         }
@@ -539,14 +690,14 @@ class TypeChecker(self) {
     }
 
     if db.getRoot().traceTypes {
-       expr.location.annotation("\n[Typecheck] ", TypeErrorPrefix)
+       expr.location.annotation("\n[Typecheck] ", TypeLoggingPrefix)
        if isnull(result) {
-         println "%sType Error!" % TypeErrorPrefix
+         println "%sType Error!" % TypeLoggingPrefix
          // Dump latest type errors as we go. These won't repeat errors already
          // reported. We've already printed the line and caret marks, so don't print them again
-         self.dumpTypeErrors(false, TypeErrorPrefix)
+         self.dumpTypeErrors(false, TypeLoggingPrefix)
        } else {
-         println "%s%s" % (TypeErrorPrefix, result.toString())
+         println "%s%s" % (TypeLoggingPrefix, result.toString())
        }
     }
     if !isnull(result) {
@@ -596,11 +747,31 @@ class TypeChecker(self) {
         }
         parent.returnType = statement.subBlock.returnType
       }
+      db.StateType.For => {
+        // Right now, only handles for expressions of the form
+        // for <assignment>, <condition>, <increment> {
+        //  ...
+        // }
+        i = 0
+        for child in statement.expr.childExprs() {
+           ty = self.expr(child)
+           if i == 1 {
+             te = self.unify(ty!, BOOL)
+             if !isnull(te) {
+               self.typeError("Condition expression must be a boolean", child.location)
+             }
+           }
+           i += 1
+        }
+        assert !isnull(statement.subBlock)
+        for s in statement.subBlock.statements() {
+          self.statement(s, statement.subBlock)
+        }
+      }
       db.StateType.Return => {
         ty = self.expr(statement.expr)
         parent.returnType = ty
       }
-      db.StateType.Return => return self.expr(statement.expr)
       default => raise Status.Unimplemented, "Statement type not yet supported by typechecker: ", db.statementTypeGetKeyword(statement.type)
     }
     return NONETY()
@@ -619,10 +790,57 @@ class TypeChecker(self) {
       }
 
       db.FuncType.Plain => self.plainFunction(fn)
+      db.FuncType.Struct => self.structFunction(fn)
       default => {
         raise Status.Unimplemented, "Function type not yet supported by typechecker: ", fn.type
       }
     }
+  }
+
+  func structFunction(self, fn: db.Function) {
+    self.openScope()
+    params = arrayof(Type)
+    fieldnames = arrayof(Sym)
+    fieldtypes = arrayof(Type)
+    for variable in fn.variables() {
+        ty = self.variable(variable)!
+        params.append(ty)
+        fieldnames.append(variable.sym)
+        fieldtypes.append(ty)
+    }
+
+    if params.length() == 1 {
+      paramType = params[0]
+    } else {
+      paramType = Type(TupleType(params))
+    }
+
+    bindingScope = self.closeScope()
+    paramType = self.resolve(paramType)
+    boundVars = arrayof(Type)
+    for sm in bindingScope.symbolMappings() {
+      if !isnull(sm.value) && sm.value.type == Type.TypeClass.Var {
+        // Has this type variable been instantiated?
+        ty = self.resolve(sm.value!)
+        if ty.type == Type.TypeClass.Var {
+          boundVars.append(Type(ty.tyvar!))
+        }
+      }
+    }
+
+    tynameDef = Type(StructType(fieldnames, fieldtypes))
+    if boundVars.length() > 0 {
+      resType = Type(TypeName(fn.sym, TupleType(boundVars)))
+      fnType = Type(FunctionType(paramType, resType))
+      fnType = Type(PolymorphicType(boundVars, fnType))
+      tynameDef = Type(PolymorphicType(boundVars, tynameDef))
+    } else {
+      fnType = Type(FunctionType(paramType, Type(TypeName(fn.sym))))
+    }
+
+    // associate function name symbol to this type.
+    self.newSymbol(fn.sym, fnType)
+    self.newTyname(fn.sym, tynameDef)
   }
 
   func plainFunction(self, fn: db.Function) {
@@ -660,9 +878,9 @@ class TypeChecker(self) {
           if !isnull(te) {
             self.typeError(
                ("Conflicting return types\n%s    %s\n%s    and %s\n%s%s"
-                 % (TypeErrorPrefix, returnType.toString(),
-                    TypeErrorPrefix, fn.subBlock.returnType.toString(),
-                    TypeErrorPrefix, te.msg)),
+                 % (TypeLoggingPrefix, returnType.toString(),
+                    TypeLoggingPrefix, fn.subBlock.returnType.toString(),
+                    TypeLoggingPrefix, te.msg)),
                fn.location)
           }
         }
@@ -680,15 +898,15 @@ class TypeChecker(self) {
             if !isnull(te) {
                 self.typeError(
                     ("Could not unify\n%s    explicit return type %s\n%s    with %s:\n%s%s"
-                      % (TypeErrorPrefix, fn.typeExpr.toString(),
-                         TypeErrorPrefix, ty.toString(), TypeErrorPrefix, te.msg)),
+                      % (TypeLoggingPrefix, fn.typeExpr.toString(),
+                         TypeLoggingPrefix, ty.toString(), TypeLoggingPrefix, te.msg)),
                     fn.location)
            }
         }
     }
 
     if isnull(returnType) {
-      returnType = Type(TypeName("none"))
+      returnType = Type(TypeName(Sym.new("none")))
     }
     // Replace type variables in the parameters and return type with their
     // instantiations, if any.
@@ -714,9 +932,9 @@ class TypeChecker(self) {
     self.newSymbol(fn.sym, fnType)
 
     if db.getRoot().traceTypes {
-       fn.location.annotation("\n[Typecheck] ", TypeErrorPrefix)
-       println "%s%s" % (TypeErrorPrefix, fnType.toString())
-       println "%s%s: %s" % (TypeErrorPrefix, fn.sym.name, fnType.toString())
+       fn.location.annotation("\n[Typecheck] ", TypeLoggingPrefix)
+       println "%s%s" % (TypeLoggingPrefix, fnType.toString())
+       println "%s%s: %s" % (TypeLoggingPrefix, fn.sym.name, fnType.toString())
     }
   }
 }
@@ -753,4 +971,19 @@ unittest SimpleTypeCheckTest {
 
   tc = TypeChecker()
   assert tc.expr(expr) == BOOL
+}
+
+unittest StructTypeCheckTest {
+  filepath = db.Filepath.new("test_filepath", null(db.Filepath), false)
+  location = db.Location(filepath, 0u32, 0u32, 0u32)
+  sym = Sym("hello")
+
+  fn = db.Function.new(null(db.Function), db.Function.FuncType.Struct, sym,
+                       db.Function.Linkage.Module, location)
+
+  tc = TypeChecker()
+  tc.structFunction(fn)
+  td = TynameDefinition(sym.name, null(Type))
+  def = tc.lookupTyname(sym.name)
+  assert !isnull(def)
 }

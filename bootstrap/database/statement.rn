@@ -198,7 +198,9 @@ class Statement(self, block: Block, type: StateType, location: Location) {
       StateType.If => self.genCIf(builder)
       StateType.Else => self.genElse(builder)
       StateType.ElseIf => self.genElseIf(builder)
+      StateType.For => self.genCFor(builder)
       StateType.Return => self.genCReturn(builder)
+      StateType.Call => builder.addStatement(self.location, self.expr.genC(builder))
       default => raise Status.Unimplemented, "Statement type not yet supported by C backend builder ", self.type
     }
   }
@@ -240,7 +242,7 @@ class Statement(self, block: Block, type: StateType, location: Location) {
       args = c.CExprList()
       args.appendCExpr(self.expr.indexChildExpr(0).genC(builder))
       cexpr = c.CExpr(args)
-      call = builder.cCall(self.location, "tostring_string", cexpr)
+      call = builder.cCall(self.location, "tostring_string_t", cexpr)
       builder.addStatement(self.location, call)
     } else {
       for expr in self.expr.childExprs() {
@@ -268,9 +270,9 @@ class Statement(self, block: Block, type: StateType, location: Location) {
             printfArgs = c.CExprList()
             printfArgs.append(builder.cStringLiteral("%s"))
             printfArgs.append(cexpr!)
-            call = builder.cCall(self.location, "tostring_string", c.CExpr(printfArgs))
+            call = builder.cCall(self.location, "tostring_string_t", c.CExpr(printfArgs))
           } else {
-            call = builder.cCall(self.location, "tostring_%s" % ctypename, cexpr)
+            call = builder.cCall(self.location, "tostring_%s_t" % ctypename, cexpr)
           }
           builder.addStatement(self.location, call)
         }
@@ -289,14 +291,6 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     self.genCCall(builder, c.CRuntimeFunction.Printf, c.CExpr(printfArgs))
   }
 
-  func genCIf(self, builder: c.CBuilder) {
-    assert !isnull(self.expr)
-    assert !isnull(self.subBlock)
-    ifStmt = builder.cIfStatement(
-       self.location, self.expr.genC(builder), self.subBlock.genC(builder))
-    builder.addStatement(self.location, ifStmt)
-  }
-
   func genElse(self, builder: c.CBuilder) {
     assert isnull(self.expr)
     assert !isnull(self.subBlock)
@@ -310,6 +304,25 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     elseIfStmt = builder.cElseIfStatement(
        self.location, self.expr.genC(builder), self.subBlock.genC(builder))
     builder.addStatement(self.location, elseIfStmt)
+  }
+
+  func genCFor(self, builder: c.CBuilder) {
+    assert !isnull(self.expr)
+    assert !isnull(self.subBlock)
+    // Generate the cexpr first so that the iterator variable is declared in
+    // the enclosing scope.
+    cexpr = self.expr.genC(builder)
+    cbody = self.subBlock.genC(builder)
+    forStmt = builder.cForStatement(self.location, cexpr, cbody)
+    builder.addStatement(self.location, forStmt)
+  }
+
+  func genCIf(self, builder: c.CBuilder) {
+    assert !isnull(self.expr)
+    assert !isnull(self.subBlock)
+    ifStmt = builder.cIfStatement(
+       self.location, self.expr.genC(builder), self.subBlock.genC(builder))
+    builder.addStatement(self.location, ifStmt)
   }
 
   func genCReturn(self, builder: c.CBuilder) {

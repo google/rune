@@ -1,0 +1,33 @@
+concat array of integers: [1, 2, 3, 4]
+concat array of strings: ["a", "b", "c", "d", "e"]
+concat array of tuples: [(1, "a"), (2, "b"), (3, "c"), (4, "d")]
+concat array of arrays: [[1], [2], [3], [4]]
+result of two appends: [123, 456]
+l.length() = 2
+l[0] = 123
+l[1] = 456
+l = [123, 456, 789]
+l.length() = 3
+l = [789, 456, 123]
+l[0] = 789
+l[1] = 456
+l[2] = 123
+l[a] = 456
+l[a+1] = 123
+l2 = ["a", "b"]
+l2 = ["a", "b", "c"]
+l2 = ["a", "b", "c", "d", "e", "f"]
+l2 = ["f", "e", "d", "c", "b", "a"]
+l2.length() = 6
+l3 = [Foo("foo1",), Foo("foo2",)]
+l3 = [Foo("foo1",), Foo("foo2",), Foo("foo3",)]
+l3 = [Foo("foo3",), Foo("foo2",), Foo("foo1",)]
+l3.length() = 3
+l4 = [(1, "a"), (2, "b"), (3, "c"), (4, "d")]
+l4 = [(1, "a"), (2, "b"), (3, "c"), (4, "d"), (5, "e"), (6, "f")]
+l4 = [(6, "f"), (5, "e"), (4, "d"), (3, "c"), (2, "b"), (1, "a")]
+l4.length() = 6
+l5 = [[(1, "a"), (2, "b")], [(3, "c")]]
+l5 = [[(1, "a"), (2, "b")], [(3, "c")], [(4, "d"), (5, "e"), (6, "f")]]
+l5 = [[(4, "d"), (5, "e"), (6, "f")], [(3, "c")], [(1, "a"), (2, "b")]]
+l5.length() = 3

@@ -664,8 +664,37 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
   }
 
   func buildStruct(self: HirBuilder, statementNode: Node) {
-    // TODO: write this.
-    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+    identNode = statementNode.firstChildNode!
+    identSym = identNode.getIdentSym()!
+    linkage = self.getLinkage(null(Sym))
+
+    function = db.Function(self.currentFunction, db.FuncType.Struct, identSym,
+       linkage, statementNode.location)
+
+    /* build parameters -- the structMembers are parameters for the struct
+     * constructor.
+     */
+    structMemberNode = identNode.nextNodeChildNode
+    while !isnull(structMemberNode) {
+      varNode = structMemberNode.firstChildNode
+      varSym = varNode.getIdentSym()!
+      node = varNode.nextNodeChildNode
+      typeConstraintExpr = null(db.Expr)
+      if !isnull(node) && node.getRuleSym() == self.optTypeConstraintSym {
+        typeConstraintExpr = self.buildExprTree(node.firstChildNode!)
+        node = node.nextNodeChildNode
+      }
+      initializerExpr = null(db.Expr)
+      if !isnull(node) && node.getRuleSym() == self.optInitializerSym {
+        initializerExpr = self.buildExprTree(node.firstChildNode!)
+        node = node.nextNodeChildNode
+      }
+      assert isnull(node)
+      db.Variable(function, /*isParam=*/ true, /*isConst=*/ true,
+                  varSym, initializerExpr, typeConstraintExpr,
+		  /*generated=*/false, structMemberNode.location)
+      structMemberNode = structMemberNode.nextNodeChildNode
+    }
   }
 
   func buildTypeswitchStatement(self: HirBuilder, statementNode: Node) {

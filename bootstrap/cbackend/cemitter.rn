@@ -15,14 +15,15 @@
 import database as db
 import io
 import types
+import utils
 use clanguageclasses
 use cruntime
-use stringwriter
+
 
 class CEmitter(self, filename: string) {
   // TODO: add buffers to string_writer so that it flushes to file every 4K or so.
   self.filename = filename
-  self.sw = StringWriter()
+  self.sw = utils.StringWriter()
   self.printfArg = false
   self.runtime = CRuntime()
 
@@ -36,18 +37,23 @@ class CEmitter(self, filename: string) {
     self.runtime.define(text)
   }
 
-  func merge(self, filename: string) {
-    self.runtime.mergeFile(filename)
-  }
-
   /* C feature support *******************************************************/
 
   func needBoolType(self) {
-    self.include("<stdbool.h>")
+    self.include("<inttypes.h>")
+    self.runtime.needBoolType = true
   }
 
   func needStringType(self) {
     self.runtime.needStringType = true
+  }
+
+  func needFloatType(self) {
+    self.runtime.needFloatType = true
+  }
+
+  func needDoubleType(self) {
+    self.runtime.needDoubleType = true
   }
 
   func needStringWriter(self) {
@@ -55,15 +61,14 @@ class CEmitter(self, filename: string) {
     self.needStringType()
     self.needStringifyMacro()
     self.needFloatPrintfMacros()
-    self.merge("cbackend/cruntime/global_string_writer.inc")
-    self.runtime.needStringWriter = true
+    self.runtime.needStringWriter()
   }
 
   func needPrimitiveTypeEqualities(self) {
     self.include("<inttypes.h>")
     self.needBoolType()
     self.needStringType()
-    self.merge("cbackend/cruntime/primitive_type_equalities.inc")
+    self.runtime.needPrimitiveEqualities()
   }
 
   func needStringifyMacro(self) {
@@ -128,6 +133,25 @@ class CEmitter(self, filename: string) {
     return self.runtime.rotr.needWidth(width)
   }
 
+  func needArrayAlloc(self) -> string {
+    return self.runtime.needArrayAlloc().name
+  }
+
+  func needArrayAppend(self, elementType: CTypeExpr) -> string {
+    return self.runtime.needArrayAppend(elementType)
+  }
+
+  func needArrayLength(self) -> string {
+    return self.runtime.needArrayLength().name
+  }
+
+  func needArrayConcat(self) -> string {
+    return self.runtime.needArrayConcat().name
+  }
+
+  func needArrayReverse(self) -> string {
+    return self.runtime.needArrayReverse().name
+  }
 
   /* layout and string functions ********************************************/
 
@@ -180,7 +204,7 @@ class CEmitter(self, filename: string) {
 
   func generateHeader(self) -> string {
     bodyWriter = self.sw
-    self.sw = StringWriter()
+    self.sw = utils.StringWriter()
     self.runtime.emit(self)
     self.newline()
     headerText = self.sw.close()

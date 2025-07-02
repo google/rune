@@ -156,6 +156,7 @@ func getPrecedence(type: ExprType) -> u32 {
 func getExprTypeName(type: ExprType) -> string {
   switch type {
     ExprType.Ident => return "<ident>"
+    ExprType.Array => return "<array>"
     ExprType.Add => return "+"
     ExprType.Sub => return "-"
     ExprType.Mul => return "*"
@@ -370,6 +371,14 @@ class Expr(self, type: ExprType, location: Location) {
 
   func newTuple(children, location) -> Expr {
     expr = Expr(ExprType.Tuple, location)
+    for child in children {
+      expr.appendChildExpr(child)
+    }
+    return expr
+  }
+
+  func newArray(children, location) -> Expr {
+    expr = Expr(ExprType.Array, location)
     for child in children {
       expr.appendChildExpr(child)
     }
@@ -741,9 +750,16 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Typeindex => return c.CExpr(self.genCType(builder))
       ExprType.Namedparam => return c.CExpr(self.genCType(builder))
 
+      // Arrays
+      ExprType.Arrayof => return self.genCArrayOf(builder)
+      ExprType.Array => return self.genCArray(builder)
+
       // Tuples
       ExprType.Tuple => return self.genCTuple(builder)
       ExprType.Index => return self.genCIndex(builder)
+
+      // Structs
+      ExprType.Dot => return self.genCFieldSel(builder)
 
       default => raise Status.Unimplemented, "Expression type not yet supported by C backend: ", getExprTypeName(self.type)
     }
@@ -752,11 +768,11 @@ class Expr(self, type: ExprType, location: Location) {
   func genCList(self, builder: c.CBuilder) -> c.CExpr {
     // The Hello World test requires a single-valued list of expressions to be
     // passed as arguments to a procedure call.
-    builder.openExprList()
+    elements = c.CExprList()
     for child in self.childExprs() {
-      builder.addExpr(child.genC(builder))
+      elements.appendCExpr(child.genC(builder))
     }
-    return builder.closeExprList()
+    return c.CExpr(elements)
   }
 
   func genCPrefixOp(self, builder: c.CBuilder) -> c.CExpr {
@@ -811,7 +827,15 @@ class Expr(self, type: ExprType, location: Location) {
 
       default => {
         switch self.type {
-          ExprType.Add => fn = c.CRuntimeFunction.AddWithOverflowDetect
+          ExprType.Add => {
+            if left.typedValue == types.STRING() {
+              raise Status.Unimplemented, "String addition not yet supported by C backend"
+            } else if left.typedValue.type == types.Type.TypeClass.Array {
+              fn = c.CRuntimeFunction.ArrayConcat
+            } else {
+              fn = c.CRuntimeFunction.AddWithOverflowDetect
+            }
+          }
           ExprType.Mul => fn = c.CRuntimeFunction.MulWithOverflowDetect
           ExprType.Sub => fn = c.CRuntimeFunction.SubWithOverflowDetect
           ExprType.Div => fn = c.CRuntimeFunction.DivWithOverflowDetect
@@ -830,6 +854,21 @@ class Expr(self, type: ExprType, location: Location) {
     return builder.cBinaryOperator(self.location, op, left.typedValue, l, r)
   }
 
+  func genCArrayOf(self, builder: c.CBuilder) -> c.CExpr {
+    left = self.firstChildExpr!
+    elements = arrayof(c.CExpr)
+    return builder.cArray(self.location, left.typedValue!, elements)
+  }
+
+  func genCArray(self, builder: c.CBuilder) -> c.CExpr {
+    left = self.firstChildExpr!
+    elements = arrayof(c.CExpr)
+    for child in self.childExprs() {
+      elements.append(child.genC(builder))
+    }
+    return builder.cArray(self.location, left.typedValue!, elements)
+  }
+
   func genCTuple(self, builder: c.CBuilder) -> c.CExpr {
     elements = c.CExprList()
     for child in self.childExprs() {
@@ -846,16 +885,22 @@ class Expr(self, type: ExprType, location: Location) {
   func genCIndex(self, builder: c.CBuilder) -> c.CExpr {
     indexee = self.firstChildExpr!
     index = indexee.nextExprChildExpr!
-
+    // We know from typechecking that index is a u64.
     left = indexee.genC(builder)
-    if indexee.typedValue.type == types.Type.TypeClass.Tuple {
-      // We know from typechecking that index is a u64.
-      assert index.type == ExprType.Constant && index.val.type == DatatypeType.Uint
-      i = index.val.intVal.uint64()
-      return builder.cTupleIndex(self.location, left, i)
-    } else {
-      raise Status.Unimplemented, "Indexing into non-tuple types."
+    if indexee.typedValue.type == types.Type.TypeClass.Array {
+      right = index.genC(builder)
+      return builder.cIndex(self.location, indexee.typedValue, left, right)
     }
+    assert index.type == ExprType.Constant && index.val.type == DatatypeType.Uint
+    i = index.val.intVal.uint64()
+    return builder.cIndex(self.location, indexee.typedValue, left, i)
+  }
+
+  func genCFieldSel(self, builder: c.CBuilder) -> c.CExpr {
+    strct = self.firstChildExpr!
+    field = strct.nextExprChildExpr!
+    left = strct.genC(builder)
+    return builder.cFieldSelect(self.location, left, field.val.symVal!)
   }
 
   func genCCall(self, builder: c.CBuilder) -> c.CExpr {
@@ -863,6 +908,29 @@ class Expr(self, type: ExprType, location: Location) {
     right = left.nextExprChildExpr!
     fntype = left.typedValue
     assert !isnull(fntype)
+
+    if left.type == ExprType.Dot {
+      // Handle method calling for classes, etc.
+      // Right now, we just handle the built-in methods on arrays.
+      array = left.firstChildExpr!
+      if array.typedValue.type == types.Type.TypeClass.Array {
+        field = array.nextExprChildExpr!
+        switch field.toString() {
+          "append" => fn = c.CRuntimeFunction.ArrayAppend
+          "concat" => fn = c.CRuntimeFunction.ArrayConcat
+          "items" => fn = c.CRuntimeFunction.ArrayItems
+          "length" => fn = c.CRuntimeFunction.ArrayLength
+          "reverse" => fn = c.CRuntimeFunction.ArrayReverse
+          "values" => fn = c.CRuntimeFunction.ArrayValues
+          default => raise Status.Unimplemented, "Unknown array builtin operator: \"", field, "\""
+        }
+        args = c.CExprList()
+        args.append(array.genC(builder))
+        args.append(right.genC(builder))
+        return builder.cCall(self.location, fn, c.CExpr(args), right.typedValue)
+      }
+    }
+
     if fntype.type == types.Type.TypeClass.Polymorphic {
       // A function expression need not be a simple identifier; it may be the
       // result of an expression, for example, a higher-order function that
@@ -885,12 +953,12 @@ class Expr(self, type: ExprType, location: Location) {
       // Special case -- if right is a tuple, we need to encode cargs as a
       // CExprList of parameters, not as an actual tuple object. Otherwise,
       // instead of generating "f(a1, a2, ...)" we'll generate
-      // "f(make_tupleX(a1, a2, ...))".
-      builder.openExprList()
+      // "f(tupleX(a1, a2, ...))".
+      parms = c.CExprList()
       for child in right.childExprs() {
-        builder.addExpr(child.genC(builder))
+        parms.appendCExpr(child.genC(builder))
       }
-      cargs = builder.closeExprList()
+      cargs = c.CExpr(parms)
     } else {
       cargs = right.genC(builder)
     }
@@ -905,6 +973,7 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.StringType => return builder.cStringType(self.location)
       ExprType.BoolType => return builder.cBooleanType(self.location)
       ExprType.NoneType => return builder.cVoidType(self.location)
+      ExprType.Ident => raise Status.Unimplemented, "named types not yet supported"
       default => raise Status.Unimplemented, "TypeExpression type not yet supported by C backend", self.type
       // TODO:
       //ExprType.Typeindex

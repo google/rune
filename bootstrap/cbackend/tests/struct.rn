@@ -1,0 +1,53 @@
+struct Point {
+  x: Int = 0i32
+  y: Int = 0i32
+}
+
+p = Point(1i32, 2i32)
+println p
+println "p.x=", p.x
+println "p.y=", p.y
+println "p[0]=", p[0]
+println "p[1]=", p[1]
+p.x = 3i32
+println p
+p[1] = 3i64
+println p
+
+struct TwoPoints {
+  s1: Point
+  s2: Point
+}
+
+tp = TwoPoints(Point(1i32, 2i32), Point(3i32, 4i32))
+
+println "s1.x = ", tp.s1.x
+println "s1.y = ", tp.s1.y
+println "s2.x = ", tp.s2.x
+println "s2.y = ", tp.s2.y
+
+/* Polymorphic structs */
+struct Person {
+  id
+  age
+};
+
+a = Person("Bob", 32)
+println "Person a = ", a
+b = Person(123, "old")
+println "Person b = ", b
+
+
+/* TODO: handle named parameters
+q = Point(
+    x = 3i64,
+    y = 4i64,
+)
+println q
+*/
+
+/* TODO: handle default parameters
+r = Point()
+println r
+*/
+
