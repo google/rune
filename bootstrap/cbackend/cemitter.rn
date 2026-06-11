@@ -84,6 +84,10 @@ class CEmitter(self, filename: string) {
     self.runtime.needRaiseError()
   }
 
+  func needByteIo(self) {
+    self.runtime.needByteIo()
+  }
+
   func needFloatPrintfMacros(self) {
     self.include("<float.h>")
     self.needStringifyMacro()

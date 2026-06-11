@@ -34,6 +34,15 @@ class Escaper(self, emitter: CEmitter, stuff: string, printf: bool) {
   func copy(self, c: u8) {
     switch c {
       '"' => self.value += "\\\""
+      92u8 => {
+        // Two backslash chars; written via append because the legacy
+        // compiler's lexer mis-parses a "\\\\" string literal.
+        self.value.append(92u8)
+        self.value.append(92u8)
+      }
+      10u8 => self.value += "\\n"   // newline
+      9u8 => self.value += "\\t"    // tab
+      13u8 => self.value += "\\r"   // carriage return
       '%' => {
         if self.printf {
           self.state = Escaper.State.FormatSpecifier
@@ -41,7 +50,18 @@ class Escaper(self, emitter: CEmitter, stuff: string, printf: bool) {
           self.value += "%"
         }
       }
-      default => self.value.append(c)
+      default => {
+        if c < 32u8 || c == 127u8 {
+          // Other control characters as three-digit octal escapes; a fixed
+          // width keeps a following digit from extending the escape.
+          self.value.append(92u8)  // backslash
+          self.value.append('0' + ((c >> 6u32) & 7u8))
+          self.value.append('0' + ((c >> 3u32) & 7u8))
+          self.value.append('0' + (c & 7u8))
+        } else {
+          self.value.append(c)
+        }
+      }
     }
   }
 

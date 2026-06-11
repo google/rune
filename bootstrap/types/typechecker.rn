@@ -906,6 +906,32 @@ class TypeChecker(self) {
         }
         parent.returnType = statement.subBlock.returnType
       }
+      db.StateType.Switch => {
+        // The sub-block holds Case statements (expr = list of match values)
+        // and an optional Default statement.  Every match value must unify
+        // with the type of the switch expression.
+        scrutTy = self.expr(statement.expr)
+        assert !isnull(statement.subBlock)
+        for caseStatement in statement.subBlock.statements() {
+          if caseStatement.type == db.StateType.Case {
+            for valExpr in caseStatement.expr.childExprs() {
+              vty = self.expr(valExpr)
+              te = self.unify(vty!, scrutTy!)
+              if !isnull(te) {
+                self.typeError("Case value must match the switch expression type",
+                               valExpr.location)
+              }
+            }
+          }
+          assert !isnull(caseStatement.subBlock)
+          for s in caseStatement.subBlock.statements() {
+            self.statement(s, caseStatement.subBlock)
+          }
+          if !isnull(caseStatement.subBlock.returnType) {
+            parent.returnType = caseStatement.subBlock.returnType
+          }
+        }
+      }
       db.StateType.Assert => {
         // The expression is a list; the first element is the condition and
         // any further elements are message values to print on failure.

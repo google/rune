@@ -44,7 +44,7 @@ func runClangCompiler(cFileName: string, debugMode: bool, optimized: bool) -> bo
     optFlag = "-g -O0";
   }
   clangPath = "clang"
-  command = "%s %s -Wno-main-return-type -fPIC -o %s %s" %
+  command = "%s %s -Wno-main-return-type -fPIC -o %s %s -lm" %
       (clangPath, optFlag, outFileName, cFileName)
   return  os.system(command) == 0
 }

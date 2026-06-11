@@ -395,6 +395,10 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
       exp: i32, width: u32) {
     val = <f64><u64>intVal + <f64><u64>fracVal / pow(10.0f64, fracDigits)
     val *= pow(10.0f64, exp)
+    if width == 32u32 {
+      // Pass an f32-typed value so db.Value records the right width.
+      return Token.newValueToken(self, <f32>val, self.location())
+    }
     return Token.newValueToken(self, val, self.location())
 
     // The Rune C compiler needs o be enhanced to support floating point exponentiation.

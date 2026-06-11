@@ -453,7 +453,20 @@ class CLiteral(self, value: string | bool | db.Bigint | f64, printf: bool) {
         e.write(int2cstring(self.intValue))
       }
       CLiteral.Type.Float => {
-        e.write(utils.float2string(self.floatValue))
+        text = utils.float2string(self.floatValue)
+        // C would parse a bare "5" as an integer literal; force a floating
+        // literal so operators like / keep float semantics.
+        isFloatForm = false
+        for i in range(text.length()) {
+          ch = text[i]
+          if ch == '.' || ch == 'e' || ch == 'E' {
+            isFloatForm = true
+          }
+        }
+        if !isFloatForm {
+          text += ".0"
+        }
+        e.write(text)
       }
       default => raise Status.Unimplemented, "CLiteral type not yet supported"
     }
@@ -814,6 +827,14 @@ enum CRuntimeFunction {
    Exponentiate
    RotateLeft
    RotateRight
+   FloatModulus
+
+   // Process and byte-level IO builtins
+   Exit
+   ReadByte
+   WriteByte
+   ReadBytes
+   WriteBytes
 
    // String builtins
    StringAppend
@@ -883,6 +904,36 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.Raise => {
         e.needRaiseError()
         e.write("raise")
+      }
+
+      CRuntimeFunction.FloatModulus => {
+        e.include("<math.h>")
+        e.write("fmod")
+      }
+
+      CRuntimeFunction.Exit => {
+        e.include("<stdlib.h>")
+        e.write("exit")
+      }
+
+      CRuntimeFunction.ReadByte => {
+        e.needByteIo()
+        e.write("readByte")
+      }
+
+      CRuntimeFunction.WriteByte => {
+        e.needByteIo()
+        e.write("writeByte")
+      }
+
+      CRuntimeFunction.ReadBytes => {
+        e.needByteIo()
+        e.write("readBytes")
+      }
+
+      CRuntimeFunction.WriteBytes => {
+        e.needByteIo()
+        e.write("writeBytes")
       }
 
       // Rune built-in arithmetic operators.
@@ -1369,12 +1420,18 @@ class CArrayDeclaration(self, location: db.Location, typeName: string, elementTy
     self.elementType.requestRuntimeTypes(e)
 
     elementTypeString = self.elementType.toString()
+    // Class instances are stored in arrays as pointers to their structs.
+    isPtrElem = self.elementType.type == CTypeExpr.Type.Pointer
+    elemCType = "%s_t" % elementTypeString
+    if isPtrElem {
+      elemCType = "%s_t *" % elementTypeString
+    }
     // Emit typedef ---------------------------------------------
-    e.writeln("typedef %s_t *%s_array_t;" % (elementTypeString, elementTypeString))
+    e.writeln("typedef %s *%s_array_t;" % (elemCType, elementTypeString))
     e.writeln("")
 
     // Emit the init function -----------------------------------
-    e.write("%s_t *%s_init(size_t num_initializers, ...)" % (elementTypeString, self.typeName))
+    e.write("%s *%s_init(size_t num_initializers, ...)" % (elemCType, self.typeName))
 
     if proto {
       e.writeln(";")
@@ -1383,11 +1440,22 @@ class CArrayDeclaration(self, location: db.Location, typeName: string, elementTy
       e.writeln("va_list ap;")
       e.writeln("size_t i;")
       e.writeln("")
-      e.writeln("%s_t *a = (%s_t*)array_alloc(sizeof(%s_t), num_initializers);" % (
-        elementTypeString, elementTypeString, elementTypeString))
+      e.writeln("%s *a = (%s*)array_alloc(sizeof(%s), num_initializers);" % (
+        elemCType, elemCType, elemCType))
       e.writeln("va_start(ap, num_initializers);")
       e.writeopenln("for (i = 0; i < num_initializers; ++i) {")
-      e.write("a[i] = va_arg(ap, %s_t);" % elementTypeString)
+      // Variadic arguments undergo default promotions: sub-int integers
+      // arrive as int and floats arrive as double, so va_arg must use the
+      // promoted type.
+      promotedType = elemCType
+      if (elementTypeString == "uint8" || elementTypeString == "int8" ||
+          elementTypeString == "uint16" || elementTypeString == "int16" ||
+          elementTypeString == "bool") {
+        promotedType = "int"
+      } else if elementTypeString == "float" {
+        promotedType = "double"
+      }
+      e.write("a[i] = (%s)va_arg(ap, %s);" % (elemCType, promotedType))
       e.writecloseln("}")
       e.write("return a;")
       e.writecloseln("}")
@@ -1395,7 +1463,7 @@ class CArrayDeclaration(self, location: db.Location, typeName: string, elementTy
     e.writeln("")
 
     // Emit the toString function -----------------------------------
-    e.write("void tostring_%s_t(%s_t a[])" % (self.typeName, elementTypeString))
+    e.write("void tostring_%s_t(%s a[])" % (self.typeName, elemCType))
     if proto {
       e.writeln(";")
     } else {
@@ -1436,7 +1504,12 @@ class CArrayDeclaration(self, location: db.Location, typeName: string, elementTy
       e.writeln("")
       e.writeln("if (s1a->used != s2a->used) return false;")
       e.writeopenln("for (i = 0; i < s1a->used; ++i) {")
-      e.write("if (!isequal_%s_t(a1[i], a2[i])) return false;" % elementTypeString)
+      if isPtrElem {
+        // Class instances compare by reference.
+        e.write("if (a1[i] != a2[i]) return false;")
+      } else {
+        e.write("if (!isequal_%s_t(a1[i], a2[i])) return false;" % elementTypeString)
+      }
       e.writecloseln("}")
       e.write("return true;")
       e.writecloseln("}")
@@ -1445,14 +1518,14 @@ class CArrayDeclaration(self, location: db.Location, typeName: string, elementTy
 
     // Emit the append function -------------------------------
     // TODO: use parameterized c fragments to avoid emitting this here.
-    e.write("%s_t append_%s_t(%s_t a, %s_t e)" % (self.typeName, self.typeName, self.typeName, elementTypeString))
+    e.write("%s_t append_%s_t(%s_t a, %s e)" % (self.typeName, self.typeName, self.typeName, elemCType))
     if proto {
       e.writeln(";")
     } else {
       e.writeopenln(" {")
       e.writeln("array_t *array = ((array_t*)a) - 1;")
       e.writeln("array = array_resize(array, array->used + 1);")
-      e.writeln("a = (%s_t *)(array + 1);" % elementTypeString)
+      e.writeln("a = (%s *)(array + 1);" % elemCType)
       e.writeln("a[array->used] = e;")
       e.writeln("array->used += 1;")
       e.write("return a;")

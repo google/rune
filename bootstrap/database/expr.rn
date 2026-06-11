@@ -836,7 +836,21 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.AddTrunc => op = c.CBinaryOperator.Type.Plus
       ExprType.SubTrunc => op = c.CBinaryOperator.Type.Minus
       ExprType.MulTrunc => op = c.CBinaryOperator.Type.Times
-      ExprType.Mod => op = c.CBinaryOperator.Type.Modulus
+      ExprType.Mod => {
+        // C's % is integer-only; floats use fmod() from math.h.
+        isFloatMod = false
+        if !isnull(left.typedValue) {
+          modTy = builder.typechecker.resolve(left.typedValue!)
+          isFloatMod = modTy.type == types.Type.TypeClass.Float
+        }
+        if isFloatMod {
+          list = c.CExprList()
+          list.appendCExpr(l)
+          list.appendCExpr(r)
+          return builder.cCall(self.location, c.CRuntimeFunction.FloatModulus, c.CExpr(list))
+        }
+        op = c.CBinaryOperator.Type.Modulus
+      }
       ExprType.And => op = c.CBinaryOperator.Type.LogAnd
       ExprType.Or =>  op = c.CBinaryOperator.Type.LogOr
       ExprType.Bitand => op = c.CBinaryOperator.Type.BitAnd
@@ -1003,6 +1017,31 @@ class Expr(self, type: ExprType, location: Location) {
       }
     }
 
+    // Process and byte-level IO builtins map to runtime helpers.
+    if left.type == ExprType.Ident {
+      builtinName = left.val.symVal.name
+      if (builtinName == "exit" || builtinName == "readByte" ||
+          builtinName == "writeByte" || builtinName == "readBytes" ||
+          builtinName == "writeBytes") {
+        switch builtinName {
+          "exit" => iofn = c.CRuntimeFunction.Exit
+          "readByte" => iofn = c.CRuntimeFunction.ReadByte
+          "writeByte" => iofn = c.CRuntimeFunction.WriteByte
+          "readBytes" => iofn = c.CRuntimeFunction.ReadBytes
+          default => iofn = c.CRuntimeFunction.WriteBytes
+        }
+        ioparms = c.CExprList()
+        if right.typedValue.type == types.Type.TypeClass.Tuple {
+          for child in right.childExprs() {
+            ioparms.appendCExpr(child.genC(builder))
+          }
+        } else {
+          ioparms.appendCExpr(right.genC(builder))
+        }
+        return builder.cCall(self.location, iofn, c.CExpr(ioparms))
+      }
+    }
+
     if fntype.type == types.Type.TypeClass.Polymorphic {
       // A function expression need not be a simple identifier; it may be the
       // result of an expression, for example, a higher-order function that
@@ -1018,6 +1057,14 @@ class Expr(self, type: ExprType, location: Location) {
       specializedName = right.typedValue.genSpecializationName(left.val.symVal.name)
       specialization = Sym.new(specializedName)
       cfn = builder.cIdentifier(specialization, false)
+    } else if (left.type == ExprType.Ident && !isnull(self.typedValue) &&
+               builder.isClassType(self.typedValue) &&
+               builder.typechecker.resolve(self.typedValue!).tyname.name.name ==
+                   left.val.symVal.name) {
+      // Monomorphic class constructor: the definition is emitted under the
+      // specialized class name even when no type variables are involved.
+      specializedName = right.typedValue.genSpecializationName(left.val.symVal.name)
+      cfn = builder.cIdentifier(Sym.new(specializedName), false)
     } else {
       cfn = left.genC(builder)
     }

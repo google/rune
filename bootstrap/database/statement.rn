@@ -208,6 +208,7 @@ class Statement(self, block: Block, type: StateType, location: Location) {
       StateType.Do => self.genCDo(builder)
       StateType.Assert => self.genCAssert(builder)
       StateType.Foreach => self.genCForeach(builder)
+      StateType.Switch => self.genCSwitch(builder)
       default => raise Status.Unimplemented, "Statement type not yet supported by C backend builder ", self.type
     }
   }
@@ -287,7 +288,7 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     }
     if newline {
       self.genCCall(builder, c.CRuntimeFunction.GlobalStringWriterWrite,
-                    builder.cStringLiteral("\\n"))
+                    builder.cStringLiteral("\n"))
     }
     // Finally generate the call to printf: printf("%s", GlobalStringWriterString())
     printfArgs = c.CExprList()
@@ -502,6 +503,53 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     body = builder.closeBlock()
     builder.addStatement(self.location,
         c.CStatement(self.location, c.CStatementType.For, c.CExpr(list), body))
+  }
+
+  // Lower a switch statement to an if/else-if/else chain.  The scrutinee is
+  // evaluated once into a hidden local; each case compares against it, with
+  // multiple match values joined by ||.
+  func genCSwitch(self, builder: c.CBuilder) {
+    assert !isnull(self.expr)
+    assert !isnull(self.subBlock)
+    ctype = builder.typeGenerator.genCType(self.expr.typedValue!)
+    tmpSym = Sym.new("switch_value_%u" % self.location.line)
+    tmpRef = builder.declareLocal(tmpSym, ctype)
+    assign = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
+                                       null(c.CTypeExpr), tmpRef, self.expr.genC(builder)))
+    builder.addStatement(self.location, assign)
+    first = true
+    for caseStatement in self.subBlock.statements() {
+      assert !isnull(caseStatement.subBlock)
+      body = caseStatement.subBlock.genC(builder)
+      if caseStatement.type == StateType.Case {
+        cond = null(c.CExpr)
+        for valExpr in caseStatement.expr.childExprs() {
+          valRef = c.CExpr(c.CIdentifier(tmpSym, null(c.CTypeExpr), false, false, false))
+          cmp = c.CExpr(c.CBinaryOperator(valExpr.location, c.CBinaryOperator.Type.Equals,
+                                          ctype, valRef, valExpr.genC(builder)))
+          if isnull(cond) {
+            cond = cmp
+          } else {
+            cond = c.CExpr(c.CBinaryOperator(valExpr.location, c.CBinaryOperator.Type.LogOr,
+                                             null(c.CTypeExpr), cond!, cmp))
+          }
+        }
+        stmtType = first ? c.CStatementType.If : c.CStatementType.ElseIf
+        builder.addStatement(caseStatement.location,
+            c.CStatement(caseStatement.location, stmtType, cond!, body))
+      } else {
+        // The default case.  If it is the only case, guard it with if (1).
+        if first {
+          one = c.CExpr(c.CLiteral(Bigint(1u32), false))
+          builder.addStatement(caseStatement.location,
+              c.CStatement(caseStatement.location, c.CStatementType.If, one, body))
+        } else {
+          builder.addStatement(caseStatement.location,
+              c.CStatement(caseStatement.location, c.CStatementType.Else, null(c.CExpr), body))
+        }
+      }
+      first = false
+    }
   }
 
   func genCAssert(self, builder: c.CBuilder) {

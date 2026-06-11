@@ -191,6 +191,10 @@ class CRuntime(self) {
     self.cFragment("", "cbackend/cruntime/global_string_writer.inc")
   }
 
+  func needByteIo(self) {
+    self.cFragment("", "cbackend/cruntime/byte_io.inc")
+  }
+
   func needIntAdd(self, width: u32) -> string {
     self.needRaiseError()
     self.needIntAddFn = true

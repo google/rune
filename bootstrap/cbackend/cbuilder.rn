@@ -517,6 +517,8 @@ class CBuilder(self, tc: types.TypeChecker) {
         ctype = self.typeGenerator.genCType(pair[1])
         if ctype.type == CTypeExpr.Type.Defined {
           deps.append(ctype.toString())
+        } else if ctype.type == CTypeExpr.Type.Array {
+          deps.append(ctype.cArrayType.name)
         }
         params.append(CParameter(location, "el%s" % int2cstring(pair[0]), ctype!))
       }
@@ -562,6 +564,13 @@ class CBuilder(self, tc: types.TypeChecker) {
         depdec = self.findDeclaration(exists.cElementType.cArrayType.name)
         assert !isnull(depdec)
         dec.addDependency(depdec!)
+      } else if exists.cElementType.type == CTypeExpr.Type.Pointer {
+        // Arrays of class instances need the class struct typedef first.
+        depdec = self.findDeclaration(
+            exists.cElementType.cPointerType.target.toString() + "_class")
+        if !isnull(depdec) {
+          dec.addDependency(depdec!)
+        }
       }
 
       self.addDeclaration(dec)

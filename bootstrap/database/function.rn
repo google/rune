@@ -304,11 +304,21 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     }
     builder.markEmitted(className)
 
-    // The struct fields, with this instantiation's concrete types.
+    // The struct fields, with this instantiation's concrete types.  Field
+    // types that name other declarations (structs, arrays, other classes)
+    // must be emitted before this class.
+    fieldDeps = arrayof(string)
     fields = c.CParamList()
     for i in range(info.strct.fieldnames.length()) {
       fieldty = builder.typechecker.resolve(info.strct.fieldtypes[i])
       ctype = builder.genCType(fieldty)
+      if ctype.type == c.CTypeExpr.Type.Defined {
+        fieldDeps.append(ctype.toString())
+      } else if ctype.type == c.CTypeExpr.Type.Array {
+        fieldDeps.append(ctype.cArrayType.name)
+      } else if ctype.type == c.CTypeExpr.Type.Pointer {
+        fieldDeps.append(ctype.cPointerType.target.toString() + "_class")
+      }
       fields.append(c.CParameter(self.location, info.strct.fieldnames[i].name, ctype!))
     }
     toStringMethod = ""
@@ -318,6 +328,9 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       }
     }
     classDec = builder.cClassDeclaration(self.location, className, fields, toStringMethod)
+    for depName in fieldDeps {
+      classDec.addDependencyName(depName)
+    }
     builder.addDeclaration(classDec)
 
     // The constructor function: allocates the instance, runs the body, and
