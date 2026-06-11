@@ -794,6 +794,10 @@ class Expr(self, type: ExprType, location: Location) {
       // The conditional operator a ? b : c.
       ExprType.Select => return self.genCSelect(builder)
 
+      // Casts: <T>x and !<T>x.
+      ExprType.Cast => return self.genCCast(builder)
+      ExprType.CastTrunc => return self.genCCast(builder)
+
       default => raise Status.Unimplemented, "Expression type not yet supported by C backend: ", getExprTypeName(self.type)
     }
   }
@@ -886,6 +890,23 @@ class Expr(self, type: ExprType, location: Location) {
       }
     }
     return null(c.CExpr)
+  }
+
+  func genCCast(self, builder: c.CBuilder) -> c.CExpr {
+    typeChild = self.firstChildExpr!
+    valueChild = typeChild.nextExprChildExpr!
+    v = valueChild.genC(builder)
+    target = builder.typechecker.resolve(self.typedValue!)
+    // Casting a string to string is the identity; strings are char buffers.
+    if (builder.typechecker.isStringType(self.typedValue) &&
+        builder.typechecker.isStringType(valueChild.typedValue)) {
+      return v
+    }
+    ctype = builder.genCType(target)
+    if isnull(ctype) {
+      raise Status.Unimplemented, "Cast target type not supported by C backend"
+    }
+    return c.CExpr(c.CCastExpr(self.location, ctype!, v))
   }
 
   func genCSelect(self, builder: c.CBuilder) -> c.CExpr {

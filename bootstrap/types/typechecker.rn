@@ -1000,6 +1000,19 @@ class TypeChecker(self) {
         result = self.apply(bopty, argty, expr.location)
      }
 
+      db.ExprType.Cast, db.ExprType.CastTrunc => {
+        castTypeChild = expr.firstChildExpr!
+        castValueChild = castTypeChild.nextExprChildExpr!
+        self.expr(castValueChild)
+        castTarget = self.tryExplicitType(castTypeChild)
+        if isnull(castTarget) {
+          self.typeError("Unsupported cast target type", expr.location)
+          return null(Type)
+        }
+        castTypeChild.typedValue = castTarget
+        result = castTarget
+      }
+
       db.ExprType.In => {
         // 'in' has no builtin form; it requires a user-defined operator.
         left = self.expr(expr.firstChildExpr!)
@@ -1352,6 +1365,19 @@ class TypeChecker(self) {
       db.StateType.Call => self.expr(statement.expr)
       db.StateType.Print => self.expr(statement.expr)
       db.StateType.Println => self.expr(statement.expr)
+      db.StateType.Raise => {
+        // The first expression is the error code path (e.g. Status.Foo),
+        // not a value; the rest are message values.
+        rchild = statement.expr.firstChildExpr
+        rfirst = true
+        while !isnull(rchild) {
+          if !rfirst {
+            self.expr(rchild!)
+          }
+          rfirst = false
+          rchild = rchild.nextExprChildExpr
+        }
+      }
       db.StateType.If => {
         ty = self.expr(statement.expr)
         te = isnull(ty) ? null(TypeError) : self.unify(ty!, BOOL)

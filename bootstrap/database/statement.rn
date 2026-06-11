@@ -215,6 +215,7 @@ class Statement(self, block: Block, type: StateType, location: Location) {
       StateType.Foreach => self.genCForeach(builder)
       StateType.Switch => self.genCSwitch(builder)
       StateType.Typeswitch => self.genCTypeswitch(builder)
+      StateType.Raise => self.genCRaise(builder)
       default => raise Status.Unimplemented, "Statement type not yet supported by C backend builder ", self.type
     }
   }
@@ -303,6 +304,45 @@ class Statement(self, block: Block, type: StateType, location: Location) {
         builder.cCall(self.location, c.CRuntimeFunction.GlobalStringWriterString,
                       null(c.CExpr)))
     self.genCCall(builder, c.CRuntimeFunction.Printf, c.CExpr(printfArgs))
+  }
+
+  // raise Status.Foo, msg... composes the message in the global string
+  // writer and aborts via the raise() runtime helper.
+  func genCRaise(self, builder: c.CBuilder) {
+    assert !isnull(self.expr)
+    self.genCCall(builder, c.CRuntimeFunction.GlobalStringWriterReset, null(c.CExpr))
+    rfirst = true
+    for expr in self.expr.childExprs() {
+      if rfirst {
+        // The error code path (e.g. Status.Foo) is included as text.
+        codeArgs = c.CExprList()
+        codeArgs.append(builder.cStringLiteral(expr.toString() + " "))
+        call = builder.cCall(self.location, "tostring_string_t",
+                             c.CExpr(codeArgs))
+        builder.addStatement(self.location, call)
+      } else {
+        cexpr = expr.genC(builder)
+        ctype = builder.genCType(expr.typedValue)
+        if !isnull(ctype) {
+          ctypename = ctype.toString()
+          if ctypename == "string" {
+            sArgs = c.CExprList()
+            sArgs.append(builder.cStringLiteral("%s"))
+            sArgs.append(cexpr!)
+            call = builder.cCall(self.location, "tostring_string_t", c.CExpr(sArgs))
+          } else {
+            call = builder.cCall(self.location, "tostring_%s_t" % ctypename, cexpr)
+          }
+          builder.addStatement(self.location, call)
+        }
+      }
+      rfirst = false
+    }
+    raiseArgs = c.CExprList()
+    raiseArgs.append(
+        builder.cCall(self.location, c.CRuntimeFunction.GlobalStringWriterString,
+                      null(c.CExpr)))
+    self.genCCall(builder, c.CRuntimeFunction.Raise, c.CExpr(raiseArgs))
   }
 
   func genElse(self, builder: c.CBuilder) {
