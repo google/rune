@@ -754,6 +754,7 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Ge => return self.genCBinaryOp(builder)
       ExprType.Equal => return self.genCBinaryOp(builder)
       ExprType.Notequal => return self.genCBinaryOp(builder)
+      ExprType.In => return self.genCBinaryOp(builder)
 
       // Now, the operators that map to runtime functions
       ExprType.Add => return self.genCBinaryOp(builder)
@@ -826,6 +827,67 @@ class Expr(self, type: ExprType, location: Location) {
     return builder.cCall(self.location, c.CRuntimeFunction.StringSprintf, c.CExpr(args))
   }
 
+  // Generate a call to a user-defined operator function whose parameter
+  // types match the operand types.  Specializations not yet emitted by the
+  // module sweep are emitted on demand.  Returns null when no registered
+  // operator matches, so the caller falls back to the builtin form.
+  func genCUserOperator(self, builder: c.CBuilder, l: c.CExpr, r: c.CExpr,
+                        left: Expr, right: Expr) -> c.CExpr? {
+    tc = builder.typechecker
+    ltype = tc.resolve(left.typedValue!)
+    rtype = tc.resolve(right.typedValue!)
+    argTuple = types.Type(types.TupleType([ltype, rtype]))
+    for i in range(tc.operatorFns.length()) {
+      opfn = tc.operatorFns[i]
+      if opfn.opType == self.type {
+        opty = tc.operatorTypes[i]
+        specializedName = argTuple.genSpecializationName(opfn.sym.name)
+        callName = ""
+        if opty.type == types.Type.TypeClass.Polymorphic {
+          if !builder.alreadyEmitted(specializedName) {
+            emitted = false
+            for inst in opty.poly.instantiations {
+              if !emitted {
+                builder.instantiate(opty.poly!, inst)
+                ptypes = arrayof(types.Type)
+                for variable in opfn.variables() {
+                  ptypes.append(tc.resolve(variable.typedValue!))
+                }
+                iname = types.Type(types.TupleType(ptypes)).genSpecializationName(opfn.sym.name)
+                builder.deInstantiate(opty.poly!)
+                if iname == specializedName {
+                  opfn.genCPolyInstantiation(builder, inst)
+                  emitted = true
+                }
+              }
+            }
+          }
+          if builder.alreadyEmitted(specializedName) {
+            callName = specializedName
+          }
+        } else if opty.type == types.Type.TypeClass.Function {
+          // Monomorphic operator, emitted under its plain name; check the
+          // parameter types match these operands.
+          mtypes = arrayof(types.Type)
+          for variable in opfn.variables() {
+            mtypes.append(tc.resolve(variable.typedValue!))
+          }
+          mname = types.Type(types.TupleType(mtypes)).genSpecializationName(opfn.sym.name)
+          if mname == specializedName {
+            callName = opfn.sym.name
+          }
+        }
+        if callName != "" {
+          args = c.CExprList()
+          args.appendCExpr(l)
+          args.appendCExpr(r)
+          return builder.cCall(self.location, callName, c.CExpr(args))
+        }
+      }
+    }
+    return null(c.CExpr)
+  }
+
   func genCSelect(self, builder: c.CBuilder) -> c.CExpr {
     condChild = self.firstChildExpr!
     trueChild = condChild.nextExprChildExpr!
@@ -870,6 +932,13 @@ class Expr(self, type: ExprType, location: Location) {
     l = left.genC(builder)
     self.bindingInstance = false
     r = right.genC(builder)
+    if (self.type != ExprType.Equals &&
+        (builder.isClassType(left.typedValue) || builder.isClassType(right.typedValue))) {
+      uop = self.genCUserOperator(builder, l, r, left, right)
+      if !isnull(uop) {
+        return uop!
+      }
+    }
     if (self.type == ExprType.Equals && right.type == ExprType.Constant &&
         right.val.type == DatatypeType.String) {
       // Copy string literals on assignment so writes through the variable

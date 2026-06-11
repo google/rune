@@ -264,6 +264,9 @@ class TypeChecker(self) {
   self.currentClassInfo = null(ClassInfo)
   self.currentSelfType = null(Type)
   self.classBoundVars = arrayof(Type)
+  // Overloaded operator functions and their types, in definition order.
+  self.operatorFns = arrayof(db.Function)
+  self.operatorTypes = arrayof(Type)
   self.openScope()
 
   func typeError(self, msg: string, location: db.Location?) {
@@ -347,6 +350,27 @@ class TypeChecker(self) {
     fd = FunctionDef(fn.sym)
     fd.fn = fn
     self.insertFunctionDef(fd)
+  }
+
+  // The function type to apply for an operator expression: the builtin
+  // operator type, extended with any user-defined overloads.
+  func operatorChoices(self, op: db.ExprType, builtin: Type?) -> Type? {
+    found = arrayof(Type)
+    if !isnull(builtin) {
+      found.append(builtin!)
+    }
+    for i in range(self.operatorFns.length()) {
+      if self.operatorFns[i].opType == op {
+        found.append(self.operatorTypes[i])
+      }
+    }
+    if found.length() == 0 {
+      return null(Type)
+    }
+    if found.length() == 1 {
+      return found[0]
+    }
+    return OR(found)
   }
 
   func lookupFunctionDef(self, sym: Sym) -> db.Function? {
@@ -734,7 +758,21 @@ class TypeChecker(self) {
     }
     if t.type == Type.TypeClass.Typename {
       name = t.tyname.name
-      if (isnull(self.lookupClass(name)) && isnull(self.lookupEnum(name)) &&
+      info = self.lookupClass(name)
+      if !isnull(info) {
+        // A class name constraint matches any instantiation of the class;
+        // parameterize it with fresh variables so unification against a
+        // concrete instance (e.g. Integer(u64,)) succeeds.
+        if info.paramVars.length() > 0 {
+          cparams = arrayof(Type)
+          for pv in info.paramVars {
+            cparams.append(Type(self.newTyvar()))
+          }
+          return Type(TypeName(name, TupleType(cparams)))
+        }
+        return t!
+      }
+      if (isnull(self.lookupEnum(name)) &&
           isnull(self.lookupTyname(name)) && name.name != "string" &&
           name.name != "bool" && name.name != "none") {
         // An unrecognized name; likely an unsupported constraint form.
@@ -957,10 +995,26 @@ class TypeChecker(self) {
         if isnull(left) || isnull(right) {
           return left
         }
-        opty = builtinType(expr.type)
+        bopty = self.operatorChoices(expr.type, builtinType(expr.type))!
         argty = Type(TupleType([left!, right!]))
-        result = self.apply(opty, argty, expr.location)
+        result = self.apply(bopty, argty, expr.location)
      }
+
+      db.ExprType.In => {
+        // 'in' has no builtin form; it requires a user-defined operator.
+        left = self.expr(expr.firstChildExpr!)
+        right = self.expr(expr.firstChildExpr!.nextExprChildExpr!)
+        if isnull(left) || isnull(right) {
+          return left
+        }
+        inopty = self.operatorChoices(expr.type, null(Type))
+        if isnull(inopty) {
+          self.typeError("No 'in' operator defined for these types", expr.location)
+          return null(Type)
+        }
+        argty = Type(TupleType([left!, right!]))
+        result = self.apply(inopty!, argty, expr.location)
+      }
 
       db.ExprType.Select => {
         condChild = expr.firstChildExpr!
@@ -1573,6 +1627,13 @@ class TypeChecker(self) {
       }
 
       db.FuncType.Plain => self.plainFunction(fn)
+      db.FuncType.Operator => {
+        // Overloaded operators typecheck like plain functions, plus an
+        // entry in the operator registry consulted at operator expressions.
+        self.plainFunction(fn)
+        self.operatorFns.append(fn)
+        self.operatorTypes.append(fn.typedValue!)
+      }
       db.FuncType.Struct => self.structFunction(fn)
       db.FuncType.Constructor => self.constructorFunction(fn)
       db.FuncType.Enum => self.enumFunction(fn)
@@ -1667,6 +1728,7 @@ class TypeChecker(self) {
       fnType = Type(PolymorphicType(boundVars, fnType))
     }
     self.newSymbol(fn.sym, fnType)
+    fn.typedValue = fnType
   }
 
   // Typecheck an enum declaration: record the members and their values, and
@@ -1875,6 +1937,7 @@ class TypeChecker(self) {
 
     // associate function name symbol to this type.
     self.newSymbol(fn.sym, fnType)
+    fn.typedValue = fnType
     self.newTyname(fn.sym, tynameDef)
   }
 
@@ -1981,6 +2044,7 @@ class TypeChecker(self) {
 
     // associate function name symbol to this type.
     self.newSymbol(fn.sym, fnType)
+    fn.typedValue = fnType
 
     if db.getRoot().traceTypes {
        fn.location.annotation("\n[Typecheck] ", TypeLoggingPrefix)

@@ -28,6 +28,43 @@ use token
 
 root = db.getRoot()
 
+// A C-safe identifier base name for an overloaded operator.
+func operatorCName(op: string) -> string {
+  switch op {
+    "+" => return "op_add"
+    "-" => return "op_sub"
+    "*" => return "op_mul"
+    "/" => return "op_div"
+    "%" => return "op_mod"
+    "**" => return "op_exp"
+    "&&" => return "op_and"
+    "||" => return "op_or"
+    "^^" => return "op_xor"
+    "&" => return "op_bitand"
+    "|" => return "op_bitor"
+    "^" => return "op_bitxor"
+    "<<" => return "op_shl"
+    ">>" => return "op_shr"
+    "<<<" => return "op_rotl"
+    ">>>" => return "op_rotr"
+    "~" => return "op_bitnot"
+    "<" => return "op_lt"
+    "<=" => return "op_le"
+    ">" => return "op_gt"
+    ">=" => return "op_ge"
+    "==" => return "op_eq"
+    "!=" => return "op_ne"
+    "!" => return "op_not"
+    "[]" => return "op_index"
+    "<>" => return "op_cast"
+    "in" => return "op_in"
+    "!+" => return "op_addtrunc"
+    "!-" => return "op_subtrunc"
+    "!*" => return "op_multrunc"
+    default => return "op_unknown"
+  }
+}
+
 // The AST structure is defined in rune.syn.
 // To split this task in two, we build Expr instances in buildExpr.rn.
 // When both are complete, we'll merge buildExpr.rn into hir.rn.
@@ -648,7 +685,9 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
   func findOperatorSym(self: HirBuilder, opNode: Node) -> (Sym, db.ExprType) {
     opSym = opNode.getKeywordSym()!
     exprType = db.getExprTypeFromSym(opSym)
-    name = self.currentFunction.createUniqueSym(opSym)
+    // Operator functions get C-safe identifier names: their specializations
+    // are emitted as plain C functions.
+    name = self.currentFunction.createUniqueSym(Sym.new(operatorCName(opSym.name)))
     return (name, exprType)
   }
 

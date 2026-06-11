@@ -82,6 +82,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   self.location = location
   self.isExtern = linkage == Linkage.ExternC || linkage == Linkage.ExternRpc
   self.opType = ExprType.Add  // Used for overloaded operators.
+  // The function's type, set by the typechecker.  Syms are interned by
+  // name, so sym.typedValue is unreliable when functions share a name
+  // (e.g. the same operator overloaded by two classes).
+  self.typedValue = null(types.Type)
   if !isnull(parent) {
     parent.appendChildFunction(self)
     Ident(parent!, self, sym, location)
@@ -178,6 +182,7 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     switch self.type {
       FuncType.Module => self.genModule(builder)
       FuncType.Plain => self.genCPlainFunc(builder)
+      FuncType.Operator => self.genCPlainFunc(builder)
       FuncType.Struct => self.genCStruct(builder)
       FuncType.Constructor => self.genCConstructor(builder)
       // Enum members are inlined as integer constants at their use sites.
@@ -208,7 +213,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     // the C.  (i.e., it is not clear how this would work if we try to
     // compile different packages into separate C files).
 
-    fntype = self.sym.typedValue
+    fntype = self.typedValue
+    if isnull(fntype) {
+      fntype = self.sym.typedValue
+    }
     assert !isnull(fntype)
 
     if fntype.type == types.Type.TypeClass.Polymorphic {
@@ -252,7 +260,7 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   // outer instantiation binding is active.
   func genCPolyInstantiation(self: Function, builder: c.CBuilder,
                              instantiation: types.TyvarInstantiation) {
-    fntype = self.sym.typedValue!
+    fntype = self.typedValue!
     // Resolve each parameter's own type under the instantiation.
     // The generalized variables in varBindings do not align
     // positionally with the parameters (operator type variables can
@@ -305,7 +313,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   // constructor function that heap-allocates and initializes an instance,
   // and the class's methods.
   func genCConstructor(self: Function, builder: c.CBuilder) {
-    fntype = self.sym.typedValue
+    fntype = self.typedValue
+    if isnull(fntype) {
+      fntype = self.sym.typedValue
+    }
     assert !isnull(fntype)
     info = builder.typechecker.lookupClass(self.sym)
     assert !isnull(info)
@@ -333,6 +344,9 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     for childfunc in self.childFunctions() {
       if childfunc.type == FuncType.Plain {
         childfunc.genCMethod(builder)
+      } else if childfunc.type == FuncType.Operator {
+        // Operators are standalone functions, not methods.
+        childfunc.genCPlainFunc(builder)
       }
     }
   }
@@ -444,9 +458,9 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
 
   // Generate C code for a class method, once per recorded instantiation.
   func genCMethod(self: Function, builder: c.CBuilder) {
-    fntype = self.sym.typedValue
+    fntype = self.typedValue
     if isnull(fntype) {
-      // The method was never called; nothing to emit.
+      // The method was never called or typechecked; nothing to emit.
       return
     }
     if fntype.type == types.Type.TypeClass.Polymorphic {
@@ -517,7 +531,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   }
 
   func genCStruct(self: Function, builder: c.CBuilder) {
-    fntype = self.sym.typedValue
+    fntype = self.typedValue
+    if isnull(fntype) {
+      fntype = self.sym.typedValue
+    }
     assert !isnull(fntype)
 
     if fntype.type == types.Type.TypeClass.Polymorphic {
@@ -557,7 +574,7 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   // genCTypename and call-site naming.
   func genCStructInstance(self: Function, builder: c.CBuilder,
                           instantiation: types.TyvarInstantiation) {
-    fntype = self.sym.typedValue!
+    fntype = self.typedValue!
     builder.instantiate(fntype.poly!, instantiation)
     paramTypes = arrayof(types.Type)
     for variable in self.variables() {
