@@ -743,6 +743,7 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Bitor => return self.genCBinaryOp(builder)
       ExprType.Bitxor => return self.genCBinaryOp(builder)
       ExprType.Bitnot => return self.genCPrefixOp(builder)
+      ExprType.Not => return self.genCPrefixOp(builder)
       ExprType.Shl => return self.genCBinaryOp(builder)
       ExprType.Shr => return self.genCBinaryOp(builder)
       ExprType.SubTrunc => return self.genCBinaryOp(builder)
@@ -812,6 +813,9 @@ class Expr(self, type: ExprType, location: Location) {
       }
       ExprType.Bitnot => {
         return builder.cUnaryBitnot(self.location, left.genC(builder))
+      }
+      ExprType.Not => {
+        return builder.cUnaryNot(self.location, left.genC(builder))
       }
 
       default => raise Status.Unimplemented, "Unary expression operator not yet supported by C backend: ", getExprTypeName(self.type)
@@ -1047,6 +1051,61 @@ class Expr(self, type: ExprType, location: Location) {
           }
         }
         return builder.cCall(self.location, strfn, c.CExpr(strArgs))
+      }
+
+      // Built-in methods on bool and integer values.
+      scalarBase = left.firstChildExpr!
+      if !isnull(scalarBase.typedValue) {
+        bty = builder.typechecker.resolve(scalarBase.typedValue!)
+        if bty.type == types.Type.TypeClass.Typename && bty.tyname.name.name == "bool" {
+          bArgs = c.CExprList()
+          bArgs.appendCExpr(scalarBase.genC(builder))
+          return builder.cCall(self.location, c.CRuntimeFunction.BoolToString, c.CExpr(bArgs))
+        }
+        if bty.type == types.Type.TypeClass.Int || bty.type == types.Type.TypeClass.AnyInt {
+          field = scalarBase.nextExprChildExpr!
+          if bty.type == types.Type.TypeClass.Int {
+            intSigned = bty.int.isSigned
+            intWidth = bty.int.width
+          } else {
+            intSigned = bty.anyInt.isSigned
+            intWidth = 64u32
+          }
+          switch field.toString() {
+            "toString" => {
+              if intSigned {
+                intfn = c.CRuntimeFunction.IntToString
+              } else {
+                intfn = c.CRuntimeFunction.UintToString
+              }
+            }
+            "toStringLE" => intfn = c.CRuntimeFunction.IntToStringLE
+            "toStringBE" => intfn = c.CRuntimeFunction.IntToStringBE
+            default => raise Status.Unimplemented, "Unknown integer builtin method: \"", field, "\""
+          }
+          iArgs = c.CExprList()
+          iArgs.appendCExpr(scalarBase.genC(builder))
+          iArgCount = 1
+          if right.typedValue.type == types.Type.TypeClass.Tuple {
+            for child in right.childExprs() {
+              iArgs.appendCExpr(child.genC(builder))
+              iArgCount += 1
+            }
+          } else {
+            iArgs.appendCExpr(right.genC(builder))
+            iArgCount += 1
+          }
+          if field.toString() == "toString" {
+            // The C helpers take a fixed base parameter; default it to 10.
+            if iArgCount < 2 {
+              iArgs.appendCExpr(builder.cIntLiteral(Bigint(10u64)))
+            }
+          } else {
+            // toStringLE/toStringBE need the receiver's width in bytes.
+            iArgs.appendCExpr(builder.cIntLiteral(Bigint(<u64>(intWidth / 8u32))))
+          }
+          return builder.cCall(self.location, intfn, c.CExpr(iArgs))
+        }
       }
 
       // Built-in methods on arrays.

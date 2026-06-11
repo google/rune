@@ -849,6 +849,13 @@ enum CRuntimeFunction {
    StringReverse
    StringXor
 
+   // Scalar to-string builtins
+   BoolToString
+   IntToString
+   UintToString
+   IntToStringLE
+   IntToStringBE
+
    // To-string builtins
    GlobalStringWriterReset
    GlobalStringWriterWrite
@@ -1016,6 +1023,31 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.StringXor => {
         e.needStringMethods()
         e.write("string_xor")
+      }
+
+      CRuntimeFunction.BoolToString => {
+        e.needStringMethods()
+        e.write("bool_tostring")
+      }
+
+      CRuntimeFunction.IntToString => {
+        e.needStringMethods()
+        e.write("int_tostring")
+      }
+
+      CRuntimeFunction.UintToString => {
+        e.needStringMethods()
+        e.write("uint_tostring")
+      }
+
+      CRuntimeFunction.IntToStringLE => {
+        e.needStringMethods()
+        e.write("int_tostring_le")
+      }
+
+      CRuntimeFunction.IntToStringBE => {
+        e.needStringMethods()
+        e.write("int_tostring_be")
       }
 
       // Rune built-in arithmetic operators.

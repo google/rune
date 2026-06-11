@@ -372,6 +372,34 @@ class TypeChecker(self) {
     }
   }
 
+  // The function type of a builtin method on bool values.
+  func boolMethodType(self, name: string, location: db.Location) -> Type? {
+    noArgs = arrayof(Type)
+    switch name {
+      "toString" => return FN(TUPLE(noArgs), STRING())
+      default => {
+        self.typeError("Unsupported bool method '%s'" % name, location)
+        return null(Type)
+      }
+    }
+  }
+
+  // The function type of a builtin method on integer values.
+  func intMethodType(self, name: string, location: db.Location) -> Type? {
+    noArgs = arrayof(Type)
+    switch name {
+      // toString takes an optional base; accept any argument tuple and
+      // let the backend supply the default.
+      "toString" => return FN(Type(self.newTyvar()), STRING())
+      "toStringLE" => return FN(TUPLE(noArgs), STRING())
+      "toStringBE" => return FN(TUPLE(noArgs), STRING())
+      default => {
+        self.typeError("Unsupported integer method '%s'" % name, location)
+        return null(Type)
+      }
+    }
+  }
+
   func lookupTyname(self, tyname: Sym) -> Type? {
     res = null(Type)
     td = TynameDefinition(tyname, null(Type))
@@ -913,6 +941,10 @@ class TypeChecker(self) {
             // Built-in string methods.
             isClassAccess = true
             result = self.stringMethodType(field.toString(), expr.location)
+          } else if sty.tyname.name.name == "bool" {
+            // Built-in bool methods.
+            isClassAccess = true
+            result = self.boolMethodType(field.toString(), expr.location)
           } else {
             ty = self.lookupTyname(sty.tyname.name)
             if isnull(ty) {
@@ -960,6 +992,9 @@ class TypeChecker(self) {
             }
           }
 
+        } else if sty.type == Type.TypeClass.Int || sty.type == Type.TypeClass.AnyInt {
+          // Built-in integer methods like toString().
+          result = self.intMethodType(field.toString(), expr.location)
         } else {
           self.typeError(
             "Field Selection on %s, which is neither an array nor a struct" % sty.toString(),

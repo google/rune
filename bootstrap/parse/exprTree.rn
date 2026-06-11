@@ -77,6 +77,12 @@ transformer ExprTree() {
           if !isnull(ruleSym) && ruleSym.name == "tupleTypeExpr" {
             return self.buildTupleTypeExpr(node)
           }
+          if !isnull(ruleSym) && ruleSym.name == "notExpr" {
+            return self.buildPrefixExpr(node, db.ExprType.Not)
+          }
+          if !isnull(ruleSym) && ruleSym.name == "negateTruncExpr" {
+            return self.buildPrefixExpr(node, db.ExprType.NegateTrunc)
+          }
           // Pass through single-child wrapper rules (e.g. the layered type
           // expression rules) rather than dropping them.
           first = node.firstChildNode

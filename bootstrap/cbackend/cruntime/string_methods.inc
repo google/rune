@@ -104,6 +104,59 @@ static inline char *string_xor(const char *a, const char *b) {
   return r;
 }
 
+static inline char *bool_tostring(int b) {
+  return string_concat(b ? "true" : "false", "");
+}
+
+static inline char *uint_tostring(uint64_t v, uint64_t base) {
+  static const char kDigits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+  char buf[65];
+  size_t n = 0;
+  if (base < 2 || base > 36) {
+    base = 10;
+  }
+  do {
+    buf[n++] = kDigits[v % base];
+    v /= base;
+  } while (v != 0);
+  char *r = (char *)malloc(n + 1);
+  for (size_t i = 0; i < n; i++) {
+    r[i] = buf[n - 1 - i];
+  }
+  r[n] = '\0';
+  return r;
+}
+
+static inline char *int_tostring(int64_t v, uint64_t base) {
+  if (v >= 0) {
+    return uint_tostring((uint64_t)v, base);
+  }
+  char *digits = uint_tostring(-(uint64_t)v, base);
+  char *r = string_concat("-", digits);
+  free(digits);
+  return r;
+}
+
+// The bytes of |v| in little-endian order as a string of |nbytes| chars.
+static inline char *int_tostring_le(uint64_t v, uint64_t nbytes) {
+  char *r = (char *)malloc((size_t)nbytes + 1);
+  for (uint64_t i = 0; i < nbytes; i++) {
+    r[i] = (char)((v >> (8 * i)) & 0xff);
+  }
+  r[nbytes] = '\0';
+  return r;
+}
+
+// The bytes of |v| in big-endian order as a string of |nbytes| chars.
+static inline char *int_tostring_be(uint64_t v, uint64_t nbytes) {
+  char *r = (char *)malloc((size_t)nbytes + 1);
+  for (uint64_t i = 0; i < nbytes; i++) {
+    r[i] = (char)((v >> (8 * (nbytes - 1 - i))) & 0xff);
+  }
+  r[nbytes] = '\0';
+  return r;
+}
+
 // Find a sub-string in a string, starting at the offset.  Return the length
 // of the string if |needle| is not found in |haystack|.
 static inline uint64_t string_find(const char *haystack, const char *needle,

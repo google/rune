@@ -469,6 +469,10 @@ class CBuilder(self, tc: types.TypeChecker) {
     return CExpr(CPrefixOperator(location, CPrefixOperator.Type.BitNot, arg))
   }
 
+  func cUnaryNot(self, location: db.Location, arg: CExpr) -> CExpr {
+    return CExpr(CPrefixOperator(location, CPrefixOperator.Type.LogNot, arg))
+  }
+
   func cBinaryOperator(self, location: db.Location, op: CBinaryOperator.Type,
                        type: types.Type?, left: CExpr, right: CExpr) -> CExpr {
     ctype = self.genCType(type)
