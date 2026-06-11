@@ -239,10 +239,63 @@ static inline void tostring_uint64_t(uint64_t u) {
   StringWriter_write(&globalStringWriter, "%" PRIu64, u);
 }
 
+// Format a float the way Rune does: always scientific notation with a
+// lower-case e and unpadded exponent, at least one fraction digit, and the
+// specials 0.0, Inf and NaN.
+static inline void tostring_rune_float(double d, int digits) {
+  char buf[64];
+  char out[64];
+  if (d != d) {
+    StringWriter_write(&globalStringWriter, "NaN");
+    return;
+  }
+  if (d > DBL_MAX || d < -DBL_MAX) {
+    StringWriter_write(&globalStringWriter, "Inf");
+    return;
+  }
+  if (d == 0.0) {
+    StringWriter_write(&globalStringWriter, "0.0");
+    return;
+  }
+  snprintf(buf, sizeof(buf), "%.*e", digits, d);
+  // buf looks like -1.234500e+02; rebuild it as -1.2345e2.
+  char *p = buf;
+  char *q = out;
+  while (*p != 'e' && *p != '\0') {
+    *q++ = *p++;
+  }
+  // Strip trailing zeros from the mantissa, keeping one fraction digit.
+  while (q[-1] == '0' && q[-2] != '.') {
+    q--;
+  }
+  long exponent = 0;
+  int expSign = 1;
+  if (*p == 'e') {
+    p++;
+    if (*p == '+') {
+      p++;
+    } else if (*p == '-') {
+      expSign = -1;
+      p++;
+    }
+    while (*p >= '0' && *p <= '9') {
+      exponent = exponent * 10 + (*p - '0');
+      p++;
+    }
+    exponent *= expSign;
+  }
+  if (exponent != 0) {
+    snprintf(q, sizeof(out) - (q - out), "e%ld", exponent);
+  } else {
+    *q = '\0';
+  }
+  StringWriter_write(&globalStringWriter, "%s", out);
+}
+
 static inline void tostring_float_t(float f) {
-  StringWriter_write(&globalStringWriter, "%." FLT_SIG_DIGITS "g", f);
+  tostring_rune_float((double)f, 6);
 }
 
 static inline void tostring_double_t(double d) {
-  StringWriter_write(&globalStringWriter, "%." DBL_SIG_DIGITS "g", d);
+  tostring_rune_float(d, 6);
 }

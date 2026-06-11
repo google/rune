@@ -56,6 +56,11 @@ class CEmitter(self, filename: string) {
     self.runtime.needDoubleType = true
   }
 
+  func needNoneType(self) {
+    self.include("<inttypes.h>")
+    self.runtime.needNoneType = true
+  }
+
   func needStringWriter(self) {
     self.needBoolType()
     self.needStringType()
@@ -73,6 +78,10 @@ class CEmitter(self, filename: string) {
 
   func needStringifyMacro(self) {
     self.runtime.needStringifyMacro = true
+  }
+
+  func needRaiseError(self) {
+    self.runtime.needRaiseError()
   }
 
   func needFloatPrintfMacros(self) {

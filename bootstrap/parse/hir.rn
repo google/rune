@@ -237,6 +237,13 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
     valueExpr = self.buildExprTree(valueNode)
     token = opNode.token!
     opType = db.getExprTypeFromSym(token.keyword.sym)
+    if opType != db.ExprType.Equals {
+      // Lower compound assignments like a += b to a = a + b so that the
+      // typechecker and C backend only see plain assignments.
+      baseOp = db.getCompoundAssignBaseOp(opType)
+      valueExpr = db.Expr.newBinary(baseOp, targetExpr.copy(), valueExpr, node.location)
+      opType = db.ExprType.Equals
+    }
     assignExpr = db.Expr.newBinary(opType, targetExpr, valueExpr, node.location)
     if !isnull(typeConstraintNode) {
       typeConstraintExpr = self.buildExprTree(typeConstraintNode!)

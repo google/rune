@@ -73,7 +73,13 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
     } else {
       raise Status.Unimplemented, "genCInt for integral width ", ty.width
     }
-    return CTypeExpr(CPrimitiveType(primty))
+    result = CTypeExpr(CPrimitiveType(primty))
+    if ty.isSigned {
+      result.runeSuffix = "i%u" % ty.width
+    } else {
+      result.runeSuffix = "u%u" % ty.width
+    }
+    return result
   }
 
   func genCAnyInt(self, ty: types.AnyIntType) -> CTypeExpr? {
@@ -85,16 +91,25 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
 
   func genCFloat(self, ty: types.FloatType) -> CTypeExpr? {
     if ty.width == 32u32 {
-      return CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Float))
+      result = CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Float))
+      result.runeSuffix = "f32"
+      return result
     }
-    return CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Double))
+    result = CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Double))
+    result.runeSuffix = "f64"
+    return result
   }
 
   func genCTypename(self, ty: types.TypeName) -> CTypeExpr? {
-    if isnull(ty.params) {
+    spec = ty.specializationString()
+    if spec == "" {
        tyname = ty.name.name
     } else {
-       tyname = "%s_%s" % (ty.name.name, ty.specializationString())
+       tyname = "%s_%s" % (ty.name.name, spec)
+    }
+    if !isnull(self.typechecker.lookupClass(ty.name)) {
+      // Class instances are heap allocated and passed by pointer.
+      return CTypeExpr(CPointerType(CTypeExpr(CDefinedType(tyname))))
     }
     return CTypeExpr(CDefinedType(tyname))
   }

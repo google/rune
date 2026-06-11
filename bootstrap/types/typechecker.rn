@@ -180,8 +180,63 @@ class BindingScope(self) {
   }
 }
 
+// Records the members of an enum and their integer values.
+class EnumInfo(self, sym: Sym) {
+  self.sym = sym
+  self.memberNames = arrayof(Sym)
+  self.memberValues = arrayof(u32)
+
+  func hash(self) -> u64 {
+    return hashValue(self.sym.name)
+  }
+
+  func equals(self, other: EnumInfo) -> bool {
+    return self.sym == other.sym
+  }
+
+  // Returns the value of the named member, or u32 max if not found.
+  func memberValue(self, name: string) -> u32 {
+    for i in range(self.memberNames.length()) {
+      if self.memberNames[i].name == name {
+        return self.memberValues[i]
+      }
+    }
+    return ~0u32
+  }
+
+  func hasMember(self, name: string) -> bool {
+    for i in range(self.memberNames.length()) {
+      if self.memberNames[i].name == name {
+        return true
+      }
+    }
+    return false
+  }
+}
+
+// Records typechecking information about a class: its constructor function,
+// the struct type holding its data members, and the type variables of its
+// constructor parameters (in declaration order).
+class ClassInfo(self, sym: Sym) {
+  self.sym = sym
+  self.fn = null(db.Function)
+  self.strct = null(StructType(arrayof(Sym), arrayof(Type)))
+  self.selfType = null(Type)
+  self.paramVars = arrayof(Type)
+
+  func hash(self) -> u64 {
+    return hashValue(self.sym.name)
+  }
+
+  func equals(self, other: ClassInfo) -> bool {
+    return self.sym == other.sym
+  }
+}
+
 relation HashedClass TypeChecker SymbolMapping cascade
 relation HashedClass TypeChecker TynameDefinition cascade
+relation HashedClass TypeChecker ClassInfo cascade
+relation HashedClass TypeChecker EnumInfo cascade
 relation DoublyLinked TypeChecker BindingScope cascade
 relation DoublyLinked TypeChecker TypeError cascade
 
@@ -189,6 +244,10 @@ class TypeChecker(self) {
   self.unifier = TypeUnifier()
   self.nextTyvarId = 1i32
   self.numTypeErrorsReported = 0
+  // Set while typechecking a class constructor or its methods.
+  self.currentClassInfo = null(ClassInfo)
+  self.currentSelfType = null(Type)
+  self.classBoundVars = arrayof(Type)
   self.openScope()
 
   func typeError(self, msg: string, location: db.Location?) {
@@ -256,6 +315,30 @@ class TypeChecker(self) {
     }
   }
 
+  // Look up the typechecking information for a class by name.  Returns null
+  // if the name does not refer to a class.
+  func lookupClass(self, sym: Sym) -> ClassInfo? {
+    return self.findClassInfo(ClassInfo(sym))
+  }
+
+  // Look up the typechecking information for an enum by name.  Returns null
+  // if the name does not refer to an enum.
+  func lookupEnum(self, sym: Sym) -> EnumInfo? {
+    return self.findEnumInfo(EnumInfo(sym))
+  }
+
+  // True if the named type refers to a class instance.
+  func isClassType(self, ty: Type?) -> bool {
+    if isnull(ty) {
+      return false
+    }
+    t = self.resolve(ty!)
+    if t.type != Type.TypeClass.Typename {
+      return false
+    }
+    return !isnull(self.lookupClass(t.tyname.name))
+  }
+
   func lookupTyname(self, tyname: Sym) -> Type? {
     res = null(Type)
     td = TynameDefinition(tyname, null(Type))
@@ -318,7 +401,10 @@ class TypeChecker(self) {
         if !isnull(t2) {
           return t2!
         }
-        return t
+        // The variable may be bound to another, unbound variable; in that
+        // case return the representative at the end of the chain so that
+        // unified variables resolve to the same variable.
+        return Type(self.unifier.representative(t.tyvar!))
       }
       Type.TypeClass.Int => return t
       Type.TypeClass.AnyInt => return t
@@ -481,6 +567,12 @@ class TypeChecker(self) {
 
   func variable(self, v: db.Variable) -> Type? {
     // TODO: handle v.isConst
+    if v.isParam && v.sym.name == "self" && !isnull(self.currentSelfType) {
+      // The self parameter of a class method is the class instance type.
+      ty = self.currentSelfType!
+      self.newSymbol(v.sym, ty)
+      return ty
+    }
     if isnull(v.typeExpr) {
       ty = Type(self.newTyvar())
     } else {
@@ -590,18 +682,39 @@ class TypeChecker(self) {
       db.ExprType.Dot => {
         sty = self.expr(expr.firstChildExpr!)
         field = expr.firstChildExpr!.nextExprChildExpr!
+        isClassAccess = false
         if sty.type == Type.TypeClass.Typename {
-          ty = self.lookupTyname(sty.tyname.name)
-          if isnull(ty) {
-            self.typeError(
-              "Field Selection on an undefined type name %s" % sty.tyname.name.name,
-              expr.location)
-            result = ty
+          info = self.lookupClass(sty.tyname.name)
+          einfo = self.lookupEnum(sty.tyname.name)
+          if !isnull(info) {
+            // Member access on a class instance.
+            isClassAccess = true
+            result = self.classMemberType(info!, sty!, field, expr.location)
+          } else if !isnull(einfo) {
+            // Enum member access like Color.red.
+            isClassAccess = true
+            if einfo.hasMember(field.toString()) {
+              result = U(32)
+            } else {
+              self.typeError("Enum %s has no member %s" % (einfo.sym.name, field.toString()),
+                             expr.location)
+              result = null(Type)
+            }
+          } else {
+            ty = self.lookupTyname(sty.tyname.name)
+            if isnull(ty) {
+              self.typeError(
+                "Field Selection on an undefined type name %s" % sty.tyname.name.name,
+                expr.location)
+              result = ty
+            }
+            sty = ty!
           }
-          sty = ty!
         }
 
-        if sty.type == Type.TypeClass.Struct {
+        if isClassAccess {
+          isClassAccess = true  // Result was computed by classMemberType above.
+        } else if sty.type == Type.TypeClass.Struct {
           ty = sty.strct.select(field.toString())
           if isnull(ty) {
             self.typeError(
@@ -772,6 +885,107 @@ class TypeChecker(self) {
         ty = self.expr(statement.expr)
         parent.returnType = ty
       }
+      db.StateType.While => {
+        ty = self.expr(statement.expr)
+        te = self.unify(ty!, BOOL)
+        if !isnull(te) {
+          self.typeError("Condition expression must be a boolean", statement.expr.location)
+        }
+        // The sub-block is null when this terminates a do-while statement.
+        if !isnull(statement.subBlock) {
+          for s in statement.subBlock.statements() {
+            self.statement(s, statement.subBlock)
+          }
+          parent.returnType = statement.subBlock.returnType
+        }
+      }
+      db.StateType.Do => {
+        assert !isnull(statement.subBlock)
+        for s in statement.subBlock.statements() {
+          self.statement(s, statement.subBlock)
+        }
+        parent.returnType = statement.subBlock.returnType
+      }
+      db.StateType.Assert => {
+        // The expression is a list; the first element is the condition and
+        // any further elements are message values to print on failure.
+        first = true
+        for child in statement.expr.childExprs() {
+          ty = self.expr(child)
+          if first {
+            te = self.unify(ty!, BOOL)
+            if !isnull(te) {
+              self.typeError("Assert condition must be a boolean", child.location)
+            }
+          }
+          first = false
+        }
+      }
+      db.StateType.Foreach => {
+        // The expression is a list: (loop variable, iterable expression).
+        // Supported iterables: range(n), range(a, b), arrays, and the
+        // array methods values() and items().
+        loopVarExpr = statement.expr.firstChildExpr!
+        iterExpr = loopVarExpr.nextExprChildExpr!
+        elemTy = null(Type)
+        if iterExpr.type == db.ExprType.Call {
+          target = iterExpr.firstChildExpr!
+          argExpr = target.nextExprChildExpr
+          if target.type == db.ExprType.Ident && target.val.symVal.name == "range" {
+            argTy = self.expr(argExpr!)
+            rty = self.resolve(argTy!)
+            if rty.type == Type.TypeClass.Tuple {
+              // range(start, end): the bounds must have the same type.
+              firstBound = rty.tuple.elements[0]
+              for el in rty.tuple.elements {
+                te = self.unify(firstBound, el)
+                if !isnull(te) {
+                  self.typeError("range bounds must have the same type", iterExpr.location)
+                }
+              }
+              elemTy = firstBound
+            } else {
+              elemTy = rty
+            }
+            iterExpr.typedValue = elemTy
+          } else if target.type == db.ExprType.Dot {
+            base = target.firstChildExpr!
+            methodName = base.nextExprChildExpr.toString()
+            if methodName == "values" || methodName == "items" {
+              baseTy = self.expr(base)
+              rbase = self.resolve(baseTy!)
+              if rbase.type == Type.TypeClass.Array {
+                if methodName == "values" {
+                  elemTy = rbase.array.elementType
+                } else {
+                  pairTypes = arrayof(Type)
+                  pairTypes.append(U(64))
+                  pairTypes.append(rbase.array.elementType)
+                  elemTy = TUPLE(pairTypes)
+                }
+                iterExpr.typedValue = elemTy
+              }
+            }
+          }
+        }
+        if isnull(elemTy) {
+          ty = self.expr(iterExpr)
+          rty = self.resolve(ty!)
+          if rty.type == Type.TypeClass.Array {
+            elemTy = rty.array.elementType
+          } else {
+            self.typeError("Cannot iterate over %s" % rty.toString(), iterExpr.location)
+            elemTy = Type(self.newTyvar())
+          }
+        }
+        self.newSymbol(loopVarExpr.val.symVal!, elemTy)
+        loopVarExpr.typedValue = elemTy
+        if !isnull(statement.subBlock) {
+          for s in statement.subBlock.statements() {
+            self.statement(s, statement.subBlock)
+          }
+        }
+      }
       default => raise Status.Unimplemented, "Statement type not yet supported by typechecker: ", db.statementTypeGetKeyword(statement.type)
     }
     return NONETY()
@@ -791,10 +1005,226 @@ class TypeChecker(self) {
 
       db.FuncType.Plain => self.plainFunction(fn)
       db.FuncType.Struct => self.structFunction(fn)
+      db.FuncType.Constructor => self.constructorFunction(fn)
+      db.FuncType.Enum => self.enumFunction(fn)
+      // Destructors are typechecked like methods.  The C backend does not
+      // yet emit or call them (that needs reference counting).
+      db.FuncType.Final => self.plainFunction(fn)
       default => {
         raise Status.Unimplemented, "Function type not yet supported by typechecker: ", fn.type
       }
     }
+  }
+
+  // Typecheck a class constructor.  The class's data members are discovered
+  // from assignments of the form self.<field> = <expr> in the constructor
+  // body.  Methods are the constructor's child functions; their self
+  // parameter is bound to the class instance type.
+  func constructorFunction(self, fn: db.Function) {
+    self.openScope()
+    info = ClassInfo(fn.sym)
+    info.fn = fn
+    // Note: empty arrays must be bound to locals first; passing arrayof(T)
+    // directly as a constructor argument crashes the C-based rune compiler.
+    emptyFieldnames = arrayof(Sym)
+    emptyFieldtypes = arrayof(Type)
+    info.strct = StructType(emptyFieldnames, emptyFieldtypes)
+    self.insertClassInfo(info)
+
+    params = arrayof(Type)
+    for variable in fn.variables() {
+      if variable.sym.name != "self" {
+        ty = self.variable(variable)!
+        params.append(ty)
+        info.paramVars.append(ty)
+      }
+    }
+    if params.length() == 1 {
+      paramType = params[0]
+    } else {
+      paramType = Type(TupleType(params))
+    }
+
+    // The class instance type, e.g. Point(v1, v2).
+    selfType = Type(TypeName(fn.sym, TupleType(info.paramVars)))
+    info.selfType = selfType
+    self.newTyname(fn.sym, Type(info.strct!))
+    self.newSymbol(Sym.new("self"), selfType)
+
+    prevClassInfo = self.currentClassInfo
+    prevSelfType = self.currentSelfType
+    prevClassBoundVars = self.classBoundVars
+    self.currentClassInfo = info
+    self.currentSelfType = selfType
+    self.classBoundVars = info.paramVars
+
+    // Typecheck the constructor body; this discovers the data members.
+    for statement in fn.subBlock.statements() {
+      self.statement(statement, fn.subBlock)
+    }
+
+    // Typecheck the methods with self bound to this class.
+    for childfunc in fn.childFunctions() {
+      self.function(childfunc)
+    }
+
+    self.currentClassInfo = prevClassInfo
+    self.currentSelfType = prevSelfType
+    self.classBoundVars = prevClassBoundVars
+
+    bindingScope = self.closeScope()
+    paramType = self.resolve(paramType)
+    boundVars = arrayof(Type)
+    for sm in bindingScope.symbolMappings() {
+      if !isnull(sm.value) && sm.value.type == Type.TypeClass.Var {
+        ty = self.resolve(sm.value!)
+        if ty.type == Type.TypeClass.Var {
+          exists = false
+          for bv in boundVars {
+            if bv.tyvar.id == ty.tyvar.id {
+              exists = true
+            }
+          }
+          if !exists {
+            boundVars.append(Type(ty.tyvar!))
+          }
+        }
+      }
+    }
+
+    resType = self.resolve(selfType)
+    fnType = Type(FunctionType(paramType, resType))
+    if boundVars.length() > 0 {
+      fnType = Type(PolymorphicType(boundVars, fnType))
+    }
+    self.newSymbol(fn.sym, fnType)
+  }
+
+  // Typecheck an enum declaration: record the members and their values, and
+  // bind the enum's name so that Color.red style accesses resolve.
+  func enumFunction(self, fn: db.Function) {
+    info = EnumInfo(fn.sym)
+    nextValue = 0u32
+    for variable in fn.variables() {
+      value = nextValue
+      init = variable.initializerExpr
+      if !isnull(init) && init.type == db.ExprType.Constant {
+        value = <u32>init.val.intVal.uint64()
+      }
+      info.memberNames.append(variable.sym)
+      info.memberValues.append(value)
+      nextValue = value + 1u32
+    }
+    self.insertEnumInfo(info)
+    self.newSymbol(fn.sym, Type(TypeName(fn.sym)))
+  }
+
+  // Typecheck a member access on a class instance: either a data member or
+  // a method.  Inside the class's own constructor, unknown members are
+  // created as new data members.
+  func classMemberType(self, info: ClassInfo, instanceType: Type, field: db.Expr,
+                       location: db.Location?) -> Type? {
+    name = field.toString()
+    method = self.findMethod(info, name)
+    if !isnull(method) {
+      return self.methodCallType(info, instanceType, method!, location)
+    }
+    inOwnConstructor = !isnull(self.currentClassInfo) && self.currentClassInfo.sym == info.sym
+    ty = info.strct.select(name)
+    if !isnull(ty) {
+      if inOwnConstructor {
+        return ty
+      }
+      return self.substituteClassVars(info, instanceType, ty!)
+    }
+    if inOwnConstructor {
+      // First assignment to self.<name> creates the data member.
+      fresh = Type(self.newTyvar())
+      info.strct.fieldnames.append(Sym.new(name))
+      info.strct.fieldtypes.append(fresh)
+      return fresh
+    }
+    self.typeError("Class %s has no member %s" % (info.sym.name, name), location)
+    return null(Type)
+  }
+
+  // Find a method (child function) of a class by name.
+  func findMethod(self, info: ClassInfo, name: string) -> db.Function? {
+    for childfunc in info.fn.childFunctions() {
+      if childfunc.sym.name == name && childfunc.type == db.FuncType.Plain {
+        return childfunc
+      }
+    }
+    return null(db.Function)
+  }
+
+  // Compute the type of a method accessed through an instance: the method's
+  // function type with the self parameter removed (it is passed implicitly).
+  func methodCallType(self, info: ClassInfo, instanceType: Type, method: db.Function,
+                      location: db.Location?) -> Type? {
+    mty = method.sym.typedValue
+    if isnull(mty) {
+      self.typeError("Method %s of class %s has no type" % (method.sym.name, info.sym.name),
+                     location)
+      return null(Type)
+    }
+    ty = mty!
+    if ty.type == Type.TypeClass.Polymorphic {
+      ty = ty.poly!.open(self.unifier, &self.unifier.newVar())
+    }
+    if ty.type != Type.TypeClass.Function {
+      self.typeError("Method %s of class %s is not a function" % (method.sym.name, info.sym.name),
+                     location)
+      return null(Type)
+    }
+    params = ty.function.params
+    result = ty.function.result
+    if params.type == Type.TypeClass.Tuple && params.tuple.elements.length() > 0 {
+      selfParam = params.tuple.elements[0]
+      rest = arrayof(Type)
+      for i in range(params.tuple.elements.length()) {
+        if i > 0 {
+          rest.append(params.tuple.elements[i])
+        }
+      }
+      if rest.length() == 1 {
+        restType = rest[0]
+      } else {
+        restType = Type(TupleType(rest))
+      }
+    } else {
+      // Single parameter: just self.
+      selfParam = params
+      noParams = arrayof(Type)
+      restType = Type(TupleType(noParams))
+    }
+    te = self.unify(selfParam, instanceType)
+    if !isnull(te) {
+      self.typeError("Cannot call method %s on %s: %s"
+                     % (method.sym.name, instanceType.toString(), te.msg), location)
+      return null(Type)
+    }
+    return Type(FunctionType(restType, result))
+  }
+
+  // Substitute the class's type parameters with the instance's type
+  // arguments inside a member type, without binding the class's type
+  // variables globally.
+  func substituteClassVars(self, info: ClassInfo, instanceType: Type, memberType: Type) -> Type {
+    if instanceType.type != Type.TypeClass.Typename || isnull(instanceType.tyname.params) {
+      return memberType
+    }
+    instParams = instanceType.tyname.params!
+    result = memberType
+    for i in range(info.paramVars.length()) {
+      pv = self.resolve(info.paramVars[i])
+      if pv.type == Type.TypeClass.Var && i < instParams.elements.length() {
+        fresh = self.newTyvar()
+        result = result.replaceVar(pv.tyvar!, fresh)
+        te = self.unify(Type(fresh), instParams.elements[i])
+      }
+    }
+    return self.resolve(result)
   }
 
   func structFunction(self, fn: db.Function) {
@@ -921,6 +1351,22 @@ class TypeChecker(self) {
         ty = self.resolve(sm.value!)
         if ty.type == Type.TypeClass.Var {
           boundVars.append(Type(ty.tyvar!))
+        }
+      }
+    }
+    // Class methods must also generalize over the enclosing class's type
+    // parameters, so that each call site instantiates them freshly.
+    for cv in self.classBoundVars {
+      rcv = self.resolve(cv)
+      if rcv.type == Type.TypeClass.Var {
+        exists = false
+        for bv in boundVars {
+          if bv.tyvar.id == rcv.tyvar.id {
+            exists = true
+          }
+        }
+        if !exists {
+          boundVars.append(Type(rcv.tyvar!))
         }
       }
     }

@@ -24,13 +24,25 @@ use sym
 relation HashedClass CurrentScope CIdentifier cascade
 
 class CurrentScope(self) {
+  self.depth = 0u32
 
   func open(self) {
-    // todo
+    self.depth += 1
   }
 
   func close(self) {
-    // todo
+    // Forget identifiers that were bound in the scope being closed, so that
+    // the same name can be re-declared in a different function.
+    closing = arrayof(CIdentifier)
+    for id in self.cIdentifiers() {
+      if id.scopeDepth == self.depth {
+        closing.append(id)
+      }
+    }
+    for id in closing {
+      self.removeCIdentifier(id)
+    }
+    self.depth -= 1
   }
 
   func getIdentifier(self, name: Sym, type: CTypeExpr?, bindingInstance: bool, isLocal: bool) -> CIdentifier {
@@ -40,6 +52,7 @@ class CurrentScope(self) {
     exists = self.findCIdentifier(id)
     if isnull(exists) {
       id.firstInstance = true
+      id.scopeDepth = self.depth
       self.insertCIdentifier(id)
     } else {
       id.isParameter = exists.isLocal
@@ -108,6 +121,7 @@ class CBuilder(self, tc: types.TypeChecker) {
   self.identifierScope = CurrentScope()
   self.typechecker = tc
   self.typeGenerator = CTypeGenerator(tc)
+  self.emittedClassDecls = arrayof(string)
   self.insertDependencyStack(DependencyStack())
 
   func build(self, module: db.Function) -> CProgram {
@@ -130,6 +144,105 @@ class CBuilder(self, tc: types.TypeChecker) {
   func addDeclaration(self, dec: CDeclaration) {
     self.dependencyStack.append(dec)
     self.program.insertCDeclaration(dec)
+  }
+
+  // Class support ------------------------------------------------------------
+
+  // True if ty is a class instance type.
+  func isClassType(self, ty: types.Type?) -> bool {
+    return self.typechecker.isClassType(ty)
+  }
+
+  // The C name for a class instantiation, e.g. Point_u64_u64.  This matches
+  // both the call-site specialization name and the typedef name (minus _t).
+  func classCName(self, ty: types.Type) -> string {
+    t = self.typechecker.resolve(ty)
+    assert t.type == types.Type.TypeClass.Typename
+    if isnull(t.tyname.params) {
+      return t.tyname.name.name
+    }
+    spec = t.tyname.specializationString()
+    if spec == "" {
+      return t.tyname.name.name
+    }
+    return "%s_%s" % (t.tyname.name.name, spec)
+  }
+
+  // The C name of a class method for a given instance type and argument
+  // types: <class instantiation>_<method>[_<argtype>...].
+  func methodCName(self, instanceTy: types.Type, methodName: string,
+                   argsTy: types.Type?) -> string {
+    name = self.classCName(instanceTy) + "_" + methodName
+    if !isnull(argsTy) {
+      t = self.typechecker.resolve(argsTy!)
+      if t.type == types.Type.TypeClass.Tuple {
+        for el in t.tuple.elements {
+          name += "_" + self.typechecker.resolve(el).toString()
+        }
+      } else {
+        name += "_" + t.toString()
+      }
+    }
+    return name
+  }
+
+  // The definition-side C name of a method, computed from the method's
+  // resolved function type (whose first parameter is self).
+  func methodDefCName(self, fnType: types.Type, methodName: string) -> string {
+    assert fnType.type == types.Type.TypeClass.Function
+    params = fnType.function.params
+    if params.type == types.Type.TypeClass.Tuple && params.tuple.elements.length() > 0 {
+      name = self.classCName(params.tuple.elements[0]) + "_" + methodName
+      for i in range(params.tuple.elements.length()) {
+        if i > 0 {
+          name += "_" + self.typechecker.resolve(params.tuple.elements[i]).toString()
+        }
+      }
+      return name
+    }
+    return self.classCName(params) + "_" + methodName
+  }
+
+  // Track class structs and methods we have already emitted, so multiple
+  // instantiations with the same types are only emitted once.
+  func alreadyEmitted(self, name: string) -> bool {
+    for n in self.emittedClassDecls {
+      if n == name {
+        return true
+      }
+    }
+    return false
+  }
+
+  func markEmitted(self, name: string) {
+    self.emittedClassDecls.append(name)
+  }
+
+  func cClassDeclaration(self, location: db.Location, name: string,
+                         fields: CParamList, toStringMethod: string) -> CDeclaration {
+    return CDeclaration(CClassDeclaration(location, name, fields, toStringMethod))
+  }
+
+  // Create a function definition whose return type is given directly as a C
+  // type, rather than derived from the symbol's typed value.
+  func cFunDefWithReturnType(self, location: db.Location, name: string,
+                             params: CParamList, body: CBlock,
+                             returnType: CTypeExpr) -> CDeclaration {
+    fundec = CDeclaration(CFunctionDeclaration(location, Sym.new(name), params,
+                                               returnType, body))
+    return fundec
+  }
+
+  // Declare a local variable with an explicit C type in the current block and
+  // identifier scope, returning an expression referencing it.
+  func declareLocal(self, sym: Sym, ctype: CTypeExpr?) -> CExpr {
+    id = self.identifierScope.getIdentifier(sym, ctype, true, true)
+    if !isnull(self.currentBlock) {
+      self.currentBlock.declare(id)
+    } else {
+      self.program.mainCBlock.declare(id)
+    }
+    return CExpr(id)
   }
 
   func findDeclaration(self, name: string) -> CDeclaration? {
@@ -250,6 +363,10 @@ class CBuilder(self, tc: types.TypeChecker) {
     if !isnull(type) {
       ty = self.typechecker.resolve(type!)
       ctype = self.typeGenerator.genCType(ty)
+      if self.typechecker.isClassType(ty) {
+        // Anything referencing a class instance needs its struct typedef.
+        self.dependencyStack.append(self.classCName(ty) + "_class")
+      }
     }
     id = self.identifierScope.getIdentifier(symbol, ctype, bindingInstance, false)
     if !isnull(ctype) && id.firstInstance {
@@ -487,7 +604,7 @@ class CBuilder(self, tc: types.TypeChecker) {
         } else {
           raise Status.Unimplemented, "Indexing into non-tuple types."
         }
-        return CExpr(CDotExpr(location, indexee, cFieldName))
+        return CExpr(CDotExpr(location, indexee, cFieldName, false))
      }
    }
   }
@@ -515,7 +632,7 @@ class CBuilder(self, tc: types.TypeChecker) {
   }
 
   func cFieldSelect(self, location: db.Location, strct: CExpr, field: Sym) -> CExpr {
-    return CExpr(CDotExpr(location, strct, field.name))
+    return CExpr(CDotExpr(location, strct, field.name, false))
   }
 
   /* Rune statements *******************************************************************/

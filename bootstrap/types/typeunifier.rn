@@ -133,6 +133,10 @@ class TypeUnifier(self) {
       return self.unifyTuple(a.tuple!, b, location)
     } else if a.type == Type.TypeClass.Function {
       return self.unifyFunction(a.function!, b, location)
+    } else if a.type == Type.TypeClass.Typename {
+      return self.unifyTypename(a.tyname!, b, location)
+    } else if b.type == Type.TypeClass.Typename {
+      return self.unifyTypename(b.tyname!, a, location)
     } else if a.type == Type.TypeClass.Polymorphic {
       return self.unifyPolymorphic(a.poly!, b, location)
     } else if a.type == Type.TypeClass.AnyInt {
@@ -333,6 +337,33 @@ class TypeUnifier(self) {
 
 
   /**
+   * @brief Unify a TypeName (e.g. a class instance type) with another type.
+   *
+   * Two named types unify when their names match and their type parameters,
+   * if any, unify pairwise.
+   */
+  func unifyTypename(self, t1: TypeName, b: Type,
+                  location: db.Location? = null(db.Location)) -> TypeError? {
+    if b.type != Type.TypeClass.Typename {
+      return TypeError("Unifying named type %s with %s" % (t1.toString(), b.toString()),
+                       location)
+    }
+    t2 = b.tyname!
+    if t1.name != t2.name {
+      return TypeError("Failed to unify named types %s and %s." % (t1.toString(), t2.toString()),
+                       location)
+    }
+    if isnull(t1.params) || isnull(t2.params) {
+      if isnull(t1.params) && isnull(t2.params) {
+        return null(TypeError)
+      }
+      return TypeError("Named types %s and %s have different type parameters."
+                       % (t1.toString(), t2.toString()), location)
+    }
+    return self.unifyTuple(t1.params!, Type(t2.params!), location)
+  }
+
+  /**
    * @brief Unify a FunctionType with another type.
    *
    * @param t1 The FunctionType to unify.
@@ -459,6 +490,18 @@ class TypeUnifier(self) {
     }
     assert v > ty.tyvar.id
     return self.resolveVar(ty.tyvar.id)
+  }
+
+  /**
+   * @brief follow a chain of variable-to-variable bindings to the
+   * representative variable at the end of the chain.
+   */
+  func representative(self, v: TypeVar) -> TypeVar {
+    ty = self.lookupVar(v.id)
+    if isnull(ty) || ty.type != Type.TypeClass.Var {
+      return v
+    }
+    return self.representative(ty.tyvar!)
   }
 
 }

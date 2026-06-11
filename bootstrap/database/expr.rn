@@ -330,6 +330,33 @@ func getExprTypeFromSym(sym: Sym) -> ExprType {
   }
 }
 
+// Return the binary operator corresponding to a compound assignment operator,
+// e.g. AddEquals -> Add.  Returns ExprType.Equals for plain assignment.
+export func getCompoundAssignBaseOp(type: ExprType) -> ExprType {
+  switch type {
+    ExprType.AddEquals => return ExprType.Add
+    ExprType.SubEquals => return ExprType.Sub
+    ExprType.MulEquals => return ExprType.Mul
+    ExprType.DivEquals => return ExprType.Div
+    ExprType.ModEquals => return ExprType.Mod
+    ExprType.AndEquals => return ExprType.And
+    ExprType.OrEquals => return ExprType.Or
+    ExprType.XorEquals => return ExprType.Xor
+    ExprType.BitandEquals => return ExprType.Bitand
+    ExprType.BitorEquals => return ExprType.Bitor
+    ExprType.BitxorEquals => return ExprType.Bitxor
+    ExprType.ExpEquals => return ExprType.Exp
+    ExprType.ShlEquals => return ExprType.Shl
+    ExprType.ShrEquals => return ExprType.Shr
+    ExprType.RotlEquals => return ExprType.Rotl
+    ExprType.RotrEquals => return ExprType.Rotr
+    ExprType.AddTruncEquals => return ExprType.AddTrunc
+    ExprType.SubTruncEquals => return ExprType.SubTrunc
+    ExprType.MulTruncEquals => return ExprType.MulTrunc
+    default => return ExprType.Equals
+  }
+}
+
 // The expression class represents all expression trees in Rune.
 class Expr(self, type: ExprType, location: Location) {
   self.type = type
@@ -826,6 +853,23 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Equals => op = c.CBinaryOperator.Type.Assign
 
       default => {
+        // Float arithmetic maps to plain C operators; there is no overflow
+        // detection for floating point.
+        isFloat = false
+        if !isnull(left.typedValue) {
+          lty = builder.typechecker.resolve(left.typedValue!)
+          isFloat = lty.type == types.Type.TypeClass.Float
+        }
+        if isFloat {
+          switch self.type {
+            ExprType.Add => fop = c.CBinaryOperator.Type.Plus
+            ExprType.Sub => fop = c.CBinaryOperator.Type.Minus
+            ExprType.Mul => fop = c.CBinaryOperator.Type.Times
+            ExprType.Div => fop = c.CBinaryOperator.Type.Divides
+            default => raise Status.Unimplemented, "Float operator not yet supported by C backend: ", getExprTypeName(self.type)
+          }
+          return builder.cBinaryOperator(self.location, fop, left.typedValue, l, r)
+        }
         switch self.type {
           ExprType.Add => {
             if left.typedValue == types.STRING() {
@@ -899,7 +943,20 @@ class Expr(self, type: ExprType, location: Location) {
   func genCFieldSel(self, builder: c.CBuilder) -> c.CExpr {
     strct = self.firstChildExpr!
     field = strct.nextExprChildExpr!
+    if strct.type == ExprType.Ident {
+      // Enum member accesses are inlined as integer constants.
+      einfo = builder.typechecker.lookupEnum(strct.val.symVal!)
+      if !isnull(einfo) {
+        value = einfo.memberValue(field.toString())
+        bigValue = Bigint(value)
+        return builder.cIntLiteral(bigValue)
+      }
+    }
     left = strct.genC(builder)
+    if builder.isClassType(strct.typedValue) {
+      // Class instances are pointers; use -> to access data members.
+      return c.CExpr(c.CDotExpr(self.location, left, field.toString(), true))
+    }
     return builder.cFieldSelect(self.location, left, field.val.symVal!)
   }
 
@@ -910,8 +967,23 @@ class Expr(self, type: ExprType, location: Location) {
     assert !isnull(fntype)
 
     if left.type == ExprType.Dot {
-      // Handle method calling for classes, etc.
-      // Right now, we just handle the built-in methods on arrays.
+      // Handle method calls on class instances.
+      base = left.firstChildExpr!
+      if builder.isClassType(base.typedValue) {
+        method = base.nextExprChildExpr!
+        name = builder.methodCName(base.typedValue!, method.toString(), right.typedValue)
+        args = c.CExprList()
+        args.appendCExpr(base.genC(builder))
+        if right.typedValue.type == types.Type.TypeClass.Tuple {
+          for child in right.childExprs() {
+            args.appendCExpr(child.genC(builder))
+          }
+        } else {
+          args.appendCExpr(right.genC(builder))
+        }
+        return builder.cCall(self.location, name, c.CExpr(args))
+      }
+      // Built-in methods on arrays.
       array = left.firstChildExpr!
       if array.typedValue.type == types.Type.TypeClass.Array {
         field = array.nextExprChildExpr!

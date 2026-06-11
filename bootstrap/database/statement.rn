@@ -12,10 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use sym
+
 use root
 use datatype
 use filepath
 use location
+use bigint
 use block
 use expr
 use rel
@@ -201,6 +204,10 @@ class Statement(self, block: Block, type: StateType, location: Location) {
       StateType.For => self.genCFor(builder)
       StateType.Return => self.genCReturn(builder)
       StateType.Call => builder.addStatement(self.location, self.expr.genC(builder))
+      StateType.While => self.genCWhile(builder)
+      StateType.Do => self.genCDo(builder)
+      StateType.Assert => self.genCAssert(builder)
+      StateType.Foreach => self.genCForeach(builder)
       default => raise Status.Unimplemented, "Statement type not yet supported by C backend builder ", self.type
     }
   }
@@ -330,6 +337,188 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     assert !isnull(self.expr)
     returnStmt = builder.cReturnStatement(self.location, self.expr.genC(builder))
     builder.addStatement(self.location, returnStmt)
+  }
+
+  func genCWhile(self, builder: c.CBuilder) {
+    prev = self.prevBlockStatement
+    if !isnull(prev) && prev.type == StateType.Do {
+      // This while terminates a do-while loop; the do statement generates it.
+      return
+    }
+    assert !isnull(self.expr)
+    assert !isnull(self.subBlock)
+    cexpr = self.expr.genC(builder)
+    cbody = self.subBlock.genC(builder)
+    builder.addStatement(self.location,
+        c.CStatement(self.location, c.CStatementType.While, cexpr, cbody))
+  }
+
+  func genCDo(self, builder: c.CBuilder) {
+    assert !isnull(self.subBlock)
+    whileStatement = self.nextBlockStatement
+    assert !isnull(whileStatement) && whileStatement.type == StateType.While
+    if isnull(whileStatement.subBlock) {
+      // Plain do-while: do { ... } while cond
+      body = self.subBlock.genC(builder)
+      cond = whileStatement.expr.genC(builder)
+      builder.addStatement(self.location,
+          c.CStatement(self.location, c.CStatementType.Do, cond, body))
+    } else {
+      // Generalized loop with a while body:
+      //   while (1) { <do-body>; if (!cond) break; <while-body>; }
+      builder.openBlock(self.location)
+      for s in self.subBlock.statements() {
+        s.genC(builder)
+      }
+      cond = whileStatement.expr.genC(builder)
+      notCond = c.CExpr(c.CPrefixOperator(self.location,
+          c.CPrefixOperator.Type.LogNot, cond))
+      builder.openBlock(self.location)
+      builder.addStatement(self.location,
+          c.CStatement(self.location, c.CStatementType.Break))
+      breakBody = builder.closeBlock()
+      builder.addStatement(self.location,
+          c.CStatement(self.location, c.CStatementType.If, notCond, breakBody))
+      for s in whileStatement.subBlock.statements() {
+        s.genC(builder)
+      }
+      body = builder.closeBlock()
+      one = c.CExpr(c.CLiteral(Bigint(1u32), false))
+      builder.addStatement(self.location,
+          c.CStatement(self.location, c.CStatementType.While, one, body))
+    }
+  }
+
+  func genCForeach(self, builder: c.CBuilder) {
+    assert !isnull(self.expr)
+    assert !isnull(self.subBlock)
+    loopVarExpr = self.expr.firstChildExpr!
+    iterExpr = loopVarExpr.nextExprChildExpr!
+    if iterExpr.type == ExprType.Call {
+      target = iterExpr.firstChildExpr!
+      argExpr = target.nextExprChildExpr
+      if target.type == ExprType.Ident && target.val.symVal.name == "range" {
+        self.genCForeachRange(builder, loopVarExpr, argExpr!)
+        return
+      }
+      if target.type == ExprType.Dot {
+        base = target.firstChildExpr!
+        methodName = base.nextExprChildExpr.toString()
+        if methodName == "values" {
+          self.genCForeachArray(builder, loopVarExpr, base, false)
+          return
+        }
+        if methodName == "items" {
+          self.genCForeachArray(builder, loopVarExpr, base, true)
+          return
+        }
+      }
+    }
+    // Plain array iteration: for x in arr.
+    self.genCForeachArray(builder, loopVarExpr, iterExpr, false)
+  }
+
+  // Emit: for (i = start; i < end; i = i + 1) { ... }
+  func genCForeachRange(self, builder: c.CBuilder, loopVarExpr: Expr, argExpr: Expr) {
+    loopSym = loopVarExpr.val.symVal!
+    if argExpr.type == ExprType.Tuple {
+      first = argExpr.firstChildExpr!
+      second = first.nextExprChildExpr!
+      cstart = first.genC(builder)
+      cend = second.genC(builder)
+    } else {
+      zero = Bigint(0u64)
+      cstart = builder.cIntLiteral(zero)
+      cend = argExpr.genC(builder)
+    }
+    initRef = builder.cIdentifier(loopSym, true)
+    init = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
+                                     null(c.CTypeExpr), initRef, cstart))
+    cond = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.LessThan,
+                                     null(c.CTypeExpr), builder.cIdentifier(loopSym, false), cend))
+    oneVal = Bigint(1u64)
+    plus = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Plus,
+                                     null(c.CTypeExpr), builder.cIdentifier(loopSym, false),
+                                     builder.cIntLiteral(oneVal)))
+    incr = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
+                                     null(c.CTypeExpr), builder.cIdentifier(loopSym, false), plus))
+    list = c.CExprList()
+    list.appendCExpr(init)
+    list.appendCExpr(cond)
+    list.appendCExpr(incr)
+    body = self.subBlock.genC(builder)
+    builder.addStatement(self.location,
+        c.CStatement(self.location, c.CStatementType.For, c.CExpr(list), body))
+  }
+
+  // Emit: for (idx = 0; idx < array_length(arr); idx = idx + 1) {
+  //         x = arr[idx];  (or x = (idx, arr[idx]) for items())
+  //         ...
+  //       }
+  func genCForeachArray(self, builder: c.CBuilder, loopVarExpr: Expr, arrayExpr: Expr,
+                        isItems: bool) {
+    loopSym = loopVarExpr.val.symVal!
+    idxSym = Sym.new("%s_index" % loopSym.name)
+    u64type = builder.cIntType(self.location, false, 64u32)
+    idxDecl = builder.declareLocal(idxSym, u64type)
+
+    zero = Bigint(0u64)
+    init = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
+                                     null(c.CTypeExpr), idxDecl, builder.cIntLiteral(zero)))
+    lenCall = builder.cCall(self.location, c.CRuntimeFunction.ArrayLength,
+                            arrayExpr.genC(builder))
+    idxRef1 = c.CExpr(c.CIdentifier(idxSym, null(c.CTypeExpr), false, false, false))
+    cond = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.LessThan,
+                                     null(c.CTypeExpr), idxRef1, lenCall))
+    oneVal = Bigint(1u64)
+    idxRef2 = c.CExpr(c.CIdentifier(idxSym, null(c.CTypeExpr), false, false, false))
+    idxRef3 = c.CExpr(c.CIdentifier(idxSym, null(c.CTypeExpr), false, false, false))
+    plus = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Plus,
+                                     null(c.CTypeExpr), idxRef2, builder.cIntLiteral(oneVal)))
+    incr = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
+                                     null(c.CTypeExpr), idxRef3, plus))
+    list = c.CExprList()
+    list.appendCExpr(init)
+    list.appendCExpr(cond)
+    list.appendCExpr(incr)
+
+    builder.openBlock(self.location)
+    idxRef4 = c.CExpr(c.CIdentifier(idxSym, null(c.CTypeExpr), false, false, false))
+    element = c.CExpr(c.CIndexExpr(self.location, arrayExpr.genC(builder), idxRef4))
+    if isItems {
+      idxRef5 = c.CExpr(c.CIdentifier(idxSym, null(c.CTypeExpr), false, false, false))
+      pairArgs = c.CExprList()
+      pairArgs.appendCExpr(idxRef5)
+      pairArgs.appendCExpr(element)
+      element = builder.cTuple(self.location, loopVarExpr.typedValue, pairArgs)
+    }
+    loopRef = builder.cIdentifier(loopSym, true)
+    assign = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
+                                       null(c.CTypeExpr), loopRef, element))
+    builder.addStatement(self.location, assign)
+    for s in self.subBlock.statements() {
+      s.genC(builder)
+    }
+    body = builder.closeBlock()
+    builder.addStatement(self.location,
+        c.CStatement(self.location, c.CStatementType.For, c.CExpr(list), body))
+  }
+
+  func genCAssert(self, builder: c.CBuilder) {
+    assert !isnull(self.expr)
+    // The expression is a list; the first element is the condition.
+    cond = self.expr.firstChildExpr!
+    ccond = cond.genC(builder)
+    notCond = c.CExpr(c.CPrefixOperator(self.location,
+        c.CPrefixOperator.Type.LogNot, ccond))
+    builder.openBlock(self.location)
+    args = c.CExprList()
+    args.appendCExpr(builder.cStringLiteral("Assertion failed"))
+    raiseCall = builder.cCall(self.location, c.CRuntimeFunction.Raise, c.CExpr(args))
+    builder.addStatement(self.location, raiseCall)
+    body = builder.closeBlock()
+    builder.addStatement(self.location,
+        c.CStatement(self.location, c.CStatementType.If, notCond, body))
   }
 }
 

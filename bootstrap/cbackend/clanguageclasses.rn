@@ -48,6 +48,31 @@ enum CStatementType {
    Vardef
 }
 
+// Convert a Rune identifier into a valid C identifier by escaping any bytes
+// that C does not allow in identifiers (e.g. UTF-8 identifiers like Γ).
+func mangleCName(name: string) -> string {
+  needsMangling = false
+  for i in range(name.length()) {
+    c = name[i]
+    if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+      needsMangling = true
+    }
+  }
+  if !needsMangling {
+    return name
+  }
+  result = ""
+  for i in range(name.length()) {
+    c = name[i]
+    if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+      result.append(c)
+    } else {
+      result.concat("_u%u" % <u32>c)
+    }
+  }
+  return result
+}
+
 // Types ----------------------------------------------------------------------
 class CPrimitiveType(self, ty: Type) {
 
@@ -196,14 +221,21 @@ class CPrimitiveType(self, ty: Type) {
 }
 
 
-relation OneToOne CPointerType CTypeExpr cascade
-
 class CPointerType(self, type: CTypeExpr) {
 
-   self.insertCTypeExpr(type)
+   // Stored as a plain reference: a relation insert here would conflict with
+   // the OneToOne CTypeExpr CPointerType relation used by CTypeExpr.
+   self.target = type
+
+   func toString(self) -> string {
+     // Pointers are used for class instances; helper functions such as
+     // tostring_<name>_t are named after the pointed-to type.
+     return self.target.toString()
+   }
 
    func emit(self, e: CEmitter) {
-     // TODO
+     self.target.emit(e)
+     e.write(" *")
    }
 }
 
@@ -236,6 +268,9 @@ class CDefinedType(self, name: string) {
     if self.name == "string_t" {
       e.needStringType()
     }
+    if self.name == "none" {
+      e.needNoneType()
+    }
     e.write("%s_t" % self.name)
   }
 }
@@ -255,6 +290,10 @@ class CTypeExpr(self, type: CPrimitiveType | CPointerType | CArrayType | CDefine
     Array
     Defined
   }
+
+  // The Rune type suffix (e.g. u64, i1, f32) used when printing values of
+  // this type inside composite values like tuples and arrays.
+  self.runeSuffix = ""
 
   typeswitch type {
     CPrimitiveType => {
@@ -280,7 +319,33 @@ class CTypeExpr(self, type: CPrimitiveType | CPointerType | CArrayType | CDefine
       CTypeExpr.Type.Primitive => return self.cPrimitiveType.width()
       CTypeExpr.Type.Defined => return 0u32
       CTypeExpr.Type.Array => return 0u32
+      CTypeExpr.Type.Pointer => return 64u32
       default => raise Status.Unimplemented, "Width not defined for this type"
+    }
+  }
+
+  // Request any runtime typedefs this type relies on (e.g. double_t) without
+  // writing anything.  Used when a type name is formatted into generated code
+  // via toString() rather than emitted through emit().
+  func requestRuntimeTypes(self, e: CEmitter) {
+    switch self.type {
+      CTypeExpr.Type.Primitive => {
+        if self.cPrimitiveType.type == CPrimitiveType.Type.Float {
+          e.needFloatType()
+        } else if self.cPrimitiveType.type == CPrimitiveType.Type.Double {
+          e.needDoubleType()
+        }
+      }
+      CTypeExpr.Type.Defined => {
+        if self.cDefinedType.name == "bool_t" {
+          e.needBoolType()
+        } else if self.cDefinedType.name == "string_t" || self.cDefinedType.name == "string" {
+          e.needStringType()
+        } else if self.cDefinedType.name == "none" {
+          e.needNoneType()
+        }
+      }
+      default => return
     }
   }
 
@@ -289,6 +354,7 @@ class CTypeExpr(self, type: CPrimitiveType | CPointerType | CArrayType | CDefine
       CTypeExpr.Type.Primitive => return self.cPrimitiveType.isSigned()
       CTypeExpr.Type.Defined => return false
       CTypeExpr.Type.Array => return false
+      CTypeExpr.Type.Pointer => return false
       default => raise Status.Unimplemented, "isSigned not defined for this type"
     }
   }
@@ -298,6 +364,7 @@ class CTypeExpr(self, type: CPrimitiveType | CPointerType | CArrayType | CDefine
       CTypeExpr.Type.Primitive => return self.cPrimitiveType.toString()
       CTypeExpr.Type.Defined => return self.cDefinedType.toString()
       CTypeExpr.Type.Array => return self.cArrayType.toString()
+      CTypeExpr.Type.Pointer => return self.cPointerType.toString()
     }
   }
 
@@ -306,6 +373,7 @@ class CTypeExpr(self, type: CPrimitiveType | CPointerType | CArrayType | CDefine
       CTypeExpr.Type.Primitive => self.cPrimitiveType.emit(e)
       CTypeExpr.Type.Defined => self.cDefinedType.emit(e)
       CTypeExpr.Type.Array => self.cArrayType.emit(e)
+      CTypeExpr.Type.Pointer => self.cPointerType.emit(e)
     }
   }
 }
@@ -400,6 +468,7 @@ class CIdentifier(self, symbol: Sym, type: CTypeExpr?, firstInstance: bool, bind
   self.firstInstance = firstInstance
   self.bindingInstance = bindingInstance
   self.isLocal = isLocal
+  self.scopeDepth = 0u32  // Scope nesting level at which this identifier was bound.
 
   func hash(self) -> u64 {
     return hashValue(self.symbol.name)
@@ -430,7 +499,7 @@ class CIdentifier(self, symbol: Sym, type: CTypeExpr?, firstInstance: bool, bind
   }
 
   func emit(self, e: CEmitter) {
-    e.write(self.symbol.name)
+    e.write(mangleCName(self.symbol.name))
   }
 
   func emitDeclaration(self, e: CEmitter) {
@@ -440,7 +509,7 @@ class CIdentifier(self, symbol: Sym, type: CTypeExpr?, firstInstance: bool, bind
       self.type.emit(e)
     }
     e.space()
-    e.writeln("%s;" % self.symbol.name)
+    e.writeln("%s;" % mangleCName(self.symbol.name))
   }
 }
 
@@ -648,9 +717,10 @@ class CBinaryOperator(self, location: db.Location, type: CBinaryOperator.Type,
 
 relation OneToOne CDotExpr CExpr cascade
 
-class CDotExpr(self, location: db.Location, left: CExpr, field: string) {
+class CDotExpr(self, location: db.Location, left: CExpr, field: string, arrow: bool) {
   self.insertCExpr(left)
   self.field = field
+  self.arrow = arrow
 
   func precedence(self) -> u8 {
     return 1u8
@@ -678,7 +748,11 @@ class CDotExpr(self, location: db.Location, left: CExpr, field: string) {
     } else {
       self.cExpr.emit(e)
     }
-    e.write(".%s" % self.field)
+    if self.arrow {
+      e.write("->%s" % self.field)
+    } else {
+      e.write(".%s" % self.field)
+    }
   }
 }
 
@@ -728,6 +802,9 @@ enum CRuntimeFunction {
 
    // Well-known C Standard Library functions
    Printf
+
+   // Abort with an error message.
+   Raise
 
    // Rune built-in operators
    AddWithOverflowDetect
@@ -801,6 +878,11 @@ relevantType: CTypeExpr?) {
         e.include("<stdio.h>")
         e.printfArg = true
         e.write("printf")
+      }
+
+      CRuntimeFunction.Raise => {
+        e.needRaiseError()
+        e.write("raise")
       }
 
       // Rune built-in arithmetic operators.
@@ -1099,7 +1181,7 @@ class CParameter(self, location: db.Location, name: string, type: CTypeExpr) {
        self.type.emit(e)
        e.space()
     }
-    e.write(self.name)
+    e.write(mangleCName(self.name))
   }
 }
 
@@ -1197,6 +1279,32 @@ class CStatement(self, location: db.Location, type: CStatementType,
         }
         e.write(";")
       }
+      CStatementType.While => {
+        assert !isnull(self.subCBlock)
+        assert !isnull(self.cExpr)
+        e.write("while (")
+        self.cExpr.emit(e)
+        e.writeopenln(") {")
+        self.subCBlock.emit(e)
+        e.writecloseln("}")
+      }
+      CStatementType.Do => {
+        // A do-while loop: the expression is the loop condition.
+        assert !isnull(self.subCBlock)
+        assert !isnull(self.cExpr)
+        e.writeopenln("do {")
+        self.subCBlock.emit(e)
+        e.writecloseln("}")
+        e.write("while (")
+        self.cExpr.emit(e)
+        e.write(");")
+      }
+      CStatementType.Break => {
+        e.write("break;")
+      }
+      CStatementType.Continue => {
+        e.write("continue;")
+      }
       default => {
         self.cExpr.emit(e)
         e.write(";")
@@ -1255,6 +1363,10 @@ class CArrayDeclaration(self, location: db.Location, typeName: string, elementTy
     e.needArrayAlloc()
     e.needStringWriter()
     e.needPrimitiveTypeEqualities()
+    // The append helper emitted below calls array_resize, and the element
+    // type may rely on a runtime typedef like double_t.
+    e.needArrayAppend(self.elementType)
+    self.elementType.requestRuntimeTypes(e)
 
     elementTypeString = self.elementType.toString()
     // Emit typedef ---------------------------------------------
@@ -1298,6 +1410,10 @@ class CArrayDeclaration(self, location: db.Location, typeName: string, elementTy
       if (self.elementType.type == CTypeExpr.Type.Defined
           && self.elementType.cDefinedType.name == "string") {
          e.write("tostring_string_t(\"\\\"%s\\\"\", a[i]);")
+      } else if self.elementType.runeSuffix != "" {
+         e.write("tostring_%s_t(a[i]);" % elementTypeString)
+         e.newline()
+         e.write("tostring_string_t(\"%s\");" % self.elementType.runeSuffix)
       } else {
          e.write("tostring_%s_t(a[i]);" % elementTypeString)
       }
@@ -1417,11 +1533,7 @@ class CStructDeclaration(self, location: db.Location, name: string, fields: CPar
       e.writeln(";")
     } else {
       e.writeopenln(" {")
-      e.write("tostring_string_t(\"")
-      if !self.isTuple {
-         e.write(self.name)
-      }
-      e.writeln("(\");")
+      e.writeln("tostring_string_t(\"(\");")
       first = true
       for field in self.cParamList.cParameters() {
         if !first {
@@ -1437,12 +1549,11 @@ class CStructDeclaration(self, location: db.Location, name: string, fields: CPar
           e.write("(")
         }
         e.writeln("str.%s);" % field.name)
+        if field.type.runeSuffix != "" {
+          e.writeln("tostring_string_t(\"%s\");" % field.type.runeSuffix)
+        }
       }
-      if self.cParamList.countCParameters() == 1 {
-        e.write("tostring_string_t(\",)\");")
-      } else {
-        e.write("tostring_string_t(\")\");")
-      }
+      e.write("tostring_string_t(\")\");")
       e.writecloseln("}")
       e.newline()
     }
@@ -1474,6 +1585,85 @@ class CStructDeclaration(self, location: db.Location, name: string, fields: CPar
 }
 
 
+relation OneToOne CClassDeclaration CParamList cascade
+
+// Emits the C structure for a Rune class instance, plus its tostring helper.
+// Class instances are heap allocated and passed by pointer; the constructor
+// function itself is emitted separately as a CFunctionDeclaration.
+class CClassDeclaration(self, location: db.Location, name: string, fields: CParamList,
+                        toStringMethod: string) {
+  self.location = location
+  self.name = name
+  // The C name of the user-defined toString method, or "" if there is none.
+  self.toStringMethod = toStringMethod
+  self.insertCParamList(fields)
+  self.protoEmitted = false
+
+  func emit(self, e: CEmitter, proto: bool) {
+    e.include("<stdlib.h>")
+    e.include("<stdio.h>")
+    e.needStringWriter()
+
+    if proto {
+      if !self.protoEmitted {
+        e.writeln("typedef struct %s_t %s_t;" % (self.name, self.name))
+        e.writeln("void tostring_%s_t(%s_t *self);" % (self.name, self.name))
+        self.protoEmitted = true
+      }
+      return
+    }
+
+    // Emit the structure definition ----------------------------------
+    if self.protoEmitted {
+      e.write("struct %s_t {" % self.name)
+    } else {
+      e.write("typedef struct %s_t {" % self.name)
+    }
+    e.indent()
+    for field in self.cParamList.cParameters() {
+      e.newline()
+      field.emit(e)
+      e.write(";")
+    }
+    if self.protoEmitted {
+      e.writecloseln("};")
+    } else {
+      e.writecloseln("} %s_t;" % self.name)
+    }
+    e.newline()
+
+    // Emit the toString function --------------------------------------
+    e.write("void tostring_%s_t(%s_t *self)" % (self.name, self.name))
+    e.writeopenln(" {")
+    if self.toStringMethod != "" {
+      e.write("tostring_string_t(\"")
+      e.write("%s")
+      e.writeln("\", " + self.toStringMethod + "(self));")
+    } else {
+      e.writeln("tostring_string_t(\"{\");")
+      first = true
+      for field in self.cParamList.cParameters() {
+        if !first {
+          e.writeln("tostring_string_t(\", \");")
+        }
+        first = false
+        e.writeln("tostring_string_t(\"%s = \");" % field.name)
+        if field.type.type == CTypeExpr.Type.Pointer {
+          e.write("tostring_%s_t(" % field.type.toString())
+        } else {
+          e.write("tostring_")
+          field.type.emit(e)
+          e.write("(")
+        }
+        e.writeln("self->%s);" % field.name)
+      }
+      e.writeln("tostring_string_t(\"}\");")
+    }
+    e.writecloseln("}")
+    e.newline()
+  }
+}
+
 class CFunctionDeclaration(self, location: db.Location, id: Sym,
                            params: CParamList, returnType: CTypeExpr,
                            body: CBlock) {
@@ -1486,7 +1676,7 @@ class CFunctionDeclaration(self, location: db.Location, id: Sym,
    func emit(self, e: CEmitter, proto: bool) {
      self.returnType.emit(e)
      e.space()
-     e.write(self.id.name + "(")
+     e.write(mangleCName(self.id.name) + "(")
      self.params.emit(e, ", ")
      if proto {
        e.write(");")
@@ -1504,14 +1694,16 @@ class CFunctionDeclaration(self, location: db.Location, id: Sym,
 relation OneToOne CDeclaration CFunctionDeclaration cascade
 relation OneToOne CDeclaration CStructDeclaration cascade
 relation OneToOne CDeclaration CArrayDeclaration cascade
+relation OneToOne CDeclaration CClassDeclaration cascade
 
-class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration | CArrayDeclaration) {
+class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration | CArrayDeclaration | CClassDeclaration) {
   self.dependencies = arrayof(string)
 
   enum Type {
     Function
     Struct
     Array
+    Class
   }
 
   typeswitch declaration {
@@ -1527,6 +1719,10 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
       self.type = Type.Array
       self.insertCArrayDeclaration(declaration)
     }
+    CClassDeclaration => {
+      self.type = Type.Class
+      self.insertCClassDeclaration(declaration)
+    }
   }
   // Don't emit the declaration or its prototype more than once.
   self.emitted = false
@@ -1536,6 +1732,9 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
       CDeclaration.Type.Function => return self.cFunctionDeclaration.id.name
       CDeclaration.Type.Struct => return self.cStructDeclaration.name
       CDeclaration.Type.Array => return self.cArrayDeclaration.typeName
+      // The "_class" suffix keeps the registry key distinct from the
+      // constructor function, which uses the plain class name.
+      CDeclaration.Type.Class => return self.cClassDeclaration.name + "_class"
     }
   }
 
@@ -1568,6 +1767,7 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
         CDeclaration.Type.Function => self.cFunctionDeclaration.emit(e, false)
         CDeclaration.Type.Struct => self.cStructDeclaration.emit(e, false)
         CDeclaration.Type.Array => self.cArrayDeclaration.emit(e, false)
+        CDeclaration.Type.Class => self.cClassDeclaration.emit(e, false)
       }
       self.emitted = true
     }
@@ -1580,6 +1780,7 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
       switch self.type {
         CDeclaration.Type.Function => self.cFunctionDeclaration.emit(e, true)
         CDeclaration.Type.Struct => self.cStructDeclaration.emit(e, true)
+        CDeclaration.Type.Class => self.cClassDeclaration.emit(e, true)
       }
       self.protoEmitted = true
     }

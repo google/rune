@@ -124,6 +124,7 @@ class CRuntime(self) {
   self.needStringType = false
   self.needFloatType = false
   self.needDoubleType = false
+  self.needNoneType = false
   self.needStringifyMacro = false
   self.needIntAddFn = false
   self.needIntSubFn = false
@@ -438,6 +439,11 @@ class CRuntime(self) {
     }
     if self.needDoubleType {
       e.writeln("typedef double double_t;")
+      e.newline()
+    }
+    if self.needNoneType {
+      // Rune's none type: a placeholder value with no information.
+      e.writeln("typedef uint8_t none_t;")
       e.newline()
     }
     if self.needStringifyMacro {

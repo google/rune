@@ -15,6 +15,7 @@
 use sym
 
 use root
+use bigint
 use location
 use filepath
 use value
@@ -178,6 +179,9 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       FuncType.Module => self.genModule(builder)
       FuncType.Plain => self.genCPlainFunc(builder)
       FuncType.Struct => self.genCStruct(builder)
+      FuncType.Constructor => self.genCConstructor(builder)
+      // Enum members are inlined as integer constants at their use sites.
+      FuncType.Enum => return
       default => raise Status.Unimplemented, "Function type not yet supported by C backend ", self.type
     }
   }
@@ -256,6 +260,181 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       builder.closeDependencyList()
       builder.addDeclaration(fundec)
     }
+  }
+
+  // Generate C code for a class: a struct typedef per instantiation, a
+  // constructor function that heap-allocates and initializes an instance,
+  // and the class's methods.
+  func genCConstructor(self: Function, builder: c.CBuilder) {
+    fntype = self.sym.typedValue
+    assert !isnull(fntype)
+    info = builder.typechecker.lookupClass(self.sym)
+    assert !isnull(info)
+
+    if fntype.type == types.Type.TypeClass.Polymorphic {
+      pi = fntype.poly.instantiations
+      if !isnull(pi) {
+        for instantiation in pi {
+          builder.resolveInstantiation(instantiation)
+          builder.instantiate(fntype.poly!, instantiation)
+          self.genCConstructorInstance(builder, info!)
+          builder.deInstantiate(fntype.poly!)
+        }
+      }
+    } else {
+      self.genCConstructorInstance(builder, info!)
+    }
+
+    // Emit the methods for each of their own instantiations.
+    for childfunc in self.childFunctions() {
+      if childfunc.type == FuncType.Plain {
+        childfunc.genCMethod(builder)
+      }
+    }
+  }
+
+  // Generate the struct typedef and constructor function for one
+  // instantiation of a class.  Must be called with the class's type
+  // variables instantiated in the typechecker.
+  func genCConstructorInstance(self: Function, builder: c.CBuilder, info: types.ClassInfo) {
+    instType = builder.typechecker.resolve(info.selfType!)
+    className = builder.classCName(instType)
+    if builder.alreadyEmitted(className) {
+      return
+    }
+    builder.markEmitted(className)
+
+    // The struct fields, with this instantiation's concrete types.
+    fields = c.CParamList()
+    for i in range(info.strct.fieldnames.length()) {
+      fieldty = builder.typechecker.resolve(info.strct.fieldtypes[i])
+      ctype = builder.genCType(fieldty)
+      fields.append(c.CParameter(self.location, info.strct.fieldnames[i].name, ctype!))
+    }
+    toStringMethod = ""
+    for childfunc in self.childFunctions() {
+      if childfunc.sym.name == "toString" {
+        toStringMethod = className + "_toString"
+      }
+    }
+    classDec = builder.cClassDeclaration(self.location, className, fields, toStringMethod)
+    builder.addDeclaration(classDec)
+
+    // The constructor function: allocates the instance, runs the body, and
+    // returns the instance pointer.
+    builder.openScope()
+    builder.openParamList()
+    for variable in self.variables() {
+      if variable.sym.name != "self" {
+        pty = builder.typechecker.resolve(variable.sym.typedValue!)
+        param = variable.genCParameter(builder, pty)
+        builder.addParam(param)
+      }
+    }
+    paramList = builder.closeParamList()
+    builder.openDependencyList()
+    builder.openBlock(self.location)
+
+    selfSym = Sym.new("self")
+    ptrType = builder.genCType(instType)
+    selfRef = builder.declareLocal(selfSym, ptrType)
+    callocArgs = c.CExprList()
+    one = Bigint(1u32)
+    callocArgs.appendCExpr(builder.cIntLiteral(one))
+    sizeofArg = c.CExpr(c.CIdentifier(Sym.new(className + "_t"), null(c.CTypeExpr),
+                                      false, false, false))
+    callocArgs.appendCExpr(builder.cCall(self.location, "sizeof", sizeofArg))
+    callocCall = builder.cCall(self.location, "calloc", c.CExpr(callocArgs))
+    assign = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
+                                       null(c.CTypeExpr), selfRef, callocCall))
+    builder.addStatement(self.location, assign)
+
+    for statement in self.subBlock.statements() {
+      statement.genC(builder)
+    }
+
+    retRef = c.CExpr(c.CIdentifier(selfSym, null(c.CTypeExpr), false, false, false))
+    builder.addStatement(self.location, builder.cReturnStatement(self.location, retRef))
+    body = builder.closeBlock()
+    builder.closeScope()
+
+    fundec = builder.cFunDefWithReturnType(self.location, className, paramList, body, ptrType!)
+    fundec.addDependencyName(className + "_class")
+    fundec.addDependencies(builder.topDependencyList().names)
+    builder.closeDependencyList()
+    builder.addDeclaration(fundec)
+  }
+
+  // Generate C code for a class method, once per recorded instantiation.
+  func genCMethod(self: Function, builder: c.CBuilder) {
+    fntype = self.sym.typedValue
+    if isnull(fntype) {
+      // The method was never called; nothing to emit.
+      return
+    }
+    if fntype.type == types.Type.TypeClass.Polymorphic {
+      pi = fntype.poly.instantiations
+      if !isnull(pi) {
+        for instantiation in pi {
+          builder.resolveInstantiation(instantiation)
+          builder.instantiate(fntype.poly!, instantiation)
+          self.genCMethodInstance(builder, instantiation.type)
+          builder.deInstantiate(fntype.poly!)
+        }
+      }
+    } else if fntype.type == types.Type.TypeClass.Function {
+      self.genCMethodInstance(builder, fntype!)
+    }
+  }
+
+  // Generate one specialization of a class method.  fnInstType is the
+  // method's resolved function type, including the self parameter.
+  func genCMethodInstance(self: Function, builder: c.CBuilder, fnInstType: types.Type) {
+    if fnInstType.type != types.Type.TypeClass.Function {
+      return
+    }
+    methodName = builder.methodDefCName(fnInstType, self.sym.name)
+    if builder.alreadyEmitted(methodName) {
+      return
+    }
+    builder.markEmitted(methodName)
+
+    builder.openScope()
+    builder.openParamList()
+    params = fnInstType.function.params
+    index = 0
+    for variable in self.variables() {
+      if params.type == types.Type.TypeClass.Tuple {
+        pty = params.tuple.elements[index]
+      } else {
+        pty = params
+      }
+      param = variable.genCParameter(builder, builder.typechecker.resolve(pty))
+      builder.addParam(param)
+      index += 1
+    }
+    paramList = builder.closeParamList()
+    builder.openDependencyList()
+    body = self.subBlock.genC(builder)
+    builder.closeScope()
+
+    resTy = builder.typechecker.resolve(fnInstType.function.result)
+    if resTy.type == types.Type.TypeClass.Typename && resTy.tyname.name.name == "none" {
+      returnType = builder.cVoidType(self.location)
+    } else {
+      returnType = builder.genCType(resTy)
+    }
+    fundec = builder.cFunDefWithReturnType(self.location, methodName, paramList, body, returnType!)
+    // The method's self parameter needs the class struct typedef.
+    params2 = fnInstType.function.params
+    if params2.type == types.Type.TypeClass.Tuple && params2.tuple.elements.length() > 0 {
+      fundec.addDependencyName(builder.classCName(params2.tuple.elements[0]) + "_class")
+    } else {
+      fundec.addDependencyName(builder.classCName(params2) + "_class")
+    }
+    fundec.addDependencies(builder.topDependencyList().names)
+    builder.closeDependencyList()
+    builder.addDeclaration(fundec)
   }
 
   func genCStruct(self: Function, builder: c.CBuilder) {

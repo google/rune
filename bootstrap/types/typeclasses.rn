@@ -988,7 +988,14 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
       Type.TypeClass.Typename => newname = baseName + "_" + self.tyname.toString()
       Type.TypeClass.Array => newname = baseName
       Type.TypeClass.Choice => newname = baseName
-      Type.TypeClass.Tuple => newname = baseName + "_" + self.tuple.specializationString()
+      Type.TypeClass.Tuple => {
+        spec = self.tuple.specializationString()
+        if spec == "" {
+          newname = baseName
+        } else {
+          newname = baseName + "_" + spec
+        }
+      }
       Type.TypeClass.Struct => newname = baseName + "_" + self.strct.specializationString()
       Type.TypeClass.Function => newname = baseName
       Type.TypeClass.Polymorphic => newname = baseName
