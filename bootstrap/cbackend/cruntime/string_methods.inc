@@ -31,6 +31,19 @@ static inline char *string_append_char(const char *s, uint8_t c) {
   return r;
 }
 
+// Duplicate a string into a fresh, writable heap buffer.  Assignments of
+// string literals use this so that later writes (s[0] = c, append) do not
+// mutate the static literal.
+static inline char *string_dup(const char *s) {
+  size_t len = s == NULL ? 0 : strlen(s);
+  char *r = (char *)malloc(len + 1);
+  if (len > 0) {
+    memcpy(r, s, len);
+  }
+  r[len] = '\0';
+  return r;
+}
+
 static inline char *string_concat(const char *a, const char *b) {
   size_t la = a == NULL ? 0 : strlen(a);
   size_t lb = b == NULL ? 0 : strlen(b);

@@ -1096,7 +1096,7 @@ class TypeChecker(self) {
         result = ARRAY(self.resolve(ty!))
       }
 
-      db.ExprType.Negate, db.ExprType.Bitnot, db.ExprType.Not => {
+      db.ExprType.Negate, db.ExprType.NegateTrunc, db.ExprType.Bitnot, db.ExprType.Not => {
         childType = self.expr(expr.firstChildExpr!)
         if isnull(childType) {
           return childType

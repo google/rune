@@ -56,11 +56,16 @@ func builtinType(op: db.ExprType) -> Type {
       return BPOLY(1, [ANYINT], FN(TUPLE([v, UINT]), v))
     }
 
-    db.ExprType.Negate, db.ExprType.NegateTrunc => {
+    db.ExprType.Negate => {
       return OR([
                   BPOLY(1, [F(32),F(64),INT], FN(v, v)),
                   FN(UINT, INT)
 		])
+    }
+
+    // Truncating negation wraps, so unsigned operands stay unsigned.
+    db.ExprType.NegateTrunc => {
+      return BPOLY(1, [NUM], FN(v, v))
     }
 
     // logical

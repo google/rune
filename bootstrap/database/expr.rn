@@ -737,6 +737,7 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Mod => return self.genCBinaryOp(builder)
       ExprType.MulTrunc => return self.genCBinaryOp(builder)
       ExprType.Negate => return self.genCPrefixOp(builder)
+      ExprType.NegateTrunc => return self.genCPrefixOp(builder)
       ExprType.And => return self.genCBinaryOp(builder)
       ExprType.Or => return self.genCBinaryOp(builder)
       ExprType.Bitand => return self.genCBinaryOp(builder)
@@ -838,7 +839,8 @@ class Expr(self, type: ExprType, location: Location) {
     left = self.firstChildExpr!
 
     switch self.type {
-      ExprType.Negate => {
+      ExprType.Negate, ExprType.NegateTrunc => {
+        // C unary minus on unsigned types already truncates (wraps).
         return builder.cUnaryMinus(self.location, left.genC(builder))
       }
       ExprType.Bitnot => {
@@ -868,6 +870,14 @@ class Expr(self, type: ExprType, location: Location) {
     l = left.genC(builder)
     self.bindingInstance = false
     r = right.genC(builder)
+    if (self.type == ExprType.Equals && right.type == ExprType.Constant &&
+        right.val.type == DatatypeType.String) {
+      // Copy string literals on assignment so writes through the variable
+      // (s[0] = c, s.append(...)) do not mutate the static literal.
+      dupArgs = c.CExprList()
+      dupArgs.appendCExpr(r)
+      r = builder.cCall(self.location, c.CRuntimeFunction.StringDup, c.CExpr(dupArgs))
+    }
 
     // First, generate C Binary Operators for those operators that map
     // directly to C operators.
