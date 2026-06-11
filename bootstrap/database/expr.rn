@@ -855,7 +855,16 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Or =>  op = c.CBinaryOperator.Type.LogOr
       ExprType.Bitand => op = c.CBinaryOperator.Type.BitAnd
       ExprType.Bitor => op = c.CBinaryOperator.Type.BitOr
-      ExprType.Bitxor => op = c.CBinaryOperator.Type.BitXor
+      ExprType.Bitxor => {
+        if builder.typechecker.isStringType(left.typedValue) {
+          // Strings XOR byte-wise via a runtime helper.
+          list = c.CExprList()
+          list.appendCExpr(l)
+          list.appendCExpr(r)
+          return builder.cCall(self.location, c.CRuntimeFunction.StringXor, c.CExpr(list))
+        }
+        op = c.CBinaryOperator.Type.BitXor
+      }
       ExprType.Shl => op = c.CBinaryOperator.Type.ShiftLeft
       ExprType.Shr => op = c.CBinaryOperator.Type.ShiftRight
       ExprType.Lt => op = c.CBinaryOperator.Type.LessThan
@@ -949,6 +958,11 @@ class Expr(self, type: ExprType, location: Location) {
       right = index.genC(builder)
       return builder.cIndex(self.location, indexee.typedValue, left, right)
     }
+    if builder.typechecker.isStringType(indexee.typedValue) {
+      // Strings index directly as C char buffers.
+      right = index.genC(builder)
+      return c.CExpr(c.CIndexExpr(self.location, left, right))
+    }
     assert index.type == ExprType.Constant && index.val.type == DatatypeType.Uint
     i = index.val.intVal.uint64()
     return builder.cIndex(self.location, indexee.typedValue, left, i)
@@ -997,6 +1011,44 @@ class Expr(self, type: ExprType, location: Location) {
         }
         return builder.cCall(self.location, name, c.CExpr(args))
       }
+      // Built-in methods on strings.
+      strBase = left.firstChildExpr!
+      if builder.typechecker.isStringType(strBase.typedValue) {
+        field = strBase.nextExprChildExpr!
+        switch field.toString() {
+          "length" => strfn = c.CRuntimeFunction.StringLength
+          "append" => strfn = c.CRuntimeFunction.StringAppendChar
+          "concat" => strfn = c.CRuntimeFunction.StringConcat
+          "find" => strfn = c.CRuntimeFunction.StringFind
+          "rfind" => strfn = c.CRuntimeFunction.StringRfind
+          "toHex" => strfn = c.CRuntimeFunction.StringToHex
+          "fromHex" => strfn = c.CRuntimeFunction.StringFromHex
+          "resize" => strfn = c.CRuntimeFunction.StringResize
+          "reverse" => strfn = c.CRuntimeFunction.StringReverse
+          default => raise Status.Unimplemented, "Unknown string builtin method: \"", field, "\""
+        }
+        strArgs = c.CExprList()
+        strArgs.appendCExpr(strBase.genC(builder))
+        argCount = 0
+        if right.typedValue.type == types.Type.TypeClass.Tuple {
+          for child in right.childExprs() {
+            strArgs.appendCExpr(child.genC(builder))
+            argCount += 1
+          }
+        } else {
+          strArgs.appendCExpr(right.genC(builder))
+          argCount += 1
+        }
+        if field.toString() == "find" || field.toString() == "rfind" {
+          // The C helpers take a fixed offset parameter; default it to 0.
+          if argCount < 2 {
+            zeroOffset = Bigint(0u64)
+            strArgs.appendCExpr(builder.cIntLiteral(zeroOffset))
+          }
+        }
+        return builder.cCall(self.location, strfn, c.CExpr(strArgs))
+      }
+
       // Built-in methods on arrays.
       array = left.firstChildExpr!
       if array.typedValue.type == types.Type.TypeClass.Array {

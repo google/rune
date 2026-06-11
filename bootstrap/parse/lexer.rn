@@ -299,7 +299,12 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
         default => self.error("Constant does not fit in integer width")
       }
     }
-    return Token.newValueToken(self, newIntVal, self.location())
+    token = Token.newValueToken(self, newIntVal, self.location())
+    if c != 'i' && c != 'u' {
+      // No width suffix: the literal adapts to the width its context needs.
+      token.value.widthUnspecified = true
+    }
+    return token
   }
 
   func parseWidthSpec(self) -> (bool, u32) {

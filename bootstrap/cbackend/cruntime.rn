@@ -187,12 +187,18 @@ class CRuntime(self) {
     self.raiseError = true
   }
 
+  // NOTE: fragments are deduplicated by name, so every fragment needs a
+  // unique one.
   func needStringWriter(self) {
-    self.cFragment("", "cbackend/cruntime/global_string_writer.inc")
+    self.cFragment("global_string_writer", "cbackend/cruntime/global_string_writer.inc")
   }
 
   func needByteIo(self) {
-    self.cFragment("", "cbackend/cruntime/byte_io.inc")
+    self.cFragment("byte_io", "cbackend/cruntime/byte_io.inc")
+  }
+
+  func needStringMethods(self) {
+    self.cFragment("string_methods", "cbackend/cruntime/string_methods.inc")
   }
 
   func needIntAdd(self, width: u32) -> string {

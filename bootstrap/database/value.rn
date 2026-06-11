@@ -41,6 +41,9 @@ func getDatatypeType(value) -> DatatypeType {
 class Value(self: Value, value: string | bool | Int | Uint | Bigint | Float | Sym) {
   self.type = getDatatypeType(value)
   self.width = 0u32
+  // True for integer literals written without a width suffix (e.g. 3, not
+  // 3u8); these adapt to the width required by their context.
+  self.widthUnspecified = false
   // TODO: Merge these values into a union when unions are supported.
   self.stringVal = ""
   self.boolVal = false

@@ -84,9 +84,13 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
 
   func genCAnyInt(self, ty: types.AnyIntType) -> CTypeExpr? {
     if ty.isSigned {
-      return CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Int64))
+      result = CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Int64))
+      result.runeSuffix = "i64"
+      return result
     }
-    return CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Uint64))
+    result = CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Uint64))
+    result.runeSuffix = "u64"
+    return result
   }
 
   func genCFloat(self, ty: types.FloatType) -> CTypeExpr? {

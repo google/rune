@@ -339,6 +339,39 @@ class TypeChecker(self) {
     return !isnull(self.lookupClass(t.tyname.name))
   }
 
+  // True if the type is the builtin string type.
+  func isStringType(self, ty: Type?) -> bool {
+    if isnull(ty) {
+      return false
+    }
+    t = self.resolve(ty!)
+    if t.type != Type.TypeClass.Typename {
+      return false
+    }
+    return t.tyname.name.name == "string"
+  }
+
+  // The function type of a builtin string method.
+  func stringMethodType(self, name: string, location: db.Location) -> Type? {
+    noArgs = arrayof(Type)
+    switch name {
+      "length" => return FN(TUPLE(noArgs), U(64))
+      "append" => return FN(U(8), NONETY())
+      "concat" => return FN(STRING(), NONETY())
+      "toHex" => return FN(TUPLE(noArgs), STRING())
+      "fromHex" => return FN(TUPLE(noArgs), STRING())
+      "reverse" => return FN(TUPLE(noArgs), NONETY())
+      "resize" => return FN(U(64), NONETY())
+      // find/rfind take an optional offset; accept any argument tuple and
+      // let the backend supply the default.
+      "find", "rfind" => return FN(Type(self.newTyvar()), U(64))
+      default => {
+        self.typeError("Unsupported string method '%s'" % name, location)
+        return null(Type)
+      }
+    }
+  }
+
   func lookupTyname(self, tyname: Sym) -> Type? {
     res = null(Type)
     td = TynameDefinition(tyname, null(Type))
@@ -368,16 +401,21 @@ class TypeChecker(self) {
     // for a limited time, pretend that the bound variables in poly are bound
     // to the bindings in the instantiation.
     assert poly.boundVars.length() == inst.varBindings.length()
+    emptyIds = arrayof(i32)
+    poly.skippedBindIds = emptyIds
     for index in range(poly.boundVars.length()) {
        assert poly.boundVars[index].type == Type.TypeClass.Var
        btv = poly.boundVars[index].tyvar!
        val = self.unifier.lookupVar(btv.id)
        if !isnull(val) {
-         println "Error: bound variable ", btv.toString(), " is already bound to ", val.toString()
-         assert(false)
+         // A generalized variable can also have been unified at a use site
+         // (e.g. a builtin operator constraint variable).  Keep the existing
+         // binding and leave it in place when de-instantiating.
+         poly.skippedBindIds.append(btv.id)
+       } else {
+         binding = inst.varBindings[index]
+         self.unifier.bindVar(btv, binding)
        }
-       binding = inst.varBindings[index]
-       self.unifier.bindVar(btv, binding)
     }
   }
 
@@ -386,9 +424,19 @@ class TypeChecker(self) {
     // to the bindings in the instantiation.
     for ty in poly.boundVars {
       assert ty.type == Type.TypeClass.Var
-      self.unifier.unbindVar(ty.tyvar!)
-      assert isnull(self.unifier.lookupVar(ty.tyvar.id))
+      skipped = false
+      for id in poly.skippedBindIds {
+        if id == ty.tyvar.id {
+          skipped = true
+        }
+      }
+      if !skipped {
+        self.unifier.unbindVar(ty.tyvar!)
+        assert isnull(self.unifier.lookupVar(ty.tyvar.id))
+      }
     }
+    emptyIds = arrayof(i32)
+    poly.skippedBindIds = emptyIds
   }
 
 
@@ -595,8 +643,20 @@ class TypeChecker(self) {
     switch val.type {
       db.DatatypeType.Bool => return BOOL
       db.DatatypeType.String => return STR
-      db.DatatypeType.Int => return I(<u64>val.width)
-      db.DatatypeType.Uint => return U(<u64>val.width)
+      db.DatatypeType.Int => {
+        if val.widthUnspecified {
+          // Unsuffixed literals adapt to any integer width; codegen
+          // defaults unresolved AnyInt to 64 bits.
+          return INTEGER()
+        }
+        return I(<u64>val.width)
+      }
+      db.DatatypeType.Uint => {
+        if val.widthUnspecified {
+          return UINTEGER()
+        }
+        return U(<u64>val.width)
+      }
       db.DatatypeType.Float => return F(<u64>val.width)
       db.DatatypeType.Sym => return self.symbol(val.symVal!)
       default => raise Status.Unimplemented, "Value type not yet supported by typechecker: ", val.type
@@ -651,6 +711,9 @@ class TypeChecker(self) {
         } else if leftChild.typedValue.type == Type.TypeClass.Array {
           // TODO: ARRAY INDEX STUFF HERE
           result = leftChild.typedValue.array.elementType
+        } else if self.isStringType(leftChild.typedValue) {
+          // Indexing a string yields a byte.
+          result = U(8)
         } else if rightChild.type != db.ExprType.Constant {
           self.typeError(
            "Indexes must be unsigned integer literals, not %s." % rightChild.toString(),
@@ -700,13 +763,17 @@ class TypeChecker(self) {
                              expr.location)
               result = null(Type)
             }
+          } else if sty.tyname.name.name == "string" {
+            // Built-in string methods.
+            isClassAccess = true
+            result = self.stringMethodType(field.toString(), expr.location)
           } else {
             ty = self.lookupTyname(sty.tyname.name)
             if isnull(ty) {
               self.typeError(
                 "Field Selection on an undefined type name %s" % sty.tyname.name.name,
                 expr.location)
-              result = ty
+              return null(Type)
             }
             sty = ty!
           }
@@ -830,7 +897,7 @@ class TypeChecker(self) {
       db.StateType.Println => self.expr(statement.expr)
       db.StateType.If => {
         ty = self.expr(statement.expr)
-        te = self.unify(ty!, BOOL)
+        te = isnull(ty) ? null(TypeError) : self.unify(ty!, BOOL)
         if !isnull(te) {
           self.typeError("Condition expression must be a boolean", statement.expr.location)
         }
@@ -850,7 +917,7 @@ class TypeChecker(self) {
       db.StateType.ElseIf => {
         assert !isnull(statement.expr)
         ty = self.expr(statement.expr)
-        te = self.unify(ty!, BOOL)
+        te = isnull(ty) ? null(TypeError) : self.unify(ty!, BOOL)
         if !isnull(te) {
           self.typeError("Condition expression must be a boolean", statement.expr.location)
         }
@@ -868,7 +935,7 @@ class TypeChecker(self) {
         i = 0
         for child in statement.expr.childExprs() {
            ty = self.expr(child)
-           if i == 1 {
+           if i == 1 && !isnull(ty) {
              te = self.unify(ty!, BOOL)
              if !isnull(te) {
                self.typeError("Condition expression must be a boolean", child.location)
@@ -887,7 +954,7 @@ class TypeChecker(self) {
       }
       db.StateType.While => {
         ty = self.expr(statement.expr)
-        te = self.unify(ty!, BOOL)
+        te = isnull(ty) ? null(TypeError) : self.unify(ty!, BOOL)
         if !isnull(te) {
           self.typeError("Condition expression must be a boolean", statement.expr.location)
         }
@@ -938,7 +1005,7 @@ class TypeChecker(self) {
         first = true
         for child in statement.expr.childExprs() {
           ty = self.expr(child)
-          if first {
+          if first && !isnull(ty) {
             te = self.unify(ty!, BOOL)
             if !isnull(te) {
               self.typeError("Assert condition must be a boolean", child.location)
@@ -980,13 +1047,20 @@ class TypeChecker(self) {
             if methodName == "values" || methodName == "items" {
               baseTy = self.expr(base)
               rbase = self.resolve(baseTy!)
+              baseElemTy = null(Type)
               if rbase.type == Type.TypeClass.Array {
+                baseElemTy = rbase.array.elementType
+              } else if self.isStringType(rbase) {
+                // Iterating a string yields bytes.
+                baseElemTy = U(8)
+              }
+              if !isnull(baseElemTy) {
                 if methodName == "values" {
-                  elemTy = rbase.array.elementType
+                  elemTy = baseElemTy
                 } else {
                   pairTypes = arrayof(Type)
                   pairTypes.append(U(64))
-                  pairTypes.append(rbase.array.elementType)
+                  pairTypes.append(baseElemTy!)
                   elemTy = TUPLE(pairTypes)
                 }
                 iterExpr.typedValue = elemTy
@@ -999,6 +1073,8 @@ class TypeChecker(self) {
           rty = self.resolve(ty!)
           if rty.type == Type.TypeClass.Array {
             elemTy = rty.array.elementType
+          } else if self.isStringType(rty) {
+            elemTy = U(8)
           } else {
             self.typeError("Cannot iterate over %s" % rty.toString(), iterExpr.location)
             elemTy = Type(self.newTyvar())

@@ -466,8 +466,13 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     zero = Bigint(0u64)
     init = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
                                      null(c.CTypeExpr), idxDecl, builder.cIntLiteral(zero)))
-    lenCall = builder.cCall(self.location, c.CRuntimeFunction.ArrayLength,
-                            arrayExpr.genC(builder))
+    if builder.typechecker.isStringType(arrayExpr.typedValue) {
+      lenCall = builder.cCall(self.location, c.CRuntimeFunction.StringLength,
+                              arrayExpr.genC(builder))
+    } else {
+      lenCall = builder.cCall(self.location, c.CRuntimeFunction.ArrayLength,
+                              arrayExpr.genC(builder))
+    }
     idxRef1 = c.CExpr(c.CIdentifier(idxSym, null(c.CTypeExpr), false, false, false))
     cond = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.LessThan,
                                      null(c.CTypeExpr), idxRef1, lenCall))

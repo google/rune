@@ -706,6 +706,9 @@ class PolymorphicType(self, vars: Type | [Type], scope: Type,
     [Type] => self.boundVars = vars
   }
   self.scope = scope
+  // Variable ids whose bindings instantiate() left untouched because they
+  // were already bound in the unifier; deInstantiate() must not unbind them.
+  self.skippedBindIds = arrayof(i32)
 
   operator == (self, other: PolymorphicType) -> bool {
     // TODO: consider equivalence up to bound variable renaming

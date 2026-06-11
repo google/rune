@@ -838,6 +838,16 @@ enum CRuntimeFunction {
 
    // String builtins
    StringAppend
+   StringLength
+   StringAppendChar
+   StringConcat
+   StringFind
+   StringRfind
+   StringToHex
+   StringFromHex
+   StringResize
+   StringReverse
+   StringXor
 
    // To-string builtins
    GlobalStringWriterReset
@@ -934,6 +944,78 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.WriteBytes => {
         e.needByteIo()
         e.write("writeBytes")
+      }
+
+      CRuntimeFunction.StringLength => {
+        e.needStringMethods()
+        e.write("string_length")
+      }
+
+      // Mutating string methods return a fresh buffer; assign it back to
+      // the receiver, mirroring the array append pattern above.
+      CRuntimeFunction.StringAppendChar => {
+        receiver = self.args.cExprList.index(0)
+        if receiver.type == CExpr.Type.Identifier {
+          receiver.emit(e)
+          e.write(" = ")
+        }
+        e.needStringMethods()
+        e.write("string_append_char")
+      }
+
+      CRuntimeFunction.StringConcat => {
+        receiver = self.args.cExprList.index(0)
+        if receiver.type == CExpr.Type.Identifier {
+          receiver.emit(e)
+          e.write(" = ")
+        }
+        e.needStringMethods()
+        e.write("string_concat")
+      }
+
+      CRuntimeFunction.StringResize => {
+        receiver = self.args.cExprList.index(0)
+        if receiver.type == CExpr.Type.Identifier {
+          receiver.emit(e)
+          e.write(" = ")
+        }
+        e.needStringMethods()
+        e.write("string_resize")
+      }
+
+      CRuntimeFunction.StringReverse => {
+        receiver = self.args.cExprList.index(0)
+        if receiver.type == CExpr.Type.Identifier {
+          receiver.emit(e)
+          e.write(" = ")
+        }
+        e.needStringMethods()
+        e.write("string_reverse")
+      }
+
+      CRuntimeFunction.StringFind => {
+        e.needStringMethods()
+        e.write("string_find")
+      }
+
+      CRuntimeFunction.StringRfind => {
+        e.needStringMethods()
+        e.write("string_rfind")
+      }
+
+      CRuntimeFunction.StringToHex => {
+        e.needStringMethods()
+        e.write("string_tohex")
+      }
+
+      CRuntimeFunction.StringFromHex => {
+        e.needStringMethods()
+        e.write("string_fromhex")
+      }
+
+      CRuntimeFunction.StringXor => {
+        e.needStringMethods()
+        e.write("string_xor")
       }
 
       // Rune built-in arithmetic operators.

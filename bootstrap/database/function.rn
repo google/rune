@@ -217,28 +217,46 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
        if !isnull(pi) {
          for instantiation in pi {
            builder.resolveInstantiation(instantiation)
-           builder.openScope()
-           builder.openParamList()
-           index = 0
-           for variable in self.variables() {
-             param = variable.genCParameter(builder, instantiation.varBindings[index])
-             builder.addParam(param)
-             index += 1
-           }
-           paramList = builder.closeParamList()
+           // Resolve each parameter's own type under the instantiation.
+           // The generalized variables in varBindings do not align
+           // positionally with the parameters (operator type variables can
+           // be generalized too), so positional lookup is wrong.
            builder.instantiate(fntype.poly!, instantiation)
-           // The function block may generate dependencies, e.g., inner
-           // functions or tuples or structs. Ensure that these are listed
-           // as depedencies of this function.
-           builder.openDependencyList();
-           body = self.subBlock.genC(builder)
-           builder.deInstantiate(fntype.poly!)
-           builder.closeScope()
-           newsym = builder.specialize(self.sym, instantiation)
-           fundec = builder.cFunDef(self.location, newsym, paramList, body)
-           fundec.addDependencies(builder.topDependencyList().names)
-           builder.closeDependencyList()
-           builder.addDeclaration(fundec)
+           paramTypes = arrayof(types.Type)
+           for variable in self.variables() {
+             paramTypes.append(builder.typechecker.resolve(variable.sym.typedValue!))
+           }
+           // The specialization name comes from the resolved parameter
+           // types, matching genSpecializationName at call sites.
+           paramTuple = types.Type(types.TupleType(paramTypes))
+           specializedName = paramTuple.genSpecializationName(self.sym.name)
+           if builder.alreadyEmitted(specializedName) {
+             builder.deInstantiate(fntype.poly!)
+           } else {
+             builder.markEmitted(specializedName)
+             builder.openScope()
+             builder.openParamList()
+             index = 0
+             for variable in self.variables() {
+               param = variable.genCParameter(builder, paramTypes[index])
+               builder.addParam(param)
+               index += 1
+             }
+             paramList = builder.closeParamList()
+             // The function block may generate dependencies, e.g., inner
+             // functions or tuples or structs. Ensure that these are listed
+             // as depedencies of this function.
+             builder.openDependencyList();
+             body = self.subBlock.genC(builder)
+             builder.deInstantiate(fntype.poly!)
+             builder.closeScope()
+             newsym = Sym.new(specializedName)
+             newsym.typedValue = instantiation.type
+             fundec = builder.cFunDef(self.location, newsym, paramList, body)
+             fundec.addDependencies(builder.topDependencyList().names)
+             builder.closeDependencyList()
+             builder.addDeclaration(fundec)
+           }
          }
       }
     } else {
