@@ -122,11 +122,44 @@ class CBuilder(self, tc: types.TypeChecker) {
   self.typechecker = tc
   self.typeGenerator = CTypeGenerator(tc)
   self.emittedClassDecls = arrayof(string)
+  self.functionNames = arrayof(string)
+  self.functions = arrayof(db.Function)
   self.insertDependencyStack(DependencyStack())
 
   func build(self, module: db.Function) -> CProgram {
+    self.registerFunctions(module)
     module.genC(self)
     return self.program
+  }
+
+  // Record every function by name so call sites can emit not-yet-seen
+  // polymorphic specializations on demand.
+  func registerFunctions(self, fn: db.Function) {
+    for childfunc in fn.childFunctions() {
+      self.functionNames.append(childfunc.sym.name)
+      self.functions.append(childfunc)
+      self.registerFunctions(childfunc)
+    }
+  }
+
+  func findFunction(self, name: string) -> db.Function? {
+    for index in range(self.functionNames.length()) {
+      if self.functionNames[index] == name {
+        return self.functions[index]
+      }
+    }
+    return null(db.Function)
+  }
+
+  // True if every binding of the instantiation resolves to a concrete type
+  // in the current unifier context.
+  func instantiationIsConcrete(self, inst: types.TyvarInstantiation) -> bool {
+    for binding in inst.varBindings {
+      if self.typechecker.hasFreeVars(binding) {
+        return false
+      }
+    }
+    return true
   }
 
   func openDependencyList(self) {

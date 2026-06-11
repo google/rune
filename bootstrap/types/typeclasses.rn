@@ -341,7 +341,7 @@ class TupleType(self, elements: [Type]) {
       if !first {
         specializationString += "_"
       }
-      specializationString += ty.toString()
+      specializationString += ty.specializationName()
       first = false
     }
     return specializationString
@@ -985,13 +985,26 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
     }
   }
 
+  // A flat name fragment for this type, usable in C identifiers.
+  // Parameterized type names flatten to name_params (e.g. Integer_u64).
+  func specializationName(self) -> string {
+    if self.type == Type.TypeClass.Typename {
+      spec = self.tyname.specializationString()
+      if spec == "" {
+        return self.tyname.name.name
+      }
+      return "%s_%s" % (self.tyname.name.name, spec)
+    }
+    return self.toString()
+  }
+
   func genSpecializationName(self, baseName: String) -> String {
     switch self.type {
       Type.TypeClass.Var => newname = baseName
       Type.TypeClass.Int => newname = baseName + "_" + self.int.toString()
       Type.TypeClass.AnyInt => newname = baseName + "_" + self.anyInt.toString()
       Type.TypeClass.Float => newname = baseName + "_" + self.float.toString()
-      Type.TypeClass.Typename => newname = baseName + "_" + self.tyname.toString()
+      Type.TypeClass.Typename => newname = baseName + "_" + self.specializationName()
       Type.TypeClass.Array => newname = baseName
       Type.TypeClass.Choice => newname = baseName
       Type.TypeClass.Tuple => {

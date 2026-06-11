@@ -217,45 +217,12 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
        if !isnull(pi) {
          for instantiation in pi {
            builder.resolveInstantiation(instantiation)
-           // Resolve each parameter's own type under the instantiation.
-           // The generalized variables in varBindings do not align
-           // positionally with the parameters (operator type variables can
-           // be generalized too), so positional lookup is wrong.
-           builder.instantiate(fntype.poly!, instantiation)
-           paramTypes = arrayof(types.Type)
-           for variable in self.variables() {
-             paramTypes.append(builder.typechecker.resolve(variable.sym.typedValue!))
-           }
-           // The specialization name comes from the resolved parameter
-           // types, matching genSpecializationName at call sites.
-           paramTuple = types.Type(types.TupleType(paramTypes))
-           specializedName = paramTuple.genSpecializationName(self.sym.name)
-           if builder.alreadyEmitted(specializedName) {
-             builder.deInstantiate(fntype.poly!)
-           } else {
-             builder.markEmitted(specializedName)
-             builder.openScope()
-             builder.openParamList()
-             index = 0
-             for variable in self.variables() {
-               param = variable.genCParameter(builder, paramTypes[index])
-               builder.addParam(param)
-               index += 1
-             }
-             paramList = builder.closeParamList()
-             // The function block may generate dependencies, e.g., inner
-             // functions or tuples or structs. Ensure that these are listed
-             // as depedencies of this function.
-             builder.openDependencyList();
-             body = self.subBlock.genC(builder)
-             builder.deInstantiate(fntype.poly!)
-             builder.closeScope()
-             newsym = Sym.new(specializedName)
-             newsym.typedValue = instantiation.type
-             fundec = builder.cFunDef(self.location, newsym, paramList, body)
-             fundec.addDependencies(builder.topDependencyList().names)
-             builder.closeDependencyList()
-             builder.addDeclaration(fundec)
+           // Instantiations whose bindings still contain type variables only
+           // resolve under an outer instantiation (e.g. a call from a
+           // polymorphic class constructor); they are emitted on demand from
+           // the call site while that outer binding is active.
+           if builder.instantiationIsConcrete(instantiation) {
+             self.genCPolyInstantiation(builder, instantiation)
            }
          }
       }
@@ -280,6 +247,60 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     }
   }
 
+  // Emit a single specialization of a polymorphic function under the given
+  // instantiation.  Also called on demand from poly call sites, while an
+  // outer instantiation binding is active.
+  func genCPolyInstantiation(self: Function, builder: c.CBuilder,
+                             instantiation: types.TyvarInstantiation) {
+    fntype = self.sym.typedValue!
+    // Resolve each parameter's own type under the instantiation.
+    // The generalized variables in varBindings do not align
+    // positionally with the parameters (operator type variables can
+    // be generalized too), so positional lookup is wrong.
+    builder.instantiate(fntype.poly!, instantiation)
+    paramTypes = arrayof(types.Type)
+    for variable in self.variables() {
+      paramTypes.append(builder.typechecker.resolve(variable.typedValue!))
+    }
+    // The specialization name comes from the resolved parameter
+    // types, matching genSpecializationName at call sites.
+    paramTuple = types.Type(types.TupleType(paramTypes))
+    specializedName = paramTuple.genSpecializationName(self.sym.name)
+    if builder.alreadyEmitted(specializedName) {
+      builder.deInstantiate(fntype.poly!)
+      return
+    }
+    builder.markEmitted(specializedName)
+    builder.openScope()
+    builder.openParamList()
+    index = 0
+    for variable in self.variables() {
+      param = variable.genCParameter(builder, paramTypes[index])
+      builder.addParam(param)
+      index += 1
+    }
+    paramList = builder.closeParamList()
+    // The function block may generate dependencies, e.g., inner
+    // functions or tuples or structs. Ensure that these are listed
+    // as depedencies of this function.
+    builder.openDependencyList();
+    body = self.subBlock.genC(builder)
+    builder.deInstantiate(fntype.poly!)
+    builder.closeScope()
+    newsym = Sym.new(specializedName)
+    newsym.typedValue = instantiation.type
+    fundec = builder.cFunDef(self.location, newsym, paramList, body)
+    // Class-typed parameters need the class struct typedef emitted first.
+    for pt in paramTypes {
+      if builder.isClassType(pt) {
+        fundec.addDependencyName(builder.classCName(pt) + "_class")
+      }
+    }
+    fundec.addDependencies(builder.topDependencyList().names)
+    builder.closeDependencyList()
+    builder.addDeclaration(fundec)
+  }
+
   // Generate C code for a class: a struct typedef per instantiation, a
   // constructor function that heap-allocates and initializes an instance,
   // and the class's methods.
@@ -294,9 +315,14 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       if !isnull(pi) {
         for instantiation in pi {
           builder.resolveInstantiation(instantiation)
-          builder.instantiate(fntype.poly!, instantiation)
-          self.genCConstructorInstance(builder, info!)
-          builder.deInstantiate(fntype.poly!)
+          // Skip instantiations that are not concrete (e.g. recorded while
+          // typechecking another polymorphic body); the concrete ones cover
+          // every class that is actually constructed.
+          if builder.instantiationIsConcrete(instantiation) {
+            builder.instantiate(fntype.poly!, instantiation)
+            self.genCConstructorInstance(builder, info!)
+            builder.deInstantiate(fntype.poly!)
+          }
         }
       }
     } else {
@@ -357,7 +383,7 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     builder.openParamList()
     for variable in self.variables() {
       if variable.sym.name != "self" {
-        pty = builder.typechecker.resolve(variable.sym.typedValue!)
+        pty = builder.typechecker.resolve(variable.typedValue!)
         param = variable.genCParameter(builder, pty)
         builder.addParam(param)
       }
@@ -394,6 +420,26 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     fundec.addDependencies(builder.topDependencyList().names)
     builder.closeDependencyList()
     builder.addDeclaration(fundec)
+
+    // A user-defined toString must be emitted for this instantiation even if
+    // user code never calls it: the class's tostring_<class> print helper
+    // references it.  The class's type variables are bound here, so the
+    // method's type resolves concretely.
+    for childfunc in self.childFunctions() {
+      if childfunc.sym.name == "toString" && childfunc.type == FuncType.Plain {
+        mty = childfunc.sym.typedValue
+        if !isnull(mty) {
+          if mty.type == types.Type.TypeClass.Polymorphic {
+            mfn = builder.typechecker.resolve(mty.poly.scope)
+          } else {
+            mfn = mty!
+          }
+          if !builder.typechecker.hasFreeVars(mfn) {
+            childfunc.genCMethodInstance(builder, mfn)
+          }
+        }
+      }
+    }
   }
 
   // Generate C code for a class method, once per recorded instantiation.
@@ -408,9 +454,11 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       if !isnull(pi) {
         for instantiation in pi {
           builder.resolveInstantiation(instantiation)
-          builder.instantiate(fntype.poly!, instantiation)
-          self.genCMethodInstance(builder, instantiation.type)
-          builder.deInstantiate(fntype.poly!)
+          if builder.instantiationIsConcrete(instantiation) {
+            builder.instantiate(fntype.poly!, instantiation)
+            self.genCMethodInstance(builder, instantiation.type)
+            builder.deInstantiate(fntype.poly!)
+          }
         }
       }
     } else if fntype.type == types.Type.TypeClass.Function {

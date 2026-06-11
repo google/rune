@@ -10,7 +10,9 @@
  * behave identically.
  */
 
+#include <stdarg.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -134,6 +136,22 @@ static inline char *int_tostring(int64_t v, uint64_t base) {
   char *digits = uint_tostring(-(uint64_t)v, base);
   char *r = string_concat("-", digits);
   free(digits);
+  return r;
+}
+
+// sprintf into a freshly allocated string.
+static inline char *string_sprintf(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  int n = vsnprintf(NULL, 0, fmt, ap);
+  va_end(ap);
+  if (n < 0) {
+    n = 0;
+  }
+  char *r = (char *)malloc((size_t)n + 1);
+  va_start(ap, fmt);
+  vsnprintf(r, (size_t)n + 1, fmt, ap);
+  va_end(ap);
   return r;
 }
 

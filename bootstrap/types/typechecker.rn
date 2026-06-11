@@ -400,6 +400,43 @@ class TypeChecker(self) {
     }
   }
 
+  // True if the type still contains unresolved type variables after
+  // resolution.  Used by the C backend to defer emission of polymorphic
+  // instantiations whose bindings only resolve under an outer instantiation.
+  func hasFreeVars(self, t: Type) -> bool {
+    rt = self.resolve(t)
+    switch rt.type {
+      Type.TypeClass.Var => return true
+      Type.TypeClass.Array => return self.hasFreeVars(rt.array.elementType)
+      Type.TypeClass.Tuple => {
+        for element in rt.tuple.elements {
+          if self.hasFreeVars(element) {
+            return true
+          }
+        }
+        return false
+      }
+      Type.TypeClass.Function => {
+        return self.hasFreeVars(rt.function.params) || self.hasFreeVars(rt.function.result)
+      }
+      Type.TypeClass.Typename => {
+        if isnull(rt.tyname.params) {
+          return false
+        }
+        return self.hasFreeVars(Type(rt.tyname.params!))
+      }
+      Type.TypeClass.Choice => {
+        for choice in rt.choice.choices {
+          if self.hasFreeVars(choice) {
+            return true
+          }
+        }
+        return false
+      }
+      default => return false
+    }
+  }
+
   func lookupTyname(self, tyname: Sym) -> Type? {
     res = null(Type)
     td = TynameDefinition(tyname, null(Type))
@@ -761,8 +798,10 @@ class TypeChecker(self) {
         }
         i += 1u32
       }
+      // Only cache the selection when typechecking a concrete scrutinee.
+      // Codegen of polymorphic functions re-selects per instantiation.
+      statement.selectedCaseIndex = selected
     }
-    statement.selectedCaseIndex = selected
     return selected
   }
 
@@ -793,6 +832,7 @@ class TypeChecker(self) {
       // The self parameter of a class method is the class instance type.
       ty = self.currentSelfType!
       self.newSymbol(v.sym, ty)
+      v.typedValue = ty
       return ty
     }
     if isnull(v.typeExpr) {
@@ -805,6 +845,10 @@ class TypeChecker(self) {
     } else {
       ty = self.symbol(v.sym)
     }
+    // Syms are interned by name, so sym.typedValue is clobbered when another
+    // function has a same-named variable.  Codegen must use the type stored
+    // on the Variable itself.
+    v.typedValue = ty
 
     if db.getRoot().traceTypes {
        v.location.annotation("\n[Typecheck] ", TypeLoggingPrefix)
@@ -867,6 +911,31 @@ class TypeChecker(self) {
         argty = Type(TupleType([left!, right!]))
         result = self.apply(opty, argty, expr.location)
      }
+
+      db.ExprType.Select => {
+        condChild = expr.firstChildExpr!
+        trueChild = condChild.nextExprChildExpr!
+        falseChild = trueChild.nextExprChildExpr!
+        condTy = self.expr(condChild)
+        trueTy = self.expr(trueChild)
+        falseTy = self.expr(falseChild)
+        if isnull(condTy) || isnull(trueTy) || isnull(falseTy) {
+          return null(Type)
+        }
+        te = self.unify(condTy!, BOOL)
+        if !isnull(te) {
+          self.typeError(
+            "Condition of ?: must be bool, not %s" % condTy.toString(), expr.location)
+        }
+        te = self.unify(trueTy!, falseTy!)
+        if !isnull(te) {
+          self.typeError(
+            "Branches of ?: have different types %s and %s" %
+                (trueTy.toString(), falseTy.toString()),
+            expr.location)
+        }
+        result = trueTy
+      }
 
       db.ExprType.Index => {
         leftChild = expr.firstChildExpr!
@@ -1557,7 +1626,9 @@ class TypeChecker(self) {
       return memberType
     }
     instParams = instanceType.tyname.params!
-    result = memberType
+    // Resolve first so the member type and paramVars both use the chain
+    // representatives; replaceVar matches on exact variable ids.
+    result = self.resolve(memberType)
     for i in range(info.paramVars.length()) {
       pv = self.resolve(info.paramVars[i])
       if pv.type == Type.TypeClass.Var && i < instParams.elements.length() {

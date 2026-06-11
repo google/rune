@@ -769,6 +769,40 @@ class CDotExpr(self, location: db.Location, left: CExpr, field: string, arrow: b
   }
 }
 
+relation OneToOne CSelectExpr CExpr: "cond" cascade
+relation OneToOne CSelectExpr CExpr: "trueVal" cascade
+relation OneToOne CSelectExpr CExpr: "falseVal" cascade
+
+// The C conditional operator: cond ? trueVal : falseVal.
+class CSelectExpr(self, location: db.Location, cond: CExpr, trueVal: CExpr, falseVal: CExpr) {
+  self.insertCondCExpr(cond)
+  self.insertTrueValCExpr(trueVal)
+  self.insertFalseValCExpr(falseVal)
+
+  func precedence(self) -> u8 {
+    return 13u8
+  }
+
+  func isSigned(self) -> bool {
+    return self.trueValCExpr.isSigned()
+  }
+
+  func width(self) -> u32 {
+    return self.trueValCExpr.width()
+  }
+
+  func emit(self, e: CEmitter) {
+    // Always parenthesized: the conditional operator binds loosely.
+    e.write("(")
+    self.condCExpr.emit(e)
+    e.write(" ? ")
+    self.trueValCExpr.emit(e)
+    e.write(" : ")
+    self.falseValCExpr.emit(e)
+    e.write(")")
+  }
+}
+
 relation OneToOne CIndexExpr CExpr: "array" cascade
 relation OneToOne CIndexExpr CExpr: "index" cascade
 
@@ -855,6 +889,7 @@ enum CRuntimeFunction {
    UintToString
    IntToStringLE
    IntToStringBE
+   StringSprintf
 
    // To-string builtins
    GlobalStringWriterReset
@@ -1050,6 +1085,11 @@ relevantType: CTypeExpr?) {
         e.write("int_tostring_be")
       }
 
+      CRuntimeFunction.StringSprintf => {
+        e.needStringMethods()
+        e.write("string_sprintf")
+      }
+
       // Rune built-in arithmetic operators.
       CRuntimeFunction.AddWithOverflowDetect => {
         e.write(e.needIntAdd(self.signedType, self.bitwidth))
@@ -1145,11 +1185,12 @@ relation OneToOne CExpr CIdentifier cascade
 relation OneToOne CExpr CTypeExpr cascade
 relation OneToOne CExpr: "parent" CDotExpr: "child" cascade
 relation OneToOne CExpr CIndexExpr cascade
+relation OneToOne CExpr CSelectExpr cascade
 relation OneToOne CExpr CCall cascade
 relation OneToOne CExpr: "parent" CPrefixOperator: "child" cascade
 relation OneToOne CExpr: "parent" CBinaryOperator: "child" cascade
 
-class CExpr(self, value: CLiteral | CIdentifier | CPrefixOperator | CBinaryOperator | CCall | CExprList | CTypeExpr | CDotExpr | CIndexExpr)  {
+class CExpr(self, value: CLiteral | CIdentifier | CPrefixOperator | CBinaryOperator | CCall | CExprList | CTypeExpr | CDotExpr | CIndexExpr | CSelectExpr)  {
 
   enum Type {
     Literal
@@ -1203,6 +1244,10 @@ class CExpr(self, value: CLiteral | CIdentifier | CPrefixOperator | CBinaryOpera
       self.type = Type.Index
       self.insertCIndexExpr(value)
     }
+    CSelectExpr => {
+      self.type = Type.Conditional
+      self.insertCSelectExpr(value)
+    }
   }
 
   func emit(self, e: CEmitter) {
@@ -1216,6 +1261,7 @@ class CExpr(self, value: CLiteral | CIdentifier | CPrefixOperator | CBinaryOpera
       CExpr.Type.TypeExpr => self.cTypeExpr.emit(e)
       CExpr.Type.Field => self.childCDotExpr.emit(e)
       CExpr.Type.Index => self.cIndexExpr.emit(e)
+      CExpr.Type.Conditional => self.cSelectExpr.emit(e)
     }
   }
 
@@ -1230,6 +1276,8 @@ class CExpr(self, value: CLiteral | CIdentifier | CPrefixOperator | CBinaryOpera
       CExpr.Type.TypeExpr => return 0u8
       CExpr.Type.Field    => return self.childCDotExpr.precedence()
       CExpr.Type.Index    => return 1u8
+      // CSelectExpr emits its own parentheses.
+      CExpr.Type.Conditional => return 0u8
     }
   }
 
@@ -1244,6 +1292,7 @@ class CExpr(self, value: CLiteral | CIdentifier | CPrefixOperator | CBinaryOpera
       CExpr.Type.TypeExpr => return false
       CExpr.Type.Field    => return self.childCDotExpr.isSigned()
       CExpr.Type.Index    => return self.cIndexExpr.isSigned()
+      CExpr.Type.Conditional => return self.cSelectExpr.isSigned()
     }
   }
 
@@ -1258,6 +1307,7 @@ class CExpr(self, value: CLiteral | CIdentifier | CPrefixOperator | CBinaryOpera
       CExpr.Type.TypeExpr => return 0u32
       CExpr.Type.Field => return self.childCDotExpr.width()
       CExpr.Type.Index => return self.cIndexExpr.width()
+      CExpr.Type.Conditional => return self.cSelectExpr.width()
     }
   }
 }
@@ -1820,6 +1870,11 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
     e.newline()
 
     // Emit the toString function --------------------------------------
+    if self.toStringMethod != "" {
+      // The user-defined method is emitted after the class (it depends on
+      // the struct typedef), so forward-declare it here.
+      e.writeln("string_t %s(%s_t *self);" % (self.toStringMethod, self.name))
+    }
     e.write("void tostring_%s_t(%s_t *self)" % (self.name, self.name))
     e.writeopenln(" {")
     if self.toStringMethod != "" {

@@ -789,6 +789,9 @@ class Expr(self, type: ExprType, location: Location) {
       // Structs
       ExprType.Dot => return self.genCFieldSel(builder)
 
+      // The conditional operator a ? b : c.
+      ExprType.Select => return self.genCSelect(builder)
+
       default => raise Status.Unimplemented, "Expression type not yet supported by C backend: ", getExprTypeName(self.type)
     }
   }
@@ -801,6 +804,33 @@ class Expr(self, type: ExprType, location: Location) {
       elements.appendCExpr(child.genC(builder))
     }
     return c.CExpr(elements)
+  }
+
+  // "fmt" % args as an expression: format into a fresh heap string via the
+  // string_sprintf runtime helper.  Rune format codes are converted to
+  // printf codes by the string literal escaper.
+  func genCStringFormat(self, builder: c.CBuilder, left: Expr, right: Expr) -> c.CExpr {
+    if left.type != ExprType.Constant || left.val.type != DatatypeType.String {
+      raise Status.Unimplemented, "String formatting requires a literal format string"
+    }
+    args = c.CExprList()
+    args.appendCExpr(builder.cStringLiteral(left.val.stringVal, printf=true))
+    if right.type == ExprType.Tuple {
+      for child in right.childExprs() {
+        args.appendCExpr(child.genC(builder))
+      }
+    } else {
+      args.appendCExpr(right.genC(builder))
+    }
+    return builder.cCall(self.location, c.CRuntimeFunction.StringSprintf, c.CExpr(args))
+  }
+
+  func genCSelect(self, builder: c.CBuilder) -> c.CExpr {
+    condChild = self.firstChildExpr!
+    trueChild = condChild.nextExprChildExpr!
+    falseChild = trueChild.nextExprChildExpr!
+    return c.CExpr(c.CSelectExpr(self.location, condChild.genC(builder),
+                                 trueChild.genC(builder), falseChild.genC(builder)))
   }
 
   func genCPrefixOp(self, builder: c.CBuilder) -> c.CExpr {
@@ -826,6 +856,11 @@ class Expr(self, type: ExprType, location: Location) {
     parent = self.parentExpr
     left = self.firstChildExpr!
     right = left.nextExprChildExpr!
+
+    if self.type == ExprType.Mod && builder.typechecker.isStringType(left.typedValue) {
+      // "fmt" % args is sprintf-like formatting, not arithmetic.
+      return self.genCStringFormat(builder, left, right)
+    }
 
     if self.type == ExprType.Equals {
       self.bindingInstance = true
@@ -1165,7 +1200,39 @@ class Expr(self, type: ExprType, location: Location) {
         raise Status.Unimplemented, "Can't generate code for polymorphic function expression ", left.toString()
       }
       // Append the instantiated types to the name (its specialization).
-      specializedName = right.typedValue.genSpecializationName(left.val.symVal.name)
+      // Resolve the argument types first: inside the body of another
+      // polymorphic emission they are type variables bound by the currently
+      // active instantiation.
+      argTypes = builder.typechecker.resolve(right.typedValue!)
+      specializedName = argTypes.genSpecializationName(left.val.symVal.name)
+      if !builder.alreadyEmitted(specializedName) {
+        // The definition-side sweep skips instantiations whose bindings only
+        // resolve under an outer instantiation (e.g. a call from a
+        // polymorphic class constructor).  Emit the specialization now,
+        // while that binding is active.
+        callee = builder.findFunction(left.val.symVal.name)
+        if !isnull(callee) {
+          pi = fntype.poly.instantiations
+          emitted = false
+          for inst in pi {
+            if !emitted {
+              // Find the recorded instantiation matching this call site by
+              // comparing specialization names under the current bindings.
+              builder.instantiate(fntype.poly!, inst)
+              ptypes = arrayof(types.Type)
+              for variable in callee.variables() {
+                ptypes.append(builder.typechecker.resolve(variable.typedValue!))
+              }
+              iname = types.Type(types.TupleType(ptypes)).genSpecializationName(callee.sym.name)
+              builder.deInstantiate(fntype.poly!)
+              if iname == specializedName {
+                callee.genCPolyInstantiation(builder, inst)
+                emitted = true
+              }
+            }
+          }
+        }
+      }
       specialization = Sym.new(specializedName)
       cfn = builder.cIdentifier(specialization, false)
     } else if (left.type == ExprType.Ident && !isnull(self.typedValue) &&

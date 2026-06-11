@@ -36,6 +36,9 @@ class Variable(self, function: Function, isParam: bool, isConst: bool, sym: Sym,
     self.insertTypeExpr(typeExpr!)
   }
   self.instantiated = false  // Some variables hold types, not values.
+  // The variable's type, set by the typechecker.  Syms are interned by name,
+  // so sym.typedValue is unreliable when other functions reuse the name.
+  self.typedValue = null(types.Type)
   self.location = location
   self.inClassSignature = false
   // TODO: Comment this in when we port Datatype.

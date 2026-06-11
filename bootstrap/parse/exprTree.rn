@@ -83,6 +83,9 @@ transformer ExprTree() {
           if !isnull(ruleSym) && ruleSym.name == "negateTruncExpr" {
             return self.buildPrefixExpr(node, db.ExprType.NegateTrunc)
           }
+          if !isnull(ruleSym) && ruleSym.name == "selectExpr" {
+            return self.buildSelectExpr(node)
+          }
           // Pass through single-child wrapper rules (e.g. the layered type
           // expression rules) rather than dropping them.
           first = node.firstChildNode
@@ -92,6 +95,19 @@ transformer ExprTree() {
           return db.Expr.newIdent(Sym.new("ident"), db.Location.emptyLocation())
         }
       }
+    }
+
+    // Format: selectExpr(cond '?' trueVal ':' falseVal) — literal tokens are
+    // dropped by the parser, leaving exactly three child expressions.
+    func buildSelectExpr(self: HirBuilder, node: Node) -> db.Expr {
+      condNode = node.firstChildNode!
+      trueNode = condNode.nextNodeChildNode!
+      falseNode = trueNode.nextNodeChildNode!
+      result = db.Expr(db.ExprType.Select, node.location)
+      result.appendChildExpr(self.buildExprTree(condNode))
+      result.appendChildExpr(self.buildExprTree(trueNode))
+      result.appendChildExpr(self.buildExprTree(falseNode))
+      return result
     }
 
     // Format: tupleTypeExpr('(' typeExpr* ')') — token children are skipped.
