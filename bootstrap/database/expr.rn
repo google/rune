@@ -1236,7 +1236,11 @@ class Expr(self, type: ExprType, location: Location) {
               iname = types.Type(types.TupleType(ptypes)).genSpecializationName(callee.sym.name)
               builder.deInstantiate(fntype.poly!)
               if iname == specializedName {
-                callee.genCPolyInstantiation(builder, inst)
+                if callee.type == FuncType.Struct {
+                  callee.genCStructInstance(builder, inst)
+                } else {
+                  callee.genCPolyInstantiation(builder, inst)
+                }
                 emitted = true
               }
             }

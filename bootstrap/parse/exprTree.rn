@@ -86,6 +86,17 @@ transformer ExprTree() {
           if !isnull(ruleSym) && ruleSym.name == "selectExpr" {
             return self.buildSelectExpr(node)
           }
+          if (!isnull(ruleSym) && ruleSym.name == "callParameter" &&
+              !isnull(node.firstChildNode) &&
+              !isnull(node.firstChildNode.nextNodeChildNode)) {
+            // (IDENT '=') expr — a named argument; positional arguments have
+            // a single child and use the passthrough below.
+            nameNode = node.firstChildNode!
+            valueNode = nameNode.nextNodeChildNode!
+            return db.Expr.newBinary(db.ExprType.Namedparam,
+                db.Expr.newIdent(nameNode.getIdentSym()!, nameNode.location),
+                self.buildExprTree(valueNode), node.location)
+          }
           // Pass through single-child wrapper rules (e.g. the layered type
           // expression rules) rather than dropping them.
           first = node.firstChildNode

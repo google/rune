@@ -631,7 +631,12 @@ class CBuilder(self, tc: types.TypeChecker) {
               indexee: CExpr, index: u64|CExpr) -> CExpr {
     ity = indexeeType
     if ity.type == types.Type.TypeClass.Typename {
-       ity = self.typechecker.lookupTyname(ity.tyname.name)!
+       st = self.typechecker.structInstanceType(ity!)
+       if !isnull(st) {
+         ity = st!
+       } else {
+         ity = self.typechecker.lookupTyname(ity.tyname.name)!
+       }
     }
 
     typeswitch index {

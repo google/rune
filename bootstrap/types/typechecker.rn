@@ -233,10 +233,26 @@ class ClassInfo(self, sym: Sym) {
   }
 }
 
+// Maps a function name to its definition, so call sites can look up
+// parameter names and default values.
+class FunctionDef(self, sym: Sym) {
+  self.sym = sym
+  self.fn = null(db.Function)
+
+  func hash(self) -> u64 {
+    return hashValue(self.sym.name)
+  }
+
+  func equals(self, other: FunctionDef) -> bool {
+    return self.sym == other.sym
+  }
+}
+
 relation HashedClass TypeChecker SymbolMapping cascade
 relation HashedClass TypeChecker TynameDefinition cascade
 relation HashedClass TypeChecker ClassInfo cascade
 relation HashedClass TypeChecker EnumInfo cascade
+relation HashedClass TypeChecker FunctionDef cascade
 relation DoublyLinked TypeChecker BindingScope cascade
 relation DoublyLinked TypeChecker TypeError cascade
 
@@ -307,6 +323,12 @@ class TypeChecker(self) {
     return tyvar
   }
 
+  func newConstrainedTyvar(self, constraint: Type) -> TypeVar {
+    tyvar = TypeVar(self.nextTyvarId, constraint)
+    self.nextTyvarId += 1
+    return tyvar
+  }
+
   func newTyname(self, tyname: Sym, def: Type) {
     td = TynameDefinition(tyname, def)
     self.insertTynameDefinition(td)
@@ -319,6 +341,20 @@ class TypeChecker(self) {
   // if the name does not refer to a class.
   func lookupClass(self, sym: Sym) -> ClassInfo? {
     return self.findClassInfo(ClassInfo(sym))
+  }
+
+  func registerFunctionDef(self, fn: db.Function) {
+    fd = FunctionDef(fn.sym)
+    fd.fn = fn
+    self.insertFunctionDef(fd)
+  }
+
+  func lookupFunctionDef(self, sym: Sym) -> db.Function? {
+    found = self.findFunctionDef(FunctionDef(sym))
+    if isnull(found) {
+      return null(db.Function)
+    }
+    return found.fn
   }
 
   // Look up the typechecking information for an enum by name.  Returns null
@@ -560,6 +596,15 @@ class TypeChecker(self) {
         }
         return Type(TupleType(elements))
       }
+      Type.TypeClass.Struct => {
+        fieldnames = arrayof(Sym)
+        fieldtypes = arrayof(Type)
+        for i in range(t.strct!.fieldnames.length()) {
+          fieldnames.append(t.strct!.fieldnames[i])
+          fieldtypes.append(self.resolve(t.strct!.fieldtypes[i]))
+        }
+        return Type(StructType(fieldnames, fieldtypes))
+      }
       Type.TypeClass.Function => {
         return Type(FunctionType(self.resolve(t.function!.params),
                                  self.resolve(t.function!.result)))
@@ -681,6 +726,11 @@ class TypeChecker(self) {
     t = self.tryExplicitType(typeExpr)
     if isnull(t) {
       return Type(self.newTyvar())
+    }
+    if t.type == Type.TypeClass.AnyInt {
+      // "Int"/"Uint" constraints accept any width; use a constrained type
+      // variable so unification records the width actually passed.
+      return Type(self.newConstrainedTyvar(t!))
     }
     if t.type == Type.TypeClass.Typename {
       name = t.tyname.name
@@ -968,12 +1018,17 @@ class TypeChecker(self) {
           }
           index = indexval.uint64()
           if left.type == Type.TypeClass.Typename {
-             lty = self.lookupTyname(left.tyname.name)
-             if isnull(lty) {
-               self.typeError(
-                 "Cannot index into undefined typename %s." % left.toString(), expr.location)
+             lst = self.structInstanceType(left!)
+             if !isnull(lst) {
+               left = lst
              } else {
-               left = lty
+               lty = self.lookupTyname(left.tyname.name)
+               if isnull(lty) {
+                 self.typeError(
+                   "Cannot index into undefined typename %s." % left.toString(), expr.location)
+               } else {
+                 left = lty
+               }
              }
           }
           if left.type != Type.TypeClass.Tuple && left.type != Type.TypeClass.Struct && left.type != Type.TypeClass.Array {
@@ -1015,14 +1070,19 @@ class TypeChecker(self) {
             isClassAccess = true
             result = self.boolMethodType(field.toString(), expr.location)
           } else {
-            ty = self.lookupTyname(sty.tyname.name)
-            if isnull(ty) {
-              self.typeError(
-                "Field Selection on an undefined type name %s" % sty.tyname.name.name,
-                expr.location)
-              return null(Type)
+            st = self.structInstanceType(sty!)
+            if !isnull(st) {
+              sty = st!
+            } else {
+              ty = self.lookupTyname(sty.tyname.name)
+              if isnull(ty) {
+                self.typeError(
+                  "Field Selection on an undefined type name %s" % sty.tyname.name.name,
+                  expr.location)
+                return null(Type)
+              }
+              sty = ty!
             }
-            sty = ty!
           }
         }
 
@@ -1107,8 +1167,15 @@ class TypeChecker(self) {
 
       db.ExprType.Call => {
         fnchild = expr.firstChildExpr!
-        argchild = expr.firstChildExpr!.nextExprChildExpr
-        fn = self.expr(expr.firstChildExpr!)
+        if fnchild.type == db.ExprType.Ident {
+          callee = self.lookupFunctionDef(fnchild.val.symVal!)
+          if !isnull(callee) {
+            self.normalizeCallArgs(expr, callee!)
+          }
+        }
+        fnchild = expr.firstChildExpr!
+        argchild = fnchild.nextExprChildExpr
+        fn = self.expr(fnchild)
         args = self.expr(argchild!)
         if isnull(fn) || isnull(args) {
           return fn
@@ -1137,6 +1204,92 @@ class TypeChecker(self) {
     return result
   }
 
+
+  // Rewrite a call's arguments into full positional form, in the HIR, so
+  // both typechecking and code generation see a plain argument tuple:
+  // named arguments move to their parameter's position and omitted
+  // parameters take a copy of their default initializer.
+  func normalizeCallArgs(self, expr: db.Expr, fn: db.Function) {
+    fnchild = expr.firstChildExpr!
+    argchild = fnchild.nextExprChildExpr!
+    // The parameters, in order.
+    params = arrayof(db.Variable)
+    for variable in fn.variables() {
+      if variable.isParam && variable.sym.name != "self" {
+        params.append(variable)
+      }
+    }
+    // The given arguments.
+    positional = arrayof(db.Expr)
+    namedNames = arrayof(string)
+    namedValues = arrayof(db.Expr)
+    if argchild.type == db.ExprType.Tuple {
+      for child in argchild.childExprs() {
+        if child.type == db.ExprType.Namedparam {
+          namedNames.append(child.firstChildExpr.val.symVal.name)
+          namedValues.append(child.firstChildExpr.nextExprChildExpr!)
+        } else {
+          positional.append(child)
+        }
+      }
+    } else if argchild.type == db.ExprType.Namedparam {
+      namedNames.append(argchild.firstChildExpr.val.symVal.name)
+      namedValues.append(argchild.firstChildExpr.nextExprChildExpr!)
+    } else {
+      positional.append(argchild)
+    }
+    if namedNames.length() == 0 && positional.length() == params.length() {
+      // Already plain positional and complete.
+      return
+    }
+    // Pick each parameter's argument: positional from the left, then named,
+    // then the parameter's default value.
+    selected = arrayof(db.Expr)
+    for index in range(params.length()) {
+      if index < positional.length() {
+        selected.append(positional[index])
+      } else {
+        found = null(db.Expr)
+        for n in range(namedNames.length()) {
+          if namedNames[n] == params[index].sym.name {
+            found = namedValues[n]
+          }
+        }
+        if isnull(found) {
+          init = params[index].initializerExpr
+          if isnull(init) {
+            // Missing argument with no default; leave the call unchanged
+            // and let unification report the error.
+            return
+          }
+          found = init.copy()
+        }
+        selected.append(found!)
+      }
+    }
+    // Detach the old argument expressions and rebuild as a plain tuple.
+    // Only the argument container and Namedparam wrappers are unlinked;
+    // the argument expressions themselves keep their children.
+    expr.removeChildExpr(argchild)
+    if argchild.type == db.ExprType.Tuple {
+      while !isnull(argchild.firstChildExpr) {
+        detach = argchild.firstChildExpr!
+        argchild.removeChildExpr(detach)
+        if detach.type == db.ExprType.Namedparam {
+          value = detach.firstChildExpr.nextExprChildExpr!
+          detach.removeChildExpr(value)
+        }
+      }
+    } else if argchild.type == db.ExprType.Namedparam {
+      value = argchild.firstChildExpr.nextExprChildExpr!
+      argchild.removeChildExpr(value)
+    }
+    newArgs = db.Expr(db.ExprType.Tuple, argchild.location)
+    for s in selected {
+      newArgs.appendChildExpr(s)
+    }
+    expr.appendChildExpr(newArgs)
+  }
 
   // Statements -------------------------------------------------------------
   func statement(self, statement: db.Statement, parent: db.Block) {
@@ -1406,6 +1559,11 @@ class TypeChecker(self) {
   func function(self, fn: db.Function) {
     switch fn.type {
       db.FuncType.Module => {
+        // Register all functions first so call sites can look up parameter
+        // names and defaults regardless of definition order.
+        for childfunc in fn.childFunctions() {
+          self.registerFunctionDef(childfunc)
+        }
         for childfunc in fn.childFunctions() {
           self.function(childfunc)
         }
@@ -1638,6 +1796,40 @@ class TypeChecker(self) {
       }
     }
     return self.resolve(result)
+  }
+
+  // If ty is a Typename whose definition is a (possibly polymorphic)
+  // struct, return the struct type with this instance's type arguments
+  // substituted for the struct's type parameters.
+  func structInstanceType(self, ty: Type) -> Type? {
+    if ty.type != Type.TypeClass.Typename {
+      return null(Type)
+    }
+    def = self.lookupTyname(ty.tyname.name)
+    if isnull(def) {
+      return null(Type)
+    }
+    if def.type == Type.TypeClass.Struct {
+      return def
+    }
+    if (def.type != Type.TypeClass.Polymorphic ||
+        def.poly.scope.type != Type.TypeClass.Struct) {
+      return null(Type)
+    }
+    result = def.poly.scope
+    if isnull(ty.tyname.params) {
+      return result
+    }
+    instParams = ty.tyname.params!
+    for i in range(def.poly.boundVars.length()) {
+      bv = def.poly.boundVars[i]
+      if i < instParams.elements.length() {
+        fresh = self.newTyvar()
+        result = result.replaceVar(bv.tyvar!, fresh)
+        te = self.unify(Type(fresh), instParams.elements[i])
+      }
+    }
+    return self.resolve(result!)
   }
 
   func structFunction(self, fn: db.Function) {
