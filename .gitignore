@@ -34,3 +34,13 @@
 #/crypto_class/
 #!/crypto_class/*.rn
 #!/crypto_class/*.stdout
+bootstrap/rune
+bootstrap/database/bigint
+bootstrap/database/block
+bootstrap/database/datatype
+bootstrap/database/expr
+bootstrap/database/filepath
+bootstrap/database/function
+bootstrap/database/location
+bootstrap/database/statement
+bootstrap/database/value
