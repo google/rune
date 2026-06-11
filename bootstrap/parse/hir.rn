@@ -101,7 +101,7 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
       self.returnStatementSym => self.buildReturnStatement(statementNode)
       self.statementSym => self.buildCompoundStatement(statementNode)
       self.structSym => self.buildStruct(statementNode)
-      self.exceptCaseSym, self.switchCaseSym => self.buildCaseStatement(statementNode)
+      self.exceptCaseSym, self.switchCaseSym, self.typeswitchCaseSym => self.buildCaseStatement(statementNode)
       self.switchStatementSym => self.buildSwitchStatement(statementNode)
       self.transformerSym => self.buildFunction(db.FuncType.Transformer, statementNode)
       self.transformStatementSym => self.buildTransformStatement(statementNode)
@@ -704,9 +704,22 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
     }
   }
 
+  // Format: typeswitchStatement(expr(...) typeswitchCase(...)* defaultCase(...)?)
   func buildTypeswitchStatement(self: HirBuilder, statementNode: Node) {
-    // TODO: write this.
-    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+    exprNode = statementNode.firstChildNode!
+    tsStatement = db.Statement(self.currentBlock, db.StateType.Typeswitch,
+                               statementNode.location)
+    expr = self.buildExprTree(exprNode)
+    tsStatement.insertExpr(expr)
+    savedBlock = self.currentBlock
+    self.currentBlock = db.Block(statementNode.location)
+    tsStatement.insertSubBlock(self.currentBlock)
+    caseNode = exprNode.nextNodeChildNode
+    while !isnull(caseNode) {
+      self.buildStatement(caseNode!)
+      caseNode = caseNode.nextNodeChildNode
+    }
+    self.currentBlock = savedBlock
   }
 
   func buildTryExceptStatement(self: HirBuilder, statementNode: Node) {
@@ -714,9 +727,10 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
     self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
   }
 
+  // Format: unitTest(IDENT? block(...))
   func buildUnitTest(self: HirBuilder, statementNode: Node) {
-    // TODO: write this.
-    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+    // A unittest block runs inline where it appears.
+    self.buildBlockStatement(statementNode.lastChildNode!)
   }
 
   func buildYield(self: HirBuilder, statementNode: Node) {
@@ -783,6 +797,7 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
     self.statementSym = Sym.new("statement")
     self.structSym = Sym.new("struct")
     self.switchCaseSym = Sym.new("switchCase")
+    self.typeswitchCaseSym = Sym.new("typeswitchCase")
     self.exceptCaseSym = Sym.new("exceptCase")
     self.switchStatementSym = Sym.new("switchStatement")
     self.transformerSym = Sym.new("transformer")

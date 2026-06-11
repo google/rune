@@ -709,6 +709,9 @@ class PolymorphicType(self, vars: Type | [Type], scope: Type,
   // Variable ids whose bindings instantiate() left untouched because they
   // were already bound in the unifier; deInstantiate() must not unbind them.
   self.skippedBindIds = arrayof(i32)
+  // Chain representatives instantiate() bound in place of variables that
+  // were var-to-var bound; deInstantiate() unbinds these instead.
+  self.chainBoundVars = arrayof(TypeVar)
 
   operator == (self, other: PolymorphicType) -> bool {
     // TODO: consider equivalence up to bound variable renaming

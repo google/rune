@@ -406,15 +406,23 @@ class TypeChecker(self) {
     for index in range(poly.boundVars.length()) {
        assert poly.boundVars[index].type == Type.TypeClass.Var
        btv = poly.boundVars[index].tyvar!
+       binding = inst.varBindings[index]
        val = self.unifier.lookupVar(btv.id)
-       if !isnull(val) {
-         // A generalized variable can also have been unified at a use site
-         // (e.g. a builtin operator constraint variable).  Keep the existing
-         // binding and leave it in place when de-instantiating.
-         poly.skippedBindIds.append(btv.id)
-       } else {
-         binding = inst.varBindings[index]
+       if isnull(val) {
          self.unifier.bindVar(btv, binding)
+       } else if val.type == Type.TypeClass.Var {
+         // Bound to another variable: bind the representative at the end of
+         // the chain instead, so resolution reaches this instantiation.
+         poly.skippedBindIds.append(btv.id)
+         rep = self.unifier.representative(btv)
+         if rep.id != btv.id && isnull(self.unifier.lookupVar(rep.id)) {
+           self.unifier.bindVar(rep, binding)
+           poly.chainBoundVars.append(rep)
+         }
+       } else {
+         // Concretely bound at a use site (e.g. a builtin operator
+         // constraint variable).  Keep the existing binding.
+         poly.skippedBindIds.append(btv.id)
        }
     }
   }
@@ -435,8 +443,13 @@ class TypeChecker(self) {
         assert isnull(self.unifier.lookupVar(ty.tyvar.id))
       }
     }
+    for rep in poly.chainBoundVars {
+      self.unifier.unbindVar(rep)
+    }
     emptyIds = arrayof(i32)
     poly.skippedBindIds = emptyIds
+    emptyVars = arrayof(TypeVar)
+    poly.chainBoundVars = emptyVars
   }
 
 
@@ -574,6 +587,10 @@ class TypeChecker(self) {
       return INTEGER()
     } else if name.name == "Uint" {
       return UINTEGER()
+    } else if name.name == "String" {
+      return STRING()
+    } else if name.name == "Bool" {
+      return BOOLEAN()
     } else {
       return Type(TypeName(name))
     }
@@ -590,6 +607,135 @@ class TypeChecker(self) {
       db.ExprType.Ident => return self.namedType(typeExpr.val.symVal!)
       default => raise Status.Unimplemented, "TypeExpression type not yet supported by C backend", typeExpr.type
     }
+  }
+
+  // The type for a variable's type constraint.  Constraint forms we cannot
+  // evaluate (e.g. choices like "string | bool") leave the variable
+  // unconstrained rather than failing.
+  func constraintType(self, typeExpr: db.Expr) -> Type {
+    t = self.tryExplicitType(typeExpr)
+    if isnull(t) {
+      return Type(self.newTyvar())
+    }
+    if t.type == Type.TypeClass.Typename {
+      name = t.tyname.name
+      if (isnull(self.lookupClass(name)) && isnull(self.lookupEnum(name)) &&
+          isnull(self.lookupTyname(name)) && name.name != "string" &&
+          name.name != "bool" && name.name != "none") {
+        // An unrecognized name; likely an unsupported constraint form.
+        return Type(self.newTyvar())
+      }
+    }
+    return t!
+  }
+
+  // Convert a type expression to a Type, returning null for forms that
+  // cannot be evaluated here (rather than raising).
+  func tryExplicitType(self, typeExpr: db.Expr) -> Type? {
+    switch typeExpr.type {
+      db.ExprType.UintType => return U(<u64>typeExpr.width)
+      db.ExprType.IntType => return I(<u64>typeExpr.width)
+      db.ExprType.FloatType => return F(<u64>typeExpr.width)
+      db.ExprType.StringType => return STR
+      db.ExprType.BoolType => return BOOL
+      db.ExprType.NoneType => return NONETY()
+      db.ExprType.Ident => return self.namedType(typeExpr.val.symVal!)
+      db.ExprType.Tuple, db.ExprType.List => {
+        elements = arrayof(Type)
+        for child in typeExpr.childExprs() {
+          t = self.tryExplicitType(child)
+          if isnull(t) {
+            return null(Type)
+          }
+          elements.append(t!)
+        }
+        return Type(TupleType(elements))
+      }
+      db.ExprType.Array => {
+        first = typeExpr.firstChildExpr
+        if isnull(first) {
+          return null(Type)
+        }
+        t = self.tryExplicitType(first!)
+        if isnull(t) {
+          return null(Type)
+        }
+        return ARRAY(t!)
+      }
+      default => return null(Type)
+    }
+  }
+
+  // True if a typeswitch case pattern matches the resolved scrutinee type.
+  func typePatternMatches(self, pattern: Type, actual: Type) -> bool {
+    if (pattern.type == Type.TypeClass.Typename &&
+        actual.type == Type.TypeClass.Typename &&
+        isnull(pattern.tyname.params)) {
+      // An unparameterized type name (e.g. a class name) matches any
+      // instantiation of that name.
+      return pattern.tyname.name.name == actual.tyname.name.name
+    }
+    if pattern.type == Type.TypeClass.AnyInt && actual.type == Type.TypeClass.Int {
+      return pattern.anyInt.isSigned == actual.int.isSigned
+    }
+    if pattern.type == Type.TypeClass.Int && actual.type == Type.TypeClass.AnyInt {
+      return pattern.int.isSigned == actual.anyInt.isSigned
+    }
+    if pattern.type == Type.TypeClass.Tuple && actual.type == Type.TypeClass.Tuple {
+      if pattern.tuple.elements.length() != actual.tuple.elements.length() {
+        return false
+      }
+      for idx in range(pattern.tuple.elements.length()) {
+        if !self.typePatternMatches(pattern.tuple.elements[idx],
+                                    actual.tuple.elements[idx]) {
+          return false
+        }
+      }
+      return true
+    }
+    return pattern == actual
+  }
+
+  // Select the typeswitch case matching the resolved scrutinee type,
+  // optionally typechecking the selected case's body.  Records and returns
+  // the selected index; raises if no case matches.
+  func selectTypeswitchCase(self, statement: db.Statement, typecheckBody: bool) -> u32 {
+    rty = self.resolve(statement.expr.typedValue!)
+    selected = 0xffffffffu32
+    index = 0u32
+    for caseStatement in statement.subBlock.statements() {
+      if selected == 0xffffffffu32 {
+        if caseStatement.type == db.StateType.Case {
+          for typeExpr in caseStatement.expr.childExprs() {
+            t = self.tryExplicitType(typeExpr)
+            if !isnull(t) && self.typePatternMatches(t!, rty) {
+              selected = index
+            }
+          }
+        } else {
+          // The default case matches anything.
+          selected = index
+        }
+      }
+      index += 1u32
+    }
+    if selected == 0xffffffffu32 {
+      statement.location.error("No typeswitch case matches type " + rty.toString())
+      raise Status.InvalidArgument, "No typeswitch case matches type ", rty.toString()
+    }
+    if typecheckBody {
+      i = 0u32
+      for caseStatement in statement.subBlock.statements() {
+        if i == selected {
+          for s in caseStatement.subBlock.statements() {
+            self.statement(s, caseStatement.subBlock)
+          }
+        }
+        i += 1u32
+      }
+    }
+    statement.selectedCaseIndex = selected
+    return selected
   }
 
 
@@ -624,7 +770,7 @@ class TypeChecker(self) {
     if isnull(v.typeExpr) {
       ty = Type(self.newTyvar())
     } else {
-      ty = self.explicitType(v.typeExpr!)
+      ty = self.constraintType(v.typeExpr!)
     }
     if v.isParam {
       self.newSymbol(v.sym, ty)
@@ -972,6 +1118,65 @@ class TypeChecker(self) {
           self.statement(s, statement.subBlock)
         }
         parent.returnType = statement.subBlock.returnType
+      }
+      db.StateType.Typeswitch => {
+        scrutTy = self.expr(statement.expr)
+        assert !isnull(statement.subBlock)
+        if !isnull(scrutTy) {
+          rty = self.resolve(scrutTy!)
+          // A typeswitch whose case patterns are value expressions (e.g.
+          // enum members) is really a value switch.
+          isValueSwitch = false
+          for caseStatement in statement.subBlock.statements() {
+            if caseStatement.type == db.StateType.Case {
+              firstPattern = caseStatement.expr.firstChildExpr
+              if !isnull(firstPattern) {
+                if (firstPattern.type == db.ExprType.Dot ||
+                    firstPattern.type == db.ExprType.Constant) {
+                  isValueSwitch = true
+                }
+              }
+            }
+          }
+          if isValueSwitch {
+            statement.type = db.StateType.Switch
+            self.statement(statement, parent)
+          } else if rty.type == Type.TypeClass.Var {
+            // Polymorphic scrutinee: typecheck every arm with the scrutinee
+            // variable temporarily bound to that arm's pattern type.  The
+            // case itself is selected at codegen time, per instantiation.
+            for caseStatement in statement.subBlock.statements() {
+              bound = false
+              if caseStatement.type == db.StateType.Case {
+                firstPattern = caseStatement.expr.firstChildExpr
+                t = self.tryExplicitType(firstPattern!)
+                if !isnull(t) {
+                  self.unifier.bindVar(rty.tyvar!, t!)
+                  bound = true
+                }
+              }
+              for s in caseStatement.subBlock.statements() {
+                self.statement(s, caseStatement.subBlock)
+              }
+              if !isnull(caseStatement.subBlock.returnType) {
+                parent.returnType = caseStatement.subBlock.returnType
+              }
+              if bound {
+                self.unifier.unbindVar(rty.tyvar!)
+              }
+            }
+          } else {
+            self.selectTypeswitchCase(statement, true)
+            tsIndex = 0u32
+            for caseStatement in statement.subBlock.statements() {
+              if (tsIndex == statement.selectedCaseIndex &&
+                  !isnull(caseStatement.subBlock.returnType)) {
+                parent.returnType = caseStatement.subBlock.returnType
+              }
+              tsIndex += 1u32
+            }
+          }
+        }
       }
       db.StateType.Switch => {
         // The sub-block holds Case statements (expr = list of match values)

@@ -67,8 +67,54 @@ transformer ExprTree() {
 
         self.tupleExprSym => return self.buildTupleExpr(node)
 
-        default => return db.Expr.newIdent(Sym.new("ident"), db.Location.emptyLocation())
+        self.pathExprSym => return self.buildPathExpr(node)
+        self.typePathExprSym => return self.buildExprTree(node.firstChildNode!)
+
+        default => {
+          // HirBuilder cannot take more Sym fields (the generated dump hits
+          // a format-argument limit), so match late-added rules by name.
+          ruleSym = node.getRuleSym()
+          if !isnull(ruleSym) && ruleSym.name == "tupleTypeExpr" {
+            return self.buildTupleTypeExpr(node)
+          }
+          // Pass through single-child wrapper rules (e.g. the layered type
+          // expression rules) rather than dropping them.
+          first = node.firstChildNode
+          if !isnull(first) && isnull(first.nextNodeChildNode) {
+            return self.buildExprTree(first!)
+          }
+          return db.Expr.newIdent(Sym.new("ident"), db.Location.emptyLocation())
+        }
       }
+    }
+
+    // Format: tupleTypeExpr('(' typeExpr* ')') — token children are skipped.
+    func buildTupleTypeExpr(self: HirBuilder, node: Node) -> db.Expr {
+      elements = arrayof(db.Expr)
+      child = node.firstChildNode
+      while !isnull(child) {
+        if isnull(child.token) {
+          elements.append(self.buildExprTree(child!))
+        }
+        child = child.nextNodeChildNode
+      }
+      return db.Expr.newTuple(elements, node.location)
+    }
+
+    // Format: pathExpr(IDENT ('.' IDENT)*) — builds a Dot chain.
+    func buildPathExpr(self: HirBuilder, node: Node) -> db.Expr {
+      first = node.firstChildNode!
+      result = self.buildExprTree(first)
+      child = first.nextNodeChildNode
+      while !isnull(child) {
+        identSym = child.getIdentSym()
+        if !isnull(identSym) {
+          result = db.Expr.newBinary(db.ExprType.Dot, result,
+              db.Expr.newIdent(identSym!, child.location), child.location)
+        }
+        child = child.nextNodeChildNode
+      }
+      return result
     }
 
     // Build the expression tree for this expression node.
