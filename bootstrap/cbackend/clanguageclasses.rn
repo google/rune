@@ -1034,6 +1034,16 @@ relevantType: CTypeExpr?) {
     self.signedType = args.isSigned()
     self.bitwidth = args.width()
   }
+  // Argument expressions like field accesses report no width; the Rune
+  // expression type is authoritative when the caller provides it (width 0
+  // would silently pick the 8-bit overflow helper).
+  if !isnull(relevantType) {
+    rtWidth = relevantType.width()
+    if rtWidth != 0u32 {
+      self.bitwidth = rtWidth
+      self.signedType = relevantType.isSigned()
+    }
+  }
 
   func isSigned(self) -> bool {
     // **********************************************************************

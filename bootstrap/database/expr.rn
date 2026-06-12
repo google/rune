@@ -1264,7 +1264,9 @@ class Expr(self, type: ExprType, location: Location) {
         list = c.CExprList()
         list.appendCExpr(l)
         list.appendCExpr(r)
-        return builder.cCall(self.location, fn, c.CExpr(list))
+        // The expression's own type carries the width; the operand
+        // CExprs (e.g. field accesses) may not know theirs.
+        return builder.cCall(self.location, fn, c.CExpr(list), self.typedValue)
       }
     }
     return builder.cBinaryOperator(self.location, op, left.typedValue, l, r)
