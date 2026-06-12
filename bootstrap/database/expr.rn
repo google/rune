@@ -2325,7 +2325,11 @@ class Expr(self, type: ExprType, location: Location) {
     }
     flattenArgs = right.typedValue.type == types.Type.TypeClass.Tuple
     if flattenArgs {
-      // A single tuple-valued argument is passed whole, not flattened.
+      // A single tuple-valued argument is passed whole, not flattened
+      // (the callee declares exactly one parameter).
+      if varFlags.length() == 1 {
+        flattenArgs = false
+      }
       if !isnull(right.firstChildExpr) {
         if isnull(right.firstChildExpr.nextExprChildExpr) {
           oneChildTy = right.firstChildExpr.typedValue
