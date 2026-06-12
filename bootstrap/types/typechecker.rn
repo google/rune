@@ -606,6 +606,17 @@ class TypeChecker(self) {
         self.statement(s, fn.subBlock!)
       }
     }
+    if fn.type == db.FuncType.Constructor {
+      // Bake the re-discovered field types while the instantiation's
+      // bindings are still active: they bind through the instantiation
+      // variables and would revert to unbound after deInstantiate.
+      if !isnull(self.currentClassInfo) {
+        bakeInfo = self.currentClassInfo!
+        for bfi in range(bakeInfo.strct.fieldtypes.length()) {
+          bakeInfo.strct.fieldtypes[bfi] = self.resolve(bakeInfo.strct.fieldtypes[bfi])
+        }
+      }
+    }
     self.closeScope()
     self.currentClassInfo = prevClassInfo
     self.currentSelfType = prevSelfType
@@ -1835,10 +1846,11 @@ class TypeChecker(self) {
           self.typeError(
             "Index expression must be an unsigned integer, not %s." % right.toString(),
             expr.location)
-        } else if leftChild.typedValue.type == Type.TypeClass.Array {
-          // TODO: ARRAY INDEX STUFF HERE
-          result = leftChild.typedValue.array.elementType
-        } else if self.isStringType(leftChild.typedValue) {
+        } else if self.resolve(leftChild.typedValue!).type == Type.TypeClass.Array {
+          // The raw type may be a variable bound to the array (a member
+          // typed during a deferred re-typecheck).
+          result = self.resolve(leftChild.typedValue!).array.elementType
+        } else if self.isStringType(self.resolve(leftChild.typedValue!)) {
           // Indexing a string yields a byte.
           result = U(8)
         } else if rightChild.type != db.ExprType.Constant {
@@ -4196,6 +4208,17 @@ class TypeChecker(self) {
           dpv = self.resolve(variable.typedValue!)
           if dpv.type == Type.TypeClass.Var {
             deferVars.append(Type(dpv.tyvar!))
+          } else if dpv.type == Type.TypeClass.Typename {
+            // A class-instance parameter (a: Matrix) is generic through
+            // its unresolved type parameters.
+            if !isnull(dpv.tyname.params) {
+              for dpel in dpv.tyname.params.elements {
+                rdp = self.resolve(dpel)
+                if rdp.type == Type.TypeClass.Var {
+                  deferVars.append(Type(rdp.tyvar!))
+                }
+              }
+            }
           }
         }
       }
