@@ -562,6 +562,24 @@ class TypeChecker(self) {
     }
   }
 
+  func clearExprTypes(self, block: db.Block) {
+    for statement in block.statements() {
+      if !isnull(statement.expr) {
+        self.clearExprTypesIn(statement.expr!)
+      }
+      if !isnull(statement.subBlock) {
+        self.clearExprTypes(statement.subBlock!)
+      }
+    }
+  }
+
+  func clearExprTypesIn(self, expr: db.Expr) {
+    expr.typedValue = null(Type)
+    for child in expr.childExprs() {
+      self.clearExprTypesIn(child)
+    }
+  }
+
   func collectIdentNames(self, expr: db.Expr, var names: [string]) {
     if expr.type == db.ExprType.Ident {
       names.append(expr.val.symVal.name)
@@ -3635,6 +3653,11 @@ class TypeChecker(self) {
           self.popTypeError()
         }
         childfunc.typedValue = null(Type)
+        // Clear the partially-assigned expression types so a retry (or a
+        // mistaken emission) never sees half-typed state.
+        if !isnull(childfunc.subBlock) {
+          self.clearExprTypes(childfunc.subBlock!)
+        }
       }
     }
     self.currentClassInfo = methodPrevClassInfo
