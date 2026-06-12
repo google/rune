@@ -1943,13 +1943,20 @@ class Expr(self, type: ExprType, location: Location) {
         argTypes = builder.typechecker.resolve(right.typedValue!)
       }
       ctorCallee = builder.findFunction(left.val.symVal.name)
+      ctorResultTy = null(types.Type)
       if (!isnull(ctorCallee) && ctorCallee.type == FuncType.Constructor &&
           !isnull(self.typedValue)) {
         // Constructor call: the definition is named from the instance type
         // (classCName canonicalizes self-referential class parameters);
         // composing from the argument types diverges for such classes.
-        specializedName = builder.classCName(
-            builder.typechecker.resolve(self.typedValue!))
+        ctorResultTy = builder.typechecker.resolve(self.typedValue!)
+        if ctorResultTy.type != types.Type.TypeClass.Typename {
+          // Unresolved under this emission context; use the argument types.
+          ctorResultTy = null(types.Type)
+        }
+      }
+      if !isnull(ctorResultTy) {
+        specializedName = builder.classCName(ctorResultTy!)
       } else {
         specializedName = argTypes.genSpecializationName(left.val.symVal.name)
       }

@@ -561,6 +561,15 @@ class TypeChecker(self) {
     }
   }
 
+  func collectIdentNames(self, expr: db.Expr, var names: [string]) {
+    if expr.type == db.ExprType.Ident {
+      names.append(expr.val.symVal.name)
+    }
+    for child in expr.childExprs() {
+      self.collectIdentNames(child, names)
+    }
+  }
+
   func registerFunctionDef(self, fn: db.Function) {
     fd = FunctionDef(fn.sym)
     fd.fn = fn
@@ -1891,8 +1900,10 @@ class TypeChecker(self) {
               }
             }
             // resize returns the resized array, so the result can be
-            // assigned (a = [0].resize(12)).
-            "resize" => result = FN(U(64), ARRAY(elementType))
+            // assigned (a = [0].resize(12)); the count is any unsigned
+            // width (heap code uses u32 indices).
+            "resize" => result = FN(Type(self.newConstrainedTyvar(UINTEGER())),
+                                    ARRAY(elementType))
             "reverse" => result = FN(TUPLE(nullTypes), NONETY())
             "concat" => result = FN(ARRAY(elementType), NONETY())
 
@@ -2564,8 +2575,8 @@ class TypeChecker(self) {
   }
 
   func statement(self, statement: db.Statement, parent: db.Block) {
-    if isnull(statement) {
-      self.typeError("internal: null statement in block", parent.location)
+    if isnull(statement) || isnull(parent) {
+      self.typeError("internal: null statement in block", null(db.Location))
       return NONETY()
     }
     self.currentStatementGenerated = statement.generated
@@ -2596,7 +2607,10 @@ class TypeChecker(self) {
       }
       db.StateType.If => {
         ty = self.expr(statement.expr)
-        te = isnull(ty) ? null(TypeError) : self.unify(ty!, BOOL)
+        te = null(TypeError)
+        if !isnull(ty) {
+          te = self.unify(ty!, BOOL)
+        }
         if !isnull(te) {
           self.typeError("Condition expression must be a boolean", statement.expr.location)
         }
@@ -2616,7 +2630,10 @@ class TypeChecker(self) {
       db.StateType.ElseIf => {
         assert !isnull(statement.expr)
         ty = self.expr(statement.expr)
-        te = isnull(ty) ? null(TypeError) : self.unify(ty!, BOOL)
+        te = null(TypeError)
+        if !isnull(ty) {
+          te = self.unify(ty!, BOOL)
+        }
         if !isnull(te) {
           self.typeError("Condition expression must be a boolean", statement.expr.location)
         }
@@ -2685,7 +2702,10 @@ class TypeChecker(self) {
       }
       db.StateType.While => {
         ty = self.expr(statement.expr)
-        te = isnull(ty) ? null(TypeError) : self.unify(ty!, BOOL)
+        te = null(TypeError)
+        if !isnull(ty) {
+          te = self.unify(ty!, BOOL)
+        }
         if !isnull(te) {
           self.typeError("Condition expression must be a boolean", statement.expr.location)
         }
@@ -3413,6 +3433,51 @@ class TypeChecker(self) {
             }
           }
         }
+        // Register operator overload SIGNATURES before any typechecking:
+        // generated code (e.g. a heap's _compare) may apply an operator a
+        // class defines, while that class's own constructor depends on the
+        // generated code.  Bare type names avoid demand-typechecking; the
+        // Operator arm replaces the entry with the real type later.  Only
+        // classes named in relation statements need this (and ordinary
+        // overloads dispatch better through their real generalized types).
+        relationClassNames = arrayof(string)
+        for statement in fn.subBlock.statements() {
+          if (statement.type == db.StateType.Relation ||
+              statement.type == db.StateType.Transform) {
+            if !isnull(statement.expr) {
+              self.collectIdentNames(statement.expr!, relationClassNames)
+            }
+          }
+        }
+        for childfunc in fn.childFunctions() {
+          inRelation = false
+          for rcn in relationClassNames {
+            if rcn == childfunc.sym.name {
+              inRelation = true
+            }
+          }
+          if childfunc.type == db.FuncType.Constructor && inRelation {
+            for opfn in childfunc.childFunctions() {
+              if opfn.type == db.FuncType.Operator {
+                opParams = arrayof(Type)
+                for opv in opfn.variables() {
+                  if opv.isParam {
+                    opTy = null(Type)
+                    if !isnull(opv.typeExpr) {
+                      opTy = self.tryExplicitType(opv.typeExpr!)
+                    }
+                    if isnull(opTy) {
+                      opTy = Type(self.newTyvar())
+                    }
+                    opParams.append(opTy!)
+                  }
+                }
+                self.operatorFns.append(opfn)
+                self.operatorTypes.append(FN(TUPLE(opParams), Type(self.newTyvar())))
+              }
+            }
+          }
+        }
         for childfunc in fn.childFunctions() {
           if childfunc.type != db.FuncType.Module {
             self.function(childfunc)
@@ -3427,9 +3492,21 @@ class TypeChecker(self) {
       db.FuncType.Operator => {
         // Overloaded operators typecheck like plain functions, plus an
         // entry in the operator registry consulted at operator expressions.
+        // A signature pre-registered in the module pre-pass is replaced
+        // with the real generalized type.
         self.plainFunction(fn)
-        self.operatorFns.append(fn)
-        self.operatorTypes.append(fn.typedValue!)
+        opIdx = -1i64
+        for opi in range(self.operatorFns.length()) {
+          if self.operatorFns[opi] == fn {
+            opIdx = <i64>opi
+          }
+        }
+        if opIdx >= 0i64 {
+          self.operatorTypes[<u64>opIdx] = fn.typedValue!
+        } else {
+          self.operatorFns.append(fn)
+          self.operatorTypes.append(fn.typedValue!)
+        }
       }
       db.FuncType.Struct => self.structFunction(fn)
       db.FuncType.Constructor => self.constructorFunction(fn)
@@ -3543,7 +3620,21 @@ class TypeChecker(self) {
     self.currentSelfType = selfType
     self.classBoundVars = info.paramVars
     for childfunc in fn.childFunctions() {
+      isGeneratedMethod = false
+      if !isnull(childfunc.subBlock) && !isnull(childfunc.subBlock.firstStatement) {
+        isGeneratedMethod = childfunc.subBlock.firstStatement.generated
+      }
+      preMethodErrors = self.countTypeErrors()
       self.function(childfunc)
+      if isGeneratedMethod && self.countTypeErrors() > preMethodErrors {
+        // A relation-generated method that fails to typecheck is only an
+        // error if something calls it (the legacy compiler never checks
+        // uncalled methods); a call demand-retries and surfaces it then.
+        while self.countTypeErrors() > preMethodErrors {
+          self.popTypeError()
+        }
+        childfunc.typedValue = null(Type)
+      }
     }
     self.currentClassInfo = methodPrevClassInfo
     self.currentSelfType = methodPrevSelfType
@@ -3954,7 +4045,8 @@ class TypeChecker(self) {
     // an interned method name like "hash" globally poisons same-named
     // locals in whatever function a demand-typecheck interrupted.
     isMethod = (!isnull(fn.parentFunction) &&
-                fn.parentFunction.type == db.FuncType.Constructor)
+                fn.parentFunction.type == db.FuncType.Constructor &&
+                fn.type != db.FuncType.Operator)
     if !isMethod {
       self.newSymbolGlobal(fn.sym, fnType)
     }
