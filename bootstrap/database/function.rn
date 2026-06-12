@@ -335,6 +335,11 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     builder.closeScope()
     newsym = Sym.new(specializedName)
     newsym.typedValue = instantiation.type
+    if isnull(newsym.typedValue) {
+      // A synthesized instantiation may carry no type; the resolved scope
+      // serves for the return type.
+      newsym.typedValue = builder.typechecker.resolve(fntype.poly.scope)
+    }
     fundec = builder.cFunDef(self.location, newsym, paramList, body)
     // Class-typed parameters need the class struct typedef emitted first.
     for pt in paramTypes {
