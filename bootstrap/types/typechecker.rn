@@ -2983,6 +2983,17 @@ class TypeChecker(self) {
   // Relations execute their transformer at compile time, copying generated
   // code into the target classes with $-name substitution.
 
+  func registerTransformersIn(self, fn: db.Function) {
+    for childfunc in fn.childFunctions() {
+      if childfunc.type == db.FuncType.Transformer {
+        self.registerTransformer(childfunc)
+      }
+      if childfunc.type == db.FuncType.Module {
+        self.registerTransformersIn(childfunc)
+      }
+    }
+  }
+
   func registerTransformer(self, fn: db.Function) {
     if !isnull(self.lookupTransformer(fn.sym.name)) {
       return
@@ -3379,6 +3390,10 @@ class TypeChecker(self) {
   func function(self, fn: db.Function) {
     switch fn.type {
       db.FuncType.Module => {
+        // Transformers anywhere in the module tree register before any
+        // module's relations execute: an imported module (use sym) can
+        // precede the builtin transformer modules in child order.
+        self.registerTransformersIn(fn)
         // Imported modules are appended as child functions after the
         // importing module's own children; typecheck them first so their
         // definitions are bound before the importer's code references them.
