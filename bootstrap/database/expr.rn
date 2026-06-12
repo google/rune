@@ -1430,20 +1430,22 @@ class Expr(self, type: ExprType, location: Location) {
   func genCIndex(self, builder: c.CBuilder) -> c.CExpr {
     indexee = self.firstChildExpr!
     index = indexee.nextExprChildExpr!
-    // We know from typechecking that index is a u64.
+    // We know from typechecking that index is a u64.  The indexee's raw
+    // type may be a variable bound to the array (deferred re-typecheck).
+    rIndexeeTy = builder.typechecker.resolve(indexee.typedValue!)
     left = indexee.genC(builder)
-    if indexee.typedValue.type == types.Type.TypeClass.Array {
+    if rIndexeeTy.type == types.Type.TypeClass.Array {
       right = index.genC(builder)
-      return builder.cIndex(self.location, indexee.typedValue, left, right)
+      return builder.cIndex(self.location, rIndexeeTy, left, right)
     }
-    if builder.typechecker.isStringType(indexee.typedValue) {
+    if builder.typechecker.isStringType(rIndexeeTy) {
       // Strings index directly as C char buffers.
       right = index.genC(builder)
       return c.CExpr(c.CIndexExpr(self.location, left, right))
     }
     assert index.type == ExprType.Constant && index.val.type == DatatypeType.Uint
     i = index.val.intVal.uint64()
-    return builder.cIndex(self.location, indexee.typedValue, left, i)
+    return builder.cIndex(self.location, rIndexeeTy, left, i)
   }
 
   // <left> mod <m>: emit the left expression tree with every arithmetic
