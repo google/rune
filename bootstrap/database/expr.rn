@@ -891,16 +891,31 @@ class Expr(self, type: ExprType, location: Location) {
       raise Status.Unimplemented, "String formatting requires a literal format string"
     }
     args = c.CExprList()
-    args.appendCExpr(builder.cStringLiteral(left.val.stringVal, printf=true))
-    // Integers widen to 64 bits to match the PRI*64 format directives.
+    // Integers widen to 64 bits to match the PRI*64 format directives;
+    // wide arguments render as strings via a %s directive.
+    fmtWideFlags = arrayof(bool)
     if right.type == ExprType.Tuple {
       for child in right.childExprs() {
-        args.appendCExpr(builder.cFormatArg(self.location, child.genC(builder),
-            child.typedValue))
+        fmtWideFlags.append(builder.wideWidth(child.typedValue) > 0u32)
       }
     } else {
+      fmtWideFlags.append(builder.wideWidth(right.typedValue) > 0u32)
+    }
+    fmtDirs = builder.formatDirectives(left.val.stringVal)
+    args.appendCExpr(builder.cStringLiteral(
+        builder.rewriteWideFormat(left.val.stringVal, fmtWideFlags), printf=true))
+    fmtArgIdx = 0
+    if right.type == ExprType.Tuple {
+      for child in right.childExprs() {
+        fmtDir = fmtArgIdx < fmtDirs.length() ? fmtDirs[fmtArgIdx] : 0u8
+        args.appendCExpr(builder.cFormatArg(self.location, child.genC(builder),
+            child.typedValue, fmtDir))
+        fmtArgIdx += 1
+      }
+    } else {
+      fmtDir = fmtDirs.length() > 0 ? fmtDirs[0] : 0u8
       args.appendCExpr(builder.cFormatArg(self.location, right.genC(builder),
-          right.typedValue))
+          right.typedValue, fmtDir))
     }
     return builder.cCall(self.location, c.CRuntimeFunction.StringSprintf, c.CExpr(args))
   }
@@ -995,6 +1010,18 @@ class Expr(self, type: ExprType, location: Location) {
   func genCSignConversion(self, builder: c.CBuilder) -> c.CExpr {
     signChild = self.firstChildExpr!
     signTarget = builder.typechecker.resolve(self.typedValue!)
+    signW = builder.wideWidth(self.typedValue)
+    if signW > 0u32 {
+      // Wide values change signedness through wide_cast so the header's
+      // sign flag updates.
+      signArgs = c.CExprList()
+      signArgs.appendCExpr(signChild.genC(builder))
+      signArgs.appendCExpr(c.CExpr(c.CLiteral(Bigint(<u64>signW), false)))
+      signArgs.appendCExpr(c.CExpr(c.CLiteral(
+          Bigint(builder.wideSigned(self.typedValue) ? 1u64 : 0u64), false)))
+      signArgs.appendCExpr(c.CExpr(c.CLiteral(Bigint(1u64), false)))
+      return builder.cWideCall(self.location, "wide_cast", signArgs)
+    }
     signCType = builder.genCType(signTarget)
     if isnull(signCType) {
       raise Status.Unimplemented, "unsigned()/signed() target type not supported by C backend"

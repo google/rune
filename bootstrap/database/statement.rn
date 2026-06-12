@@ -356,17 +356,33 @@ class Statement(self, block: Block, type: StateType, location: Location) {
             }
           } else if left.type == ExprType.Constant && left.val.type == DatatypeType.String {
             args = c.CExprList()
-            args.appendCExpr(builder.cStringLiteral(left.val.stringVal, printf=true))
             // Tuple arguments spread into the vararg list; integers widen
-            // to 64 bits to match the PRI*64 format directives.
+            // to 64 bits to match the PRI*64 format directives; wide
+            // arguments render as strings via a %s directive.
+            fmtWideFlags = arrayof(bool)
             if right.type == ExprType.Tuple {
               for fmtChild in right.childExprs() {
-                args.appendCExpr(builder.cFormatArg(self.location,
-                    fmtChild.genC(builder), fmtChild.typedValue))
+                fmtWideFlags.append(builder.wideWidth(fmtChild.typedValue) > 0u32)
               }
             } else {
+              fmtWideFlags.append(builder.wideWidth(right.typedValue) > 0u32)
+            }
+            fmtDirs = builder.formatDirectives(left.val.stringVal)
+            args.appendCExpr(builder.cStringLiteral(
+                builder.rewriteWideFormat(left.val.stringVal, fmtWideFlags),
+                printf=true))
+            fmtArgIdx = 0
+            if right.type == ExprType.Tuple {
+              for fmtChild in right.childExprs() {
+                fmtDir = fmtArgIdx < fmtDirs.length() ? fmtDirs[fmtArgIdx] : 0u8
+                args.appendCExpr(builder.cFormatArg(self.location,
+                    fmtChild.genC(builder), fmtChild.typedValue, fmtDir))
+                fmtArgIdx += 1
+              }
+            } else {
+              fmtDir = fmtDirs.length() > 0 ? fmtDirs[0] : 0u8
               args.appendCExpr(builder.cFormatArg(self.location,
-                  right.genC(builder), right.typedValue))
+                  right.genC(builder), right.typedValue, fmtDir))
             }
             cexpr = c.CExpr(args)
             self.genCCall(builder, c.CRuntimeFunction.GlobalStringWriterWrite, cexpr)

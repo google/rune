@@ -608,17 +608,22 @@ class CBuilder(self, tc: types.TypeChecker) {
 
   // Integer arguments to printf-style format calls must widen to 64 bits:
   // the format emitter translates %u/%i/%x to their PRI*64 forms, which
-  // read 8 bytes from the vararg list.
-  func cFormatArg(self, location: db.Location, arg: CExpr, ty: types.Type?) -> CExpr {
+  // read 8 bytes from the vararg list.  Wide arguments render as strings
+  // (the format directive becomes %s; |directive| selects the base).
+  func cFormatArg(self, location: db.Location, arg: CExpr, ty: types.Type?,
+                  directive: u8 = 0u8) -> CExpr {
     if isnull(ty) {
       return arg
     }
     t = self.typechecker.resolve(ty!)
     if t.type == types.Type.TypeClass.Int {
       if t.int.width > 64u32 {
-        // Wide integers format via %s as decimal strings.
         wideArgs = CExprList()
         wideArgs.appendCExpr(arg)
+        if directive == 'x' {
+          wideArgs.appendCExpr(CExpr(CLiteral(db.Bigint(16u64), false)))
+          return self.cWideCall(location, "wide_tostring_base", wideArgs)
+        }
         return self.cWideCall(location, "wide_tostring", wideArgs)
       }
       argSigned = t.int.isSigned
@@ -628,6 +633,79 @@ class CBuilder(self, tc: types.TypeChecker) {
       return arg
     }
     return CExpr(CCastExpr(location, self.cIntType(location, argSigned, 64u32), arg))
+  }
+
+  // The directive characters of a printf-style Rune format, in argument
+  // order (skipping %%).
+  func formatDirectives(self, fmt: string) -> [u8] {
+    dirs = arrayof(u8)
+    pos = 0
+    while pos < fmt.length() {
+      if fmt[pos] == '%' && pos + 1 < fmt.length() {
+        if fmt[pos + 1] == '%' {
+          pos += 2
+        } else {
+          scan = pos + 1
+          while (scan < fmt.length() &&
+              ((fmt[scan] >= '0' && fmt[scan] <= '9') || fmt[scan] == '.' ||
+               fmt[scan] == '[' || fmt[scan] == ']')) {
+            scan += 1
+          }
+          if scan < fmt.length() {
+            dirs.append(fmt[scan])
+          }
+          // Rune format widths follow the directive char (e.g. %x128).
+          scan += 1
+          while scan < fmt.length() && fmt[scan] >= '0' && fmt[scan] <= '9' {
+            scan += 1
+          }
+          pos = scan
+        }
+      } else {
+        pos += 1
+      }
+    }
+    return dirs
+  }
+
+  // Rewrite a Rune format string so directives whose argument is a wide
+  // integer become %s (the argument renders as a string).
+  func rewriteWideFormat(self, fmt: string, wideArgFlags: [bool]) -> string {
+    out = ""
+    argIdx = 0
+    pos = 0
+    while pos < fmt.length() {
+      if fmt[pos] == '%' && pos + 1 < fmt.length() && fmt[pos + 1] == '%' {
+        out += "%%"
+        pos += 2
+      } else if fmt[pos] == '%' && pos + 1 < fmt.length() {
+        scan = pos + 1
+        while (scan < fmt.length() &&
+            ((fmt[scan] >= '0' && fmt[scan] <= '9') || fmt[scan] == '.')) {
+          scan += 1
+        }
+        isWideArg = argIdx < wideArgFlags.length() && wideArgFlags[argIdx]
+        argIdx += 1
+        // Rune format widths follow the directive char (e.g. %x128).
+        widthEnd = scan + 1
+        while widthEnd < fmt.length() && fmt[widthEnd] >= '0' && fmt[widthEnd] <= '9' {
+          widthEnd += 1
+        }
+        if isWideArg && scan < fmt.length() {
+          out += "%s"
+          pos = widthEnd
+        } else {
+          while pos < widthEnd && pos < fmt.length() {
+            out.append(fmt[pos])
+            pos += 1
+          }
+        }
+      } else {
+        out.append(fmt[pos])
+        pos += 1
+      }
+    }
+    return out
   }
 
   func cIntType(self, location: db.Location, isSigned: bool, width: u32) -> CTypeExpr {
