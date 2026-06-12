@@ -1936,6 +1936,18 @@ class Expr(self, type: ExprType, location: Location) {
           }
         }
       }
+      if ((builtinName == "max" || builtinName == "min") &&
+          isnull(builder.findFunction(builtinName))) {
+        mmArgs = c.CExprList()
+        for child in right.childExprs() {
+          mmArgs.appendCExpr(child.genC(builder))
+        }
+        mmHelper = "rn_max"
+        if builtinName == "min" {
+          mmHelper = "rn_min"
+        }
+        return builder.cCall(self.location, mmHelper, c.CExpr(mmArgs))
+      }
       if builtinName == "randString" && isnull(builder.findFunction("randString")) {
         rsArg = right
         if right.type == ExprType.List && !isnull(right.firstChildExpr) {

@@ -54,6 +54,12 @@ class CurrentScope(self) {
       id.firstInstance = true
       id.scopeDepth = self.depth
       self.insertCIdentifier(id)
+    } else if exists.scopeDepth < self.depth {
+      // The match belongs to an enclosing emission — a different C
+      // function whose locals are invisible here; declare anew.
+      id.firstInstance = true
+      id.scopeDepth = self.depth
+      self.insertCIdentifier(id)
     } else {
       id.isParameter = exists.isLocal
       id.isVarParam = exists.isVarParam

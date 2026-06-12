@@ -751,7 +751,7 @@ class Statement(self, block: Block, type: StateType, location: Location) {
       cstart = builder.cIntLiteral(zero)
       cend = argExpr.genC(builder)
     }
-    initRef = builder.cIdentifier(loopSym, true)
+    initRef = builder.cIdentifier(loopSym, true, loopVarExpr.typedValue)
     init = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
                                      null(c.CTypeExpr), initRef, cstart))
     cond = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.LessThan,

@@ -1627,6 +1627,12 @@ class TypeChecker(self) {
           castTarget = self.getSymbolType(castTypeChild.val.symVal!)
         }
         if isnull(castTarget) {
+          if castTypeChild.type == db.ExprType.Dot {
+            // <self.m>v casts to the type held by the field.
+            castTarget = self.expr(castTypeChild)
+          }
+        }
+        if isnull(castTarget) {
           castTarget = self.tryExplicitType(castTypeChild)
         }
         if isnull(castTarget) {
@@ -1978,6 +1984,12 @@ class TypeChecker(self) {
                  rAofTy.type == Type.TypeClass.Polymorphic) {
                aofTy = null(Type)
              }
+           }
+         }
+         if isnull(aofTy) {
+           if expr.firstChildExpr.type == db.ExprType.Dot {
+             // arrayof(self.m): the element type is the field's value type.
+             aofTy = self.expr(expr.firstChildExpr!)
            }
          }
          if isnull(aofTy) {

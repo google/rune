@@ -281,3 +281,11 @@ static inline char *rn_rand_string(uint64_t n) {
   s[n] = '\0';
   return s;
 }
+
+// Builtin max/min on 64-bit unsigned values.
+static inline uint64_t rn_max(uint64_t a, uint64_t b) {
+  return a > b ? a : b;
+}
+static inline uint64_t rn_min(uint64_t a, uint64_t b) {
+  return a < b ? a : b;
+}

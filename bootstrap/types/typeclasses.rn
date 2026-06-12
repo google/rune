@@ -1057,6 +1057,10 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
       }
       return "%s_%s" % (self.tyname.name.name, spec)
     }
+    if self.type == Type.TypeClass.Array {
+      // C identifiers cannot contain brackets.
+      return "%s_array" % self.array.elementType.specializationName()
+    }
     return self.toString()
   }
 
