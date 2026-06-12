@@ -1185,6 +1185,48 @@ class TypeChecker(self) {
     return pattern == actual
   }
 
+  // Does a typeswitch case pattern expression match the resolved scrutinee
+  // type?  Handles alternation (a | b), integer width ranges (u1 ... u64),
+  // and explicit types.
+  func casePatternMatches(self, typeExpr: db.Expr, rty: Type) -> bool {
+    if typeExpr.type == db.ExprType.Bitor {
+      altLhs = typeExpr.firstChildExpr!
+      altRhs = altLhs.nextExprChildExpr!
+      return (self.casePatternMatches(altLhs, rty) ||
+              self.casePatternMatches(altRhs, rty))
+    }
+    if typeExpr.type == db.ExprType.Dotdotdot {
+      lowExpr = typeExpr.firstChildExpr!
+      highExpr = lowExpr.nextExprChildExpr!
+      lowTy = self.tryExplicitType(lowExpr)
+      highTy = self.tryExplicitType(highExpr)
+      if isnull(lowTy) || isnull(highTy) {
+        return false
+      }
+      rlo = self.resolve(lowTy!)
+      rhi = self.resolve(highTy!)
+      if rlo.type != Type.TypeClass.Int || rhi.type != Type.TypeClass.Int {
+        return false
+      }
+      if rty.type == Type.TypeClass.Int {
+        actualSigned = rty.int.isSigned
+        actualWidth = rty.int.width
+      } else if rty.type == Type.TypeClass.AnyInt {
+        actualSigned = rty.anyInt.isSigned
+        actualWidth = 64u32
+      } else {
+        return false
+      }
+      return (actualSigned == rlo.int.isSigned &&
+              actualWidth >= rlo.int.width && actualWidth <= rhi.int.width)
+    }
+    t = self.tryExplicitType(typeExpr)
+    if !isnull(t) {
+      return self.typePatternMatches(t!, rty)
+    }
+    return false
+  }
+
   // Select the typeswitch case matching the resolved scrutinee type,
   // optionally typechecking the selected case's body.  Records and returns
   // the selected index; raises if no case matches.
@@ -1196,8 +1238,7 @@ class TypeChecker(self) {
       if selected == 0xffffffffu32 {
         if caseStatement.type == db.StateType.Case {
           for typeExpr in caseStatement.expr.childExprs() {
-            t = self.tryExplicitType(typeExpr)
-            if !isnull(t) && self.typePatternMatches(t!, rty) {
+            if self.casePatternMatches(typeExpr, rty) {
               selected = index
             }
           }
@@ -1646,9 +1687,22 @@ class TypeChecker(self) {
           // as first parameter, we ignore that. If we add the array type in these
           // types we shall need to update the code that typechecks the arguments
           // passed in.
+          // length doubles as a property: `a.length` (no call) is a u64.
+          isCallTarget = false
+          dotParent = expr.parentExpr
+          if !isnull(dotParent) && dotParent.type == db.ExprType.Call &&
+              dotParent.firstChildExpr == expr {
+            isCallTarget = true
+          }
           switch field.toString() {
             "append" => result = FN(elementType, NONETY())
-            "length" => result = FN(TUPLE(nullTypes), U(64))
+            "length" => {
+              if isCallTarget {
+                result = FN(TUPLE(nullTypes), U(64))
+              } else {
+                result = U(64)
+              }
+            }
             "resize" => result = FN(U(64), NONETY())
             "reverse" => result = FN(TUPLE(nullTypes), NONETY())
             "concat" => result = FN(ARRAY(elementType), NONETY())
@@ -2272,6 +2326,24 @@ class TypeChecker(self) {
     return Type(TypeName(Sym.new("Exception")))
   }
 
+  // The binding type for a polymorphic typeswitch case pattern: type-class
+  // keywords bind structurally (an Array pattern binds the scrutinee to an
+  // array of a fresh element variable, so the arm body can index and measure
+  // it); anything else binds as an explicit type.
+  func typeswitchPatternType(self, pattern: db.Expr) -> Type? {
+    if pattern.type == db.ExprType.Ident {
+      patternName = pattern.val.symVal.name
+      if patternName == "Array" {
+        return Type(ArrayType(Type(self.newTyvar())))
+      } else if patternName == "String" {
+        return STRING()
+      } else if patternName == "Bool" {
+        return BOOL
+      }
+    }
+    return self.tryExplicitType(pattern)
+  }
+
   func statement(self, statement: db.Statement, parent: db.Block) {
     switch statement.type {
       db.StateType.Assign => {
@@ -2438,14 +2510,26 @@ class TypeChecker(self) {
               bound = false
               if caseStatement.type == db.StateType.Case {
                 firstPattern = caseStatement.expr.firstChildExpr
-                t = self.tryExplicitType(firstPattern!)
+                t = self.typeswitchPatternType(firstPattern!)
                 if !isnull(t) {
                   self.unifier.bindVar(rty.tyvar!, t!)
                   bound = true
                 }
               }
+              // An arm that fails to typecheck under its binding is only an
+              // error if codegen selects it (matching the legacy compiler,
+              // which typechecks just the selected arm per instantiation,
+              // e.g. hashed.rn's intentional error arm).  Roll its errors
+              // back and poison the arm.
+              preArmErrors = self.countTypeErrors()
               for s in caseStatement.subBlock.statements() {
                 self.statement(s, caseStatement.subBlock)
+              }
+              if self.countTypeErrors() > preArmErrors {
+                while self.countTypeErrors() > preArmErrors {
+                  self.popTypeError()
+                }
+                caseStatement.typecheckPoisoned = true
               }
               if !isnull(caseStatement.subBlock.returnType) {
                 parent.returnType = caseStatement.subBlock.returnType
@@ -2527,19 +2611,24 @@ class TypeChecker(self) {
           argExpr = target.nextExprChildExpr
           if target.type == db.ExprType.Ident && target.val.symVal.name == "range" {
             argTy = self.expr(argExpr!)
-            rty = self.resolve(argTy!)
-            if rty.type == Type.TypeClass.Tuple {
-              // range(start, end): the bounds must have the same type.
-              firstBound = rty.tuple.elements[0]
-              for el in rty.tuple.elements {
-                te = self.unify(firstBound, el)
-                if !isnull(te) {
-                  self.typeError("range bounds must have the same type", iterExpr.location)
-                }
-              }
-              elemTy = firstBound
+            if isnull(argTy) {
+              // A type error in the bound expression was already reported.
+              elemTy = Type(self.newTyvar())
             } else {
-              elemTy = rty
+              rty = self.resolve(argTy!)
+              if rty.type == Type.TypeClass.Tuple {
+                // range(start, end): the bounds must have the same type.
+                firstBound = rty.tuple.elements[0]
+                for el in rty.tuple.elements {
+                  te = self.unify(firstBound, el)
+                  if !isnull(te) {
+                    self.typeError("range bounds must have the same type", iterExpr.location)
+                  }
+                }
+                elemTy = firstBound
+              } else {
+                elemTy = rty
+              }
             }
             iterExpr.typedValue = elemTy
           } else if target.type == db.ExprType.Dot {
@@ -2547,13 +2636,15 @@ class TypeChecker(self) {
             methodName = base.nextExprChildExpr.toString()
             if methodName == "values" || methodName == "items" {
               baseTy = self.expr(base)
-              rbase = self.resolve(baseTy!)
               baseElemTy = null(Type)
-              if rbase.type == Type.TypeClass.Array {
-                baseElemTy = rbase.array.elementType
-              } else if self.isStringType(rbase) {
-                // Iterating a string yields bytes.
-                baseElemTy = U(8)
+              if !isnull(baseTy) {
+                rbase = self.resolve(baseTy!)
+                if rbase.type == Type.TypeClass.Array {
+                  baseElemTy = rbase.array.elementType
+                } else if self.isStringType(rbase) {
+                  // Iterating a string yields bytes.
+                  baseElemTy = U(8)
+                }
               }
               if !isnull(baseElemTy) {
                 if methodName == "values" {
@@ -2571,14 +2662,19 @@ class TypeChecker(self) {
         }
         if isnull(elemTy) {
           ty = self.expr(iterExpr)
-          rty = self.resolve(ty!)
-          if rty.type == Type.TypeClass.Array {
-            elemTy = rty.array.elementType
-          } else if self.isStringType(rty) {
-            elemTy = U(8)
-          } else {
-            self.typeError("Cannot iterate over %s" % rty.toString(), iterExpr.location)
+          if isnull(ty) {
+            // A type error in the iterable was already reported.
             elemTy = Type(self.newTyvar())
+          } else {
+            rty = self.resolve(ty!)
+            if rty.type == Type.TypeClass.Array {
+              elemTy = rty.array.elementType
+            } else if self.isStringType(rty) {
+              elemTy = U(8)
+            } else {
+              self.typeError("Cannot iterate over %s" % rty.toString(), iterExpr.location)
+              elemTy = Type(self.newTyvar())
+            }
           }
         }
         self.newSymbol(loopVarExpr.val.symVal!, elemTy)

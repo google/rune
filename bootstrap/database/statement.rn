@@ -114,6 +114,11 @@ class Statement(self, block: Block, type: StateType, location: Location) {
   // For typeswitch: the index of the case selected at typecheck time, or
   // the sentinel when selection is deferred to per-instantiation codegen.
   self.selectedCaseIndex = 0xffffffffu32
+  // For typeswitch cases of a polymorphic scrutinee: the arm body failed to
+  // typecheck under its pattern binding (e.g. hashed.rn's intentional error
+  // arm).  Selecting such an arm at codegen is a compile error; leaving it
+  // unselected is fine, matching the legacy per-instantiation semantics.
+  self.typecheckPoisoned = false
   // Index into the code-block registry for prependcode/appendcode.
   self.codeBlockIndex = 0xffffffffu32
   block.appendStatement(self)
@@ -180,6 +185,7 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     newStatement.executed = self.executed
     newStatement.generated = self.generated
     newStatement.codeBlockIndex = self.codeBlockIndex
+    newStatement.typecheckPoisoned = self.typecheckPoisoned
     return newStatement
   }
 
@@ -883,6 +889,11 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     i = 0u32
     for caseStatement in self.subBlock.statements() {
       if i == index {
+        if caseStatement.typecheckPoisoned {
+          raise Status.InvalidArgument, "typeswitch case selected at ",
+              caseStatement.location.line,
+              " did not typecheck under this instantiation"
+        }
         for s in caseStatement.subBlock.statements() {
           s.genC(builder)
         }

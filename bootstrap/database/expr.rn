@@ -1619,6 +1619,17 @@ class Expr(self, type: ExprType, location: Location) {
         }
       }
     }
+    // Array length as a property (`a.length`, no call) maps to the runtime
+    // length helper, like the call form does in genCCall.
+    if !isnull(strct.typedValue) && field.toString() == "length" {
+      baseTy = builder.typechecker.resolve(strct.typedValue!)
+      if baseTy.type == types.Type.TypeClass.Array {
+        lenArgs = c.CExprList()
+        lenArgs.appendCExpr(strct.genC(builder))
+        return builder.cCall(self.location, c.CRuntimeFunction.ArrayLength,
+            c.CExpr(lenArgs))
+      }
+    }
     left = strct.genC(builder)
     if builder.isClassType(strct.typedValue) {
       // Class instances are pointers; use -> to access data members.

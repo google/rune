@@ -153,6 +153,13 @@ transformer ExprTree() {
                 db.Expr.newIdent(nameNode.getIdentSym()!, nameNode.location),
                 self.buildExprTree(valueNode), node.location)
           }
+          if (!isnull(ruleSym) &&
+              (ruleSym.name == "orTypeExpr" || ruleSym.name == "typeRangeExpr")) {
+            // Type alternation (a | b) and width ranges (u1 ... u64) in
+            // typeswitch patterns and parameter constraints: both are
+            // (expr op expr) with the operator token kept.
+            return self.buildInfixExpr(node)
+          }
           // Pass through single-child wrapper rules (e.g. the layered type
           // expression rules) rather than dropping them.
           first = node.firstChildNode
@@ -292,6 +299,11 @@ return db.Expr.newIdent(Sym.new("temp"), node.location)
         leftExpr = self.buildExprTree(leftChild)
         rightExpr = self.buildExprTree(rightChild)
         opSym = opChild.getKeywordSym()
+        // Compared by name: HirBuilder cannot take more Sym fields.
+        if !isnull(opSym) && opSym.name == "..." {
+          return db.Expr.newBinary(db.ExprType.Dotdotdot, leftExpr, rightExpr,
+              node.location)
+        }
         switch opSym! {
           self.bangMinusSym => opType = db.ExprType.SubTrunc
           self.bangPlusSym => opType = db.ExprType.AddTrunc
