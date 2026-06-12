@@ -138,12 +138,65 @@ class CBuilder(self, tc: types.TypeChecker) {
   self.scopeBlockBases = arrayof(u64)
   self.scopeBaseCount = 0u64
   self.openBlockCount = 0u64
+  // Module-level variables holding objects with destructors, finalized
+  // when main exits.
+  self.mainFinalSyms = arrayof(Sym)
+  self.mainFinalNames = arrayof(string)
   self.insertDependencyStack(DependencyStack())
 
   func build(self, module: db.Function) -> CProgram {
     self.registerFunctions(module)
     module.genC(self)
+    // Destroy module-level objects with destructors when main exits.
+    for index in range(self.mainFinalSyms.length()) {
+      finalRef = CExpr(CIdentifier(self.mainFinalSyms[index], null(CTypeExpr),
+          false, false, false))
+      finalRef2 = CExpr(CIdentifier(self.mainFinalSyms[index], null(CTypeExpr),
+          false, false, false))
+      finalArgs = CExprList()
+      finalArgs.appendCExpr(finalRef)
+      self.openBlock(module.location)
+      self.addStatement(module.location,
+          self.cCall(module.location, self.mainFinalNames[index], CExpr(finalArgs)))
+      finalBody = self.closeBlock()
+      self.program.addStatementToMain(
+          CStatement(module.location, CStatementType.If, finalRef2, finalBody))
+    }
     return self.program
+  }
+
+  // The C name of the class's destructor for instance type |ty|, or "" if
+  // the class declares no final().
+  func classFinalName(self, ty: types.Type?) -> string {
+    if isnull(ty) {
+      return ""
+    }
+    t = self.typechecker.resolve(ty!)
+    if t.type != types.Type.TypeClass.Typename {
+      return ""
+    }
+    info = self.typechecker.lookupClass(t.tyname.name)
+    if isnull(info) || isnull(info.fn) {
+      return ""
+    }
+    for childfunc in info.fn.childFunctions() {
+      if childfunc.type == db.FuncType.Final {
+        return self.classCName(t) + "_final"
+      }
+    }
+    return ""
+  }
+
+  // Record a module-level variable holding an object that needs its
+  // destructor run at program exit.
+  func registerMainFinal(self, sym: Sym, finalName: string) {
+    for existing in self.mainFinalSyms {
+      if existing == sym {
+        return
+      }
+    }
+    self.mainFinalSyms.append(sym)
+    self.mainFinalNames.append(finalName)
   }
 
   // Record every function by name so call sites can emit not-yet-seen

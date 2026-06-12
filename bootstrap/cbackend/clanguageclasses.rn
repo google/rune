@@ -537,6 +537,12 @@ class CIdentifier(self, symbol: Sym, type: CTypeExpr?, firstInstance: bool, bind
       self.type.emit(e)
     }
     e.space()
+    if !isnull(self.type) && self.type.type == CTypeExpr.Type.Pointer {
+      // Object references start null so destructors can test for a live
+      // previous value on reassignment.
+      e.writeln("%s = 0;" % mangleCName(self.symbol.name))
+      return
+    }
     e.writeln("%s;" % mangleCName(self.symbol.name))
   }
 }
@@ -2049,6 +2055,10 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
       e.write("typedef struct %s_t {" % self.name)
     }
     e.indent()
+    // Objects carry a 1-based per-class id, used when casting a reference
+    // to an integer and printed by destructors.
+    e.newline()
+    e.write("uint32_t rn_id;")
     for field in self.cParamList.cParameters() {
       e.newline()
       field.emit(e)
@@ -2059,6 +2069,7 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
     } else {
       e.writecloseln("} %s_t;" % self.name)
     }
+    e.writeln("static uint32_t %s_idcounter = 0;" % self.name)
     e.newline()
 
     // Emit the toString function --------------------------------------

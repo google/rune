@@ -258,6 +258,32 @@ class Statement(self, block: Block, type: StateType, location: Location) {
       // Type-valued assignments like t = u32 exist only at compile time.
       return
     }
+    // Overwriting an object reference destroys the previous object:
+    // if (lhs) { Class_final(lhs); }
+    if self.expr.type == ExprType.Equals {
+      assignLhs = self.expr.firstChildExpr!
+      if assignLhs.type == ExprType.Ident {
+        finalName = builder.classFinalName(assignLhs.typedValue)
+        if finalName != "" {
+          lhsSym = assignLhs.val.symVal!
+          condRef = c.CExpr(c.CIdentifier(lhsSym, null(c.CTypeExpr),
+              false, false, false))
+          callRef = c.CExpr(c.CIdentifier(lhsSym, null(c.CTypeExpr),
+              false, false, false))
+          finalArgs = c.CExprList()
+          finalArgs.appendCExpr(callRef)
+          builder.openBlock(self.location)
+          builder.addStatement(self.location,
+              builder.cCall(self.location, finalName, c.CExpr(finalArgs)))
+          finalBody = builder.closeBlock()
+          builder.addStatement(self.location,
+              c.CStatement(self.location, c.CStatementType.If, condRef, finalBody))
+          if isnull(builder.currentBlock) {
+            builder.registerMainFinal(lhsSym, finalName)
+          }
+        }
+      }
+    }
     cexpr = self.expr.genC(builder)
     builder.addStatement(self.location, c.CStatement(self.location, c.CStatementType.Assignment, cexpr))
   }

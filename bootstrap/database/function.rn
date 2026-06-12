@@ -442,6 +442,25 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
                                        null(c.CTypeExpr), selfRef, callocCall))
     builder.addStatement(self.location, assign)
 
+    // Number the instance: self->rn_id = ++<class>_idcounter.
+    counterRef = c.CExpr(c.CIdentifier(Sym.new(className + "_idcounter"),
+                                       null(c.CTypeExpr), false, false, false))
+    counterRef2 = c.CExpr(c.CIdentifier(Sym.new(className + "_idcounter"),
+                                        null(c.CTypeExpr), false, false, false))
+    counterRef3 = c.CExpr(c.CIdentifier(Sym.new(className + "_idcounter"),
+                                        null(c.CTypeExpr), false, false, false))
+    one2 = Bigint(1u32)
+    bump = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
+        null(c.CTypeExpr), counterRef,
+        c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Plus,
+            null(c.CTypeExpr), counterRef2, builder.cIntLiteral(one2)))))
+    builder.addStatement(self.location, bump)
+    selfRef2 = c.CExpr(c.CIdentifier(selfSym, null(c.CTypeExpr), false, false, false))
+    idAssign = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
+        null(c.CTypeExpr),
+        c.CExpr(c.CDotExpr(self.location, selfRef2, "rn_id", true)), counterRef3))
+    builder.addStatement(self.location, idAssign)
+
     for statement in self.subBlock.statements() {
       statement.genC(builder)
     }
@@ -456,6 +475,27 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     fundec.addDependencies(builder.topDependencyList().names)
     builder.closeDependencyList()
     builder.addDeclaration(fundec)
+
+    // A final() destructor is called from generated cleanup code, never
+    // from user calls, so emit it per instantiation like toString below.
+    for childfunc in self.childFunctions() {
+      if childfunc.type == FuncType.Final {
+        fty = childfunc.typedValue
+        if isnull(fty) {
+          fty = childfunc.sym.typedValue
+        }
+        if !isnull(fty) {
+          if fty.type == types.Type.TypeClass.Polymorphic {
+            ffn = builder.typechecker.resolve(fty.poly.scope)
+          } else {
+            ffn = fty!
+          }
+          if !builder.typechecker.hasFreeVars(ffn) {
+            childfunc.genCMethodInstance(builder, ffn)
+          }
+        }
+      }
+    }
 
     // A user-defined toString must be emitted for this instantiation even if
     // user code never calls it: the class's tostring_<class> print helper

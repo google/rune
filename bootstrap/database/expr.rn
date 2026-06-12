@@ -997,6 +997,13 @@ class Expr(self, type: ExprType, location: Location) {
     if isnull(ctype) {
       raise Status.Unimplemented, "Cast target type not supported by C backend"
     }
+    if (builder.isClassType(valueChild.typedValue) &&
+        (target.type == types.Type.TypeClass.Int ||
+         target.type == types.Type.TypeClass.AnyInt)) {
+      // Casting an object reference to an integer yields its 1-based id.
+      idSel = c.CExpr(c.CDotExpr(self.location, v, "rn_id", true))
+      return c.CExpr(c.CCastExpr(self.location, ctype!, idSel))
+    }
     return c.CExpr(c.CCastExpr(self.location, ctype!, v))
   }
 
