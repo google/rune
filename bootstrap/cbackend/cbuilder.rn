@@ -222,6 +222,7 @@ class CBuilder(self, tc: types.TypeChecker) {
                 if self.instantiationIsConcrete(dinst) {
                   self.instantiate(dfty.poly!, dinst)
                   self.typechecker.retypecheckDeferred(dfn)
+                  dfn.deferredRetypechecked = true
                   self.deInstantiate(dfty.poly!)
                   dDone = true
                 }
