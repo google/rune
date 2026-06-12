@@ -750,7 +750,26 @@ class Expr(self, type: ExprType, location: Location) {
       // First, the operators that map directly to C binary operators
       ExprType.AddTrunc => return self.genCBinaryOp(builder)
       ExprType.Constant => return self.val.genC(builder, false)
-      ExprType.Ident => return self.val.genC(builder, self.bindingInstance)
+      ExprType.Ident => {
+        if self.val.symVal.name == "argv" && !self.bindingInstance {
+          // The program's argument list, built from main()'s argc/argv.
+          // Declare the string-array type so its tostring helper exists.
+          if !isnull(self.typedValue) {
+            argvTy = builder.typechecker.resolve(self.typedValue!)
+            if argvTy.type == types.Type.TypeClass.Array {
+              builder.ensureArrayDeclared(self.location, argvTy.array.elementType!)
+            }
+          }
+          argvArgs = c.CExprList()
+          argvArgs.appendCExpr(c.CExpr(c.CIdentifier(Sym.new("argc"),
+              null(c.CTypeExpr), false, false, false)))
+          argvArgs.appendCExpr(c.CExpr(c.CIdentifier(Sym.new("argv"),
+              null(c.CTypeExpr), false, false, false)))
+          return builder.cCall(self.location, c.CRuntimeFunction.ArgvArray,
+              c.CExpr(argvArgs))
+        }
+        return self.val.genC(builder, self.bindingInstance)
+      }
       ExprType.List => return self.genCList(builder)
       ExprType.Mod => return self.genCBinaryOp(builder)
       ExprType.MulTrunc => return self.genCBinaryOp(builder)
@@ -854,12 +873,15 @@ class Expr(self, type: ExprType, location: Location) {
     }
     args = c.CExprList()
     args.appendCExpr(builder.cStringLiteral(left.val.stringVal, printf=true))
+    // Integers widen to 64 bits to match the PRI*64 format directives.
     if right.type == ExprType.Tuple {
       for child in right.childExprs() {
-        args.appendCExpr(child.genC(builder))
+        args.appendCExpr(builder.cFormatArg(self.location, child.genC(builder),
+            child.typedValue))
       }
     } else {
-      args.appendCExpr(right.genC(builder))
+      args.appendCExpr(builder.cFormatArg(self.location, right.genC(builder),
+          right.typedValue))
     }
     return builder.cCall(self.location, c.CRuntimeFunction.StringSprintf, c.CExpr(args))
   }
@@ -1456,6 +1478,18 @@ class Expr(self, type: ExprType, location: Location) {
         }
         return inner.genC(builder)
       }
+      if builtinName == "readln" && isnull(builder.findFunction("readln")) {
+        return builder.cCall(self.location, c.CRuntimeFunction.ReadLn, null(c.CExpr))
+      }
+      if builtinName == "chr" && isnull(builder.findFunction("chr")) {
+        chrArg = right
+        if right.type == ExprType.List && !isnull(right.firstChildExpr) {
+          chrArg = right.firstChildExpr!
+        }
+        chrArgs = c.CExprList()
+        chrArgs.appendCExpr(chrArg.genC(builder))
+        return builder.cCall(self.location, c.CRuntimeFunction.StringChr, c.CExpr(chrArgs))
+      }
       if builtinName == "abs" && isnull(builder.findFunction("abs")) {
         // abs() maps to fabs for floats, llabs for integers; C's abs()
         // truncates doubles to int.
@@ -1580,18 +1614,41 @@ class Expr(self, type: ExprType, location: Location) {
     } else {
       cfn = left.genC(builder)
     }
+    // var parameters of the callee receive the address of their argument.
+    varFlags = arrayof(bool)
+    if left.type == ExprType.Ident {
+      varCallee = builder.findFunction(left.val.symVal.name)
+      if !isnull(varCallee) {
+        for v in varCallee.variables() {
+          if v.isParam {
+            varFlags.append(!v.isConst)
+          }
+        }
+      }
+    }
     if right.typedValue.type == types.Type.TypeClass.Tuple {
       // Special case -- if right is a tuple, we need to encode cargs as a
       // CExprList of parameters, not as an actual tuple object. Otherwise,
       // instead of generating "f(a1, a2, ...)" we'll generate
       // "f(tupleX(a1, a2, ...))".
       parms = c.CExprList()
+      argIndex = 0
       for child in right.childExprs() {
-        parms.appendCExpr(child.genC(builder))
+        carg = child.genC(builder)
+        if argIndex < varFlags.length() && varFlags[argIndex] {
+          carg = c.CExpr(c.CPrefixOperator(self.location,
+              c.CPrefixOperator.Type.AddressOf, carg))
+        }
+        parms.appendCExpr(carg)
+        argIndex += 1
       }
       cargs = c.CExpr(parms)
     } else {
       cargs = right.genC(builder)
+      if varFlags.length() > 0 && varFlags[0] {
+        cargs = c.CExpr(c.CPrefixOperator(self.location,
+            c.CPrefixOperator.Type.AddressOf, cargs))
+      }
     }
     return builder.cCall(self.location, cfn, cargs)
   }

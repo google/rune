@@ -71,6 +71,14 @@ static inline char *string_resize(const char *s, uint64_t n) {
   return r;
 }
 
+// A one-character string holding the given byte.
+static inline char *string_chr(uint8_t c) {
+  char *r = (char *)malloc(2);
+  r[0] = (char)c;
+  r[1] = '\0';
+  return r;
+}
+
 // A [lo:hi) slice of a string.  Out-of-range bounds clamp to the string
 // length.
 static inline char *string_slice(const char *s, uint64_t lo, uint64_t hi) {

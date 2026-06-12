@@ -21,6 +21,20 @@ static inline void writeByte(uint8_t b) {
   fflush(stdout);
 }
 
+// Read one line from stdin, without the trailing newline.
+static inline char *readln(void) {
+  char *line = NULL;
+  size_t cap = 0;
+  ssize_t len = getline(&line, &cap, stdin);
+  if (len < 0) {
+    return "";
+  }
+  if (len > 0 && line[len - 1] == '\n') {
+    line[len - 1] = '\0';
+  }
+  return line;
+}
+
 static inline char *readBytes(uint64_t n) {
   char *buf = (char *)malloc((size_t)n + 1);
   size_t got = fread(buf, 1, (size_t)n, stdin);

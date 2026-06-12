@@ -56,6 +56,7 @@ class CurrentScope(self) {
       self.insertCIdentifier(id)
     } else {
       id.isParameter = exists.isLocal
+      id.isVarParam = exists.isVarParam
     }
     return id
   }
@@ -458,7 +459,8 @@ class CBuilder(self, tc: types.TypeChecker) {
   // specializedType is used when generating specific instances of a
   // polymorphic type.
   func cParameter(self, location: db.Location, sym: Sym,
-                  specializedType: types.Type? = null(types.Type)) -> CParameter {
+                  specializedType: types.Type? = null(types.Type),
+                  isVar: bool = false) -> CParameter {
     if isnull(specializedType) {
       assert !isnull(sym.typedValue)
       ty = self.typechecker.resolve(sym.typedValue!)
@@ -467,10 +469,15 @@ class CBuilder(self, tc: types.TypeChecker) {
     } else {
       ctype = self.typeGenerator.genCType(specializedType!)
     }
+    if isVar && !isnull(ctype) {
+      // var parameters pass by pointer; their references emit as (*name).
+      ctype = CTypeExpr(CPointerType(ctype!))
+    }
     // Add this parameter to the current scope (otherwise next time we
     // see it, it will appear to be 1st occurrence, and we'll try to
     // declare it).
-    self.identifierScope.getIdentifier(sym, ctype, true, true)
+    paramId = self.identifierScope.getIdentifier(sym, ctype, true, true)
+    paramId.isVarParam = isVar
     return CParameter(location, sym.name, ctype!)
   }
 
@@ -508,6 +515,24 @@ class CBuilder(self, tc: types.TypeChecker) {
 
   func cType(self, type: CType) -> CTypeExpr {
     return CTypeExpr(type)
+  }
+
+  // Integer arguments to printf-style format calls must widen to 64 bits:
+  // the format emitter translates %u/%i/%x to their PRI*64 forms, which
+  // read 8 bytes from the vararg list.
+  func cFormatArg(self, location: db.Location, arg: CExpr, ty: types.Type?) -> CExpr {
+    if isnull(ty) {
+      return arg
+    }
+    t = self.typechecker.resolve(ty!)
+    if t.type == types.Type.TypeClass.Int {
+      argSigned = t.int.isSigned
+    } else if t.type == types.Type.TypeClass.AnyInt {
+      argSigned = t.anyInt.isSigned
+    } else {
+      return arg
+    }
+    return CExpr(CCastExpr(location, self.cIntType(location, argSigned, 64u32), arg))
   }
 
   func cIntType(self, location: db.Location, isSigned: bool, width: u32) -> CTypeExpr {
@@ -674,8 +699,10 @@ class CBuilder(self, tc: types.TypeChecker) {
                        CExpr(constructorName), null(CTypeExpr)))
   }
 
-  func cArray(self, location: db.Location, elementType: types.Type, elements: [CExpr]) -> CExpr {
-    ty = self.typechecker.resolve(elementType)
+  // Ensure the C declaration for an array of |elementType| exists (the
+  // typedef along with its init and tostring helpers).
+  func ensureArrayDeclared(self, location: db.Location,
+                           elementType: types.Type) -> CArrayDefinition {
     exists = self.typeGenerator.genCArray(elementType)!
     if !exists.defined {
       // create the C struct definition ------------
@@ -702,6 +729,12 @@ class CBuilder(self, tc: types.TypeChecker) {
       exists.dec = dec
       exists.defined = true
     }
+    return exists!
+  }
+
+  func cArray(self, location: db.Location, elementType: types.Type, elements: [CExpr]) -> CExpr {
+    ty = self.typechecker.resolve(elementType)
+    exists = self.ensureArrayDeclared(location, elementType)
     constructorName = CIdentifier(Sym.new("%s_init" % exists.typeName),
                                   null(CTypeExpr),
                                   false, false, false)

@@ -274,6 +274,15 @@ class TypeChecker(self) {
   self.renameOld = arrayof(string)
   self.renameNew = arrayof(Sym)
   self.openScope()
+  // Builtin values whose types cannot be inferred from use: readln() reads
+  // a line from stdin, chr(i) makes a one-byte string, argv is the program's
+  // argument list.
+  noArgTypes = arrayof(Type)
+  self.newSymbol(Sym.new("readln"), FN(TUPLE(noArgTypes), STRING()))
+  chrVar = V(1)
+  chrConstraint = [ANYINTEGER()]
+  self.newSymbol(Sym.new("chr"), BPOLY(1, chrConstraint, FN(chrVar, STRING())))
+  self.newSymbol(Sym.new("argv"), ARRAY(STRING()))
 
   func typeError(self, msg: string, location: db.Location?) {
     self.appendTypeError(TypeError(msg, location))

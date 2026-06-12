@@ -482,6 +482,8 @@ class CIdentifier(self, symbol: Sym, type: CTypeExpr?, firstInstance: bool, bind
   self.bindingInstance = bindingInstance
   self.isLocal = isLocal
   self.scopeDepth = 0u32  // Scope nesting level at which this identifier was bound.
+  // var parameters pass by pointer; references emit as (*name).
+  self.isVarParam = false
 
   func hash(self) -> u64 {
     return hashValue(self.symbol.name)
@@ -512,6 +514,10 @@ class CIdentifier(self, symbol: Sym, type: CTypeExpr?, firstInstance: bool, bind
   }
 
   func emit(self, e: CEmitter) {
+    if self.isVarParam {
+      e.write("(*%s)" % mangleCName(self.symbol.name))
+      return
+    }
     e.write(mangleCName(self.symbol.name))
   }
 
@@ -553,6 +559,10 @@ class CPrefixOperator(self, location: db.Location, type: CPrefixOperator.Type,
   }
 
   func width(self) -> u32 {
+    if self.type == CPrefixOperator.Type.AddressOf {
+      // Pointers must not be width-cast in argument lists.
+      return 0u32
+    }
     return self.cExpr.width()
   }
 
@@ -899,6 +909,9 @@ enum CRuntimeFunction {
    WriteByte
    ReadBytes
    WriteBytes
+   ReadLn
+   ArgvArray
+   StringChr
 
    // String builtins
    StringAppend
@@ -1056,6 +1069,21 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.WriteBytes => {
         e.needByteIo()
         e.write("writeBytes")
+      }
+
+      CRuntimeFunction.ReadLn => {
+        e.needByteIo()
+        e.write("readln")
+      }
+
+      CRuntimeFunction.ArgvArray => {
+        e.needArgvArray()
+        e.write("rn_argv_array")
+      }
+
+      CRuntimeFunction.StringChr => {
+        e.needStringMethods()
+        e.write("string_chr")
       }
 
       CRuntimeFunction.StringLength => {
@@ -2022,6 +2050,8 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
     }
     e.write("void tostring_%s_t(%s_t *self)" % (self.name, self.name))
     e.writeopenln(" {")
+    // A null reference prints as null.
+    e.writeln("if (self == 0) { tostring_string_t(\"null\"); return; }")
     if self.toStringMethod != "" {
       e.write("tostring_string_t(\"")
       e.write("%s")

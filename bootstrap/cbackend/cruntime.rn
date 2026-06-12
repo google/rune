@@ -340,6 +340,12 @@ class CRuntime(self) {
     return cf
   }
 
+  func needArgvArray(self) -> CFragment {
+    cf = self.cFragment("argv_array", "cbackend/cruntime/argv.inc")
+    cf.addDependencies([self.needArrayAlloc()])
+    return cf
+  }
+
   /** Runtime Feature Emission **********************************************************/
 
   func emitIntAdd(self, e: CEmitter, width: u32) {

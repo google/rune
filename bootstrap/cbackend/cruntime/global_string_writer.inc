@@ -250,7 +250,8 @@ static inline void tostring_rune_float(double d, int digits) {
     return;
   }
   if (d > DBL_MAX || d < -DBL_MAX) {
-    StringWriter_write(&globalStringWriter, "Inf");
+    // Rune prints all non-finite values as NaN, including infinities.
+    StringWriter_write(&globalStringWriter, "NaN");
     return;
   }
   if (d == 0.0) {

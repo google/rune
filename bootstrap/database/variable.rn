@@ -109,7 +109,9 @@ class Variable(self, function: Function, isParam: bool, isConst: bool, sym: Sym,
 
   func genCParameter(self, builder: c.CBuilder,
                      instance: types.Type? = null(types.Type)) -> c.CParameter {
-    return builder.cParameter(self.location, self.sym, instance)
+    // var parameters (isConst false) pass by pointer.
+    return builder.cParameter(self.location, self.sym, instance,
+        self.isParam && !self.isConst)
   }
 }
 
