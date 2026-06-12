@@ -1764,20 +1764,11 @@ class Expr(self, type: ExprType, location: Location) {
                   ncOpened = ncFty.poly!.open(builder.typechecker.unifier,
                       &builder.typechecker.unifier.newVar())
                   if ncOpened.type == types.Type.TypeClass.Function {
-                    ncElems = arrayof(types.Type)
-                    for ncChild in right.childExprs() {
-                      if isnull(ncChild.typedValue) {
-                        ncElems.append(types.NONETY())
-                      } else {
-                        ncElems.append(builder.typechecker.resolve(ncChild.typedValue!))
-                      }
-                    }
-                    if ncElems.length() == 1 {
-                      ncArgTy = ncElems[0]
-                    } else {
-                      ncArgTy = types.Type(types.TupleType(ncElems))
-                    }
-                    ncTe = builder.typechecker.unify(ncOpened.function.params!, ncArgTy)
+                    // The call's own resolved type names the wanted
+                    // instance; bind the opened variables through the
+                    // result rather than the (less reliable) arguments.
+                    ncTe = builder.typechecker.unify(ncOpened.function.result!,
+                        builder.typechecker.resolve(self.typedValue!))
                     if isnull(ncTe) {
                       // open() recorded this instantiation; bind it to
                       // resolve the class's own type variables.
