@@ -3903,6 +3903,12 @@ class TypeChecker(self) {
         fieldParent.parentExpr.firstChildExpr == fieldParent) {
       isAssignTarget = true
     }
+    if name == "toString" {
+      // Every class gets an auto-generated toString (the field formatter
+      // the print helper uses), callable as a method.
+      noToStringArgs = arrayof(Type)
+      return FN(TUPLE(noToStringArgs), STRING())
+    }
     // A deferred constructor has not discovered its fields yet: member
     // misses (and assignment-creations, which would duplicate the real
     // field) defer the accessing body instead.

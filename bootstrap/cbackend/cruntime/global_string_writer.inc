@@ -300,3 +300,14 @@ static inline void tostring_float_t(float f) {
 static inline void tostring_double_t(double d) {
   tostring_rune_float(d, 6);
 }
+
+// Auto-generated <obj>.toString(): capture a tostring_<class> print into
+// a fresh heap string.
+static inline char *rn_dup_writer(void) {
+  const char *s = GlobalStringWriter_string();
+  char *r = (char *)malloc(strlen(s) + 1);
+  strcpy(r, s);
+  GlobalStringWriter_reset();
+  return r;
+}
+#define RN_TOSTRING_RET(callexpr) (GlobalStringWriter_reset(), (callexpr), rn_dup_writer())

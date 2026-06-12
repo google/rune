@@ -1733,6 +1733,28 @@ class Expr(self, type: ExprType, location: Location) {
       // Handle method calls on class instances.
       if builder.isClassType(base.typedValue) {
         method = base.nextExprChildExpr!
+        if method.toString() == "toString" {
+          // The auto-generated toString captures the print helper's
+          // output, unless the class defines its own.
+          tsTy = builder.typechecker.resolve(base.typedValue!)
+          tsInfo = builder.typechecker.lookupClass(tsTy.tyname.name)
+          tsUser = null(Function)
+          if !isnull(tsInfo) {
+            for tsChild in tsInfo.fn.childFunctions() {
+              if tsChild.sym.name == "toString" && tsChild.type == FuncType.Plain {
+                tsUser = tsChild
+              }
+            }
+          }
+          if isnull(tsUser) {
+            tsArgs = c.CExprList()
+            tsInner = c.CExprList()
+            tsInner.appendCExpr(base.genC(builder))
+            tsArgs.appendCExpr(builder.cCall(self.location,
+                "tostring_%s_t" % builder.classCName(tsTy), c.CExpr(tsInner)))
+            return builder.cCall(self.location, "RN_TOSTRING_RET", c.CExpr(tsArgs))
+          }
+        }
         name = builder.methodCallCName(base.typedValue!, method.toString(), right.typedValue)
         if !builder.alreadyEmitted(name) {
           builder.emitMethodOnDemand(base.typedValue!, method.toString(), name,
