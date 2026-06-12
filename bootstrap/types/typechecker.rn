@@ -3303,6 +3303,30 @@ class TypeChecker(self) {
             self.registerFunctionDef(childfunc)
           }
         }
+        // Pre-bind module globals whose initializers are self-contained
+        // literals, so functions referencing them forward see their types
+        // (module statements themselves typecheck after all functions).
+        for statement in fn.subBlock.statements() {
+          if statement.type == db.StateType.Assign && !isnull(statement.expr) {
+            preAssign = statement.expr!
+            if preAssign.type == db.ExprType.Equals {
+              preLhs = preAssign.firstChildExpr!
+              preRhs = preLhs.nextExprChildExpr!
+              if (preLhs.type == db.ExprType.Ident &&
+                  (preRhs.type == db.ExprType.Array ||
+                   preRhs.type == db.ExprType.Constant)) {
+                preErrors = self.countTypeErrors()
+                prty = self.expr(preRhs)
+                while self.countTypeErrors() > preErrors {
+                  self.popTypeError()
+                }
+                if !isnull(prty) {
+                  self.newSymbolGlobal(preLhs.val.symVal!, prty!)
+                }
+              }
+            }
+          }
+        }
         for childfunc in fn.childFunctions() {
           if childfunc.type != db.FuncType.Module {
             self.function(childfunc)
