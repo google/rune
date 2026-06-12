@@ -187,6 +187,9 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       FuncType.Constructor => self.genCConstructor(builder)
       // Enum members are inlined as integer constants at their use sites.
       FuncType.Enum => return
+      // Iterators are inlined into foreach statements by the typechecker;
+      // nothing is emitted for the iterator function itself.
+      FuncType.Iterator => return
       default => raise Status.Unimplemented, "Function type not yet supported by C backend ", self.type
     }
   }

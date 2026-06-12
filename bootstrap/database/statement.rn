@@ -60,6 +60,8 @@ enum StateType {
   Yield
   Ref  // These two are used by transformers to manage reference counts.
   Unref
+  // Holds statements spliced in by iterator inlining; has no source keyword.
+  InlinedBlock
 }
 
 // Get the statement type keyword.
@@ -97,6 +99,7 @@ export func statementTypeGetKeyword(type: StateType) {
     StateType.Yield => return "yield"
     StateType.Ref => return "ref"
     StateType.Unref => return "unref"
+    StateType.InlinedBlock => return "inlined block"
   }
 }
 
@@ -216,7 +219,23 @@ class Statement(self, block: Block, type: StateType, location: Location) {
       StateType.Switch => self.genCSwitch(builder)
       StateType.Typeswitch => self.genCTypeswitch(builder)
       StateType.Raise => self.genCRaise(builder)
+      StateType.InlinedBlock => self.genCInlinedBlock(builder)
       default => raise Status.Unimplemented, "Statement type not yet supported by C backend builder ", self.type
+    }
+  }
+
+  // Statements spliced in by iterator inlining; they emit directly into the
+  // enclosing C block.
+  func genCInlinedBlock(self, builder: c.CBuilder) {
+    // Pre-declare the foreach loop variable here: its first assignment is
+    // inside the inlined iterator's loop, which would otherwise scope the C
+    // declaration to that loop's body.
+    loopVarExpr = self.expr.firstChildExpr!
+    if loopVarExpr.type == ExprType.Ident {
+      builder.cIdentifier(loopVarExpr.val.symVal!, true)
+    }
+    for s in self.subBlock.statements() {
+      s.genC(builder)
     }
   }
 

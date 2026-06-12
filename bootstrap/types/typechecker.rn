@@ -267,6 +267,12 @@ class TypeChecker(self) {
   // Overloaded operator functions and their types, in definition order.
   self.operatorFns = arrayof(db.Function)
   self.operatorTypes = arrayof(Type)
+  // State for iterator inlining: a counter making inlined variable names
+  // unique, and the rename map (old name -> new Sym) for the current inline.
+  self.iteratorInlineCounter = 0u32
+  self.renamePrefix = ""
+  self.renameOld = arrayof(string)
+  self.renameNew = arrayof(Sym)
   self.openScope()
 
   func typeError(self, msg: string, location: db.Location?) {
@@ -1004,7 +1010,14 @@ class TypeChecker(self) {
         castTypeChild = expr.firstChildExpr!
         castValueChild = castTypeChild.nextExprChildExpr!
         self.expr(castValueChild)
-        castTarget = self.tryExplicitType(castTypeChild)
+        castTarget = null(Type)
+        if castTypeChild.type == db.ExprType.Ident {
+          // <x>v where x is a variable casts v to the type of x.
+          castTarget = self.getSymbolType(castTypeChild.val.symVal!)
+        }
+        if isnull(castTarget) {
+          castTarget = self.tryExplicitType(castTypeChild)
+        }
         if isnull(castTarget) {
           self.typeError("Unsupported cast target type", expr.location)
           return null(Type)
@@ -1358,6 +1371,264 @@ class TypeChecker(self) {
     expr.appendChildExpr(newArgs)
   }
 
+  // Iterator inlining --------------------------------------------------------
+  //
+  // A foreach statement over a user-defined iterator is rewritten in place
+  // into an InlinedBlock statement holding:
+  //   <param> = <argument or default>    (one per iterator parameter)
+  //   <iterator body>                    (variables renamed to be unique)
+  // where each "yield e" becomes an assignment of e to the loop variable
+  // followed by a copy of the foreach body.  Typeswitches in the iterator
+  // body keep only the arm selected for the (concrete) argument types, which
+  // is how e.g. range(first, second = false) dispatches on argument count.
+
+  // The iterator function a foreach statement iterates, or null: a call to
+  // an iterator function or method, or a class instance, which iterates via
+  // its values() iterator.
+  func findForeachIterator(self, iterExpr: db.Expr) -> db.Function? {
+    if iterExpr.type == db.ExprType.Call {
+      target = iterExpr.firstChildExpr!
+      if target.type == db.ExprType.Ident {
+        fn = self.lookupFunctionDef(target.val.symVal!)
+        if !isnull(fn) && fn.type == db.FuncType.Iterator {
+          return fn
+        }
+        return null(db.Function)
+      }
+      if target.type == db.ExprType.Dot {
+        methodExpr = target.firstChildExpr!.nextExprChildExpr!
+        if methodExpr.type != db.ExprType.Ident {
+          return null(db.Function)
+        }
+        return self.findClassIterator(target.firstChildExpr!, methodExpr.val.symVal.name)
+      }
+      return null(db.Function)
+    }
+    return self.findClassIterator(iterExpr, "values")
+  }
+
+  // Find an iterator method of the class that |baseExpr| is an instance of.
+  func findClassIterator(self, baseExpr: db.Expr, methodName: string) -> db.Function? {
+    baseTy = self.expr(baseExpr)
+    if isnull(baseTy) {
+      return null(db.Function)
+    }
+    rbase = self.resolve(baseTy!)
+    if rbase.type != Type.TypeClass.Typename {
+      return null(db.Function)
+    }
+    info = self.lookupClass(rbase.tyname.name)
+    if isnull(info) {
+      return null(db.Function)
+    }
+    for childfunc in info.fn.childFunctions() {
+      if childfunc.type == db.FuncType.Iterator && childfunc.sym.name == methodName {
+        return childfunc
+      }
+    }
+    return null(db.Function)
+  }
+
+  func renamedSym(self, name: string) -> Sym? {
+    for idx in range(self.renameOld.length()) {
+      if self.renameOld[idx] == name {
+        return self.renameNew[idx]
+      }
+    }
+    return null(Sym)
+  }
+
+  func addRename(self, name: string) {
+    if !isnull(self.renamedSym(name)) {
+      return
+    }
+    self.renameOld.append(name)
+    self.renameNew.append(Sym.new(self.renamePrefix + name))
+  }
+
+  // Record every variable assigned in the iterator body so it can be renamed.
+  func collectIteratorLocals(self, block: db.Block) {
+    for s in block.statements() {
+      if !isnull(s.expr) {
+        self.collectAssignedNamesInExpr(s.expr!)
+      }
+      if s.type == db.StateType.Foreach {
+        nestedLoopVar = s.expr.firstChildExpr!
+        if nestedLoopVar.type == db.ExprType.Ident {
+          self.addRename(nestedLoopVar.val.symVal.name)
+        }
+      }
+      if !isnull(s.subBlock) {
+        self.collectIteratorLocals(s.subBlock!)
+      }
+    }
+  }
+
+  func collectAssignedNamesInExpr(self, expr: db.Expr) {
+    if expr.type == db.ExprType.Equals {
+      lhs = expr.firstChildExpr!
+      if lhs.type == db.ExprType.Ident {
+        self.addRename(lhs.val.symVal.name)
+      }
+    }
+    for child in expr.childExprs() {
+      self.collectAssignedNamesInExpr(child)
+    }
+  }
+
+  func renameStatementIdents(self, statement: db.Statement) {
+    if !isnull(statement.expr) {
+      self.renameExprIdents(statement.expr!)
+    }
+    if !isnull(statement.subBlock) {
+      for s in statement.subBlock.statements() {
+        self.renameStatementIdents(s)
+      }
+    }
+  }
+
+  func renameExprIdents(self, expr: db.Expr) {
+    if expr.type == db.ExprType.Ident {
+      identName = expr.val.symVal.name
+      newSym = self.renamedSym(identName)
+      if !isnull(newSym) {
+        expr.val = db.Value(newSym!)
+      }
+      return
+    }
+    if expr.type == db.ExprType.Dot {
+      // Only the base is a variable; the member name is not renamed.
+      self.renameExprIdents(expr.firstChildExpr!)
+      return
+    }
+    isFirst = true
+    for child in expr.childExprs() {
+      // The first child of a named parameter is the parameter name.
+      if !isFirst || expr.type != db.ExprType.Namedparam {
+        self.renameExprIdents(child)
+      }
+      isFirst = false
+    }
+  }
+
+  func appendAssignStatement(self, block: db.Block, sym: Sym, value: db.Expr,
+                             location: db.Location) {
+    s = db.Statement(block, db.StateType.Assign, location)
+    assign = db.Expr.newBinary(db.ExprType.Equals,
+                               db.Expr.newIdent(sym, location), value, location)
+    s.insertExpr(assign)
+  }
+
+  // Replace each yield in |block| with an assignment of the yield value to
+  // the foreach loop variable, followed by a copy of the foreach body.
+  func convertYields(self, block: db.Block, loopVarExpr: db.Expr, body: db.Block) {
+    for s in block.statements() {
+      if s.type == db.StateType.Yield {
+        yieldValue = s.expr!
+        s.removeExpr(yieldValue)
+        assign = db.Expr.newBinary(db.ExprType.Equals, loopVarExpr.copy(),
+                                   yieldValue, s.location)
+        s.insertExpr(assign)
+        s.type = db.StateType.Assign
+        body.copyStatementsAfterStatement(s)
+      } else if !isnull(s.subBlock) {
+        self.convertYields(s.subBlock!, loopVarExpr, body)
+      }
+    }
+  }
+
+  // Inline |iterFn| into the foreach |statement|, rewriting it in place into
+  // an InlinedBlock, then typecheck the result.
+  func inlineIterator(self, statement: db.Statement, iterFn: db.Function) {
+    loopVarExpr = statement.expr.firstChildExpr!
+    iterExpr = loopVarExpr.nextExprChildExpr!
+    location = statement.location
+    self.iteratorInlineCounter += 1u32
+    self.renamePrefix = "_itr%u_" % self.iteratorInlineCounter
+    emptyOld = arrayof(string)
+    emptyNew = arrayof(Sym)
+    self.renameOld = emptyOld
+    self.renameNew = emptyNew
+    for variable in iterFn.variables() {
+      if variable.isParam {
+        self.addRename(variable.sym.name)
+      }
+    }
+    self.collectIteratorLocals(iterFn.subBlock!)
+
+    // Gather the positional call arguments and the method-call base.
+    selfExpr = null(db.Expr)
+    args = arrayof(db.Expr)
+    if iterExpr.type == db.ExprType.Call {
+      target = iterExpr.firstChildExpr!
+      if target.type == db.ExprType.Dot {
+        selfExpr = target.firstChildExpr
+      }
+      argchild = target.nextExprChildExpr
+      if !isnull(argchild) {
+        if argchild.type == db.ExprType.Tuple || argchild.type == db.ExprType.List {
+          for a in argchild.childExprs() {
+            args.append(a)
+          }
+        } else {
+          args.append(argchild!)
+        }
+      }
+    } else {
+      // Iterating a class instance: the instance is the iterator's self.
+      selfExpr = iterExpr
+    }
+
+    // Assign arguments (or parameter defaults) to the renamed parameters.
+    newBlock = db.Block(location)
+    argIndex = 0u64
+    for variable in iterFn.variables() {
+      if variable.isParam {
+        paramSym = self.renamedSym(variable.sym.name)!
+        if variable.sym.name == "self" {
+          if !isnull(selfExpr) {
+            self.appendAssignStatement(newBlock, paramSym, selfExpr.copy(), location)
+          }
+        } else {
+          value = null(db.Expr)
+          if argIndex < args.length() {
+            value = args[argIndex].copy()
+          } else {
+            init = variable.initializerExpr
+            if !isnull(init) {
+              value = init.copy()
+            }
+          }
+          if isnull(value) {
+            self.typeError("Missing argument %s in call to iterator %s" %
+                           (variable.sym.name, iterFn.sym.name), location)
+            return
+          }
+          self.appendAssignStatement(newBlock, paramSym, value!, location)
+          argIndex += 1u64
+        }
+      }
+    }
+
+    // Copy the iterator body with renamed variables.
+    for s in iterFn.subBlock.statements() {
+      copied = s.appendCopy(newBlock)
+      self.renameStatementIdents(copied)
+    }
+
+    // Convert yields, splicing in copies of the foreach body.
+    body = statement.subBlock!
+    statement.removeSubBlock(body)
+    self.convertYields(newBlock, loopVarExpr, body)
+    body.destroy()
+    statement.insertSubBlock(newBlock)
+    statement.type = db.StateType.InlinedBlock
+
+    for s in newBlock.statements() {
+      self.statement(s, newBlock)
+    }
+  }
+
   // Statements -------------------------------------------------------------
   func statement(self, statement: db.Statement, parent: db.Block) {
     switch statement.type {
@@ -1562,6 +1833,13 @@ class TypeChecker(self) {
         // array methods values() and items().
         loopVarExpr = statement.expr.firstChildExpr!
         iterExpr = loopVarExpr.nextExprChildExpr!
+        // A call to a user-defined iterator (or a class instance, which
+        // iterates via its values() iterator) is inlined in place.
+        iterFn = self.findForeachIterator(iterExpr)
+        if !isnull(iterFn) {
+          self.inlineIterator(statement, iterFn!)
+          return NONETY()
+        }
         elemTy = null(Type)
         if iterExpr.type == db.ExprType.Call {
           target = iterExpr.firstChildExpr!
@@ -1630,6 +1908,12 @@ class TypeChecker(self) {
           }
         }
       }
+      db.StateType.InlinedBlock => {
+        // Statements spliced in by iterator inlining; typecheck like a block.
+        for s in statement.subBlock.statements() {
+          self.statement(s, statement.subBlock!)
+        }
+      }
       default => raise Status.Unimplemented, "Statement type not yet supported by typechecker: ", db.statementTypeGetKeyword(statement.type)
     }
     return NONETY()
@@ -1663,6 +1947,9 @@ class TypeChecker(self) {
       db.FuncType.Struct => self.structFunction(fn)
       db.FuncType.Constructor => self.constructorFunction(fn)
       db.FuncType.Enum => self.enumFunction(fn)
+      // Iterators are not typechecked standalone; their bodies are inlined
+      // into each foreach statement that calls them and typechecked there.
+      db.FuncType.Iterator => return
       // Destructors are typechecked like methods.  The C backend does not
       // yet emit or call them (that needs reference counting).
       db.FuncType.Final => self.plainFunction(fn)

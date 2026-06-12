@@ -772,9 +772,9 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
     self.buildBlockStatement(statementNode.lastChildNode!)
   }
 
+  // Format: yield(expr(...))
   func buildYield(self: HirBuilder, statementNode: Node) {
-    // TODO: write this.
-    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+    self.newStatement(statementNode, db.StateType.Yield, statementNode.firstChildNode, null(Node))
   }
 
   // Build a statement with it's expression and sub-block.
