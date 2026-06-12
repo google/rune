@@ -605,6 +605,19 @@ class TypeChecker(self) {
       for s in bodySnapshot {
         self.statement(s, fn.subBlock!)
       }
+      // Connect the body's return type to the function's result variable
+      // so the call site's type resolves under this instantiation.
+      if !isnull(fn.subBlock.returnType) {
+        drfty = fn.typedValue
+        if !isnull(drfty) {
+          if drfty.type == Type.TypeClass.Polymorphic {
+            // Resolve first: the body's type binds through instantiation
+            // variables that deInstantiate will pop.
+            self.unify(drfty.poly.scope.function.result!,
+                self.resolve(fn.subBlock.returnType!))
+          }
+        }
+      }
     }
     if fn.type == db.FuncType.Constructor {
       // Bake the re-discovered field types while the instantiation's
@@ -1531,8 +1544,14 @@ class TypeChecker(self) {
       i = 0u32
       for caseStatement in statement.subBlock.statements() {
         if i == selected {
+          preArmErrs = self.countTypeErrors()
           for s in caseStatement.subBlock.statements() {
             self.statement(s, caseStatement.subBlock)
+          }
+          if self.countTypeErrors() == preArmErrs {
+            // The arm typechecks under this (now concrete) scrutinee;
+            // clear any definition-time poison.
+            caseStatement.typecheckPoisoned = false
           }
         }
         i += 1u32
@@ -1879,6 +1898,7 @@ class TypeChecker(self) {
              }
           }
           if left.type != Type.TypeClass.Tuple && left.type != Type.TypeClass.Struct && left.type != Type.TypeClass.Array {
+            self.sawStructuralGenericError = true
             self.typeError(
               "Cannot index into type %s." % left.toString(), expr.location)
           } else {

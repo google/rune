@@ -246,12 +246,41 @@ class CBuilder(self, tc: types.TypeChecker) {
             for dinst in dpi {
               if !dDone {
                 self.resolveInstantiation(dinst)
-                if self.instantiationIsConcrete(dinst) {
+                // The result slot (last) is what the retypecheck computes;
+                // only the parameter bindings need to be concrete.
+                dConc = true
+                dnb = dinst.varBindings.length()
+                for dvi in range(dnb) {
+                  if dvi + 1 < dnb {
+                    dvb = self.typechecker.resolve(dinst.varBindings[dvi])
+                    if dvb.type == types.Type.TypeClass.Var {
+                      dConc = false
+                    }
+                  }
+                }
+                if dConc {
+                  // Try instantiations until one typechecks cleanly: a
+                  // recorded one can come from an unreachable typeswitch
+                  // arm (e.g. decParens(()) in the turing test).
+                  dPreErrs = self.typechecker.countTypeErrors()
                   self.instantiate(dfty.poly!, dinst)
                   self.typechecker.retypecheckDeferred(dfn)
                   dfn.deferredRetypechecked = true
                   self.deInstantiate(dfty.poly!)
-                  dDone = true
+                  if self.typechecker.countTypeErrors() > dPreErrs {
+                    // This instantiation does not typecheck (it can come
+                    // from an unreachable typeswitch arm); the legacy
+                    // compiler never checks unreachable paths.
+                    while self.typechecker.countTypeErrors() > dPreErrs {
+                      self.typechecker.popTypeError()
+                    }
+                    if !isnull(dfn.subBlock) {
+                      self.typechecker.clearExprTypes(dfn.subBlock!)
+                    }
+                    dfn.deferredRetypechecked = false
+                  } else {
+                    dDone = true
+                  }
                 }
               }
             }
