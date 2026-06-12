@@ -192,6 +192,10 @@ class CEmitter(self, filename: string) {
     return self.runtime.needArraySlice().name
   }
 
+  func needArraySetSize(self) -> string {
+    return self.runtime.needArraySetSize().name
+  }
+
   func needArgvArray(self) -> string {
     return self.runtime.needArgvArray().name
   }

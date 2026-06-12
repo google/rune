@@ -340,6 +340,14 @@ class CRuntime(self) {
     return cf
   }
 
+  func needArraySetSize(self) -> CFragment {
+    self.include("<assert.h>")
+    self.include("<string.h>")
+    cf = self.cFragment("array_setsize", "cbackend/cruntime/arrays/setsize.inc")
+    cf.addDependencies([self.needArrayType(), self.needArrayResize()])
+    return cf
+  }
+
   func needArgvArray(self) -> CFragment {
     cf = self.cFragment("argv_array", "cbackend/cruntime/argv.inc")
     cf.addDependencies([self.needArrayAlloc()])

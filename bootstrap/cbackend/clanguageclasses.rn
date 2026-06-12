@@ -51,6 +51,15 @@ enum CStatementType {
 // Convert a Rune identifier into a valid C identifier by escaping any bytes
 // that C does not allow in identifiers (e.g. UTF-8 identifiers like Γ).
 func mangleCName(name: string) -> string {
+  // Names that collide with C library functions declared by our includes
+  // get a prefix; calls and definitions both pass through here, so they
+  // stay consistent.
+  if (name == "sqrt" || name == "exp" || name == "log" || name == "pow" ||
+      name == "sin" || name == "cos" || name == "floor" || name == "ceil" ||
+      name == "round" || name == "remove" || name == "div" ||
+      name == "time" || name == "random" || name == "index") {
+    return "rn_user_" + name
+  }
   needsMangling = false
   for i in range(name.length()) {
     c = name[i]
@@ -950,6 +959,7 @@ enum CRuntimeFunction {
    ArrayItems
    ArrayConcat
    ArraySlice
+   ArrayResize
 
    // Try/except support: RN_TRY() pushes+setjmps a frame; raise_with_code
    // records the code path and message, then longjmps or aborts.
@@ -1315,6 +1325,15 @@ relevantType: CTypeExpr?) {
           e.write(" = ")
         }
         e.write(e.needArrayConcat())
+      }
+      CRuntimeFunction.ArrayResize => {
+        // Resizing can move the array; assign the result back.
+        array = self.args.cExprList.index(0)
+        if array.type == CExpr.Type.Identifier {
+          array.emit(e)
+          e.write(" = ")
+        }
+        e.write(e.needArraySetSize())
       }
       CRuntimeFunction.ArrayLength => {
         e.write(e.needArrayLength())

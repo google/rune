@@ -1453,6 +1453,7 @@ class Expr(self, type: ExprType, location: Location) {
         switch field.toString() {
           "append" => fn = c.CRuntimeFunction.ArrayAppend
           "concat" => fn = c.CRuntimeFunction.ArrayConcat
+          "resize" => fn = c.CRuntimeFunction.ArrayResize
           "items" => fn = c.CRuntimeFunction.ArrayItems
           "length" => fn = c.CRuntimeFunction.ArrayLength
           "reverse" => fn = c.CRuntimeFunction.ArrayReverse

@@ -115,6 +115,10 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
       // Class instances are heap allocated and passed by pointer.
       return CTypeExpr(CPointerType(CTypeExpr(CDefinedType(tyname))))
     }
+    if !isnull(self.typechecker.lookupEnum(ty.name)) {
+      // Enum values are plain unsigned integers in C.
+      return CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Uint32))
+    }
     return CTypeExpr(CDefinedType(tyname))
   }
 

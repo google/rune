@@ -250,6 +250,14 @@ transformer ExprTree() {
         return db.Expr.newConstant(db.Value(true), node.location)
       } else if keyWordSym == self.falseSym {
         return db.Expr.newConstant(db.Value(false), node.location)
+      } else if keyWordSym.name == "f32" {
+        f32Expr = db.Expr(db.ExprType.FloatType, node.location)
+        f32Expr.width = 32u32
+        return f32Expr
+      } else if keyWordSym.name == "f64" {
+        f64Expr = db.Expr(db.ExprType.FloatType, node.location)
+        f64Expr.width = 64u32
+        return f64Expr
       }
       // TODO: Deal with the other keywords
 // temp

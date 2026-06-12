@@ -367,17 +367,19 @@ class TypeChecker(self) {
     self.insertFunctionDef(fd)
   }
 
-  // The function type to apply for an operator expression: the builtin
-  // operator type, extended with any user-defined overloads.
+  // The function type to apply for an operator expression: user-defined
+  // overloads first, then the builtin operator type.  Overloads must come
+  // first: builtins like == accept operands of any type, so they would
+  // always win and the overload would never record an instantiation.
   func operatorChoices(self, op: db.ExprType, builtin: Type?) -> Type? {
     found = arrayof(Type)
-    if !isnull(builtin) {
-      found.append(builtin!)
-    }
     for i in range(self.operatorFns.length()) {
       if self.operatorFns[i].opType == op {
         found.append(self.operatorTypes[i])
       }
+    }
+    if !isnull(builtin) {
+      found.append(builtin!)
     }
     if found.length() == 0 {
       return null(Type)
@@ -509,6 +511,47 @@ class TypeChecker(self) {
         return false
       }
       default => return false
+    }
+  }
+
+  // Append every distinct free type variable in |t| to |found|.  Variables
+  // with negative ids come from opening another polymorphic type and belong
+  // to that instantiation, not to the definition being generalized.
+  func collectFreeVars(self, t: Type, var found: [Type]) {
+    rt = self.resolve(t)
+    switch rt.type {
+      Type.TypeClass.Var => {
+        if rt.tyvar.id < 0i32 {
+          return
+        }
+        for bv in found {
+          if bv.tyvar.id == rt.tyvar.id {
+            return
+          }
+        }
+        found.append(Type(rt.tyvar!))
+      }
+      Type.TypeClass.Array => self.collectFreeVars(rt.array.elementType, found)
+      Type.TypeClass.Tuple => {
+        for element in rt.tuple.elements {
+          self.collectFreeVars(element, found)
+        }
+      }
+      Type.TypeClass.Function => {
+        self.collectFreeVars(rt.function.params, found)
+        self.collectFreeVars(rt.function.result, found)
+      }
+      Type.TypeClass.Typename => {
+        if !isnull(rt.tyname.params) {
+          self.collectFreeVars(Type(rt.tyname.params!), found)
+        }
+      }
+      Type.TypeClass.Choice => {
+        for choice in rt.choice.choices {
+          self.collectFreeVars(choice, found)
+        }
+      }
+      default => return
     }
   }
 
@@ -1351,6 +1394,7 @@ class TypeChecker(self) {
           switch field.toString() {
             "append" => result = FN(elementType, NONETY())
             "length" => result = FN(TUPLE(nullTypes), U(64))
+            "resize" => result = FN(U(64), NONETY())
             "reverse" => result = FN(TUPLE(nullTypes), NONETY())
             "concat" => result = FN(ARRAY(elementType), NONETY())
 
@@ -1482,6 +1526,10 @@ class TypeChecker(self) {
         if rSignTy.type == Type.TypeClass.Int {
           result = Type(IntType(wantSigned, rSignTy.int.width))
         } else if rSignTy.type == Type.TypeClass.AnyInt {
+          result = wantSigned ? INTEGER() : UINTEGER()
+        } else if rSignTy.type == Type.TypeClass.Var {
+          // A generic operand: the result adapts like an unsuffixed literal
+          // of the requested sign (concrete widths bind at instantiation).
           result = wantSigned ? INTEGER() : UINTEGER()
         } else {
           self.typeError("unsigned()/signed() require an integer value", expr.location)
@@ -2657,7 +2705,7 @@ class TypeChecker(self) {
                 self.typeError(
                     ("Could not unify\n%s    explicit return type %s\n%s    with %s:\n%s%s"
                       % (TypeLoggingPrefix, fn.typeExpr.toString(),
-                         TypeLoggingPrefix, ty.toString(), TypeLoggingPrefix, te.msg)),
+                         TypeLoggingPrefix, returnType.toString(), TypeLoggingPrefix, te.msg)),
                     fn.location)
            }
         }
