@@ -1813,6 +1813,27 @@ class Expr(self, type: ExprType, location: Location) {
             intSigned = bty.anyInt.isSigned
             intWidth = 64u32
           }
+          if intWidth > 64u32 {
+            if field.toString() == "toString" {
+              // Wide integers stringify through the wide runtime.
+              wtArgs = c.CExprList()
+              wtArgs.appendCExpr(scalarBase.genC(builder))
+              wtArgCount = 1
+              if right.typedValue.type == types.Type.TypeClass.Tuple {
+                for child in right.childExprs() {
+                  wtArgs.appendCExpr(child.genC(builder))
+                  wtArgCount += 1
+                }
+              } else if right.type == ExprType.List && !isnull(right.firstChildExpr) {
+                wtArgs.appendCExpr(right.firstChildExpr.genC(builder))
+                wtArgCount += 1
+              }
+              if wtArgCount < 2 {
+                wtArgs.appendCExpr(builder.cIntLiteral(Bigint(10u64)))
+              }
+              return builder.cWideCall(self.location, "wide_tostring_base", wtArgs)
+            }
+          }
           switch field.toString() {
             "toString" => {
               if intSigned {
