@@ -97,7 +97,8 @@ class Value(self: Value, value: string | bool | Int | Uint | Bigint | Float | Sy
     return !(v1 == v2)
   }
 
-  func genC(self, builder: cb.CBuilder, bindingInstance: bool) -> cb.CExpr {
+  func genC(self, builder: cb.CBuilder, bindingInstance: bool,
+      exprType: types.Type? = null(types.Type)) -> cb.CExpr {
     switch self.type {
       DatatypeType.Bool => return  builder.cBoolLiteral(self.boolVal)
       DatatypeType.String => return builder.cStringLiteral(self.stringVal)
@@ -106,7 +107,7 @@ class Value(self: Value, value: string | bool | Int | Uint | Bigint | Float | Sy
       DatatypeType.Float => return builder.cFloatLiteral(self.floatVal)
       DatatypeType.Sym => {
         // println("gen symbol %s" % self.symVal.name)
-        return builder.cIdentifier(self.symVal!, bindingInstance)
+        return builder.cIdentifier(self.symVal!, bindingInstance, exprType)
       }
       default => raise Status.Unimplemented, "Value type not yet supported by C backend: ", self.type
     }

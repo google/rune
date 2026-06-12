@@ -779,7 +779,7 @@ class Expr(self, type: ExprType, location: Location) {
           return builder.cCall(self.location, c.CRuntimeFunction.ArgvArray,
               c.CExpr(argvArgs))
         }
-        return self.val.genC(builder, self.bindingInstance)
+        return self.val.genC(builder, self.bindingInstance, self.typedValue)
       }
       ExprType.List => return self.genCList(builder)
       ExprType.Mod => return self.genCBinaryOp(builder)
@@ -1639,6 +1639,9 @@ class Expr(self, type: ExprType, location: Location) {
       if builder.isClassType(base.typedValue) {
         method = base.nextExprChildExpr!
         name = builder.methodCallCName(base.typedValue!, method.toString(), right.typedValue)
+        if !builder.alreadyEmitted(name) {
+          builder.emitMethodOnDemand(base.typedValue!, method.toString(), name)
+        }
         args = c.CExprList()
         args.appendCExpr(base.genC(builder))
         if right.typedValue.type == types.Type.TypeClass.Tuple {
@@ -1888,7 +1891,17 @@ class Expr(self, type: ExprType, location: Location) {
       } else {
         argTypes = builder.typechecker.resolve(right.typedValue!)
       }
-      specializedName = argTypes.genSpecializationName(left.val.symVal.name)
+      ctorCallee = builder.findFunction(left.val.symVal.name)
+      if (!isnull(ctorCallee) && ctorCallee.type == FuncType.Constructor &&
+          !isnull(self.typedValue)) {
+        // Constructor call: the definition is named from the instance type
+        // (classCName canonicalizes self-referential class parameters);
+        // composing from the argument types diverges for such classes.
+        specializedName = builder.classCName(
+            builder.typechecker.resolve(self.typedValue!))
+      } else {
+        specializedName = argTypes.genSpecializationName(left.val.symVal.name)
+      }
       if !builder.alreadyEmitted(specializedName) {
         // The definition-side sweep skips instantiations whose bindings only
         // resolve under an outer instantiation (e.g. a call from a
@@ -1952,7 +1965,8 @@ class Expr(self, type: ExprType, location: Location) {
                    left.val.symVal.name) {
       // Monomorphic class constructor: the definition is emitted under the
       // specialized class name even when no type variables are involved.
-      specializedName = right.typedValue.genSpecializationName(left.val.symVal.name)
+      specializedName = builder.classCName(
+          builder.typechecker.resolve(self.typedValue!))
       cfn = builder.cIdentifier(Sym.new(specializedName), false)
     } else {
       cfn = left.genC(builder)

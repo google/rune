@@ -111,16 +111,94 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
     return result
   }
 
+  // When a class instance type still has unresolved parameters (e.g. a
+  // field referencing another class whose parameters are not bound by this
+  // emission context), substitute the class constructor's single concrete
+  // instantiation.  Ambiguity leaves the type unchanged.
+  func concreteClassTyname(self, ty: types.TypeName) -> types.TypeName {
+    needsFallback = isnull(ty.params)
+    if !needsFallback {
+      for el in ty.params.elements {
+        r = self.typechecker.resolve(el)
+        if r.type == types.Type.TypeClass.Var {
+          needsFallback = true
+        }
+      }
+    }
+    if !needsFallback {
+      return self.typechecker.canonicalClassTyname(ty)
+    }
+    info = self.typechecker.lookupClass(ty.name)
+    if isnull(info) || isnull(info.fn) || isnull(info.fn.typedValue) {
+      return ty
+    }
+    fnType = info.fn.typedValue!
+    // Collect candidate concrete instance types: the constructor's result
+    // type for a monomorphic class (e.g. a self-referential class whose
+    // type parameters all tied to the class itself), or each recorded
+    // instantiation's result for a polymorphic one.
+    candidates = arrayof(types.Type)
+    if fnType.type == types.Type.TypeClass.Function {
+      candidates.append(fnType.function.result!)
+    } else if fnType.type == types.Type.TypeClass.Polymorphic {
+      pi = fnType.poly.instantiations
+      if !isnull(pi) {
+        for inst in pi {
+          it = inst.type
+          if !isnull(it) && it.type == types.Type.TypeClass.Function {
+            candidates.append(it.function.result!)
+          }
+        }
+      }
+    }
+    best = null(types.TypeName)
+    bestSpec = ""
+    for cand in candidates {
+      res = self.typechecker.resolve(cand)
+      if res.type == types.Type.TypeClass.Typename && !isnull(res.tyname.params) {
+        ctn = self.typechecker.canonicalClassTyname(res.tyname!)
+        allConcrete = true
+        for el2 in ctn.params.elements {
+          r2 = self.typechecker.resolve(el2)
+          if r2.type == types.Type.TypeClass.Var {
+            allConcrete = false
+          }
+        }
+        if allConcrete {
+          instSpec = ctn.specializationString()
+          if isnull(best) {
+            best = ctn
+            bestSpec = instSpec
+          } else if instSpec != bestSpec {
+            // More than one concrete instantiation: ambiguous.
+            return ty
+          }
+        }
+      }
+    }
+    if !isnull(best) {
+      return best!
+    }
+    return ty
+  }
+
   func genCTypename(self, ty: types.TypeName) -> CTypeExpr? {
+    if !isnull(self.typechecker.lookupClass(ty.name)) {
+      cname = self.concreteClassTyname(ty)
+      cspec = cname.specializationString()
+      if cspec == "" {
+        ctyname = cname.name.name
+      } else {
+        ctyname = "%s_%s" % (cname.name.name, cspec)
+      }
+      // Class instances are heap allocated and passed by pointer.
+      return CTypeExpr(CPointerType(CTypeExpr(CDefinedType(ctyname))))
+    }
     spec = ty.specializationString()
     if spec == "" {
        tyname = ty.name.name
     } else {
        tyname = "%s_%s" % (ty.name.name, spec)
-    }
-    if !isnull(self.typechecker.lookupClass(ty.name)) {
-      // Class instances are heap allocated and passed by pointer.
-      return CTypeExpr(CPointerType(CTypeExpr(CDefinedType(tyname))))
     }
     if !isnull(self.typechecker.lookupEnum(ty.name)) {
       // Enum values are plain unsigned integers in C.

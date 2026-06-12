@@ -283,14 +283,17 @@ class CBuilder(self, tc: types.TypeChecker) {
   func classCName(self, ty: types.Type) -> string {
     t = self.typechecker.resolve(ty)
     assert t.type == types.Type.TypeClass.Typename
-    if isnull(t.tyname.params) {
-      return t.tyname.name.name
+    // Unresolved class parameters fall back to the class's single concrete
+    // instantiation, matching the names the type generator emits.
+    tn = self.typeGenerator.concreteClassTyname(t.tyname!)
+    if isnull(tn.params) {
+      return tn.name.name
     }
-    spec = t.tyname.specializationString()
+    spec = tn.specializationString()
     if spec == "" {
-      return t.tyname.name.name
+      return tn.name.name
     }
-    return "%s_%s" % (t.tyname.name.name, spec)
+    return "%s_%s" % (tn.name.name, spec)
   }
 
   // The C name to call a class method by.  Monomorphic methods are named
@@ -317,6 +320,19 @@ class CBuilder(self, tc: types.TypeChecker) {
     return self.methodCName(instanceTy, methodName, argsTy)
   }
 
+  // The piece of a method specialization name contributed by one argument
+  // type.  Class instances render through classCName so that unresolved
+  // class parameters fall back to the concrete instantiation, keeping
+  // definition-side and call-site names identical across contexts.
+  func argTypePiece(self, ty: types.Type) -> string {
+    t = self.typechecker.resolve(ty)
+    if (t.type == types.Type.TypeClass.Typename &&
+        !isnull(self.typechecker.lookupClass(t.tyname.name))) {
+      return self.classCName(t)
+    }
+    return t.toString()
+  }
+
   // The C name of a class method for a given instance type and argument
   // types: <class instantiation>_<method>[_<argtype>...].
   func methodCName(self, instanceTy: types.Type, methodName: string,
@@ -326,10 +342,10 @@ class CBuilder(self, tc: types.TypeChecker) {
       t = self.typechecker.resolve(argsTy!)
       if t.type == types.Type.TypeClass.Tuple {
         for el in t.tuple.elements {
-          name += "_" + self.typechecker.resolve(el).toString()
+          name += "_" + self.argTypePiece(el)
         }
       } else {
-        name += "_" + t.toString()
+        name += "_" + self.argTypePiece(t)
       }
     }
     return name
@@ -344,7 +360,7 @@ class CBuilder(self, tc: types.TypeChecker) {
       name = self.classCName(params.tuple.elements[0]) + "_" + methodName
       for i in range(params.tuple.elements.length()) {
         if i > 0 {
-          name += "_" + self.typechecker.resolve(params.tuple.elements[i]).toString()
+          name += "_" + self.argTypePiece(params.tuple.elements[i])
         }
       }
       return name
@@ -354,6 +370,53 @@ class CBuilder(self, tc: types.TypeChecker) {
 
   // Track class structs and methods we have already emitted, so multiple
   // instantiations with the same types are only emitted once.
+  // Emit a method specialization at the call site when the definition-side
+  // sweep has not produced it (its recorded instantiation only resolves
+  // under an outer binding, e.g. a call from another class's method).
+  func emitMethodOnDemand(self, instanceTy: types.Type, methodName: string,
+      wantName: string) {
+    inst = self.typechecker.resolve(instanceTy)
+    if inst.type != types.Type.TypeClass.Typename {
+      return
+    }
+    info = self.typechecker.lookupClass(inst.tyname.name)
+    if isnull(info) || isnull(info.fn) {
+      return
+    }
+    for childfunc in info.fn.childFunctions() {
+      if childfunc.sym.name == methodName && !isnull(childfunc.typedValue) {
+        mty = childfunc.typedValue!
+        if mty.type == types.Type.TypeClass.Polymorphic {
+          pi = mty.poly.instantiations
+          if !isnull(pi) {
+            for minst in pi {
+              if !self.alreadyEmitted(wantName) {
+                // Resolve under the caller's active bindings first, like
+                // the definition-side sweep; raw bindings can still hold
+                // type variables and must not enter the unifier.
+                self.resolveInstantiation(minst)
+                if self.instantiationIsConcrete(minst) {
+                  self.instantiate(mty.poly!, minst)
+                  mfn = self.typechecker.resolve(mty.poly.scope)
+                  if (mfn.type == types.Type.TypeClass.Function &&
+                      self.methodDefCName(mfn!, methodName) == wantName) {
+                    childfunc.genCMethodInstance(self, mfn!)
+                  }
+                  self.deInstantiate(mty.poly!)
+                }
+              }
+            }
+          }
+        } else if mty.type == types.Type.TypeClass.Function {
+          mfn2 = self.typechecker.resolve(mty!)
+          if self.methodDefCName(mfn2, methodName) == wantName {
+            childfunc.genCMethodInstance(self, mfn2)
+          }
+        }
+      }
+    }
+  }
+
   func alreadyEmitted(self, name: string) -> bool {
     for n in self.emittedClassDecls {
       if n == name {
@@ -559,8 +622,18 @@ class CBuilder(self, tc: types.TypeChecker) {
     return CParameter(location, sym.name, ctype!)
   }
 
-  func cIdentifier(self, symbol: Sym, bindingInstance: bool) -> CExpr {
-    type = self.typechecker.symbol(symbol)
+  func cIdentifier(self, symbol: Sym, bindingInstance: bool,
+      exprType: types.Type? = null(types.Type)) -> CExpr {
+    // The reference's own typechecked type is authoritative; syms are
+    // interned by name, so the sym's binding may be another function's
+    // same-named local.  Fall back to scope lookup, then the sym.
+    type = exprType
+    if isnull(type) {
+      type = self.typechecker.getSymbolType(symbol)
+    }
+    if isnull(type) {
+      type = symbol.typedValue
+    }
     ctype = null(CTypeExpr)
     if !isnull(type) {
       ty = self.typechecker.resolve(type!)

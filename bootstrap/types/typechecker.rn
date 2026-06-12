@@ -379,6 +379,22 @@ class TypeChecker(self) {
     return type
   }
 
+  // Bind a definition name (function, class, struct, enum) in the global
+  // scope: definitions are module-scoped even when typechecked on demand
+  // from inside another function's scope.
+  func newSymbolGlobal(self, symbol: Sym, ty: Type?) -> Type? {
+    if isnull(ty) {
+      type = Type(self.newTyvar())
+    } else {
+      type = ty
+    }
+    sm = SymbolMapping(symbol, type)
+    self.insertSymbolMapping(sm)
+    self.firstBindingScope.add(sm)
+    symbol.typedValue = type
+    return type
+  }
+
   func newTyvar(self) -> TypeVar {
     tyvar = TypeVar(self.nextTyvarId, null(Type))
     self.nextTyvarId += 1
@@ -403,6 +419,45 @@ class TypeChecker(self) {
   // if the name does not refer to a class.
   func lookupClass(self, sym: Sym) -> ClassInfo? {
     return self.findClassInfo(ClassInfo(sym))
+  }
+
+  // Find the single class that defines the named method or data member,
+  // for duck-typing member access on unconstrained values.  Returns null
+  // when no class or more than one class has the member.
+  func findClassByMember(self, name: string) -> ClassInfo? {
+    found = null(ClassInfo)
+    count = 0
+    for info in self.classInfos() {
+      has = !isnull(self.findMethod(info, name))
+      if !has && !isnull(info.strct) {
+        for fieldSym in info.strct.fieldnames {
+          if fieldSym.name == name {
+            has = true
+          }
+        }
+      }
+      if has {
+        count += 1
+        found = info
+      }
+    }
+    if count == 1 {
+      return found
+    }
+    return null(ClassInfo)
+  }
+
+  // An instance type of the class suitable for unification: polymorphic
+  // classes parameterize with fresh type variables.
+  func classInstanceType(self, info: ClassInfo) -> Type {
+    if info.paramVars.length() > 0 {
+      cparams = arrayof(Type)
+      for pv in info.paramVars {
+        cparams.append(Type(self.newTyvar()))
+      }
+      return Type(TypeName(info.sym, TupleType(cparams)))
+    }
+    return info.selfType!
   }
 
   // Create the generated destroy(self) method on a class: relation
@@ -786,6 +841,30 @@ class TypeChecker(self) {
     return self.resolveDepth(t, 0u32)
   }
 
+  // Canonical form of a class instance type for C naming: parameters that
+  // refer to the class itself collapse to the bare class name, so every
+  // variant of a self-referential class type (bare nominal knot, knot
+  // expanded one level, etc.) produces the same specialization string.
+  func canonicalClassTyname(self, ty: TypeName) -> TypeName {
+    if isnull(ty.params) {
+      return ty
+    }
+    els = arrayof(Type)
+    for el in ty.params.elements {
+      r = self.resolve(el)
+      if r.type == Type.TypeClass.Typename && r.tyname!.name == ty.name {
+        bare = TypeName(ty.name)
+        bare.isNullable = r.tyname!.isNullable
+        els.append(Type(bare))
+      } else {
+        els.append(r)
+      }
+    }
+    rname = TypeName(ty.name, TupleType(els))
+    rname.isNullable = ty.isNullable
+    return rname
+  }
+
   // resolve() with a recursion bound: a bound variable's binding is itself
   // resolved (so e.g. Foo?(v3,) with v3 -> string resolves fully for
   // codegen), but the unifier has no occurs check, so a self-referential
@@ -968,7 +1047,13 @@ class TypeChecker(self) {
       db.ExprType.BoolType => return BOOL
       db.ExprType.NoneType => return NONETY()
       db.ExprType.Ident => return self.namedType(typeExpr.val.symVal!)
-      default => raise Status.Unimplemented, "TypeExpression type not yet supported by C backend", typeExpr.type
+      default => {
+        t = self.tryExplicitType(typeExpr)
+        if !isnull(t) {
+          return t!
+        }
+        raise Status.Unimplemented, "TypeExpression type not yet supported by typechecker", typeExpr.type
+      }
     }
   }
 
@@ -1153,7 +1238,19 @@ class TypeChecker(self) {
     if !isnull(found) {
       return found.value
     }
-    return self.newSymbol(symbol, symbol.typedValue)
+    // Not bound in any open scope.  Reuse the sym's last type only while
+    // it is still an unresolved variable (a forward reference to a
+    // module-level definition typechecked later); a concrete type is a
+    // leftover local from an unrelated closed scope (syms are interned by
+    // name) and must not leak into this new binding.
+    prior = symbol.typedValue
+    if !isnull(prior) {
+      rp = self.resolve(prior!)
+      if rp.type == Type.TypeClass.Var {
+        return self.newSymbol(symbol, prior)
+      }
+    }
+    return self.newSymbol(symbol, null(Type))
   }
 
   // Rewrite <moduleAlias>.<member> in place into a plain reference to
@@ -1278,6 +1375,11 @@ class TypeChecker(self) {
 
       // Binary expressions --------------------------------------------------
       db.ExprType.Add, db.ExprType.Div, db.ExprType.Mul, db.ExprType.Sub, db.ExprType.Bitxor, db.ExprType.AddTrunc, db.ExprType.MulTrunc, db.ExprType.SubTrunc, db.ExprType.Bitand, db.ExprType.Bitor, db.ExprType.Or, db.ExprType.Exp, db.ExprType.Mod, db.ExprType.And, db.ExprType.Or, db.ExprType.Xor, db.ExprType.Shl, db.ExprType.Shr, db.ExprType.Rotl, db.ExprType.Rotr, db.ExprType.Lt, db.ExprType.Le, db.ExprType.Gt, db.ExprType.Ge, db.ExprType.Equal, db.ExprType.Notequal, db.ExprType.Equals, db.ExprType.Equals, db.ExprType.AddEquals, db.ExprType.SubEquals, db.ExprType.MulEquals, db.ExprType.DivEquals, db.ExprType.ModEquals, db.ExprType.AndEquals, db.ExprType.OrEquals, db.ExprType.XorEquals, db.ExprType.BitandEquals, db.ExprType.BitorEquals, db.ExprType.BitxorEquals, db.ExprType.ExpEquals, db.ExprType.ShlEquals, db.ExprType.ShrEquals, db.ExprType.RotlEquals, db.ExprType.RotrEquals, db.ExprType.AddTruncEquals, db.ExprType.SubTruncEquals, db.ExprType.MulTruncEquals => {
+        if isnull(expr.firstChildExpr) || isnull(expr.firstChildExpr.nextExprChildExpr) {
+          self.typeError("internal: binary expression with missing operands",
+              expr.location)
+          return null(Type)
+        }
         left = self.expr(expr.firstChildExpr!)
         right = self.expr(expr.firstChildExpr!.nextExprChildExpr!)
         if isnull(left) || isnull(right) {
@@ -1468,6 +1570,9 @@ class TypeChecker(self) {
           return self.expr(expr)
         }
         sty = self.expr(expr.firstChildExpr!)
+        if isnull(sty) {
+          return null(Type)
+        }
         field = expr.firstChildExpr!.nextExprChildExpr!
         isClassAccess = false
         if sty.type == Type.TypeClass.Typename {
@@ -1561,6 +1666,23 @@ class TypeChecker(self) {
         } else if sty.type == Type.TypeClass.Int || sty.type == Type.TypeClass.AnyInt {
           // Built-in integer methods like toString().
           result = self.intMethodType(field.toString(), expr.location)
+        } else if sty.type == Type.TypeClass.Var {
+          // Duck-type an unconstrained value (e.g. an unannotated
+          // parameter) by its member name: if exactly one class defines
+          // the member, the value must be an instance of that class.
+          duckInfo = self.findClassByMember(field.toString())
+          if isnull(duckInfo) {
+            self.typeError(
+              "Field Selection on %s, which is neither an array nor a struct" % sty.toString(),
+              expr.location)
+          } else {
+            duckTy = self.classInstanceType(duckInfo!)
+            duckTe = self.unify(sty!, duckTy)
+            if !isnull(duckTe) {
+              self.typeError(duckTe.msg, expr.location)
+            }
+            result = self.classMemberType(duckInfo!, duckTy, field, expr.location)
+          }
         } else {
           self.typeError(
             "Field Selection on %s, which is neither an array nor a struct" % sty.toString(),
@@ -2152,7 +2274,14 @@ class TypeChecker(self) {
 
   func statement(self, statement: db.Statement, parent: db.Block) {
     switch statement.type {
-      db.StateType.Assign => self.expr(statement.expr)
+      db.StateType.Assign => {
+        if isnull(statement.expr) {
+          self.typeError("internal: assign statement with no expression",
+              statement.location)
+        } else {
+          self.expr(statement.expr)
+        }
+      }
       db.StateType.Call => self.expr(statement.expr)
       db.StateType.Print => self.expr(statement.expr)
       db.StateType.Println => self.expr(statement.expr)
@@ -3005,11 +3134,6 @@ class TypeChecker(self) {
       self.statement(statement, fn.subBlock)
     }
 
-    // Typecheck the methods with self bound to this class.
-    for childfunc in fn.childFunctions() {
-      self.function(childfunc)
-    }
-
     self.currentClassInfo = prevClassInfo
     self.currentSelfType = prevSelfType
     self.classBoundVars = prevClassBoundVars
@@ -3039,8 +3163,25 @@ class TypeChecker(self) {
     if boundVars.length() > 0 {
       fnType = Type(PolymorphicType(boundVars, fnType))
     }
-    self.newSymbol(fn.sym, fnType)
+    self.newSymbolGlobal(fn.sym, fnType)
     fn.typedValue = fnType
+
+    // Typecheck the methods after the fields and the constructor type are
+    // recorded: method bodies may reference other classes (triggering
+    // on-demand typechecks), and those may call back into this class's
+    // methods, which find complete fields this way.
+    methodPrevClassInfo = self.currentClassInfo
+    methodPrevSelfType = self.currentSelfType
+    methodPrevClassBoundVars = self.classBoundVars
+    self.currentClassInfo = info
+    self.currentSelfType = selfType
+    self.classBoundVars = info.paramVars
+    for childfunc in fn.childFunctions() {
+      self.function(childfunc)
+    }
+    self.currentClassInfo = methodPrevClassInfo
+    self.currentSelfType = methodPrevSelfType
+    self.classBoundVars = methodPrevClassBoundVars
   }
 
   // Typecheck an enum declaration: record the members and their values, and
@@ -3059,7 +3200,7 @@ class TypeChecker(self) {
       nextValue = value + 1u32
     }
     self.insertEnumInfo(info)
-    self.newSymbol(fn.sym, Type(TypeName(fn.sym)))
+    self.newSymbolGlobal(fn.sym, Type(TypeName(fn.sym)))
   }
 
   // Typecheck a member access on a class instance: either a data member or
@@ -3258,12 +3399,18 @@ class TypeChecker(self) {
     }
 
     // associate function name symbol to this type.
-    self.newSymbol(fn.sym, fnType)
+    self.newSymbolGlobal(fn.sym, fnType)
     fn.typedValue = fnType
     self.newTyname(fn.sym, tynameDef)
   }
 
   func plainFunction(self, fn: db.Function) {
+    if !isnull(fn.typedValue) {
+      // Already typechecked (e.g. on demand from another class's method).
+      // Re-typechecking would replace the polymorphic type and orphan the
+      // instantiations recorded on it for the C backend.
+      return
+    }
     // Todo: consider storage types
     if isnull(fn.typeExpr) {
       returnType = Type(self.newTyvar())
@@ -3287,6 +3434,12 @@ class TypeChecker(self) {
     } else {
       paramType = Type(TupleType(params))
     }
+    // Pre-bind a monomorphic in-progress type built from the real
+    // parameter variables: a recursive call (direct or mutual) in the
+    // body then unifies against this through methodCallType instead of
+    // demanding a re-typecheck of this function, which never terminates.
+    monoResult = Type(self.newTyvar())
+    fn.typedValue = Type(FunctionType(paramType, monoResult))
     // The parameter scope stays open while the body typechecks so that
     // parameter lookups resolve to this function's bindings; the body's
     // locals bind into their own scope.
@@ -3333,6 +3486,13 @@ class TypeChecker(self) {
 
     if isnull(returnType) {
       returnType = Type(TypeName(Sym.new("none")))
+    }
+    // Recursive call sites typed against the in-progress result variable
+    // must agree with the actual return type.
+    te = self.unify(monoResult, returnType!)
+    if !isnull(te) {
+      self.typeError("Recursive call result conflicts with return type: %s" % te.msg,
+                     fn.location)
     }
     self.closeScope()  // The body's locals.
     bindingScope = self.closeScope()  // The parameters, for generalization.
@@ -3402,7 +3562,7 @@ class TypeChecker(self) {
     }
 
     // associate function name symbol to this type.
-    self.newSymbol(fn.sym, fnType)
+    self.newSymbolGlobal(fn.sym, fnType)
     fn.typedValue = fnType
 
     if db.getRoot().traceTypes {

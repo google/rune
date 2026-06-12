@@ -152,6 +152,74 @@ class TypeUnifier(self) {
 
 
   /**
+   * @brief Occurs check: does type variable |id| occur in |ty|?
+   *
+   * Follows bound variables through the current mappings.  Binding a
+   * variable to a type containing itself creates a cyclic type, which
+   * resolve() then expands with exponential copying; such bindings must
+   * be refused.  The depth bound answers true (refuse) conservatively
+   * if the walk runs away, e.g. through an already-cyclic environment.
+   */
+  func occursIn(self, id: i32, ty: Type, depth: u32 = 0u32) -> bool {
+    if depth > 64u32 {
+      return true
+    }
+    switch ty.type {
+      Type.TypeClass.Var => {
+        v = ty.tyvar!
+        if v.id == id {
+          return true
+        }
+        bound = self.lookupVar(v.id)
+        if !isnull(bound) {
+          return self.occursIn(id, bound!, depth + 1u32)
+        }
+        return false
+      }
+      Type.TypeClass.Typename => {
+        if isnull(ty.tyname.params) {
+          return false
+        }
+        return self.occursIn(id, Type(ty.tyname.params!), depth + 1u32)
+      }
+      Type.TypeClass.Array => {
+        return self.occursIn(id, ty.array.elementType, depth + 1u32)
+      }
+      Type.TypeClass.Tuple => {
+        for child in ty.tuple!.elements {
+          if self.occursIn(id, child, depth + 1u32) {
+            return true
+          }
+        }
+        return false
+      }
+      Type.TypeClass.Choice => {
+        for choice in ty.choice!.choices {
+          if self.occursIn(id, choice, depth + 1u32) {
+            return true
+          }
+        }
+        return false
+      }
+      Type.TypeClass.Struct => {
+        for fieldty in ty.strct!.fieldtypes {
+          if self.occursIn(id, fieldty, depth + 1u32) {
+            return true
+          }
+        }
+        return false
+      }
+      Type.TypeClass.Function => {
+        if self.occursIn(id, ty.function!.params, depth + 1u32) {
+          return true
+        }
+        return self.occursIn(id, ty.function!.result, depth + 1u32)
+      }
+      default => return false
+    }
+  }
+
+  /**
    * @brief unify a typevariable with a non-type variable.
    *
    * @param tyvar The typevariable to bind.
@@ -176,6 +244,20 @@ class TypeUnifier(self) {
     }
     exists = self.lookupVar(tyvar.id)
     if isnull(exists) {
+      if self.occursIn(tyvar.id, ty) {
+        if ty.type == Type.TypeClass.Typename {
+          // A self-referential class type (e.g. a constructor parameter
+          // defaulted to null(self), or a linked-list member of the class
+          // itself): tie the knot nominally by binding the variable to the
+          // bare class name, which unifies with any specialization.
+          knot = TypeName(ty.tyname!.name)
+          knot.isNullable = ty.tyname!.isNullable
+          self.bindVar(tyvar, Type(knot))
+          return null(TypeError)
+        }
+        return TypeError("Cannot construct infinite type: %s occurs in %s." %
+                         (Type(tyvar).toString(), ty.toString()), location)
+      }
       self.bindVar(tyvar, ty)
       return null(TypeError)
     }
@@ -363,21 +445,11 @@ class TypeUnifier(self) {
                        location)
     }
     if isnull(t1.params) || isnull(t2.params) {
-      // A bare name (null params) is the same type as one with an empty
-      // parameter tuple: both mean a class with no type parameters.
-      n1 = 0u64
-      if !isnull(t1.params) {
-        n1 = t1.params.numElements()
-      }
-      n2 = 0u64
-      if !isnull(t2.params) {
-        n2 = t2.params.numElements()
-      }
-      if n1 == 0 && n2 == 0 {
-        return null(TypeError)
-      }
-      return TypeError("Named types %s and %s have different type parameters."
-                       % (t1.toString(), t2.toString()), location)
+      // A bare name (null params) unifies with any same-named type: it is
+      // either a class with no type parameters (same as an empty parameter
+      // tuple), or a nominal knot from a self-referential class type (see
+      // instantiateVar), which stands for any specialization of the class.
+      return null(TypeError)
     }
     return self.unifyTuple(t1.params!, Type(t2.params!), location)
   }
