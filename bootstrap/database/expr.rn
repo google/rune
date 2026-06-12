@@ -1242,7 +1242,13 @@ class Expr(self, type: ExprType, location: Location) {
         switch self.type {
           ExprType.Add => {
             if left.typedValue == types.STRING() {
-              raise Status.Unimplemented, "String addition not yet supported by C backend"
+              // s1 + s2 concatenates into a fresh heap string.
+              catArgs = c.CExprList()
+              catArgs.appendCExpr(builder.cStringLiteral("%s%s", printf=true))
+              catArgs.appendCExpr(l)
+              catArgs.appendCExpr(r)
+              return builder.cCall(self.location, c.CRuntimeFunction.StringSprintf,
+                  c.CExpr(catArgs))
             } else if left.typedValue.type == types.Type.TypeClass.Array {
               fn = c.CRuntimeFunction.ArrayConcat
             } else {
