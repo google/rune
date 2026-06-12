@@ -782,15 +782,25 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     u64type = builder.cIntType(self.location, false, 64u32)
     idxDecl = builder.declareLocal(idxSym, u64type)
 
+    // Evaluate the iterable once into a hidden local: a CExpr object can
+    // only live in one place, and the length check and element access
+    // both need it (re-emitting would also re-evaluate side effects).
+    iterSym = Sym.new("%s_iterable" % loopSym.name)
+    iterDecl = builder.cIdentifier(iterSym, true, arrayExpr.typedValue)
+    iterAssign = c.CExpr(c.CBinaryOperator(self.location,
+        c.CBinaryOperator.Type.Assign, null(c.CTypeExpr), iterDecl,
+        arrayExpr.genC(builder)))
+    builder.addStatement(self.location, iterAssign)
+
     zero = Bigint(0u64)
     init = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
                                      null(c.CTypeExpr), idxDecl, builder.cIntLiteral(zero)))
     if builder.typechecker.isStringType(arrayExpr.typedValue) {
       lenCall = builder.cCall(self.location, c.CRuntimeFunction.StringLength,
-                              arrayExpr.genC(builder))
+                              builder.cIdentifier(iterSym, false, arrayExpr.typedValue))
     } else {
       lenCall = builder.cCall(self.location, c.CRuntimeFunction.ArrayLength,
-                              arrayExpr.genC(builder))
+                              builder.cIdentifier(iterSym, false, arrayExpr.typedValue))
     }
     idxRef1 = c.CExpr(c.CIdentifier(idxSym, null(c.CTypeExpr), false, false, false))
     cond = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.LessThan,
@@ -809,7 +819,8 @@ class Statement(self, block: Block, type: StateType, location: Location) {
 
     builder.openBlock(self.location)
     idxRef4 = c.CExpr(c.CIdentifier(idxSym, null(c.CTypeExpr), false, false, false))
-    element = c.CExpr(c.CIndexExpr(self.location, arrayExpr.genC(builder), idxRef4))
+    element = c.CExpr(c.CIndexExpr(self.location,
+        builder.cIdentifier(iterSym, false, arrayExpr.typedValue), idxRef4))
     if isItems {
       idxRef5 = c.CExpr(c.CIdentifier(idxSym, null(c.CTypeExpr), false, false, false))
       pairArgs = c.CExprList()
