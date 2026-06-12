@@ -22,6 +22,7 @@ use function
 use variable
 use datatype
 use util
+use value
 
 import cbackend
 
@@ -152,11 +153,11 @@ class Ident(self, function: Function, object: Function | Variable, sym: Sym, obj
 
   // Rename the identifier.  Also change the sym in its identifier Exprs.
   func rename(self, newName: Sym) {
-    scopeFunc = ident.function
-    scopeFunc.removeIdent(ident)
+    scopeFunc = self.function!
+    scopeFunc.removeIdent(self)
     self.sym = newName
-    scopeFunc.appendIdent(ident)
-    for expr in ident.exprs() {
+    scopeFunc.insertIdent(self)
+    for expr in self.exprs() {
       assert expr.type == ExprType.Ident
       expr.val = Value(newName)
     }

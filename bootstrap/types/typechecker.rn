@@ -248,6 +248,40 @@ class FunctionDef(self, sym: Sym) {
   }
 }
 
+// A value computed while interpreting a transformer: a class (its
+// constructor function), a string, or a bool.
+class TransVal(self) {
+  self.kind = 9u32  // 0 = class, 1 = string, 2 = bool, 9 = invalid.
+  self.classFn = null(db.Function)
+  self.strVal = ""
+  self.boolVal = false
+}
+
+// The variable bindings of a transformer invocation.
+class TransEnv(self) {
+  self.names = arrayof(string)
+  self.vals = arrayof(TransVal)
+
+  func find(self, name: string) -> i64 {
+    for i in range(self.names.length()) {
+      if self.names[i] == name {
+        return <i64>i
+      }
+    }
+    return -1i64
+  }
+
+  func set(self, name: string, val: TransVal) {
+    idx = self.find(name)
+    if idx >= 0i64 {
+      self.vals[<u64>idx] = val
+    } else {
+      self.names.append(name)
+      self.vals.append(val)
+    }
+  }
+}
+
 relation HashedClass TypeChecker SymbolMapping cascade
 relation HashedClass TypeChecker TynameDefinition cascade
 relation HashedClass TypeChecker ClassInfo cascade
@@ -270,6 +304,9 @@ class TypeChecker(self) {
   // State for iterator inlining: a counter making inlined variable names
   // unique, and the rename map (old name -> new Sym) for the current inline.
   self.iteratorInlineCounter = 0u32
+  // Transformer definitions, looked up by relation statements.
+  self.transformerNames = arrayof(string)
+  self.transformerFns = arrayof(db.Function)
   self.renamePrefix = ""
   self.renameOld = arrayof(string)
   self.renameNew = arrayof(Sym)
@@ -317,6 +354,13 @@ class TypeChecker(self) {
   func closeScope(self) -> BindingScope {
     scope = self.lastBindingScope!
     self.removeBindingScope(scope)
+    // Drop the scope's bindings from the lookup hash; an equal-keyed
+    // mapping from an outer scope (shadowed until now) becomes visible
+    // again.  The mappings stay on the scope for generalization, and
+    // sym.typedValue keeps its last-bound value for the C backend.
+    for sm in scope.symbolMappings() {
+      self.removeSymbolMapping(sm)
+    }
     return scope
   }
 
@@ -359,6 +403,99 @@ class TypeChecker(self) {
   // if the name does not refer to a class.
   func lookupClass(self, sym: Sym) -> ClassInfo? {
     return self.findClassInfo(ClassInfo(sym))
+  }
+
+  // Create the generated destroy(self) method on a class: relation
+  // transformers prepend removal code and append cascade deletions around
+  // it, and it runs the user's final() destructor in between.  The C
+  // backend adds the idempotence guard and frees the instance slot.
+  func synthesizeDestroy(self, classFn: db.Function) {
+    hasFinal = false
+    for childfunc in classFn.childFunctions() {
+      if childfunc.sym.name == "destroy" {
+        return
+      }
+      if childfunc.type == db.FuncType.Final {
+        hasFinal = true
+      }
+    }
+    loc = classFn.location
+    destroyFn = db.Function(classFn, db.FuncType.Plain, Sym.new("destroy"),
+        db.Linkage.Module, loc)
+    selfVar = db.Variable(destroyFn, true, true, Sym.new("self"),
+        null(db.Expr), null(db.Expr), true, loc)
+    if hasFinal {
+      st = db.Statement(destroyFn.subBlock!, db.StateType.Call, loc)
+      st.generated = true
+      selfExpr = db.Expr.newIdent(Sym.new("self"), loc)
+      finalExpr = db.Expr.newIdent(Sym.new("final"), loc)
+      dotExpr = db.Expr.newBinary(db.ExprType.Dot, selfExpr, finalExpr, loc)
+      noArgs = arrayof(db.Expr)
+      argsExpr = db.Expr.newTuple(noArgs, loc)
+      callExpr = db.Expr.newBinary(db.ExprType.Call, dotExpr, argsExpr, loc)
+      st.insertExpr(callExpr)
+    }
+  }
+
+  // Record the typedValue of every sym bound in an open scope.  An
+  // on-demand typecheck (demandClass/demandMethod) interrupts the function
+  // being typechecked; the nested typecheck rebinds shared interned syms
+  // (notably "self"), so the demand site restores them afterward.
+  func snapshotBindings(self, var syms: [Sym], var vals: [Type]) {
+    for scope in self.bindingScopes() {
+      for sm in scope.symbolMappings() {
+        if !isnull(sm.key.typedValue) {
+          syms.append(sm.key)
+          vals.append(sm.key.typedValue!)
+        }
+      }
+    }
+  }
+
+  func restoreBindings(self, syms: [Sym], vals: [Type]) {
+    for bindingIndex in range(syms.length()) {
+      syms[bindingIndex].typedValue = vals[bindingIndex]
+    }
+  }
+
+  // Typecheck a class method on demand, in its class's context.
+  func demandMethod(self, info: ClassInfo, method: db.Function) {
+    if (method.type != db.FuncType.Plain &&
+        method.type != db.FuncType.Operator &&
+        method.type != db.FuncType.Final) {
+      return
+    }
+    snapSyms = arrayof(Sym)
+    snapVals = arrayof(Type)
+    self.snapshotBindings(snapSyms, snapVals)
+    prevClassInfo = self.currentClassInfo
+    prevSelfType = self.currentSelfType
+    prevClassBoundVars = self.classBoundVars
+    self.currentClassInfo = info
+    self.currentSelfType = info.selfType
+    self.classBoundVars = info.paramVars
+    self.plainFunction(method)
+    self.currentClassInfo = prevClassInfo
+    self.currentSelfType = prevSelfType
+    self.classBoundVars = prevClassBoundVars
+    self.restoreBindings(snapSyms, snapVals)
+  }
+
+  // Typecheck a class on demand: references can precede the class's own
+  // typechecking (e.g. methods a relation added to an earlier class).  A
+  // class already registered (done or in progress) is left alone.
+  func demandClass(self, sym: Sym) {
+    if !isnull(self.lookupClass(sym)) {
+      return
+    }
+    classFn = self.findClassFunction(sym.name)
+    if !isnull(classFn) {
+      snapSyms = arrayof(Sym)
+      snapVals = arrayof(Type)
+      self.snapshotBindings(snapSyms, snapVals)
+      self.function(classFn!)
+      self.restoreBindings(snapSyms, snapVals)
+    }
   }
 
   func registerFunctionDef(self, fn: db.Function) {
@@ -850,6 +987,7 @@ class TypeChecker(self) {
     }
     if t.type == Type.TypeClass.Typename {
       name = t.tyname.name
+      self.demandClass(name)
       info = self.lookupClass(name)
       if !isnull(info) {
         // A class name constraint matches any instantiation of the class;
@@ -1553,6 +1691,7 @@ class TypeChecker(self) {
         nullChild = expr.firstChildExpr!
         nullTy = null(Type)
         if nullChild.type == db.ExprType.Ident {
+          self.demandClass(nullChild.val.symVal!)
           nullInfo = self.lookupClass(nullChild.val.symVal!)
           if !isnull(nullInfo) {
             // null(Foo): a nullable instance of a not-yet-known instantiation
@@ -2334,9 +2473,405 @@ class TypeChecker(self) {
       db.StateType.ImportRpc => return NONETY()
       db.StateType.Use => return NONETY()
 
+      // Relations and code blocks execute in the module pre-pass; ref and
+      // unref manage transformer reference counts (not implemented).
+      db.StateType.Transform => return NONETY()
+      db.StateType.Relation => return NONETY()
+      db.StateType.Appendcode => return NONETY()
+      db.StateType.Prependcode => return NONETY()
+      db.StateType.Ref => return NONETY()
+      db.StateType.Unref => return NONETY()
+
       default => raise Status.Unimplemented, "Statement type not yet supported by typechecker: ", db.statementTypeGetKeyword(statement.type)
     }
     return NONETY()
+  }
+
+  // Transformer interpretation ---------------------------------------------
+  // Relations execute their transformer at compile time, copying generated
+  // code into the target classes with $-name substitution.
+
+  func registerTransformer(self, fn: db.Function) {
+    self.transformerNames.append(fn.sym.name)
+    self.transformerFns.append(fn)
+  }
+
+  func lookupTransformer(self, name: string) -> db.Function? {
+    for i in range(self.transformerNames.length()) {
+      if self.transformerNames[i] == name {
+        return self.transformerFns[i]
+      }
+    }
+    return null(db.Function)
+  }
+
+  // Find a class constructor by name anywhere in the loaded program.
+  func findClassFunction(self, name: string) -> db.Function? {
+    return self.findClassFunctionIn(db.getMainFunc(), name)
+  }
+
+  func findClassFunctionIn(self, fn: db.Function, name: string) -> db.Function? {
+    for childfunc in fn.childFunctions() {
+      if childfunc.type == db.FuncType.Constructor && childfunc.sym.name == name {
+        return childfunc
+      }
+      found = self.findClassFunctionIn(childfunc, name)
+      if !isnull(found) {
+        return found
+      }
+    }
+    return null(db.Function)
+  }
+
+  // Execute a relation or transform statement: bind the transformer's
+  // parameters and interpret its body.
+  func executeTransformStatement(self, statement: db.Statement) {
+    expr = statement.expr!
+    if expr.type == db.ExprType.Call {
+      nameExpr = expr.firstChildExpr!
+      argList = nameExpr.nextExprChildExpr
+    } else {
+      nameExpr = expr.firstChildExpr!
+      argList = nameExpr.nextExprChildExpr
+    }
+    if nameExpr.type != db.ExprType.Ident {
+      self.typeError("Unsupported transformer path", statement.location)
+      return
+    }
+    trans = self.lookupTransformer(nameExpr.val.symVal.name)
+    if isnull(trans) {
+      self.typeError("Unknown transformer %s" % nameExpr.val.symVal.name,
+          statement.location)
+      return
+    }
+    env = TransEnv()
+    argExpr = null(db.Expr)
+    if !isnull(argList) {
+      argExpr = argList.firstChildExpr
+    }
+    for variable in trans.variables() {
+      if variable.isParam {
+        if !isnull(argExpr) {
+          v = self.evalTransExpr(argExpr!, env, statement.location)
+          argExpr = argExpr.nextExprChildExpr
+        } else if !isnull(variable.initializerExpr) {
+          v = self.evalTransExpr(variable.initializerExpr!, env, statement.location)
+        } else {
+          v = TransVal()
+        }
+        env.set(variable.sym.name, v)
+      }
+    }
+    self.interpretTransBlock(trans.subBlock!, env, statement.location)
+  }
+
+  func evalTransExpr(self, expr: db.Expr, env: TransEnv,
+      location: db.Location) -> TransVal {
+    v = TransVal()
+    switch expr.type {
+      db.ExprType.Constant => {
+        if expr.val.type == db.DatatypeType.String {
+          v.kind = 1u32
+          v.strVal = self.expandTransName(expr.val.stringVal, env)
+        } else if expr.val.type == db.DatatypeType.Bool {
+          v.kind = 2u32
+          v.boolVal = expr.val.boolVal
+        }
+      }
+      db.ExprType.Ident => {
+        name = expr.val.symVal.name
+        idx = env.find(name)
+        if idx >= 0i64 {
+          return env.vals[<u64>idx]
+        }
+        classFn = self.findClassFunction(name)
+        if !isnull(classFn) {
+          v.kind = 0u32
+          v.classFn = classFn
+        } else {
+          self.typeError("Transformer identifier %s not found" % name, location)
+        }
+      }
+      db.ExprType.Equal, db.ExprType.Notequal => {
+        l = self.evalTransExpr(expr.firstChildExpr!, env, location)
+        r = self.evalTransExpr(expr.firstChildExpr.nextExprChildExpr!, env, location)
+        v.kind = 2u32
+        if l.kind == 1u32 {
+          v.boolVal = l.strVal == r.strVal
+        } else if l.kind == 2u32 {
+          v.boolVal = l.boolVal == r.boolVal
+        } else {
+          v.boolVal = l.classFn == r.classFn
+        }
+        if expr.type == db.ExprType.Notequal {
+          v.boolVal = !v.boolVal
+        }
+      }
+      db.ExprType.Not => {
+        c = self.evalTransExpr(expr.firstChildExpr!, env, location)
+        v.kind = 2u32
+        v.boolVal = !c.boolVal
+      }
+      default => self.typeError("Cannot evaluate transformer expression",
+          location)
+    }
+    return v
+  }
+
+  func interpretTransBlock(self, block: db.Block, env: TransEnv,
+      location: db.Location) {
+    condTaken = false
+    for statement in block.statements() {
+      switch statement.type {
+        db.StateType.Assign => {
+          assignExpr = statement.expr!
+          lhs = assignExpr.firstChildExpr!
+          rhs = lhs.nextExprChildExpr!
+          if lhs.type == db.ExprType.Ident {
+            env.set(lhs.val.symVal.name,
+                self.evalTransExpr(rhs, env, statement.location))
+          }
+        }
+        db.StateType.If => {
+          condTaken = self.evalTransExpr(statement.expr!, env,
+              statement.location).boolVal
+          if condTaken {
+            self.interpretTransBlock(statement.subBlock!, env, statement.location)
+          }
+        }
+        db.StateType.ElseIf => {
+          if !condTaken {
+            c = self.evalTransExpr(statement.expr!, env, statement.location)
+            if c.boolVal {
+              condTaken = true
+              self.interpretTransBlock(statement.subBlock!, env, statement.location)
+            }
+          }
+        }
+        db.StateType.Else => {
+          if !condTaken {
+            self.interpretTransBlock(statement.subBlock!, env, statement.location)
+          }
+        }
+        db.StateType.Prependcode => self.instantiateCodeBlock(statement, env, true)
+        db.StateType.Appendcode => self.instantiateCodeBlock(statement, env, false)
+        default => return
+      }
+    }
+  }
+
+  // Copy a prependcode/appendcode container's functions and statements into
+  // the target class, expanding $-names.
+  func instantiateCodeBlock(self, statement: db.Statement, env: TransEnv,
+      prepend: bool) {
+    container = db.lookupCodeBlock(statement)
+    if isnull(container) {
+      return
+    }
+    if isnull(statement.expr) {
+      self.typeError("appendcode without a target is not supported",
+          statement.location)
+      return
+    }
+    if statement.expr.type == db.ExprType.Dot {
+      // Targets like A.destroy extend a method of the class (the generated
+      // destroy method for relation removal and cascade deletion).
+      lhsExpr = statement.expr.firstChildExpr!
+      memberExpr = lhsExpr.nextExprChildExpr!
+      lhsVal = self.evalTransExpr(lhsExpr, env, statement.location)
+      if lhsVal.kind != 0u32 || isnull(lhsVal.classFn) {
+        self.typeError("Code block target is not a class", statement.location)
+        return
+      }
+      assert memberExpr.type == db.ExprType.Ident
+      memberName = self.expandTransName(memberExpr.val.symVal.name, env)
+      methodFn = null(db.Function)
+      for childfunc in lhsVal.classFn.childFunctions() {
+        if childfunc.sym.name == memberName {
+          methodFn = childfunc
+        }
+      }
+      if isnull(methodFn) {
+        self.typeError("Code block target method %s not found" % memberName,
+            statement.location)
+        return
+      }
+      self.copyCodeBlockInto(container!, methodFn!, env, prepend)
+      return
+    }
+    targetVal = self.evalTransExpr(statement.expr!, env, statement.location)
+    if targetVal.kind != 0u32 || isnull(targetVal.classFn) {
+      self.typeError("Code block target is not a class", statement.location)
+      return
+    }
+    self.copyCodeBlockInto(container!, targetVal.classFn!, env, prepend)
+  }
+
+  // Copy a code block container's functions and statements into the target
+  // function, expanding $-substitutions, prepending or appending the
+  // statements relative to the target's existing body.
+  func copyCodeBlockInto(self, container: db.Function, target: db.Function,
+      env: TransEnv, prepend: bool) {
+    destBlock = target.subBlock!
+    for childfunc in container.childFunctions() {
+      newFn = childfunc.copy(target)
+      self.expandTransFunctionTree(newFn, env)
+    }
+    if prepend {
+      st = container.subBlock.lastStatement
+      while !isnull(st) {
+        cp = st.prependCopy(destBlock)
+        self.expandTransStatementTree(cp, env)
+        st = st.prevBlockStatement
+      }
+    } else {
+      st2 = container.subBlock.firstStatement
+      while !isnull(st2) {
+        cp2 = st2.appendCopy(destBlock)
+        self.expandTransStatementTree(cp2, env)
+        st2 = st2.nextBlockStatement
+      }
+    }
+  }
+
+  func expandTransFunctionTree(self, fn: db.Function, env: TransEnv) {
+    newName = self.expandTransName(fn.sym.name, env)
+    if newName != fn.sym.name {
+      newSym = Sym.new(newName)
+      ident = fn.firstNameIdent
+      if !isnull(ident) {
+        ident.rename(newSym)
+      }
+      fn.sym = newSym
+    }
+    if !isnull(fn.typeExpr) {
+      self.expandTransExprTree(fn.typeExpr!, env)
+    }
+    for variable in fn.variables() {
+      if !isnull(variable.typeExpr) {
+        self.expandTransExprTree(variable.typeExpr!, env)
+      }
+      if !isnull(variable.initializerExpr) {
+        self.expandTransExprTree(variable.initializerExpr!, env)
+      }
+    }
+    self.expandTransBlockTree(fn.subBlock!, env)
+    for childfunc in fn.childFunctions() {
+      self.expandTransFunctionTree(childfunc, env)
+    }
+  }
+
+  func expandTransBlockTree(self, block: db.Block, env: TransEnv) {
+    for statement in block.statements() {
+      self.expandTransStatementTree(statement, env)
+    }
+  }
+
+  func expandTransStatementTree(self, statement: db.Statement, env: TransEnv) {
+    if !isnull(statement.expr) {
+      self.expandTransExprTree(statement.expr!, env)
+    }
+    if !isnull(statement.subBlock) {
+      self.expandTransBlockTree(statement.subBlock!, env)
+    }
+  }
+
+  func expandTransExprTree(self, expr: db.Expr, env: TransEnv) {
+    if expr.type == db.ExprType.Ident {
+      identName = expr.val.symVal.name
+      idx = env.find(identName)
+      if idx >= 0i64 && env.vals[<u64>idx].kind == 0u32 {
+        expr.val = db.Value(Sym.new(env.vals[<u64>idx].classFn.sym.name))
+      } else {
+        newName = self.expandTransName(identName, env)
+        if newName != identName {
+          expr.val = db.Value(Sym.new(newName))
+        }
+      }
+    } else if (expr.type == db.ExprType.Constant &&
+        expr.val.type == db.DatatypeType.String) {
+      newStr = self.expandTransName(expr.val.stringVal, env)
+      if newStr != expr.val.stringVal {
+        expr.val = db.Value(newStr)
+      }
+    }
+    for child in expr.childExprs() {
+      self.expandTransExprTree(child, env)
+    }
+  }
+
+  // Substitute $-references in a name: $var inserts the variable's value,
+  // capitalized mid-name and lowercased at the start; an _ right after a
+  // substitution is a separator and is dropped; $L uppercases the next
+  // insertion.
+  func expandTransName(self, name: string, env: TransEnv) -> string {
+    hasDollar = false
+    for i in range(name.length()) {
+      if name[i] == '$' {
+        hasDollar = true
+      }
+    }
+    if !hasDollar {
+      return name
+    }
+    out = ""
+    pos = 0
+    upper = false
+    while pos < name.length() {
+      c = name[pos]
+      if c == '$' {
+        pos += 1
+        start = pos
+        while (pos < name.length() &&
+            ((name[pos] >= 'a' && name[pos] <= 'z') ||
+             (name[pos] >= 'A' && name[pos] <= 'Z') ||
+             (name[pos] >= '0' && name[pos] <= '9'))) {
+          pos += 1
+        }
+        varName = name[start:pos]
+        // An _ right after a substitution separates it from following text.
+        if pos < name.length() && name[pos] == '_' {
+          pos += 1
+        }
+        if varName == "L" {
+          upper = true
+        } else {
+          value = ""
+          idx = env.find(varName)
+          if idx >= 0i64 {
+            v = env.vals[<u64>idx]
+            if v.kind == 0u32 {
+              value = v.classFn.sym.name
+            } else if v.kind == 1u32 {
+              value = v.strVal
+            } else if v.kind == 2u32 {
+              value = v.boolVal ? "true" : "false"
+            }
+          }
+          if value.length() > 0 {
+            first = value[0]
+            if out.length() == 0 && !upper {
+              if first >= 'A' && first <= 'Z' {
+                first = first + 32u8
+              }
+            } else {
+              if first >= 'a' && first <= 'z' {
+                first = first - 32u8
+              }
+            }
+            upper = false
+            out.append(first)
+            if value.length() > 1 {
+              out += value[1:value.length()]
+            }
+          }
+        }
+      } else {
+        out.append(c)
+        pos += 1
+      }
+    }
+    return out
   }
 
   // Typecheck Functions, including modules ---------------------------------
@@ -2349,6 +2884,29 @@ class TypeChecker(self) {
         for childfunc in fn.childFunctions() {
           if childfunc.type == db.FuncType.Module {
             self.function(childfunc)
+          }
+        }
+        // Every class gets a generated destroy(self) method before
+        // relations execute, so that A.destroy code blocks have a target.
+        for childfunc in fn.childFunctions() {
+          if childfunc.type == db.FuncType.Constructor {
+            self.synthesizeDestroy(childfunc)
+          }
+        }
+        // Execute relation/transform statements and module-level code
+        // blocks before any of this module's code typechecks: they add
+        // fields and methods to classes.  Transformers in builtin modules
+        // registered when those module children were processed above.
+        for statement in fn.subBlock.statements() {
+          if (statement.type == db.StateType.Transform ||
+              statement.type == db.StateType.Relation) {
+            self.executeTransformStatement(statement)
+          } else if statement.type == db.StateType.Appendcode {
+            emptyEnv = TransEnv()
+            self.instantiateCodeBlock(statement, emptyEnv, false)
+          } else if statement.type == db.StateType.Prependcode {
+            emptyEnv2 = TransEnv()
+            self.instantiateCodeBlock(statement, emptyEnv2, true)
           }
         }
         // Register all functions first so call sites can look up parameter
@@ -2384,6 +2942,9 @@ class TypeChecker(self) {
       // Iterators are not typechecked standalone; their bodies are inlined
       // into each foreach statement that calls them and typechecked there.
       db.FuncType.Iterator => return
+      // Transformers are compile-time code generators: register them for
+      // relation statements; their bodies never typecheck directly.
+      db.FuncType.Transformer => self.registerTransformer(fn)
       // Destructors are typechecked like methods.  The C backend does not
       // yet emit or call them (that needs reference counting).
       db.FuncType.Final => self.plainFunction(fn)
@@ -2398,6 +2959,10 @@ class TypeChecker(self) {
   // body.  Methods are the constructor's child functions; their self
   // parameter is bound to the class instance type.
   func constructorFunction(self, fn: db.Function) {
+    if !isnull(fn.typedValue) {
+      // Already typechecked on demand from an earlier reference.
+      return
+    }
     self.openScope()
     info = ClassInfo(fn.sym)
     info.fn = fn
@@ -2529,7 +3094,8 @@ class TypeChecker(self) {
   // Find a method (child function) of a class by name.
   func findMethod(self, info: ClassInfo, name: string) -> db.Function? {
     for childfunc in info.fn.childFunctions() {
-      if childfunc.sym.name == name && childfunc.type == db.FuncType.Plain {
+      if childfunc.sym.name == name && (childfunc.type == db.FuncType.Plain ||
+          childfunc.type == db.FuncType.Final) {
         return childfunc
       }
     }
@@ -2540,7 +3106,16 @@ class TypeChecker(self) {
   // function type with the self parameter removed (it is passed implicitly).
   func methodCallType(self, info: ClassInfo, instanceType: Type, method: db.Function,
                       location: db.Location?) -> Type? {
-    mty = method.sym.typedValue
+    mty = method.typedValue
+    if isnull(mty) {
+      mty = method.sym.typedValue
+    }
+    if isnull(mty) {
+      // The method has not typechecked yet (e.g. a reference from another
+      // class checked on demand): typecheck it now in its class's context.
+      self.demandMethod(info, method)
+      mty = method.typedValue
+    }
     if isnull(mty) {
       self.typeError("Method %s of class %s has no type" % (method.sym.name, info.sym.name),
                      location)
@@ -2712,7 +3287,10 @@ class TypeChecker(self) {
     } else {
       paramType = Type(TupleType(params))
     }
-    bindingScope = self.closeScope()
+    // The parameter scope stays open while the body typechecks so that
+    // parameter lookups resolve to this function's bindings; the body's
+    // locals bind into their own scope.
+    self.openScope()
 
     // must walk through all return statements.
     returnType = null(Type)
@@ -2756,6 +3334,8 @@ class TypeChecker(self) {
     if isnull(returnType) {
       returnType = Type(TypeName(Sym.new("none")))
     }
+    self.closeScope()  // The body's locals.
+    bindingScope = self.closeScope()  // The parameters, for generalization.
     // Forget literal-induced AnyInt bindings on parameters: a comparison
     // like a == 1 must not fix the parameter's width; the call site's
     // argument decides (per-call literal polymorphism).  Follow the

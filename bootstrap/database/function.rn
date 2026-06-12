@@ -190,6 +190,8 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       // Iterators are inlined into foreach statements by the typechecker;
       // nothing is emitted for the iterator function itself.
       FuncType.Iterator => return
+      // Transformers are compile-time code generators.
+      FuncType.Transformer => return
       default => raise Status.Unimplemented, "Function type not yet supported by C backend ", self.type
     }
   }
@@ -497,6 +499,28 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       }
     }
 
+    // The generated destroy() runs relation removal and the final()
+    // destructor; cleanup code calls it without a user call site, so emit
+    // it per instantiation like final above.
+    for childfunc in self.childFunctions() {
+      if childfunc.sym.name == "destroy" && childfunc.type == FuncType.Plain {
+        dty = childfunc.typedValue
+        if isnull(dty) {
+          dty = childfunc.sym.typedValue
+        }
+        if !isnull(dty) {
+          if dty.type == types.Type.TypeClass.Polymorphic {
+            dfn = builder.typechecker.resolve(dty.poly.scope)
+          } else {
+            dfn = dty!
+          }
+          if !builder.typechecker.hasFreeVars(dfn) {
+            childfunc.genCMethodInstance(builder, dfn)
+          }
+        }
+      }
+    }
+
     // A user-defined toString must be emitted for this instantiation even if
     // user code never calls it: the class's tostring_<class> print helper
     // references it.  The class's type variables are bound here, so the
@@ -571,7 +595,40 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     paramList = builder.closeParamList()
     builder.openDependencyList()
     savedTryBase = builder.openFunctionTryContext()
-    body = self.subBlock.genC(builder)
+    if self.sym.name == "destroy" {
+      // destroy() must be idempotent: cleanup paths (cascade deletion,
+      // reference overwrite, program exit) can reach an object more than
+      // once.  Emit: if (self) { if (self->rn_id) { <body> rn_id = 0; } }
+      destroySelfSym = Sym.new("self")
+      builder.openBlock(self.location)
+      builder.openBlock(self.location)
+      builder.openBlock(self.location)
+      for destroyStatement in self.subBlock.statements() {
+        destroyStatement.genC(builder)
+      }
+      zeroSelfRef = c.CExpr(c.CIdentifier(destroySelfSym, null(c.CTypeExpr),
+          false, false, false))
+      zeroVal = Bigint(0u32)
+      zeroAssign = c.CExpr(c.CBinaryOperator(self.location,
+          c.CBinaryOperator.Type.Assign, null(c.CTypeExpr),
+          c.CExpr(c.CDotExpr(self.location, zeroSelfRef, "rn_id", true)),
+          builder.cIntLiteral(zeroVal)))
+      builder.addStatement(self.location, zeroAssign)
+      destroyGuardBody = builder.closeBlock()
+      idSelfRef = c.CExpr(c.CIdentifier(destroySelfSym, null(c.CTypeExpr),
+          false, false, false))
+      idRef = c.CExpr(c.CDotExpr(self.location, idSelfRef, "rn_id", true))
+      builder.addStatement(self.location, c.CStatement(self.location,
+          c.CStatementType.If, idRef, destroyGuardBody))
+      destroyNullBody = builder.closeBlock()
+      condSelfRef = c.CExpr(c.CIdentifier(destroySelfSym, null(c.CTypeExpr),
+          false, false, false))
+      builder.addStatement(self.location, c.CStatement(self.location,
+          c.CStatementType.If, condSelfRef, destroyNullBody))
+      body = builder.closeBlock()
+    } else {
+      body = self.subBlock.genC(builder)
+    }
     builder.closeFunctionTryContext(savedTryBase)
     builder.closeScope()
 
@@ -771,6 +828,22 @@ func lookupModuleAlias(alias: Sym) -> Function? {
     }
   }
   return null(Function)
+}
+
+// Container functions holding prependcode/appendcode code, indexed by the
+// statement's codeBlockIndex (object comparisons are unreliable as keys).
+codeBlockContainers = arrayof(Function)
+
+func registerCodeBlock(statement: Statement, container: Function) {
+  statement.codeBlockIndex = <u32>codeBlockContainers.length()
+  codeBlockContainers.append(container)
+}
+
+func lookupCodeBlock(statement: Statement) -> Function? {
+  if statement.codeBlockIndex == 0xffffffffu32 {
+    return null(Function)
+  }
+  return codeBlockContainers[<u64>statement.codeBlockIndex]
 }
 
 // Append a call statement to the module initialization function in the root function.

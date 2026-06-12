@@ -396,13 +396,18 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
     // parameter lists of our relation transformers.
     // Build the list backwards.  "insert" adds to the start of the list.
     listExpr = self.buildExprList(callParamsNode, statementNode.location)
+    // Labels are always passed so later parameters stay positional.
     if !isnull(childLabel) {
       listExpr.insertChildExpr(db.Expr.newConstant(childLabel.firstChildNode.token.value!,
           childLabel.location))
+    } else {
+      listExpr.insertChildExpr(db.Expr.newConstant(db.Value(""), statementNode.location))
     }
     if !isnull(parentLabel) {
       listExpr.insertChildExpr(db.Expr.newConstant(parentLabel.firstChildNode.token.value!,
           parentLabel.location))
+    } else {
+      listExpr.insertChildExpr(db.Expr.newConstant(db.Value(""), statementNode.location))
     }
     listExpr.insertChildExpr(db.Expr.newConstant(db.Value(!isnull(optCascadeNode)),
         statementNode.location))
@@ -443,13 +448,7 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
 
   // Format: appendCode(pathExpr(...)? block(...))
   func buildAppendCode(self: HirBuilder, statementNode: Node) {
-    node = statementNode.firstChildNode!
-    pathExprNode = null(Node)
-    if node.getRuleSym() == self.pathExprSym {
-      pathExprNode = node
-      node = node.nextNodeChildNode
-    }
-    self.newStatement(statementNode, db.StateType.Appendcode, pathExprNode, node)
+    self.buildCodeBlockStatement(statementNode, db.StateType.Appendcode)
   }
 
   // Format: class(("export" | "exportlib" | "rpc")? IDENT optRefWidth(<uintType>)
@@ -705,8 +704,33 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
   }
 
   func buildPrependCode(self: HirBuilder, statementNode: Node) {
-    // TODO: write this.
-    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+    self.buildCodeBlockStatement(statementNode, db.StateType.Prependcode)
+  }
+
+  // prependcode/appendcode <path>? { ... }: the block builds into a fresh
+  // container function so inner function definitions stay associated with
+  // this statement; the transformer interpreter copies the container's
+  // contents into the target class.
+  func buildCodeBlockStatement(self: HirBuilder, statementNode: Node,
+      type: db.StateType) {
+    node = statementNode.firstChildNode!
+    pathExprNode = null(Node)
+    if node.getRuleSym() == self.pathExprSym {
+      pathExprNode = node
+      node = node.nextNodeChildNode
+    }
+    container = db.Function(self.currentFunction, db.FuncType.Plain,
+        self.currentFunction.createUniqueSym(Sym.new("transcode")),
+        db.Linkage.Module, statementNode.location)
+    savedFunction = self.currentFunction
+    savedBlock = self.currentBlock
+    self.currentFunction = container
+    self.currentBlock = container.subBlock!
+    self.buildBlockStatement(node!)
+    self.currentFunction = savedFunction
+    self.currentBlock = savedBlock
+    statement = self.newStatement(statementNode, type, pathExprNode, null(Node))
+    db.registerCodeBlock(statement, container)
   }
 
   func buildStruct(self: HirBuilder, statementNode: Node) {

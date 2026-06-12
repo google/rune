@@ -114,6 +114,8 @@ class Statement(self, block: Block, type: StateType, location: Location) {
   // For typeswitch: the index of the case selected at typecheck time, or
   // the sentinel when selection is deferred to per-instantiation codegen.
   self.selectedCaseIndex = 0xffffffffu32
+  // Index into the code-block registry for prependcode/appendcode.
+  self.codeBlockIndex = 0xffffffffu32
   block.appendStatement(self)
 
   // Dump a statement to |text| without its sub-block.
@@ -177,6 +179,7 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     newStatement.instantiated = self.instantiated
     newStatement.executed = self.executed
     newStatement.generated = self.generated
+    newStatement.codeBlockIndex = self.codeBlockIndex
     return newStatement
   }
 
@@ -232,6 +235,14 @@ class Statement(self, block: Block, type: StateType, location: Location) {
       StateType.ImportLib => return
       StateType.ImportRpc => return
       StateType.Use => return
+      // Relations execute at typecheck time; ref/unref manage transformer
+      // reference counts, which the bootstrap does not implement.
+      StateType.Transform => return
+      StateType.Relation => return
+      StateType.Appendcode => return
+      StateType.Prependcode => return
+      StateType.Ref => return
+      StateType.Unref => return
       default => raise Status.Unimplemented, "Statement type not yet supported by C backend builder ", self.type
     }
   }
@@ -258,12 +269,13 @@ class Statement(self, block: Block, type: StateType, location: Location) {
       // Type-valued assignments like t = u32 exist only at compile time.
       return
     }
-    // Overwriting an object reference destroys the previous object:
-    // if (lhs) { Class_final(lhs); }
-    if self.expr.type == ExprType.Equals {
+    // Overwriting a main-level object reference destroys the previous
+    // object: if (lhs) { Class_destroy(lhs); }.  Locals inside functions
+    // are plain references and never destroy on reassignment.
+    if self.expr.type == ExprType.Equals && isnull(builder.currentBlock) {
       assignLhs = self.expr.firstChildExpr!
       if assignLhs.type == ExprType.Ident {
-        finalName = builder.classFinalName(assignLhs.typedValue)
+        finalName = builder.classDestroyName(assignLhs.typedValue)
         if finalName != "" {
           lhsSym = assignLhs.val.symVal!
           condRef = c.CExpr(c.CIdentifier(lhsSym, null(c.CTypeExpr),

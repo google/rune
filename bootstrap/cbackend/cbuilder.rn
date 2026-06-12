@@ -187,6 +187,31 @@ class CBuilder(self, tc: types.TypeChecker) {
     return ""
   }
 
+  // The C name of the class's generated destroy() for instance type |ty|,
+  // or "" if its destroy body is empty (no final() and no relations), in
+  // which case cleanup is a no-op and no call is emitted.
+  func classDestroyName(self, ty: types.Type?) -> string {
+    if isnull(ty) {
+      return ""
+    }
+    t = self.typechecker.resolve(ty!)
+    if t.type != types.Type.TypeClass.Typename {
+      return ""
+    }
+    info = self.typechecker.lookupClass(t.tyname.name)
+    if isnull(info) || isnull(info.fn) {
+      return ""
+    }
+    for childfunc in info.fn.childFunctions() {
+      if (childfunc.sym.name == "destroy" &&
+          childfunc.type == db.FuncType.Plain &&
+          !isnull(childfunc.subBlock.firstStatement)) {
+        return self.classCName(t) + "_destroy"
+      }
+    }
+    return ""
+  }
+
   // Record a module-level variable holding an object that needs its
   // destructor run at program exit.
   func registerMainFinal(self, sym: Sym, finalName: string) {

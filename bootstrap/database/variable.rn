@@ -109,8 +109,14 @@ class Variable(self, function: Function, isParam: bool, isConst: bool, sym: Sym,
 
   func genCParameter(self, builder: c.CBuilder,
                      instance: types.Type? = null(types.Type)) -> c.CParameter {
+    inst = instance
+    if isnull(inst) && !isnull(self.typedValue) {
+      // The variable's own typedValue is reliable; the sym's typedValue
+      // can be clobbered by a later same-named binding.
+      inst = builder.typechecker.resolve(self.typedValue!)
+    }
     // var parameters (isConst false) pass by pointer.
-    return builder.cParameter(self.location, self.sym, instance,
+    return builder.cParameter(self.location, self.sym, inst,
         self.isParam && !self.isConst)
   }
 }

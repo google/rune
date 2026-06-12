@@ -102,11 +102,28 @@ func findUsedFile(name: string, currentDir: string) -> string {
   return ""
 }
 
-// Load the top-level module of the program.
+// Load the top-level module of the program, plus the builtin relation
+// transformers every program may use.
 func loadTopModule(parser: Peg, fileName: string, parent: db.Function,
     moduleSym: Sym) -> db.Function? {
   root.topModuleDir = dirName(fileName)
-  return loadModule(parser, fileName, parent, moduleSym)
+  module = loadModule(parser, fileName, parent, moduleSym)
+  if !isnull(module) {
+    loadBuiltinModules(parser, module!)
+  }
+  return module
+}
+
+// The relation transformers in builtin/ load into every program.
+func loadBuiltinModules(parser: Peg, module: db.Function) {
+  builtinNames = ["doublylinked", "onetoone",
+      "taillinked", "linkedlist", "arraylist", "heapqlist"]
+  for name in builtinNames {
+    fileName = findModuleFile("builtin/" + name, "")
+    if fileName != "" {
+      loadModule(parser, fileName, module, Sym.new(name))
+    }
+  }
 }
 
 // Load the module in |fileName| as a child of |parent| and recursively load

@@ -363,7 +363,17 @@ class TypeUnifier(self) {
                        location)
     }
     if isnull(t1.params) || isnull(t2.params) {
-      if isnull(t1.params) && isnull(t2.params) {
+      // A bare name (null params) is the same type as one with an empty
+      // parameter tuple: both mean a class with no type parameters.
+      n1 = 0u64
+      if !isnull(t1.params) {
+        n1 = t1.params.numElements()
+      }
+      n2 = 0u64
+      if !isnull(t2.params) {
+        n2 = t2.params.numElements()
+      }
+      if n1 == 0 && n2 == 0 {
         return null(TypeError)
       }
       return TypeError("Named types %s and %s have different type parameters."
