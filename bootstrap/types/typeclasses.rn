@@ -204,16 +204,37 @@ class FloatType(self, width: u32) {
 class TypeName(self, name: Sym, params: TupleType? = null(TupleType)) {
   self.name = name
   self.params = params
+  // True for nullable instance types like Foo? (also the type of null(Foo)).
+  // Set after construction: a defaulted bool constructor parameter trips a
+  // legacy-compiler argument-corruption bug.
+  self.isNullable = false
 
   operator == (self, other: TypeName) -> bool {
-    return self.name == other.name && self.params == other.params
+    return self.name == other.name && self.params == other.params &&
+        self.isNullable == other.isNullable
   }
 
   func toString(self) -> string {
-    if isnull(self.params) {
-      return self.name.name
+    suffix = ""
+    if self.isNullable {
+      suffix = "?"
     }
-    return self.name.name + self.params.toString()
+    if isnull(self.params) {
+      return self.name.name + suffix
+    }
+    return self.name.name + self.params.toString() + suffix
+  }
+
+  // The Rune-source spelling, as printed for type values.
+  func runeString(self) -> string {
+    value = self.name.name
+    if !isnull(self.params) {
+      value += self.params.runeString()
+    }
+    if self.isNullable {
+      value += "?"
+    }
+    return value
   }
 
   func replaceVar(self, vold: TypeVar, vnew: TypeVar) -> Type {
@@ -221,11 +242,16 @@ class TypeName(self, name: Sym, params: TupleType? = null(TupleType)) {
        return Type(self)
      }
      newParams = self.params.replaceVar(vold, vnew)
-     return Type(TypeName(self.name, newParams.tuple!))
+     replacedName = TypeName(self.name, newParams.tuple!)
+     replacedName.isNullable = self.isNullable
+     return Type(replacedName)
   }
 
   func hash(self) -> u64 {
     h = hashValue(self.name)
+    if self.isNullable {
+      h = hashCombine(h, 0x4e554c4c)
+    }
     if !isnull(self.params) {
       h = hashCombine(h, self.params.hash())
     }
@@ -259,6 +285,11 @@ class ArrayType(self, elementType: Type) {
 
   func toString(self) -> string {
     return "[%s]" % self.elementType.toString()
+  }
+
+  // The Rune-source spelling, as printed for type values.
+  func runeString(self) -> string {
+    return "[%s]" % self.elementType.runeString()
   }
 
   func replaceVar(self, vold: TypeVar, vnew: TypeVar) -> Type {
@@ -325,6 +356,22 @@ class TupleType(self, elements: [Type]) {
       }
       value += ty.toString()
       value += ","
+      first = false
+    }
+    return value + ")"
+  }
+
+  // The Rune-source spelling, as printed for type values: comma-space
+  // separated with no trailing comma, e.g. (u32, string).  toString's tuple
+  // format (used in unifier diagnostics) differs.
+  func runeString(self) -> string {
+    value = "("
+    first = true
+    for ty in self.elements {
+      if !first {
+        value += ", "
+      }
+      value += ty.runeString()
       first = false
     }
     return value + ")"
@@ -897,6 +944,18 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
       Type.TypeClass.Struct => return self.strct.toString()
       Type.TypeClass.Function => return self.function.toString()
       Type.TypeClass.Polymorphic => return self.poly.toString()
+    }
+  }
+
+  // The Rune-source spelling of this type, as printed for type values
+  // (e.g. println typeof(x)).  Differs from toString for tuples and
+  // parameterized type names.
+  func runeString(self) -> string {
+    switch self.type {
+      Type.TypeClass.Typename => return self.tyname.runeString()
+      Type.TypeClass.Array => return self.array.runeString()
+      Type.TypeClass.Tuple => return self.tuple.runeString()
+      default => return self.toString()
     }
   }
 

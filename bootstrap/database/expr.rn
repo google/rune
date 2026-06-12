@@ -357,6 +357,24 @@ export func getCompoundAssignBaseOp(type: ExprType) -> ExprType {
   }
 }
 
+// Whether an argument of this type can select a specialization whose
+// parameter has the given type: equal types, or an adaptable
+// unsuffixed-literal type (AnyInt) against any integer type.  Compared by
+// specialization name: Type.equals does not see structurally equal
+// parameter tuples as equal.
+func typeArgCompatible(argType: types.Type, paramType: types.Type) -> bool {
+  if argType.specializationName() == paramType.specializationName() {
+    return true
+  }
+  paramIsInt = (paramType.type == types.Type.TypeClass.Int ||
+                paramType.type == types.Type.TypeClass.AnyInt)
+  if argType.type == types.Type.TypeClass.AnyInt && paramIsInt {
+    return true
+  }
+  return (paramType.type == types.Type.TypeClass.AnyInt &&
+          argType.type == types.Type.TypeClass.Int)
+}
+
 // The expression class represents all expression trees in Rune.
 class Expr(self, type: ExprType, location: Location) {
   self.type = type
@@ -770,15 +788,28 @@ class Expr(self, type: ExprType, location: Location) {
       // Assignment
       ExprType.Equals => return self.genCBinaryOp(builder)
 
-      // Types
-      ExprType.UintType => return c.CExpr(self.genCType(builder))
-      ExprType.IntType => return c.CExpr(self.genCType(builder))
-      ExprType.FloatType => return c.CExpr(self.genCType(builder))
-      ExprType.StringType => return c.CExpr(self.genCType(builder))
-      ExprType.BoolType => return c.CExpr(self.genCType(builder))
-      ExprType.NoneType => return c.CExpr(self.genCType(builder))
+      // Type values (t = u32, bar(string), typeof(x)) exist only at compile
+      // time; where a runtime value is syntactically required (a call
+      // argument), a zero dummy of the resolved type stands in.
+      ExprType.UintType => return self.genCTypeDummy(builder)
+      ExprType.IntType => return self.genCTypeDummy(builder)
+      ExprType.FloatType => return self.genCTypeDummy(builder)
+      ExprType.StringType => return self.genCTypeDummy(builder)
+      ExprType.BoolType => return self.genCTypeDummy(builder)
+      ExprType.NoneType => return self.genCTypeDummy(builder)
+      ExprType.Typeof => return self.genCTypeDummy(builder)
       ExprType.Typeindex => return c.CExpr(self.genCType(builder))
       ExprType.Namedparam => return c.CExpr(self.genCType(builder))
+
+      // Null handling: class instances are C pointers.
+      ExprType.Null => return self.genCTypeDummy(builder)
+      ExprType.Isnull => return c.CExpr(c.CPrefixOperator(self.location,
+          c.CPrefixOperator.Type.LogNot, self.firstChildExpr.genC(builder)))
+      ExprType.Notnull => return self.firstChildExpr.genC(builder)
+
+      ExprType.Widthof => return self.genCWidthof(builder)
+      ExprType.Unsigned => return self.genCSignConversion(builder)
+      ExprType.Signed => return self.genCSignConversion(builder)
 
       // Arrays
       ExprType.Arrayof => return self.genCArrayOf(builder)
@@ -835,39 +866,41 @@ class Expr(self, type: ExprType, location: Location) {
   // types match the operand types.  Specializations not yet emitted by the
   // module sweep are emitted on demand.  Returns null when no registered
   // operator matches, so the caller falls back to the builtin form.
+  //
+  // Matching compares the operand types against each recorded
+  // instantiation's resolved parameter types, allowing an unsuffixed
+  // literal (typed AnyInt) to match a concrete integer parameter; an exact
+  // name comparison would never match because the call site only knows the
+  // literal's adaptable type.
   func genCUserOperator(self, builder: c.CBuilder, l: c.CExpr, r: c.CExpr,
                         left: Expr, right: Expr) -> c.CExpr? {
     tc = builder.typechecker
     ltype = tc.resolve(left.typedValue!)
     rtype = tc.resolve(right.typedValue!)
-    argTuple = types.Type(types.TupleType([ltype, rtype]))
     for i in range(tc.operatorFns.length()) {
       opfn = tc.operatorFns[i]
       if opfn.opType == self.type {
         opty = tc.operatorTypes[i]
-        specializedName = argTuple.genSpecializationName(opfn.sym.name)
         callName = ""
         if opty.type == types.Type.TypeClass.Polymorphic {
-          if !builder.alreadyEmitted(specializedName) {
-            emitted = false
-            for inst in opty.poly.instantiations {
-              if !emitted {
-                builder.instantiate(opty.poly!, inst)
-                ptypes = arrayof(types.Type)
-                for variable in opfn.variables() {
-                  ptypes.append(tc.resolve(variable.typedValue!))
-                }
-                iname = types.Type(types.TupleType(ptypes)).genSpecializationName(opfn.sym.name)
-                builder.deInstantiate(opty.poly!)
-                if iname == specializedName {
+          for inst in opty.poly.instantiations {
+            if callName == "" {
+              builder.instantiate(opty.poly!, inst)
+              ptypes = arrayof(types.Type)
+              for variable in opfn.variables() {
+                ptypes.append(tc.resolve(variable.typedValue!))
+              }
+              iname = types.Type(types.TupleType(ptypes)).genSpecializationName(opfn.sym.name)
+              builder.deInstantiate(opty.poly!)
+              if (ptypes.length() == 2 &&
+                  typeArgCompatible(ltype, ptypes[0]) &&
+                  typeArgCompatible(rtype, ptypes[1])) {
+                if !builder.alreadyEmitted(iname) {
                   opfn.genCPolyInstantiation(builder, inst)
-                  emitted = true
                 }
+                callName = iname
               }
             }
-          }
-          if builder.alreadyEmitted(specializedName) {
-            callName = specializedName
           }
         } else if opty.type == types.Type.TypeClass.Function {
           // Monomorphic operator, emitted under its plain name; check the
@@ -876,8 +909,9 @@ class Expr(self, type: ExprType, location: Location) {
           for variable in opfn.variables() {
             mtypes.append(tc.resolve(variable.typedValue!))
           }
-          mname = types.Type(types.TupleType(mtypes)).genSpecializationName(opfn.sym.name)
-          if mname == specializedName {
+          if (mtypes.length() == 2 &&
+              typeArgCompatible(ltype, mtypes[0]) &&
+              typeArgCompatible(rtype, mtypes[1])) {
             callName = opfn.sym.name
           }
         }
@@ -890,6 +924,39 @@ class Expr(self, type: ExprType, location: Location) {
       }
     }
     return null(c.CExpr)
+  }
+
+  // A zero value standing in for an expression with no runtime
+  // representation: type values passed as arguments, and null(Foo), which
+  // becomes a zero (null) pointer of the class's C struct type.
+  func genCTypeDummy(self, builder: c.CBuilder) -> c.CExpr {
+    dummyType = builder.typechecker.resolve(self.typedValue!)
+    dummyZero = Bigint(0u64)
+    zeroExpr = builder.cIntLiteral(dummyZero)
+    dummyCType = builder.genCType(dummyType)
+    if isnull(dummyCType) {
+      return zeroExpr
+    }
+    return c.CExpr(c.CCastExpr(self.location, dummyCType!, zeroExpr))
+  }
+
+  // widthof(e) is a compile-time constant: the bit width of e's type.
+  func genCWidthof(self, builder: c.CBuilder) -> c.CExpr {
+    widthChild = self.firstChildExpr!
+    widthType = builder.typechecker.resolve(widthChild.typedValue!)
+    widthValue = Bigint(<u64>widthType.width())
+    return builder.cIntLiteral(widthValue)
+  }
+
+  // unsigned(x)/signed(x) reinterpret x with flipped signedness.
+  func genCSignConversion(self, builder: c.CBuilder) -> c.CExpr {
+    signChild = self.firstChildExpr!
+    signTarget = builder.typechecker.resolve(self.typedValue!)
+    signCType = builder.genCType(signTarget)
+    if isnull(signCType) {
+      raise Status.Unimplemented, "unsigned()/signed() target type not supported by C backend"
+    }
+    return c.CExpr(c.CCastExpr(self.location, signCType!, signChild.genC(builder)))
   }
 
   func genCCast(self, builder: c.CBuilder) -> c.CExpr {
@@ -1048,7 +1115,10 @@ class Expr(self, type: ExprType, location: Location) {
           ExprType.Exp => fn = c.CRuntimeFunction.Exponentiate
           ExprType.Rotl => fn = c.CRuntimeFunction.RotateLeft
           ExprType.Rotr => fn = c.CRuntimeFunction.RotateRight
-          default => raise Status.Unimplemented, "Binary expression operator not yet supported by C backend: ", getExprTypeName(self.type)
+          default => {
+            self.location.error("Binary expression operator not yet supported by C backend: " + getExprTypeName(self.type))
+            raise Status.Unimplemented, "Binary expression operator not yet supported by C backend: ", getExprTypeName(self.type)
+          }
         }
         // Can Rune do arbitrary length calls?
         list = c.CExprList()

@@ -179,7 +179,16 @@ class TypeUnifier(self) {
       self.bindVar(tyvar, ty)
       return null(TypeError)
     }
-    return self.unify(exists!, ty, location)
+    te = self.unify(exists!, ty, location)
+    if (isnull(te) && exists.type == Type.TypeClass.AnyInt &&
+        ty.type == Type.TypeClass.Int) {
+      // The variable was bound to an adaptable literal type (AnyInt) and now
+      // unified with a concrete integer type; narrow the binding so
+      // specializations see the concrete type (u64, not Uint).
+      self.unbindVar(tyvar)
+      self.bindVar(tyvar, ty)
+    }
+    return te
   }
 
 
@@ -436,9 +445,13 @@ class TypeUnifier(self) {
    */
   func unifyAnyInt(self, t1: AnyIntType, b: Type,
                   location: db.Location? = null(db.Location)) -> TypeError? {
+    // An unsigned AnyInt is the type of an unsuffixed literal like 1, which
+    // adapts to signed contexts (a + 1 with a: i32).  Two AnyInts always
+    // unify (literal vs. Int/Uint constraint); only a signed AnyInt against
+    // a concrete unsigned type fails.
     switch b.type {
-      Type.TypeClass.AnyInt => success = (t1.isSigned == b.anyInt.isSigned)
-      Type.TypeClass.Int => success = (t1.isSigned == b.int.isSigned)
+      Type.TypeClass.AnyInt => success = true
+      Type.TypeClass.Int => success = (!t1.isSigned || b.int.isSigned)
       default => return TypeError("Unifying type %s against non-integer type %s."
                                   % (t1.toString(), b.toString()),
                                   location)

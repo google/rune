@@ -587,11 +587,28 @@ class TypeChecker(self) {
   // ---------------------------------- Type checking functions ----------------------
 
   func resolve(self, t: Type) -> Type {
+    return self.resolveDepth(t, 0u32)
+  }
+
+  // resolve() with a recursion bound: a bound variable's binding is itself
+  // resolved (so e.g. Foo?(v3,) with v3 -> string resolves fully for
+  // codegen), but the unifier has no occurs check, so a self-referential
+  // binding must not recurse forever.
+  func resolveDepth(self, t: Type, depth: u32) -> Type {
+    if depth > 64u32 {
+      return t
+    }
     switch t.type {
       Type.TypeClass.Var => {
         t2 = self.unifier.resolveVar(t.tyvar!.id)
         if !isnull(t2) {
-          return t2!
+          if t2.type == Type.TypeClass.Polymorphic {
+            // Resolve function-type bindings shallowly: their bound
+            // variables may be legitimately bound while an instantiation
+            // is active, which the Polymorphic arm's assert forbids.
+            return t2!
+          }
+          return self.resolveDepth(t2!, depth + 1u32)
         }
         // The variable may be bound to another, unbound variable; in that
         // case return the representative at the end of the chain so that
@@ -605,24 +622,26 @@ class TypeChecker(self) {
         if isnull(t.tyname.params) {
           return t
         }
-        args = self.resolve(Type(t.tyname.params!))
-        return Type(TypeName(t.tyname.name, args.tuple))
+        args = self.resolveDepth(Type(t.tyname.params!), depth + 1u32)
+        rname = TypeName(t.tyname.name, args.tuple)
+        rname.isNullable = t.tyname.isNullable
+        return Type(rname)
       }
       Type.TypeClass.Array => {
-        et = self.resolve(t.array.elementType)
+        et = self.resolveDepth(t.array.elementType, depth + 1u32)
         return Type(ArrayType(et))
       }
       Type.TypeClass.Choice => {
         choices = arrayof(Type)
         for choice in t.choice!.choices {
-          choices.append(self.resolve(choice))
+          choices.append(self.resolveDepth(choice, depth + 1u32))
         }
         return Type(ChoiceType(choices))
       }
       Type.TypeClass.Tuple => {
         elements = arrayof(Type)
         for child in t.tuple!.elements {
-          elements.append(self.resolve(child))
+          elements.append(self.resolveDepth(child, depth + 1u32))
         }
         return Type(TupleType(elements))
       }
@@ -631,28 +650,34 @@ class TypeChecker(self) {
         fieldtypes = arrayof(Type)
         for i in range(t.strct!.fieldnames.length()) {
           fieldnames.append(t.strct!.fieldnames[i])
-          fieldtypes.append(self.resolve(t.strct!.fieldtypes[i]))
+          fieldtypes.append(self.resolveDepth(t.strct!.fieldtypes[i], depth + 1u32))
         }
         return Type(StructType(fieldnames, fieldtypes))
       }
       Type.TypeClass.Function => {
-        return Type(FunctionType(self.resolve(t.function!.params),
-                                 self.resolve(t.function!.result)))
+        return Type(FunctionType(self.resolveDepth(t.function!.params, depth + 1u32),
+                                 self.resolveDepth(t.function!.result, depth + 1u32)))
       }
       Type.TypeClass.Polymorphic => {
         // We want to resolve any free variables in the scope of the
-        // polymorphic type. However, first make sure that no bound variable
-        // exists in the unifier.
+        // polymorphic type.  If a bound variable is itself bound in the
+        // unifier (an active instantiation, or a var-to-var chain created
+        // while typechecking the defining body), substituting under the
+        // binder would corrupt it; return the type unchanged instead.
+        for bv in t.poly!.boundVars {
+          if !isnull(self.unifier.lookupVar(bv.tyvar.id)) {
+            return t
+          }
+        }
         //
         // It's unclear why we need to generate a new array of bound variables,
         // if we try to share the existing one, we (sometimes) end up generating
         // a new PolymorphicType with empty variables.
         newvars = arrayof(Type)
         for boundVar in t.poly!.boundVars {
-          assert isnull(self.unifier.lookupVar(boundVar.tyvar.id))
           newvars.append(boundVar)
         }
-        pt = PolymorphicType(newvars, self.resolve(t.poly!.scope),
+        pt = PolymorphicType(newvars, self.resolveDepth(t.poly!.scope, depth + 1u32),
                              t.poly.instantiations)
         return Type(pt)
       }
@@ -774,7 +799,9 @@ class TypeChecker(self) {
           for pv in info.paramVars {
             cparams.append(Type(self.newTyvar()))
           }
-          return Type(TypeName(name, TupleType(cparams)))
+          cname = TypeName(name, TupleType(cparams))
+          cname.isNullable = t.tyname.isNullable
+          return Type(cname)
         }
         return t!
       }
@@ -821,6 +848,23 @@ class TypeChecker(self) {
         }
         return ARRAY(t!)
       }
+      db.ExprType.Null => {
+        // Foo? -- the nullable form of the inner type.
+        nullableInner = self.tryExplicitType(typeExpr.firstChildExpr!)
+        if isnull(nullableInner) {
+          return null(Type)
+        }
+        if nullableInner.type == Type.TypeClass.Typename {
+          nullableName = TypeName(nullableInner.tyname.name, nullableInner.tyname.params)
+          nullableName.isNullable = true
+          return Type(nullableName)
+        }
+        return nullableInner
+      }
+      db.ExprType.Typeof => {
+        // typeof(expr) in a type position: the type of the expression.
+        return self.expr(typeExpr.firstChildExpr!)
+      }
       default => return null(Type)
     }
   }
@@ -831,8 +875,10 @@ class TypeChecker(self) {
         actual.type == Type.TypeClass.Typename &&
         isnull(pattern.tyname.params)) {
       // An unparameterized type name (e.g. a class name) matches any
-      // instantiation of that name.
-      return pattern.tyname.name.name == actual.tyname.name.name
+      // instantiation of that name.  Nullability must agree: a Foo case
+      // does not match a nullable Foo? scrutinee, nor vice versa.
+      return (pattern.tyname.name.name == actual.tyname.name.name &&
+              pattern.tyname.isNullable == actual.tyname.isNullable)
     }
     if pattern.type == Type.TypeClass.AnyInt && actual.type == Type.TypeClass.Int {
       return pattern.anyInt.isSigned == actual.int.isSigned
@@ -984,12 +1030,20 @@ class TypeChecker(self) {
 
       db.ExprType.List, db.ExprType.Tuple => {
         elements = arrayof(Type)
+        allTypeValues = true
         for child in expr.childExprs() {
           ty = self.expr(child)
           if isnull(ty) {
             return ty
           }
+          if !child.isType {
+            allTypeValues = false
+          }
           elements.append(ty!)
+        }
+        if allTypeValues && !isnull(expr.firstChildExpr) {
+          // A tuple of type values, e.g. (u32, string), is itself a type value.
+          expr.isType = true
         }
         result = Type(TupleType(elements))
       }
@@ -1213,9 +1267,26 @@ class TypeChecker(self) {
 
       // Unary expressions ----------------------------------------------------------
       db.ExprType.Arrayof => {
-         elementType = self.explicitType(expr.firstChildExpr!)!
-         expr.firstChildExpr.typedValue = elementType
-         result = ARRAY(self.resolve(elementType!))
+         // arrayof(t) where t is a variable holding a type value (e.g. a
+         // class parameter like Set(elementType)) uses that value; class
+         // names bind to their constructor's function type and fall through
+         // to the explicit-type path.
+         aofTy = null(Type)
+         if expr.firstChildExpr.type == db.ExprType.Ident {
+           aofTy = self.getSymbolType(expr.firstChildExpr.val.symVal!)
+           if !isnull(aofTy) {
+             rAofTy = self.resolve(aofTy!)
+             if (rAofTy.type == Type.TypeClass.Function ||
+                 rAofTy.type == Type.TypeClass.Polymorphic) {
+               aofTy = null(Type)
+             }
+           }
+         }
+         if isnull(aofTy) {
+           aofTy = self.explicitType(expr.firstChildExpr!)
+         }
+         expr.firstChildExpr.typedValue = aofTy
+         result = ARRAY(self.resolve(aofTy!))
       }
 
       db.ExprType.Array => {
@@ -1261,6 +1332,108 @@ class TypeChecker(self) {
           return fn
         }
         result = self.apply(fn!, args!, expr.location)
+      }
+
+      // Type values: type-literal expressions used as values, e.g. t = u32
+      // or bar(string).  They exist only at compile time; codegen emits a
+      // zero dummy where a runtime value is syntactically required.
+      db.ExprType.UintType, db.ExprType.IntType, db.ExprType.FloatType, db.ExprType.StringType, db.ExprType.BoolType, db.ExprType.NoneType => {
+        expr.isType = true
+        result = self.tryExplicitType(expr)
+      }
+
+      db.ExprType.Typeof => {
+        typeofTy = self.expr(expr.firstChildExpr!)
+        if isnull(typeofTy) {
+          return typeofTy
+        }
+        expr.isType = true
+        result = typeofTy
+      }
+
+      db.ExprType.Widthof => {
+        // widthof(e): the bit width of e's type, a compile-time u32.
+        widthofTy = self.expr(expr.firstChildExpr!)
+        if isnull(widthofTy) {
+          return widthofTy
+        }
+        result = U(32)
+      }
+
+      db.ExprType.Unsigned, db.ExprType.Signed => {
+        signTy = self.expr(expr.firstChildExpr!)
+        if isnull(signTy) {
+          return signTy
+        }
+        rSignTy = self.resolve(signTy!)
+        wantSigned = expr.type == db.ExprType.Signed
+        if rSignTy.type == Type.TypeClass.Int {
+          result = Type(IntType(wantSigned, rSignTy.int.width))
+        } else if rSignTy.type == Type.TypeClass.AnyInt {
+          result = wantSigned ? INTEGER() : UINTEGER()
+        } else {
+          self.typeError("unsigned()/signed() require an integer value", expr.location)
+          return null(Type)
+        }
+      }
+
+      db.ExprType.Null => {
+        nullChild = expr.firstChildExpr!
+        nullTy = null(Type)
+        if nullChild.type == db.ExprType.Ident {
+          nullInfo = self.lookupClass(nullChild.val.symVal!)
+          if !isnull(nullInfo) {
+            // null(Foo): a nullable instance of a not-yet-known instantiation
+            // of the class.  Instance types always carry a params tuple
+            // (possibly empty), so mirror that shape with fresh variables.
+            nullParams = arrayof(Type)
+            for pv in nullInfo.paramVars {
+              nullParams.append(Type(self.newTyvar()))
+            }
+            nullName = TypeName(nullChild.val.symVal!, TupleType(nullParams))
+            nullName.isNullable = true
+            nullTy = Type(nullName)
+          }
+        }
+        if isnull(nullTy) {
+          // null(expr): the nullable form of the expression's type.
+          nullChildTy = self.expr(nullChild)
+          if isnull(nullChildTy) {
+            return nullChildTy
+          }
+          rNullTy = self.resolve(nullChildTy!)
+          if rNullTy.type == Type.TypeClass.Typename {
+            nullName2 = TypeName(rNullTy.tyname.name, rNullTy.tyname.params)
+            nullName2.isNullable = true
+            nullTy = Type(nullName2)
+          } else {
+            nullTy = nullChildTy
+          }
+        }
+        result = nullTy
+      }
+
+      db.ExprType.Isnull => {
+        isnullTy = self.expr(expr.firstChildExpr!)
+        if isnull(isnullTy) {
+          return isnullTy
+        }
+        result = BOOL
+      }
+
+      db.ExprType.Notnull => {
+        // x! strips nullability from the type of x.
+        notnullTy = self.expr(expr.firstChildExpr!)
+        if isnull(notnullTy) {
+          return notnullTy
+        }
+        rNotnullTy = self.resolve(notnullTy!)
+        if rNotnullTy.type == Type.TypeClass.Typename && rNotnullTy.tyname.isNullable {
+          notnullName = TypeName(rNotnullTy.tyname.name, rNotnullTy.tyname.params)
+          result = Type(notnullName)
+        } else {
+          result = notnullTy
+        }
       }
 
       default => raise Status.Unimplemented, "Expression type not yet supported by typechecker: ", db.getExprTypeName(expr.type)

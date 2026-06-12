@@ -98,6 +98,50 @@ transformer ExprTree() {
             return db.Expr.newBinary(castType, self.buildExprTree(typeNode),
                 self.buildExprTree(valueNode), node.location)
           }
+          if !isnull(ruleSym) && ruleSym.name == "nullExpr" {
+            return self.buildPrefixExpr(node, db.ExprType.Null)
+          }
+          if !isnull(ruleSym) && ruleSym.name == "isnullExpr" {
+            return self.buildPrefixExpr(node, db.ExprType.Isnull)
+          }
+          if !isnull(ruleSym) && ruleSym.name == "widthofExpr" {
+            return self.buildPrefixExpr(node, db.ExprType.Widthof)
+          }
+          if !isnull(ruleSym) && ruleSym.name == "unsignedExpr" {
+            return self.buildPrefixExpr(node, db.ExprType.Unsigned)
+          }
+          if !isnull(ruleSym) && ruleSym.name == "signedExpr" {
+            return self.buildPrefixExpr(node, db.ExprType.Signed)
+          }
+          if (!isnull(ruleSym) && ruleSym.name == "basicTypeExpr" &&
+              !isnull(node.firstChildNode) &&
+              !isnull(node.firstChildNode.nextNodeChildNode)) {
+            // Two-child type forms keep a token child: "typeof"/"unsigned"/
+            // "signed" '(' expr ')' keep their keyword, and typePathExpr "?"
+            // keeps the question mark.
+            keywordSym = node.firstChildNode.getKeywordSym()
+            questionSym = node.firstChildNode.nextNodeChildNode.getKeywordSym()
+            if !isnull(keywordSym) && keywordSym! == Sym.new("typeof") {
+              return db.Expr.newUnary(db.ExprType.Typeof,
+                  self.buildExprTree(node.firstChildNode.nextNodeChildNode!),
+                  node.location)
+            }
+            if !isnull(keywordSym) && keywordSym! == Sym.new("unsigned") {
+              return db.Expr.newUnary(db.ExprType.Unsigned,
+                  self.buildExprTree(node.firstChildNode.nextNodeChildNode!),
+                  node.location)
+            }
+            if !isnull(keywordSym) && keywordSym! == Sym.new("signed") {
+              return db.Expr.newUnary(db.ExprType.Signed,
+                  self.buildExprTree(node.firstChildNode.nextNodeChildNode!),
+                  node.location)
+            }
+            if !isnull(questionSym) && questionSym! == Sym.new("?") {
+              // typePathExpr "?" -- a nullable type.
+              return db.Expr.newUnary(db.ExprType.Null,
+                  self.buildExprTree(node.firstChildNode!), node.location)
+            }
+          }
           if (!isnull(ruleSym) && ruleSym.name == "callParameter" &&
               !isnull(node.firstChildNode) &&
               !isnull(node.firstChildNode.nextNodeChildNode)) {

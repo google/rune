@@ -242,6 +242,10 @@ class Statement(self, block: Block, type: StateType, location: Location) {
   func genCAssign(self, builder: c.CBuilder) {
     assert isnull(self.subBlock)
     assert !isnull(self.expr)
+    if self.expr.type == ExprType.Equals && self.expr.lastChildExpr.isType {
+      // Type-valued assignments like t = u32 exist only at compile time.
+      return
+    }
     cexpr = self.expr.genC(builder)
     builder.addStatement(self.location, c.CStatement(self.location, c.CStatementType.Assignment, cexpr))
   }
@@ -281,7 +285,17 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     } else {
       for expr in self.expr.childExprs() {
         cexpr = null(c.CExpr)
-        if expr.type == ExprType.Mod {
+        if expr.isType {
+          // Type values have no runtime representation; print the type's
+          // Rune spelling (e.g. "u32" or "(u32, string)") as a literal.
+          typeArgs = c.CExprList()
+          typeArgs.append(builder.cStringLiteral("%s"))
+          typeArgs.append(builder.cStringLiteral(
+              builder.typechecker.resolve(expr.typedValue!).runeString()))
+          cexpr = c.CExpr(typeArgs)
+          typeCall = builder.cCall(self.location, "tostring_string_t", cexpr!)
+          builder.addStatement(self.location, typeCall)
+        } else if expr.type == ExprType.Mod {
           left = expr.firstChildExpr!
           right = left.nextExprChildExpr!
           if left.type == ExprType.Constant && left.val.type == DatatypeType.String {
