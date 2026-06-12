@@ -527,7 +527,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     // method's type resolves concretely.
     for childfunc in self.childFunctions() {
       if childfunc.sym.name == "toString" && childfunc.type == FuncType.Plain {
-        mty = childfunc.sym.typedValue
+        mty = childfunc.typedValue
+        if isnull(mty) {
+          mty = childfunc.sym.typedValue
+        }
         if !isnull(mty) {
           if mty.type == types.Type.TypeClass.Polymorphic {
             mfn = builder.typechecker.resolve(mty.poly.scope)

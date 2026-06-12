@@ -1682,6 +1682,31 @@ class TypeChecker(self) {
           // Now a plain identifier reference to the module member.
           return self.expr(expr)
         }
+        dotLhs = expr.firstChildExpr!
+        if dotLhs.type == db.ExprType.Ident {
+          // Static member access through the class name (e.g. Bar.new(...)):
+          // the member's full function type; no self is passed.
+          self.demandClass(dotLhs.val.symVal!)
+          staticInfo = self.lookupClass(dotLhs.val.symVal!)
+          if !isnull(staticInfo) {
+            staticField = dotLhs.nextExprChildExpr!
+            staticMethod = self.findMethod(staticInfo!, staticField.toString())
+            if !isnull(staticMethod) {
+              if isnull(staticMethod.typedValue) {
+                self.demandMethod(staticInfo!, staticMethod!)
+              }
+              smty = staticMethod.typedValue
+              if !isnull(smty) {
+                sopen = smty!
+                if sopen.type == Type.TypeClass.Polymorphic {
+                  sopen = sopen.poly!.open(self.unifier, &self.unifier.newVar())
+                }
+                expr.typedValue = sopen
+                return sopen
+              }
+            }
+          }
+        }
         sty = self.expr(expr.firstChildExpr!)
         if isnull(sty) {
           return null(Type)
@@ -2179,10 +2204,22 @@ class TypeChecker(self) {
       return null(db.Function)
     }
     rbase = self.resolve(baseTy!)
-    if rbase.type != Type.TypeClass.Typename {
-      return null(db.Function)
+    info = null(ClassInfo)
+    if rbase.type == Type.TypeClass.Var {
+      // Duck-type an unconstrained base (e.g. a forward-referenced module
+      // global) by the iterator's name: a unique class defining it fixes
+      // the base's class.
+      duckInfo = self.findClassByIterator(methodName)
+      if !isnull(duckInfo) {
+        duckTy = self.classInstanceType(duckInfo!)
+        te = self.unify(baseTy!, duckTy)
+        if isnull(te) {
+          info = duckInfo
+        }
+      }
+    } else if rbase.type == Type.TypeClass.Typename {
+      info = self.lookupClass(rbase.tyname.name)
     }
-    info = self.lookupClass(rbase.tyname.name)
     if isnull(info) {
       return null(db.Function)
     }
@@ -2192,6 +2229,24 @@ class TypeChecker(self) {
       }
     }
     return null(db.Function)
+  }
+
+  // The unique class defining an iterator named |name|, if any.
+  func findClassByIterator(self, name: string) -> ClassInfo? {
+    found = null(ClassInfo)
+    count = 0
+    for info in self.classInfos() {
+      for childfunc in info.fn.childFunctions() {
+        if childfunc.type == db.FuncType.Iterator && childfunc.sym.name == name {
+          count += 1
+          found = info
+        }
+      }
+    }
+    if count == 1 {
+      return found
+    }
+    return null(ClassInfo)
   }
 
   func renamedSym(self, name: string) -> Sym? {
@@ -2420,6 +2475,10 @@ class TypeChecker(self) {
   }
 
   func statement(self, statement: db.Statement, parent: db.Block) {
+    if isnull(statement) {
+      self.typeError("internal: null statement in block", parent.location)
+      return NONETY()
+    }
     switch statement.type {
       db.StateType.Assign => {
         if isnull(statement.expr) {
@@ -2792,6 +2851,9 @@ class TypeChecker(self) {
   // code into the target classes with $-name substitution.
 
   func registerTransformer(self, fn: db.Function) {
+    if !isnull(self.lookupTransformer(fn.sym.name)) {
+      return
+    }
     self.transformerNames.append(fn.sym.name)
     self.transformerFns.append(fn)
   }
@@ -3048,6 +3110,11 @@ class TypeChecker(self) {
       self.expandTransExprTree(fn.typeExpr!, env)
     }
     for variable in fn.variables() {
+      // Parameter names parameterize too (e.g. find$labelB$B(self, $B)).
+      newVarName = self.expandTransName(variable.sym.name, env)
+      if newVarName != variable.sym.name {
+        variable.sym = Sym.new(newVarName)
+      }
       if !isnull(variable.typeExpr) {
         self.expandTransExprTree(variable.typeExpr!, env)
       }
@@ -3191,6 +3258,13 @@ class TypeChecker(self) {
         for childfunc in fn.childFunctions() {
           if childfunc.type == db.FuncType.Constructor {
             self.synthesizeDestroy(childfunc)
+          }
+        }
+        // Transformers defined in this module must register before the
+        // relation statements below execute.
+        for childfunc in fn.childFunctions() {
+          if childfunc.type == db.FuncType.Transformer {
+            self.registerTransformer(childfunc)
           }
         }
         // Execute relation/transform statements and module-level code
@@ -3421,10 +3495,10 @@ class TypeChecker(self) {
   // function type with the self parameter removed (it is passed implicitly).
   func methodCallType(self, info: ClassInfo, instanceType: Type, method: db.Function,
                       location: db.Location?) -> Type? {
+    // Only the function's own typedValue is trustworthy: syms are interned
+    // by name, so method.sym.typedValue may be a stale local (e.g. a local
+    // named hash next to a hash() method).
     mty = method.typedValue
-    if isnull(mty) {
-      mty = method.sym.typedValue
-    }
     if isnull(mty) {
       // The method has not typechecked yet (e.g. a reference from another
       // class checked on demand): typecheck it now in its class's context.
@@ -3441,7 +3515,8 @@ class TypeChecker(self) {
       ty = ty.poly!.open(self.unifier, &self.unifier.newVar())
     }
     if ty.type != Type.TypeClass.Function {
-      self.typeError("Method %s of class %s is not a function" % (method.sym.name, info.sym.name),
+      self.typeError("Method %s of class %s is not a function (has type %s)"
+                     % (method.sym.name, info.sym.name, ty.toString()),
                      location)
       return null(Type)
     }
@@ -3735,8 +3810,15 @@ class TypeChecker(self) {
       fnType = Type(PolymorphicType(boundVars, fnType))
     }
 
-    // associate function name symbol to this type.
-    self.newSymbolGlobal(fn.sym, fnType)
+    // Associate the function name symbol to this type — but not for class
+    // methods: those are only reachable through member access, and binding
+    // an interned method name like "hash" globally poisons same-named
+    // locals in whatever function a demand-typecheck interrupted.
+    isMethod = (!isnull(fn.parentFunction) &&
+                fn.parentFunction.type == db.FuncType.Constructor)
+    if !isMethod {
+      self.newSymbolGlobal(fn.sym, fnType)
+    }
     fn.typedValue = fnType
 
     if db.getRoot().traceTypes {

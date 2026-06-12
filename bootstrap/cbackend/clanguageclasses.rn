@@ -2182,8 +2182,24 @@ relation OneToOne CDeclaration CFunctionDeclaration cascade
 relation OneToOne CDeclaration CStructDeclaration cascade
 relation OneToOne CDeclaration CArrayDeclaration cascade
 relation OneToOne CDeclaration CClassDeclaration cascade
+relation OneToOne CDeclaration CVariableDeclaration cascade
 
-class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration | CArrayDeclaration | CClassDeclaration) {
+// A file-scope variable: a module-level Rune variable referenced from
+// inside functions, emitted as a C static (zero-initialized).
+class CVariableDeclaration(self, varName: string, ctype: CTypeExpr) {
+  self.varName = varName
+  self.ctype = ctype
+
+  func emit(self, e: CEmitter) {
+    e.write("static ")
+    self.ctype.emit(e)
+    e.space()
+    e.write(mangleCName(self.varName))
+    e.writeln(";")
+  }
+}
+
+class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration | CArrayDeclaration | CClassDeclaration | CVariableDeclaration) {
   self.dependencies = arrayof(string)
 
   enum Type {
@@ -2191,6 +2207,7 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
     Struct
     Array
     Class
+    Variable
   }
 
   typeswitch declaration {
@@ -2210,6 +2227,10 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
       self.type = Type.Class
       self.insertCClassDeclaration(declaration)
     }
+    CVariableDeclaration => {
+      self.type = Type.Variable
+      self.insertCVariableDeclaration(declaration)
+    }
   }
   // Don't emit the declaration or its prototype more than once.
   self.emitted = false
@@ -2222,6 +2243,7 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
       // The "_class" suffix keeps the registry key distinct from the
       // constructor function, which uses the plain class name.
       CDeclaration.Type.Class => return self.cClassDeclaration.name + "_class"
+      CDeclaration.Type.Variable => return self.cVariableDeclaration.varName
     }
   }
 
@@ -2255,6 +2277,11 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
         CDeclaration.Type.Struct => self.cStructDeclaration.emit(e, false)
         CDeclaration.Type.Array => self.cArrayDeclaration.emit(e, false)
         CDeclaration.Type.Class => self.cClassDeclaration.emit(e, false)
+        CDeclaration.Type.Variable => {
+          // A static definition emits once; there is no proto/impl split.
+          self.cVariableDeclaration.emit(e)
+          self.protoEmitted = true
+        }
       }
       self.emitted = true
     }
@@ -2269,6 +2296,11 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
         CDeclaration.Type.Struct => self.cStructDeclaration.emit(e, true)
         CDeclaration.Type.Array => self.cArrayDeclaration.emit(e, true)
         CDeclaration.Type.Class => self.cClassDeclaration.emit(e, true)
+        CDeclaration.Type.Variable => {
+          // A static definition emits once; there is no proto/impl split.
+          self.cVariableDeclaration.emit(e)
+          self.emitted = true
+        }
       }
       self.protoEmitted = true
     }

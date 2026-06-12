@@ -1645,8 +1645,40 @@ class Expr(self, type: ExprType, location: Location) {
     assert !isnull(fntype)
 
     if left.type == ExprType.Dot {
-      // Handle method calls on class instances.
       base = left.firstChildExpr!
+      // Static method calls through the class name (e.g. Bar.new(...)).
+      if base.type == ExprType.Ident {
+        staticInfo = builder.typechecker.lookupClass(base.val.symVal!)
+        if !isnull(staticInfo) {
+          staticMethodExpr = base.nextExprChildExpr!
+          staticFn = null(Function)
+          for childfunc in staticInfo.fn.childFunctions() {
+            if (childfunc.sym.name == staticMethodExpr.toString() &&
+                childfunc.type == FuncType.Plain) {
+              staticFn = childfunc
+            }
+          }
+          if !isnull(staticFn) && !isnull(staticFn.typedValue) {
+            sk = builder.typechecker.resolve(staticFn.typedValue!)
+            if sk.type == types.Type.TypeClass.Function {
+              sname = builder.methodDefCName(sk, staticMethodExpr.toString())
+              if !builder.alreadyEmitted(sname) {
+                staticFn.genCMethod(builder)
+              }
+              sargs = c.CExprList()
+              if right.typedValue.type == types.Type.TypeClass.Tuple {
+                for child in right.childExprs() {
+                  sargs.appendCExpr(child.genC(builder))
+                }
+              } else {
+                sargs.appendCExpr(right.genC(builder))
+              }
+              return builder.cCall(self.location, sname, c.CExpr(sargs))
+            }
+          }
+        }
+      }
+      // Handle method calls on class instances.
       if builder.isClassType(base.typedValue) {
         method = base.nextExprChildExpr!
         name = builder.methodCallCName(base.typedValue!, method.toString(), right.typedValue)

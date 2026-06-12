@@ -142,10 +142,55 @@ class CBuilder(self, tc: types.TypeChecker) {
   // when main exits.
   self.mainFinalSyms = arrayof(Sym)
   self.mainFinalNames = arrayof(string)
+  // Names of module-level variables: emitted as file-scope C statics so
+  // functions can reference them (a main-local would be out of scope).
+  self.moduleVarNames = arrayof(string)
   self.insertDependencyStack(DependencyStack())
+
+  func registerModuleVariable(self, name: string) {
+    for n in self.moduleVarNames {
+      if n == name {
+        return
+      }
+    }
+    self.moduleVarNames.append(name)
+  }
+
+  func isModuleVariable(self, name: string) -> bool {
+    for n in self.moduleVarNames {
+      if n == name {
+        return true
+      }
+    }
+    return false
+  }
+
+  // Only top-level module assignments become C globals: functions reference
+  // them by name (e.g. a class instance like foo).  Loop variables and
+  // assignments nested in module-level control flow stay main()-locals —
+  // registering those would capture every function's same-named locals.
+  func registerModuleVariables(self, module: db.Function) {
+    for statement in module.subBlock.statements() {
+      if statement.type == db.StateType.Assign && !isnull(statement.expr) {
+        assignExpr = statement.expr!
+        if assignExpr.type == db.ExprType.Equals {
+          lhs = assignExpr.firstChildExpr!
+          if lhs.type == db.ExprType.Ident {
+            self.registerModuleVariable(lhs.val.symVal.name)
+          }
+        }
+      }
+    }
+    for childfunc in module.childFunctions() {
+      if childfunc.type == db.FuncType.Module {
+        self.registerModuleVariables(childfunc)
+      }
+    }
+  }
 
   func build(self, module: db.Function) -> CProgram {
     self.registerFunctions(module)
+    self.registerModuleVariables(module)
     module.genC(self)
     // Destroy module-level objects with destructors when main exits.
     for index in range(self.mainFinalSyms.length()) {
@@ -645,14 +690,29 @@ class CBuilder(self, tc: types.TypeChecker) {
     }
     id = self.identifierScope.getIdentifier(symbol, ctype, bindingInstance, false)
     if !isnull(ctype) && id.firstInstance {
-      target = self.declarationBlock()
-      if isnull(target) {
-        target = self.currentBlock
-      }
-      if !isnull(target) {
-        target.declare(id)
+      if self.isModuleVariable(symbol.name) {
+        // A module-level variable: declared once at file scope, never as
+        // a local of whatever function mentions it first.
+        if isnull(self.findDeclaration(symbol.name)) {
+          vdec = CDeclaration(CVariableDeclaration(symbol.name, ctype!))
+          if ctype.type == CTypeExpr.Type.Defined {
+            vdec.addDependencyName(ctype.cDefinedType.name)
+          } else if ctype.type == CTypeExpr.Type.Array {
+            vdec.addDependencyName(ctype.cArrayType.name)
+          } else if ctype.type == CTypeExpr.Type.Pointer {
+            vdec.addDependencyName(ctype.cPointerType.target.toString() + "_class")
+          }
+          self.addDeclaration(vdec)
+        }
       } else {
-        self.program.mainCBlock.declare(id)
+        target = self.declarationBlock()
+        if !isnull(target) {
+          target.declare(id)
+        } else {
+          // Module level: declare in main's body block so the variable is
+          // visible across all top-level loops and blocks.
+          self.program.mainCBlock.declare(id)
+        }
       }
     }
     // Add this to the list of the current scope dependencies, unless it
