@@ -1335,6 +1335,33 @@ class TypeChecker(self) {
         // typeof(expr) in a type position: the type of the expression.
         return self.expr(typeExpr.firstChildExpr!)
       }
+      db.ExprType.Unsigned, db.ExprType.Signed => {
+        // unsigned(x)/signed(x) in a type position: x's integer type with
+        // the signedness flipped accordingly.
+        innerTy = self.expr(typeExpr.firstChildExpr!)
+        if isnull(innerTy) {
+          return null(Type)
+        }
+        rin = self.resolve(innerTy!)
+        if rin.type == Type.TypeClass.Int {
+          if typeExpr.type == db.ExprType.Unsigned {
+            return U(<u64>rin.int.width)
+          }
+          return I(<u64>rin.int.width)
+        }
+        if rin.type == Type.TypeClass.AnyInt {
+          if typeExpr.type == db.ExprType.Unsigned {
+            return U(64)
+          }
+          return I(64)
+        }
+        if rin.type == Type.TypeClass.Var {
+          // Unknown until instantiation; keep the variable (the width
+          // resolves at emission).
+          return innerTy
+        }
+        return null(Type)
+      }
       default => return null(Type)
     }
   }
