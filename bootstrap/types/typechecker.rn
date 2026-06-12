@@ -3501,7 +3501,18 @@ class TypeChecker(self) {
       }
       return self.substituteClassVars(info, instanceType, ty!)
     }
-    if inOwnConstructor {
+    // Assignment to an unknown member creates it: always inside the
+    // class's own constructor, and from anywhere when the member access
+    // is the target of an assignment (foo.value = 123 adds a field).
+    isAssignTarget = false
+    fieldParent = field.parentExpr
+    if (!isnull(fieldParent) && fieldParent.type == db.ExprType.Dot &&
+        !isnull(fieldParent.parentExpr) &&
+        fieldParent.parentExpr.type == db.ExprType.Equals &&
+        fieldParent.parentExpr.firstChildExpr == fieldParent) {
+      isAssignTarget = true
+    }
+    if inOwnConstructor || isAssignTarget {
       // First assignment to self.<name> creates the data member.
       fresh = Type(self.newTyvar())
       info.strct.fieldnames.append(Sym.new(name))
