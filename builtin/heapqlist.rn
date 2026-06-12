@@ -113,7 +113,7 @@ transformer HeapqList(A: Class, B: Class, cascadeDelete:bool = false,
     }
 
     func update$labelB$B(self, child) {
-      index = child.$labelA$A_Index(child)
+      index = child.$labelA$A_Index
       self._heapqUp$labelB$B(index)
       self._heapqDown$labelB$B(index)
     }

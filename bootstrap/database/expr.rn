@@ -1647,10 +1647,24 @@ class Expr(self, type: ExprType, location: Location) {
   }
 
   func genCCall(self, builder: c.CBuilder) -> c.CExpr {
-    left = self.firstChildExpr!
+    left0 = self.firstChildExpr
+    badCall = isnull(left0)
+    if !badCall {
+      if isnull(left0.nextExprChildExpr) {
+        badCall = true
+      }
+    }
+    if badCall {
+      println "DBGBADCALL"
+      raise Status.Internal, "malformed call expression"
+    }
+    left = left0!
     right = left.nextExprChildExpr!
     fntype = left.typedValue
-    assert !isnull(fntype)
+    if isnull(fntype) {
+      self.location.error("internal: call emitted without a type")
+      raise Status.Internal, "call emitted without a type"
+    }
 
     if left.type == ExprType.Dot {
       base = left.firstChildExpr!
@@ -1696,7 +1710,17 @@ class Expr(self, type: ExprType, location: Location) {
         }
         args = c.CExprList()
         args.appendCExpr(base.genC(builder))
-        if right.typedValue.type == types.Type.TypeClass.Tuple {
+        // The args list may have no type when the enclosing method was
+        // re-typechecked on demand; emit the children positionally.
+        isTupleArgs = false
+        if !isnull(right.typedValue) {
+          isTupleArgs = right.typedValue.type == types.Type.TypeClass.Tuple
+        }
+        if isTupleArgs {
+          for child in right.childExprs() {
+            args.appendCExpr(child.genC(builder))
+          }
+        } else if right.type == ExprType.List {
           for child in right.childExprs() {
             args.appendCExpr(child.genC(builder))
           }
@@ -1951,11 +1975,21 @@ class Expr(self, type: ExprType, location: Location) {
       if right.type == ExprType.List || right.type == ExprType.Tuple {
         argElems = arrayof(types.Type)
         for argChild in right.childExprs() {
-          argElems.append(builder.typechecker.resolve(argChild.typedValue!))
+          if isnull(argChild.typedValue) {
+            // An argument that never typechecked (e.g. inside a method
+            // whose first check rolled back); name it loosely.
+            argElems.append(types.NONETY())
+          } else {
+            argElems.append(builder.typechecker.resolve(argChild.typedValue!))
+          }
         }
         argTypes = types.Type(types.TupleType(argElems))
       } else {
-        argTypes = builder.typechecker.resolve(right.typedValue!)
+        if isnull(right.typedValue) {
+          argTypes = types.NONETY()
+        } else {
+          argTypes = builder.typechecker.resolve(right.typedValue!)
+        }
       }
       ctorCallee = builder.findFunction(left.val.symVal.name)
       ctorResultTy = null(types.Type)
