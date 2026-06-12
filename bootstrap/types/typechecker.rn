@@ -1195,6 +1195,16 @@ class TypeChecker(self) {
                              expr.location)
               result = null(Type)
             }
+          } else if sty.tyname.name.name == "Exception" {
+            // The exception variable bound by an except clause.
+            isClassAccess = true
+            if field.toString() == "errorMessage" {
+              result = STRING()
+            } else {
+              self.typeError("Unsupported exception member %s" % field.toString(),
+                             expr.location)
+              result = null(Type)
+            }
           } else if sty.tyname.name.name == "string" {
             // Built-in string methods.
             isClassAccess = true
@@ -1803,6 +1813,12 @@ class TypeChecker(self) {
   }
 
   // Statements -------------------------------------------------------------
+  // The special type bound to except-clause exception variables.  Member
+  // accesses on it (e.errorMessage) are resolved in the Dot arm of expr().
+  func exceptionType(self) -> Type {
+    return Type(TypeName(Sym.new("Exception")))
+  }
+
   func statement(self, statement: db.Statement, parent: db.Block) {
     switch statement.type {
       db.StateType.Assign => self.expr(statement.expr)
@@ -1876,8 +1892,40 @@ class TypeChecker(self) {
         }
       }
       db.StateType.Return => {
-        ty = self.expr(statement.expr)
-        parent.returnType = ty
+        if isnull(statement.expr) {
+          // A bare return: the function returns none.
+          parent.returnType = NONETY()
+        } else {
+          ty = self.expr(statement.expr)
+          parent.returnType = ty
+        }
+      }
+      db.StateType.Try => {
+        assert !isnull(statement.subBlock)
+        for s in statement.subBlock.statements() {
+          self.statement(s, statement.subBlock)
+        }
+        parent.returnType = statement.subBlock.returnType
+      }
+      db.StateType.Except => {
+        // Bind the exception variable (the IDENT after `except`) to the
+        // special Exception typename; field accesses on it are resolved in
+        // the Dot arm.  The sub-block holds Case statements whose patterns
+        // are raise code paths (e.g. Status.Foo); those are matched as text
+        // at codegen time and are not typechecked as values.
+        identExpr = statement.expr!
+        excTy = self.exceptionType()
+        self.newSymbol(identExpr.val.symVal!, excTy)
+        identExpr.typedValue = excTy
+        for caseStatement in statement.subBlock.statements() {
+          assert !isnull(caseStatement.subBlock)
+          for s in caseStatement.subBlock.statements() {
+            self.statement(s, caseStatement.subBlock)
+          }
+          if !isnull(caseStatement.subBlock.returnType) {
+            parent.returnType = caseStatement.subBlock.returnType
+          }
+        }
       }
       db.StateType.While => {
         ty = self.expr(statement.expr)

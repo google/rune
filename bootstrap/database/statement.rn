@@ -219,6 +219,12 @@ class Statement(self, block: Block, type: StateType, location: Location) {
       StateType.Switch => self.genCSwitch(builder)
       StateType.Typeswitch => self.genCTypeswitch(builder)
       StateType.Raise => self.genCRaise(builder)
+      StateType.Try => self.genCTry(builder)
+      StateType.Except => {
+        // The preceding try statement generates the except handler.
+        prev = self.prevBlockStatement
+        assert !isnull(prev) && prev.type == StateType.Try
+      }
       StateType.InlinedBlock => self.genCInlinedBlock(builder)
       default => raise Status.Unimplemented, "Statement type not yet supported by C backend builder ", self.type
     }
@@ -340,19 +346,19 @@ class Statement(self, block: Block, type: StateType, location: Location) {
   }
 
   // raise Status.Foo, msg... composes the message in the global string
-  // writer and aborts via the raise() runtime helper.
+  // writer, records the code path text, and unwinds to the innermost try
+  // frame via the raise_with_code() runtime helper (aborting if there is
+  // no enclosing try).
   func genCRaise(self, builder: c.CBuilder) {
     assert !isnull(self.expr)
     self.genCCall(builder, c.CRuntimeFunction.GlobalStringWriterReset, null(c.CExpr))
+    codeText = ""
     rfirst = true
     for expr in self.expr.childExprs() {
       if rfirst {
-        // The error code path (e.g. Status.Foo) is included as text.
-        codeArgs = c.CExprList()
-        codeArgs.append(builder.cStringLiteral(expr.toString() + " "))
-        call = builder.cCall(self.location, "tostring_string_t",
-                             c.CExpr(codeArgs))
-        builder.addStatement(self.location, call)
+        // The error code path (e.g. Status.Foo) is matched by except cases
+        // and prefixed to the uncaught-abort message; it is not a value.
+        codeText = expr.toString() + " "
       } else {
         cexpr = expr.genC(builder)
         ctype = builder.genCType(expr.typedValue)
@@ -372,10 +378,123 @@ class Statement(self, block: Block, type: StateType, location: Location) {
       rfirst = false
     }
     raiseArgs = c.CExprList()
+    raiseArgs.append(builder.cStringLiteral(codeText))
     raiseArgs.append(
         builder.cCall(self.location, c.CRuntimeFunction.GlobalStringWriterString,
                       null(c.CExpr)))
-    self.genCCall(builder, c.CRuntimeFunction.Raise, c.CExpr(raiseArgs))
+    self.genCCall(builder, c.CRuntimeFunction.RaiseWithCode, c.CExpr(raiseArgs))
+  }
+
+  // try { B } except e { cases } compiles to a setjmp/longjmp frame:
+  //   uint32_t try_frame_N = rn_try_depth;
+  //   if (RN_TRY()) { B; rn_try_depth = try_frame_N; }
+  //   else { <bind e; dispatch except cases> }
+  // RN_TRY() pushes a frame on the runtime try stack and setjmps it;
+  // raise_with_code() longjmps to the innermost frame.  A return inside B
+  // pops this function's frames first (see genCReturn).
+  func genCTry(self, builder: c.CBuilder) {
+    assert !isnull(self.subBlock)
+    exceptStatement = self.nextBlockStatement
+    assert !isnull(exceptStatement) && exceptStatement.type == StateType.Except
+
+    // Save the frame depth at entry in a local so normal exit and returns
+    // can pop every frame this try (and any nested in it) pushed.
+    frameSym = Sym.new("try_frame_%u" % self.location.line)
+    u32type = c.CTypeExpr(c.CPrimitiveType(c.CPrimitiveType.Type.Uint32))
+    frameRef = builder.declareLocal(frameSym, u32type)
+    depthRef = c.CExpr(c.CIdentifier(Sym.new("rn_try_depth"),
+                                     null(c.CTypeExpr), false, false, false))
+    saveAssign = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
+                                           null(c.CTypeExpr), frameRef, depthRef))
+    builder.addStatement(self.location,
+        c.CStatement(self.location, c.CStatementType.Assignment, saveAssign))
+    if builder.tryFrameDepth == builder.tryFrameSyms.length() {
+      builder.tryFrameSyms.append(frameSym)
+    } else {
+      builder.tryFrameSyms[builder.tryFrameDepth] = frameSym
+    }
+    builder.tryFrameDepth += 1u64
+
+    cond = builder.cCall(self.location, c.CRuntimeFunction.TryEnter, null(c.CExpr))
+    builder.openBlock(self.location)
+    for s in self.subBlock.statements() {
+      s.genC(builder)
+    }
+    // Pop the frame on normal exit from the try body.
+    depthRef2 = c.CExpr(c.CIdentifier(Sym.new("rn_try_depth"),
+                                      null(c.CTypeExpr), false, false, false))
+    frameRef2 = c.CExpr(c.CIdentifier(frameSym, null(c.CTypeExpr), false, false, false))
+    popAssign = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
+                                          null(c.CTypeExpr), depthRef2, frameRef2))
+    builder.addStatement(self.location,
+        c.CStatement(self.location, c.CStatementType.Assignment, popAssign))
+    tryBody = builder.closeBlock()
+    builder.addStatement(self.location,
+        c.CStatement(self.location, c.CStatementType.If, cond, tryBody))
+
+    exceptStatement.genCExcept(builder)
+    builder.tryFrameDepth -= 1u64
+  }
+
+  // The else-branch of a try's setjmp: bind the exception variable's
+  // errorMessage and dispatch the except cases on the raised code text.
+  func genCExcept(self, builder: c.CBuilder) {
+    assert !isnull(self.expr)
+    assert !isnull(self.subBlock)
+    builder.openBlock(self.location)
+    // Copy the message out of the global string writer before the handler's
+    // own tostring calls clobber it.  Nested handlers reusing the same
+    // variable name shadow correctly: each declaration lands in its own
+    // C block.
+    eName = self.expr.val.symVal.name
+    msgSym = Sym.new(eName + "_errorMessage")
+    strType = c.CTypeExpr(c.CDefinedType("string"))
+    msgRef = builder.declareLocal(msgSym, strType)
+    dupArgs = c.CExprList()
+    dupArgs.append(c.CExpr(c.CIdentifier(Sym.new("rn_raised_message"),
+                                         null(c.CTypeExpr), false, false, false)))
+    dupCall = builder.cCall(self.location, c.CRuntimeFunction.StringDup, c.CExpr(dupArgs))
+    msgAssign = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
+                                          null(c.CTypeExpr), msgRef, dupCall))
+    builder.addStatement(self.location,
+        c.CStatement(self.location, c.CStatementType.Assignment, msgAssign))
+    // Case dispatch, like genCSwitch: each case lists raise code paths
+    // (e.g. Status.Foo) matched as text against the raised code.
+    first = true
+    for caseStatement in self.subBlock.statements() {
+      assert !isnull(caseStatement.subBlock)
+      body = caseStatement.subBlock.genC(builder)
+      if caseStatement.type == StateType.Case {
+        cond = null(c.CExpr)
+        for valExpr in caseStatement.expr.childExprs() {
+          mArgs = c.CExprList()
+          mArgs.append(builder.cStringLiteral(valExpr.toString() + " "))
+          cmp = builder.cCall(valExpr.location, "rn_code_matches", c.CExpr(mArgs))
+          if isnull(cond) {
+            cond = cmp
+          } else {
+            cond = c.CExpr(c.CBinaryOperator(valExpr.location, c.CBinaryOperator.Type.LogOr,
+                                             null(c.CTypeExpr), cond!, cmp))
+          }
+        }
+        stmtType = first ? c.CStatementType.If : c.CStatementType.ElseIf
+        builder.addStatement(caseStatement.location,
+            c.CStatement(caseStatement.location, stmtType, cond!, body))
+      } else {
+        // The default case.  If it is the only case, guard it with if (1).
+        if first {
+          one = c.CExpr(c.CLiteral(Bigint(1u32), false))
+          builder.addStatement(caseStatement.location,
+              c.CStatement(caseStatement.location, c.CStatementType.If, one, body))
+        } else {
+          builder.addStatement(caseStatement.location,
+              c.CStatement(caseStatement.location, c.CStatementType.Else, null(c.CExpr), body))
+        }
+      }
+      first = false
+    }
+    handlerBody = builder.closeBlock()
+    builder.addStatement(self.location, builder.cElseStatement(self.location, handlerBody))
   }
 
   func genElse(self, builder: c.CBuilder) {
@@ -414,8 +533,24 @@ class Statement(self, block: Block, type: StateType, location: Location) {
 
   func genCReturn(self, builder: c.CBuilder) {
     assert isnull(self.subBlock)
-    assert !isnull(self.expr)
-    returnStmt = builder.cReturnStatement(self.location, self.expr.genC(builder))
+    if builder.tryFrameDepth > builder.tryFrameBase {
+      // This return is inside a try block: pop every frame this function's
+      // try statements pushed before leaving (the outermost frame local of
+      // this function holds the depth at function entry).
+      frameRef = c.CExpr(c.CIdentifier(builder.tryFrameSyms[builder.tryFrameBase],
+                                       null(c.CTypeExpr), false, false, false))
+      depthRef = c.CExpr(c.CIdentifier(Sym.new("rn_try_depth"),
+                                       null(c.CTypeExpr), false, false, false))
+      restore = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
+                                          null(c.CTypeExpr), depthRef, frameRef))
+      builder.addStatement(self.location,
+          c.CStatement(self.location, c.CStatementType.Assignment, restore))
+    }
+    cexpr = null(c.CExpr)
+    if !isnull(self.expr) {
+      cexpr = self.expr.genC(builder)
+    }
+    returnStmt = builder.cReturnStatement(self.location, cexpr)
     builder.addStatement(self.location, returnStmt)
   }
 

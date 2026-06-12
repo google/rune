@@ -1188,6 +1188,16 @@ class Expr(self, type: ExprType, location: Location) {
         bigValue = Bigint(value)
         return builder.cIntLiteral(bigValue)
       }
+      // The except-clause exception variable: its fields read locals bound
+      // at handler entry (see Statement.genCExcept), e.g. e_errorMessage.
+      if !isnull(strct.typedValue) {
+        excTy = builder.typechecker.resolve(strct.typedValue!)
+        if excTy.type == types.Type.TypeClass.Typename &&
+            excTy.tyname.name.name == "Exception" {
+          fieldSym = Sym.new(strct.val.symVal.name + "_" + field.toString())
+          return c.CExpr(c.CIdentifier(fieldSym, null(c.CTypeExpr), false, false, false))
+        }
+      }
     }
     left = strct.genC(builder)
     if builder.isClassType(strct.typedValue) {

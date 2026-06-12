@@ -124,6 +124,12 @@ class CBuilder(self, tc: types.TypeChecker) {
   self.emittedClassDecls = arrayof(string)
   self.functionNames = arrayof(string)
   self.functions = arrayof(db.Function)
+  // Frame-index locals of try statements lexically enclosing the current
+  // codegen point (see Statement.genCTry).  Entries below tryFrameBase
+  // belong to enclosing functions and must not be touched.
+  self.tryFrameSyms = arrayof(Sym)
+  self.tryFrameDepth = 0u64
+  self.tryFrameBase = 0u64
   self.insertDependencyStack(DependencyStack())
 
   func build(self, module: db.Function) -> CProgram {
@@ -313,6 +319,19 @@ class CBuilder(self, tc: types.TypeChecker) {
     ctype = self.typeGenerator.genCType(inst.type)
     self.identifierScope.getIdentifier(newsym, ctype, false, false)
     return newsym
+  }
+
+  // Function bodies get a fresh try-frame context: a return inside a
+  // function emitted on demand from a call site inside a try block must
+  // not pop the calling function's frames.
+  func openFunctionTryContext(self) -> u64 {
+    saved = self.tryFrameBase
+    self.tryFrameBase = self.tryFrameDepth
+    return saved
+  }
+
+  func closeFunctionTryContext(self, saved: u64) {
+    self.tryFrameBase = saved
   }
 
   func openScope(self) {
@@ -721,7 +740,15 @@ class CBuilder(self, tc: types.TypeChecker) {
     type = id.typedValue
     switch type.type {
       types.Type.TypeClass.Function => {
-        returnType = self.genCType(type.function.result!)
+        // Functions returning none become void C functions, so a bare
+        // return inside them is legal C.
+        resTy = self.typechecker.resolve(type.function.result!)
+        if resTy.type == types.Type.TypeClass.Typename &&
+            resTy.tyname.name.name == "none" {
+          returnType = self.cVoidType(location)
+        } else {
+          returnType = self.genCType(resTy)
+        }
       }
       types.Type.TypeClass.Polymorphic => {
         raise Status.InvalidArgument, "Polymorphic functions should be specialized by now."

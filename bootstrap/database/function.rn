@@ -249,7 +249,9 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       }
       paramList = builder.closeParamList()
       builder.openDependencyList();
+      savedTryBase = builder.openFunctionTryContext()
       body = self.subBlock.genC(builder)
+      builder.closeFunctionTryContext(savedTryBase)
       builder.closeScope()
       fundec = builder.cFunDef(self.location, self.sym, paramList, body)
       fundec.addDependencies(builder.topDependencyList().names)
@@ -295,7 +297,9 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     // functions or tuples or structs. Ensure that these are listed
     // as depedencies of this function.
     builder.openDependencyList();
+    savedTryBase = builder.openFunctionTryContext()
     body = self.subBlock.genC(builder)
+    builder.closeFunctionTryContext(savedTryBase)
     builder.deInstantiate(fntype.poly!)
     builder.closeScope()
     newsym = Sym.new(specializedName)
@@ -511,7 +515,9 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     }
     paramList = builder.closeParamList()
     builder.openDependencyList()
+    savedTryBase = builder.openFunctionTryContext()
     body = self.subBlock.genC(builder)
+    builder.closeFunctionTryContext(savedTryBase)
     builder.closeScope()
 
     resTy = builder.typechecker.resolve(fnInstType.function.result)

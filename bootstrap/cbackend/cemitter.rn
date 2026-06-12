@@ -84,6 +84,10 @@ class CEmitter(self, filename: string) {
     self.runtime.needRaiseError()
   }
 
+  func needTryExcept(self) {
+    self.runtime.needTryExcept()
+  }
+
   func needByteIo(self) {
     self.runtime.needByteIo()
   }

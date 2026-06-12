@@ -265,7 +265,7 @@ class CDefinedType(self, name: string) {
     if self.name == "bool_t" {
       e.needBoolType()
     }
-    if self.name == "string_t" {
+    if self.name == "string_t" || self.name == "string" {
       e.needStringType()
     }
     if self.name == "none" {
@@ -933,6 +933,11 @@ enum CRuntimeFunction {
    ArrayValues
    ArrayItems
    ArrayConcat
+
+   // Try/except support: RN_TRY() pushes+setjmps a frame; raise_with_code
+   // records the code path and message, then longjmps or aborts.
+   TryEnter
+   RaiseWithCode
 }
 
 class CCall(self, location: db.Location, fntype: CRuntimeFunction, args: CExpr?, fn: CExpr? = null(CExpr),
@@ -1122,6 +1127,16 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.StringDup => {
         e.needStringMethods()
         e.write("string_dup")
+      }
+
+      CRuntimeFunction.TryEnter => {
+        e.needTryExcept()
+        e.write("RN_TRY")
+      }
+
+      CRuntimeFunction.RaiseWithCode => {
+        e.needTryExcept()
+        e.write("raise_with_code")
       }
 
       // Rune built-in arithmetic operators.
@@ -1529,8 +1544,8 @@ class CStatement(self, location: db.Location, type: CStatementType,
         e.writecloseln("}")
       }
       CStatementType.Return => {
+        // A bare return has no expression.
         assert isnull(self.subCBlock)
-        assert !isnull(self.cExpr)
         e.write("return")
         if !isnull(self.cExpr) {
           e.space()

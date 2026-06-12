@@ -340,9 +340,9 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
     self.currentBlock = savedBlock
   }
 
-  // Format: raiseStatement(pathExpr() expr()*)
+  // Format: raiseStatement(raiseExprList(pathExpr() expr()*))
   func buildRaiseStatement(self: HirBuilder, statementNode: Node) {
-    exprList = self.buildExprList(statementNode, statementNode.location)
+    exprList = self.buildExprList(statementNode.firstChildNode, statementNode.location)
     self.newStatement(statementNode, db.StateType.Raise, exprList, null(Node))
   }
 
@@ -761,9 +761,14 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
     self.currentBlock = savedBlock
   }
 
+  // Format: tryExceptStatement(tryStatement(...) exceptStatement(...))
+  // Builds a Try statement followed by its Except statement as siblings.
   func buildTryExceptStatement(self: HirBuilder, statementNode: Node) {
-    // TODO: write this.
-    self.newStatement(statementNode, db.StateType.Return, null(Node), null(Node))
+    childNode = statementNode.firstChildNode
+    while !isnull(childNode) {
+      self.buildStatement(childNode!)
+      childNode = childNode.nextNodeChildNode
+    }
   }
 
   // Format: unitTest(IDENT? block(...))
