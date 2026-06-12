@@ -328,6 +328,7 @@ class TypeChecker(self) {
   chrConstraint = [ANYINTEGER()]
   self.newSymbol(Sym.new("chr"), BPOLY(1, chrConstraint, FN(chrVar, STRING())))
   self.newSymbol(Sym.new("argv"), ARRAY(STRING()))
+  self.newSymbol(Sym.new("randString"), FN(U(64), STRING()))
 
   func typeError(self, msg: string, location: db.Location?) {
     self.appendTypeError(TypeError(msg, location))

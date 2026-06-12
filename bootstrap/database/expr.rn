@@ -1839,6 +1839,15 @@ class Expr(self, type: ExprType, location: Location) {
       if builtinName == "readln" && isnull(builder.findFunction("readln")) {
         return builder.cCall(self.location, c.CRuntimeFunction.ReadLn, null(c.CExpr))
       }
+      if builtinName == "randString" && isnull(builder.findFunction("randString")) {
+        rsArg = right
+        if right.type == ExprType.List && !isnull(right.firstChildExpr) {
+          rsArg = right.firstChildExpr!
+        }
+        rsArgs = c.CExprList()
+        rsArgs.appendCExpr(rsArg.genC(builder))
+        return builder.cCall(self.location, "rn_rand_string", c.CExpr(rsArgs))
+      }
       if builtinName == "chr" && isnull(builder.findFunction("chr")) {
         chrArg = right
         if right.type == ExprType.List && !isnull(right.firstChildExpr) {

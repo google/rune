@@ -270,3 +270,14 @@ static inline uint64_t string_rfind(const char *haystack, const char *needle,
   }
   return length;
 }
+
+// Random printable string of n bytes (nonce generation).
+static inline char *rn_rand_string(uint64_t n) {
+  char *s = (char *)malloc(n + 1);
+  uint64_t i;
+  for (i = 0; i < n; i++) {
+    s[i] = (char)(33 + (rand() % 94));
+  }
+  s[n] = '\0';
+  return s;
+}
