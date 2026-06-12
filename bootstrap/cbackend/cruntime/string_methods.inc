@@ -62,6 +62,31 @@ static inline char *string_resize(const char *s, uint64_t n) {
   size_t len = s == NULL ? 0 : strlen(s);
   char *r = (char *)calloc((size_t)n + 1, 1);
   memcpy(r, s, len < n ? len : (size_t)n);
+  // Strings are NUL-terminated buffers, so growth must pad with a non-NUL
+  // byte to actually extend the string (rn_freadInternal relies on strlen
+  // reporting the resized capacity).
+  if (len < n) {
+    memset(r + len, ' ', (size_t)n - len);
+  }
+  return r;
+}
+
+// A [lo:hi) slice of a string.  Out-of-range bounds clamp to the string
+// length.
+static inline char *string_slice(const char *s, uint64_t lo, uint64_t hi) {
+  size_t len = s == NULL ? 0 : strlen(s);
+  if (lo > len) {
+    lo = len;
+  }
+  if (hi > len) {
+    hi = len;
+  }
+  if (hi < lo) {
+    hi = lo;
+  }
+  char *r = (char *)malloc(hi - lo + 1);
+  memcpy(r, s + lo, hi - lo);
+  r[hi - lo] = '\0';
   return r;
 }
 

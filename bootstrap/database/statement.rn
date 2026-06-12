@@ -226,6 +226,12 @@ class Statement(self, block: Block, type: StateType, location: Location) {
         assert !isnull(prev) && prev.type == StateType.Try
       }
       StateType.InlinedBlock => self.genCInlinedBlock(builder)
+      // Module loading happens before typechecking; the statements
+      // themselves emit nothing.
+      StateType.Import => return
+      StateType.ImportLib => return
+      StateType.ImportRpc => return
+      StateType.Use => return
       default => raise Status.Unimplemented, "Statement type not yet supported by C backend builder ", self.type
     }
   }

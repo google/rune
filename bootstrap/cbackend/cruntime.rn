@@ -332,6 +332,14 @@ class CRuntime(self) {
     return cf
   }
 
+  func needArraySlice(self) -> CFragment {
+    self.include("<assert.h>")
+    self.include("<string.h>")
+    cf = self.cFragment("array_slice", "cbackend/cruntime/arrays/slice.inc")
+    cf.addDependencies([self.needArrayType(), self.needArrayAlloc()])
+    return cf
+  }
+
   /** Runtime Feature Emission **********************************************************/
 
   func emitIntAdd(self, e: CEmitter, width: u32) {

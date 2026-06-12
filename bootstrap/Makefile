@@ -39,6 +39,7 @@ parse/hir.rn\
 parse/exprTree.rn\
 parse/keytab.rn\
 parse/lexer.rn\
+parse/loader.rn\
 parse/package.rn\
 parse/pegparser.rn\
 parse/rule.rn\

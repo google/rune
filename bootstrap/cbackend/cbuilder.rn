@@ -130,6 +130,13 @@ class CBuilder(self, tc: types.TypeChecker) {
   self.tryFrameSyms = arrayof(Sym)
   self.tryFrameDepth = 0u64
   self.tryFrameBase = 0u64
+  // Rune scopes variables to the function, C to the block: locals must be
+  // declared in the function's body block even when first assigned inside a
+  // nested block.  Each openScope records how many CBlocks were open; the
+  // first block opened after that is the function's body block.
+  self.scopeBlockBases = arrayof(u64)
+  self.scopeBaseCount = 0u64
+  self.openBlockCount = 0u64
   self.insertDependencyStack(DependencyStack())
 
   func build(self, module: db.Function) -> CProgram {
@@ -207,6 +214,30 @@ class CBuilder(self, tc: types.TypeChecker) {
     return "%s_%s" % (t.tyname.name.name, spec)
   }
 
+  // The C name to call a class method by.  Monomorphic methods are named
+  // from their definition's resolved parameter types: a parameter fixed to
+  // AnyInt by a literal (e.g. size = 0) is emitted under "Uint"/"Int" while
+  // call-site arguments carry concrete widths like u64, so argument-based
+  // names would not match the definition.
+  func methodCallCName(self, instanceTy: types.Type, methodName: string,
+                       argsTy: types.Type?) -> string {
+    inst = self.typechecker.resolve(instanceTy)
+    if inst.type == types.Type.TypeClass.Typename {
+      info = self.typechecker.lookupClass(inst.tyname.name)
+      if !isnull(info) && !isnull(info.fn) {
+        for childfunc in info.fn.childFunctions() {
+          if childfunc.sym.name == methodName {
+            mty = childfunc.typedValue
+            if !isnull(mty) && mty.type == types.Type.TypeClass.Function {
+              return self.methodDefCName(mty!, methodName)
+            }
+          }
+        }
+      }
+    }
+    return self.methodCName(instanceTy, methodName, argsTy)
+  }
+
   // The C name of a class method for a given instance type and argument
   // types: <class instantiation>_<method>[_<argtype>...].
   func methodCName(self, instanceTy: types.Type, methodName: string,
@@ -276,8 +307,12 @@ class CBuilder(self, tc: types.TypeChecker) {
   // identifier scope, returning an expression referencing it.
   func declareLocal(self, sym: Sym, ctype: CTypeExpr?) -> CExpr {
     id = self.identifierScope.getIdentifier(sym, ctype, true, true)
-    if !isnull(self.currentBlock) {
-      self.currentBlock.declare(id)
+    target = self.declarationBlock()
+    if isnull(target) {
+      target = self.currentBlock
+    }
+    if !isnull(target) {
+      target.declare(id)
     } else {
       self.program.mainCBlock.declare(id)
     }
@@ -336,21 +371,51 @@ class CBuilder(self, tc: types.TypeChecker) {
 
   func openScope(self) {
     self.identifierScope.open()
+    if self.scopeBaseCount < self.scopeBlockBases.length() {
+      self.scopeBlockBases[self.scopeBaseCount] = self.openBlockCount
+    } else {
+      self.scopeBlockBases.append(self.openBlockCount)
+    }
+    self.scopeBaseCount += 1
   }
 
   func closeScope(self) {
     self.identifierScope.close()
+    if self.scopeBaseCount > 0 {
+      self.scopeBaseCount -= 1
+    }
+  }
+
+  // The block where local declarations belong: the body block of the
+  // function currently being emitted, or null at module level.
+  func declarationBlock(self) -> CBlock? {
+    if self.scopeBaseCount == 0 {
+      return null(CBlock)
+    }
+    base = self.scopeBlockBases[self.scopeBaseCount - 1]
+    index = 0u64
+    for block in self.cBlocks() {
+      if index == base {
+        return block
+      }
+      index += 1
+    }
+    return null(CBlock)
   }
 
   func openBlock(self, location: db.Location?) {
     self.currentBlock = CBlock(location)
     self.appendCBlock(self.currentBlock!)
+    self.openBlockCount += 1
   }
 
   func closeBlock(self) -> CBlock {
     block = self.lastCBlock!
     self.removeCBlock(block)
     self.currentBlock = self.lastCBlock
+    if self.openBlockCount > 0 {
+      self.openBlockCount -= 1
+    }
     return block
   }
 
@@ -422,8 +487,12 @@ class CBuilder(self, tc: types.TypeChecker) {
     }
     id = self.identifierScope.getIdentifier(symbol, ctype, bindingInstance, false)
     if !isnull(ctype) && id.firstInstance {
-      if !isnull(self.currentBlock) {
-        self.currentBlock.declare(id)
+      target = self.declarationBlock()
+      if isnull(target) {
+        target = self.currentBlock
+      }
+      if !isnull(target) {
+        target.declare(id)
       } else {
         self.program.mainCBlock.declare(id)
       }

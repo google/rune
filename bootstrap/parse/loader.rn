@@ -1,0 +1,185 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Load modules referenced by import and use statements.  Each loaded module
+// becomes a FuncType.Module child function of the importing module, so the
+// typechecker and C backend traverse it as part of the function tree.  A
+// module file is only ever loaded once: re-imports find the existing module
+// function through its Filepath.
+
+import database as db
+import io
+
+use hir
+use pegparser
+use sym
+
+root = db.getRoot()
+
+// The directory portion of a path, including the trailing '/'.  Empty if the
+// path has no directory portion (it is then relative to the compiler's
+// working directory).
+func dirName(path: string) -> string {
+  i = path.length()
+  while i > 0 && path[i - 1] != '/' {
+    i -= 1
+  }
+  return path[0:i]
+}
+
+// True if |path| names a readable file.
+func fileExists(path: string) -> bool {
+  file = io.open(path, "r")
+  if isnull(file) {
+    return false
+  }
+  return true
+}
+
+// The slash-joined path named by an import path expression, e.g.
+// "tests/importTwice2" for import tests.importTwice2.
+func pathExprString(expr: db.Expr) -> string {
+  if expr.type == db.ExprType.Ident {
+    return expr.val.symVal.name
+  }
+  assert expr.type == db.ExprType.Dot
+  left = expr.firstChildExpr!
+  right = left.nextExprChildExpr!
+  return pathExprString(left) + "/" + pathExprString(right)
+}
+
+// The default alias for an import path: its last identifier.
+func pathExprAlias(expr: db.Expr) -> Sym {
+  if expr.type == db.ExprType.Ident {
+    return expr.val.symVal!
+  }
+  left = expr.firstChildExpr!
+  return pathExprAlias(left.nextExprChildExpr!)
+}
+
+// Find the file for an imported module: <path>.rn or <path>/package.rn,
+// relative to the importing module's directory, the top-level module's
+// directory, the package directory, or its parent (the bootstrap binary
+// lives in a subdirectory of the Rune root that holds io/, math/ and std/).
+func findModuleFile(relPath: string, currentDir: string) -> string {
+  bases = [currentDir, root.topModuleDir, root.packageDir,
+      root.packageDir + "../"]
+  for base in bases {
+    candidate = base + relPath + ".rn"
+    if fileExists(candidate) {
+      return candidate
+    }
+    candidate = base + relPath + "/package.rn"
+    if fileExists(candidate) {
+      return candidate
+    }
+  }
+  return ""
+}
+
+// Find the file for a use statement: a sibling of the using module, or a
+// member of the std package.
+func findUsedFile(name: string, currentDir: string) -> string {
+  candidates = [currentDir + name + ".rn",
+      root.packageDir + "std/" + name + ".rn",
+      root.packageDir + "../std/" + name + ".rn"]
+  for candidate in candidates {
+    if fileExists(candidate) {
+      return candidate
+    }
+  }
+  return ""
+}
+
+// Load the top-level module of the program.
+func loadTopModule(parser: Peg, fileName: string, parent: db.Function,
+    moduleSym: Sym) -> db.Function? {
+  root.topModuleDir = dirName(fileName)
+  return loadModule(parser, fileName, parent, moduleSym)
+}
+
+// Load the module in |fileName| as a child of |parent| and recursively load
+// its imports.  Returns the existing module function if the file was already
+// loaded, or null if parsing fails.
+func loadModule(parser: Peg, fileName: string, parent: db.Function,
+    moduleSym: Sym) -> db.Function? {
+  filepath = db.Filepath.new(fileName, null(db.Filepath), false)
+  existing = filepath.moduleFunction
+  if !isnull(existing) {
+    return existing
+  }
+  node = parser.parse(filepath, allowUnderscores = true)
+  if isnull(node) {
+    return null(db.Function)
+  }
+  location = db.Location(filepath, 0u32, 0u32, 0u32)
+  module = db.Function(parent, db.FuncType.Module, moduleSym,
+      db.Linkage.Module, location)
+  filepath.insertModuleFunction(module)
+  HirBuilder(node!, module).build()
+  loadModuleImports(parser, module, dirName(fileName))
+  return module
+}
+
+// Load the modules referenced by |module|'s import and use statements.
+func loadModuleImports(parser: Peg, module: db.Function, currentDir: string) {
+  for statement in module.subBlock.statements() {
+    type = statement.type
+    if type == db.StateType.Import || type == db.StateType.ImportLib {
+      loadImportedModule(parser, statement, module, currentDir)
+    } else if type == db.StateType.Use {
+      loadUsedModule(parser, statement, module, currentDir)
+    }
+  }
+}
+
+// import a.b.c [as alias]: load the module and register its alias so the
+// typechecker can resolve <alias>.<member> expressions.
+func loadImportedModule(parser: Peg, statement: db.Statement,
+    module: db.Function, currentDir: string) {
+  expr = statement.expr!
+  pathExpr = expr
+  if expr.type == db.ExprType.As {
+    pathExpr = expr.firstChildExpr!
+    aliasExpr = pathExpr.nextExprChildExpr!
+    alias = aliasExpr.val.symVal!
+  } else {
+    alias = pathExprAlias(expr)
+  }
+  relPath = pathExprString(pathExpr)
+  fileName = findModuleFile(relPath, currentDir)
+  if fileName == "" {
+    raise Status.NotFound, "Unable to find module ", relPath
+  }
+  loaded = loadModule(parser, fileName, module, alias)
+  if isnull(loaded) {
+    raise Status.InvalidArgument, "Unable to parse module ", fileName
+  }
+  db.registerModuleAlias(alias, loaded!)
+}
+
+// use foo: load the module; its identifiers share the importing module's
+// global namespace, so no alias is needed.
+func loadUsedModule(parser: Peg, statement: db.Statement,
+    module: db.Function, currentDir: string) {
+  name = statement.expr.val.symVal.name
+  fileName = findUsedFile(name, currentDir)
+  if fileName == "" {
+    raise Status.NotFound, "Unable to find used module ", name
+  }
+  loaded = loadModule(parser, fileName, module, Sym.new(name))
+  if isnull(loaded) {
+    raise Status.InvalidArgument, "Unable to parse module ", fileName
+  }
+}

@@ -144,14 +144,12 @@ if fileName[fileName.length() - 3 : fileName.length()] != ".rn" {
 if !root.quietMode {
   println "Parsing ", fileName
 }
-node = parser.parse(fileName, allowUnderscores = true)
-if isnull(node) {
+moduleName = stripSuffix(fileName)
+moduleResult = parse.loadTopModule(parser, fileName, mainFunc, Sym.new(moduleName))
+if isnull(moduleResult) {
   exit(1i32)
 }
-moduleName = stripSuffix(fileName)
-module = db.Function(mainFunc, db.FuncType.Module, Sym.new(moduleName),
-  db.Linkage.Module, db.Location.emptyLocation())
-parse.HirBuilder(node!, module).build()
+module = moduleResult!
 tc = types.TypeChecker()
 tc.function(module)
 numTypeErrors = tc.countTypeErrors()

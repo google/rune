@@ -96,6 +96,15 @@ class CEmitter(self, filename: string) {
     self.runtime.needStringMethods()
   }
 
+  func needExternIo(self) {
+    self.include("<stdio.h>")
+    self.include("<stdlib.h>")
+    self.include("<string.h>")
+    self.include("<stdint.h>")
+    self.include("<unistd.h>")
+    self.runtime.cFragment("extern_io", "cbackend/cruntime/extern_io.inc")
+  }
+
   func needFloatPrintfMacros(self) {
     self.include("<float.h>")
     self.needStringifyMacro()
@@ -172,6 +181,10 @@ class CEmitter(self, filename: string) {
 
   func needArrayReverse(self) -> string {
     return self.runtime.needArrayReverse().name
+  }
+
+  func needArraySlice(self) -> string {
+    return self.runtime.needArraySlice().name
   }
 
   /* layout and string functions ********************************************/

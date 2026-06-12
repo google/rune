@@ -818,6 +818,7 @@ class Expr(self, type: ExprType, location: Location) {
       // Tuples
       ExprType.Tuple => return self.genCTuple(builder)
       ExprType.Index => return self.genCIndex(builder)
+      ExprType.Slice => return self.genCSlice(builder)
 
       // Structs
       ExprType.Dot => return self.genCFieldSel(builder)
@@ -1177,6 +1178,21 @@ class Expr(self, type: ExprType, location: Location) {
     return builder.cIndex(self.location, indexee.typedValue, left, i)
   }
 
+  func genCSlice(self, builder: c.CBuilder) -> c.CExpr {
+    base = self.firstChildExpr!
+    lower = base.nextExprChildExpr!
+    upper = lower.nextExprChildExpr!
+    args = c.CExprList()
+    args.appendCExpr(base.genC(builder))
+    args.appendCExpr(lower.genC(builder))
+    args.appendCExpr(upper.genC(builder))
+    if builder.typechecker.isStringType(self.typedValue) {
+      return builder.cCall(self.location, c.CRuntimeFunction.StringSlice, c.CExpr(args))
+    }
+    return builder.cCall(self.location, c.CRuntimeFunction.ArraySlice, c.CExpr(args),
+        self.typedValue)
+  }
+
   func genCFieldSel(self, builder: c.CBuilder) -> c.CExpr {
     strct = self.firstChildExpr!
     field = strct.nextExprChildExpr!
@@ -1218,7 +1234,7 @@ class Expr(self, type: ExprType, location: Location) {
       base = left.firstChildExpr!
       if builder.isClassType(base.typedValue) {
         method = base.nextExprChildExpr!
-        name = builder.methodCName(base.typedValue!, method.toString(), right.typedValue)
+        name = builder.methodCallCName(base.typedValue!, method.toString(), right.typedValue)
         args = c.CExprList()
         args.appendCExpr(base.genC(builder))
         if right.typedValue.type == types.Type.TypeClass.Tuple {
@@ -1365,6 +1381,28 @@ class Expr(self, type: ExprType, location: Location) {
           ioparms.appendCExpr(right.genC(builder))
         }
         return builder.cCall(self.location, iofn, c.CExpr(ioparms))
+      }
+    }
+
+    // Calls to extern "C" functions are emitted under an rn_ prefix and
+    // implemented by the C runtime, even when integer-constrained parameters
+    // made the function type polymorphic.
+    if left.type == ExprType.Ident {
+      externCallee = builder.findFunction(left.val.symVal.name)
+      if !isnull(externCallee) && externCallee.isExtern {
+        externFn = c.CExpr(c.CIdentifier(left.val.symVal!, null(c.CTypeExpr),
+            false, false, false))
+        if right.typedValue.type == types.Type.TypeClass.Tuple {
+          externParms = c.CExprList()
+          for child in right.childExprs() {
+            externParms.appendCExpr(child.genC(builder))
+          }
+          externArgs = c.CExpr(externParms)
+        } else {
+          externArgs = right.genC(builder)
+        }
+        return c.CExpr(c.CCall(self.location, c.CRuntimeFunction.ExternC,
+            externArgs, externFn, null(c.CTypeExpr)))
       }
     }
 

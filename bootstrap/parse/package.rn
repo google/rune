@@ -17,5 +17,6 @@ use hir
 use exprTree
 use keytab
 use lexer
+use loader
 use pegparser
 use token

@@ -367,11 +367,18 @@ return db.Expr.newIdent(Sym.new("temp"), node.location)
              self.buildExprTree(lastChild.firstChildNode!), node.location)
         }
         self.sliceSuffixSym => {
-          // TODO: Write these.
+          // a[lower:upper]: three children -- base, lower, upper.
+          lowerNode = postfixNode.firstChildNode!
+          upperNode = lowerNode.nextNodeChildNode!
+          sliceExpr = db.Expr(db.ExprType.Slice, node.location)
+          sliceExpr.appendChildExpr(self.buildExprTree(firstChild))
+          sliceExpr.appendChildExpr(self.buildExprTree(lowerNode))
+          sliceExpr.appendChildExpr(self.buildExprTree(upperNode))
+          return sliceExpr
         }
+        // temp
+        default => return db.Expr.newIdent(Sym.new("temp"), node.location)
       }
-// temp
-return db.Expr.newIdent(Sym.new("temp"), node.location)
     }
 
     func buildTupleExpr(self: HirBuilder, node: Node) -> db.Expr {

@@ -195,8 +195,18 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   }
 
   func genModule(self: Function, builder: c.CBuilder) {
+    // Imported modules are appended as child functions after the importing
+    // module's own children; emit them first so their top-level statements
+    // run before the importer's (matching typechecking order).
     for childfunc in self.childFunctions() {
-       childfunc.genC(builder)
+      if childfunc.type == FuncType.Module {
+        childfunc.genC(builder)
+      }
+    }
+    for childfunc in self.childFunctions() {
+      if childfunc.type != FuncType.Module {
+        childfunc.genC(builder)
+      }
     }
     for statement in self.subBlock.statements() {
       // Note that a Rune statement may correspond to a C statement in main()
@@ -207,6 +217,11 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
 
 
   func genCPlainFunc(self: Function, builder: c.CBuilder) {
+    if self.isExtern {
+      // extern "C" functions are provided by the C runtime (under an rn_
+      // prefix); nothing is emitted for the declaration itself.
+      return
+    }
     // TODO: figure out storage types.....
 
     // Is this a polymorphic type?  polymorphic type variables do not
@@ -690,6 +705,32 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     prefixExpr = parent.createPathExpr()
     return Expr.newBinary(ExprType.Dot, prefixExpr, identExpr, self.location)
   }
+}
+
+// Modules loaded by import statements, registered under their alias (the
+// last identifier of the import path, or the name after "as").  The
+// typechecker uses this to resolve <alias>.<member> expressions; modules
+// otherwise share one global namespace in the bootstrap.
+moduleAliases = arrayof(Sym)
+moduleAliasTargets = arrayof(Function)
+
+func registerModuleAlias(alias: Sym, moduleFunc: Function) {
+  for i in range(moduleAliases.length()) {
+    if moduleAliases[i] == alias {
+      return
+    }
+  }
+  moduleAliases.append(alias)
+  moduleAliasTargets.append(moduleFunc)
+}
+
+func lookupModuleAlias(alias: Sym) -> Function? {
+  for i in range(moduleAliases.length()) {
+    if moduleAliases[i] == alias {
+      return moduleAliasTargets[i]
+    }
+  }
+  return null(Function)
 }
 
 // Append a call statement to the module initialization function in the root function.

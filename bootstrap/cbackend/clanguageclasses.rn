@@ -909,6 +909,7 @@ enum CRuntimeFunction {
    StringFromHex
    StringResize
    StringReverse
+   StringSlice
    StringXor
 
    // Scalar to-string builtins
@@ -933,11 +934,16 @@ enum CRuntimeFunction {
    ArrayValues
    ArrayItems
    ArrayConcat
+   ArraySlice
 
    // Try/except support: RN_TRY() pushes+setjmps a frame; raise_with_code
    // records the code path and message, then longjmps or aborts.
    TryEnter
    RaiseWithCode
+
+   // A call to an extern "C" function: emitted as rn_<name>, implemented by
+   // the extern_io runtime fragment.
+   ExternC
 }
 
 class CCall(self, location: db.Location, fntype: CRuntimeFunction, args: CExpr?, fn: CExpr? = null(CExpr),
@@ -977,6 +983,14 @@ relevantType: CTypeExpr?) {
       // User-defined function call.
       CRuntimeFunction.UserDefined => {
         assert !isnull(self.fn)
+        self.fn.emit(e)
+      }
+
+      // extern "C" function: the runtime implements it under an rn_ prefix.
+      CRuntimeFunction.ExternC => {
+        assert !isnull(self.fn)
+        e.needExternIo()
+        e.write("rn_")
         self.fn.emit(e)
       }
 
@@ -1077,6 +1091,16 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.StringRfind => {
         e.needStringMethods()
         e.write("string_rfind")
+      }
+
+      CRuntimeFunction.StringSlice => {
+        e.needStringMethods()
+        e.write("string_slice")
+      }
+
+      CRuntimeFunction.ArraySlice => {
+        e.needArraySlice()
+        e.write("array_slice")
       }
 
       CRuntimeFunction.StringToHex => {

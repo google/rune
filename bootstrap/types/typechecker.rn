@@ -957,6 +957,32 @@ class TypeChecker(self) {
     return self.newSymbol(symbol, symbol.typedValue)
   }
 
+  // Rewrite <moduleAlias>.<member> in place into a plain reference to
+  // <member>.  Modules share one global namespace in the bootstrap, so the
+  // qualifier only needs to disappear.  Returns true if a rewrite happened.
+  func rewriteModuleMember(self, expr: db.Expr) -> bool {
+    if expr.type != db.ExprType.Dot {
+      return false
+    }
+    lhs = expr.firstChildExpr!
+    if lhs.type != db.ExprType.Ident {
+      return false
+    }
+    member = lhs.nextExprChildExpr!
+    if member.type != db.ExprType.Ident {
+      return false
+    }
+    if isnull(db.lookupModuleAlias(lhs.val.symVal!)) {
+      return false
+    }
+    memberSym = member.val.symVal!
+    expr.removeChildExpr(lhs)
+    expr.removeChildExpr(member)
+    expr.type = db.ExprType.Ident
+    expr.val = db.Value(memberSym)
+    return true
+  }
+
   func getSymbolType(self, symbol: Sym) -> Type? {
     sm = SymbolMapping(symbol, null(Type))
     found = self.findSymbolMapping(sm)
@@ -1121,6 +1147,37 @@ class TypeChecker(self) {
         result = trueTy
       }
 
+      db.ExprType.Slice => {
+        sliceBase = expr.firstChildExpr!
+        sliceLower = sliceBase.nextExprChildExpr!
+        sliceUpper = sliceLower.nextExprChildExpr!
+        baseTy = self.expr(sliceBase)
+        lowerTy = self.expr(sliceLower)
+        upperTy = self.expr(sliceUpper)
+        if isnull(baseTy) || isnull(lowerTy) || isnull(upperTy) {
+          return baseTy
+        }
+        te = self.unify(lowerTy!, UINTEGER())
+        if isnull(te) {
+          te = self.unify(upperTy!, UINTEGER())
+        }
+        if !isnull(te) {
+          self.typeError(
+            "Slice bounds must be unsigned integers: %s" % te.msg, expr.location)
+          return null(Type)
+        }
+        rBaseTy = self.resolve(baseTy!)
+        if self.isStringType(rBaseTy) || rBaseTy.type == Type.TypeClass.Array {
+          // A slice of a string or array has the same type as its base.
+          result = rBaseTy
+        } else {
+          self.typeError(
+            "Only strings and arrays can be sliced, not %s." % rBaseTy.toString(),
+            expr.location)
+          return null(Type)
+        }
+      }
+
       db.ExprType.Index => {
         leftChild = expr.firstChildExpr!
         rightChild = expr.firstChildExpr!.nextExprChildExpr!
@@ -1175,6 +1232,10 @@ class TypeChecker(self) {
       }
 
       db.ExprType.Dot => {
+        if self.rewriteModuleMember(expr) {
+          // Now a plain identifier reference to the module member.
+          return self.expr(expr)
+        }
         sty = self.expr(expr.firstChildExpr!)
         field = expr.firstChildExpr!.nextExprChildExpr!
         isClassAccess = false
@@ -1328,6 +1389,9 @@ class TypeChecker(self) {
 
       db.ExprType.Call => {
         fnchild = expr.firstChildExpr!
+        // A <moduleAlias>.<member> target becomes a plain identifier, so
+        // named and default arguments normalize for it too.
+        didRewrite = self.rewriteModuleMember(fnchild)
         if fnchild.type == db.ExprType.Ident {
           callee = self.lookupFunctionDef(fnchild.val.symVal!)
           if !isnull(callee) {
@@ -2135,6 +2199,13 @@ class TypeChecker(self) {
           self.statement(s, statement.subBlock!)
         }
       }
+      // Module loading happens before typechecking; the statements
+      // themselves contribute no types.
+      db.StateType.Import => return NONETY()
+      db.StateType.ImportLib => return NONETY()
+      db.StateType.ImportRpc => return NONETY()
+      db.StateType.Use => return NONETY()
+
       default => raise Status.Unimplemented, "Statement type not yet supported by typechecker: ", db.statementTypeGetKeyword(statement.type)
     }
     return NONETY()
@@ -2144,13 +2215,27 @@ class TypeChecker(self) {
   func function(self, fn: db.Function) {
     switch fn.type {
       db.FuncType.Module => {
-        // Register all functions first so call sites can look up parameter
-        // names and defaults regardless of definition order.
+        // Imported modules are appended as child functions after the
+        // importing module's own children; typecheck them first so their
+        // definitions are bound before the importer's code references them.
         for childfunc in fn.childFunctions() {
-          self.registerFunctionDef(childfunc)
+          if childfunc.type == db.FuncType.Module {
+            self.function(childfunc)
+          }
+        }
+        // Register all functions first so call sites can look up parameter
+        // names and defaults regardless of definition order.  Module
+        // children stay out of the registry: their names may collide with
+        // the functions they export (e.g. use sqrt providing func sqrt).
+        for childfunc in fn.childFunctions() {
+          if childfunc.type != db.FuncType.Module {
+            self.registerFunctionDef(childfunc)
+          }
         }
         for childfunc in fn.childFunctions() {
-          self.function(childfunc)
+          if childfunc.type != db.FuncType.Module {
+            self.function(childfunc)
+          }
         }
         for statement in fn.subBlock.statements() {
           self.statement(statement, fn.subBlock)
@@ -2480,7 +2565,10 @@ class TypeChecker(self) {
     if isnull(fn.typeExpr) {
       returnType = Type(self.newTyvar())
     } else {
-      returnType = self.explicitType(fn.typeExpr)
+      // Like parameter constraints: class names parameterize with fresh
+      // variables (nullable forms like FilePtr? included) so the body's
+      // instance types unify against them.
+      returnType = self.constraintType(fn.typeExpr!)
     }
 
     // open new scope - new parameter bindings are added to the scope
@@ -2522,7 +2610,7 @@ class TypeChecker(self) {
     // Make sure that the explicit return type, if it exists, agrees with
     // the type computed from the function body.
     if !isnull(fn.typeExpr) {
-        explicitReturnType = self.explicitType(fn.typeExpr)
+        explicitReturnType = self.constraintType(fn.typeExpr!)
         if isnull(returnType) {
             returnType = explicitReturnType
         } else {
