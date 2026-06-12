@@ -170,8 +170,20 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
             best = ctn
             bestSpec = instSpec
           } else if instSpec != bestSpec {
-            // More than one concrete instantiation: ambiguous.
-            return ty
+            // Two distinct concrete forms: prefer one without a self-knot
+            // parameter (a parameter that is the class's own bare name is
+            // a nominal cut from a degenerate unification, not a real
+            // specialization).  Genuinely ambiguous otherwise.
+            bestKnot = self.hasSelfKnotParam(best!, ty.name)
+            candKnot = self.hasSelfKnotParam(ctn, ty.name)
+            if bestKnot && !candKnot {
+              best = ctn
+              bestSpec = instSpec
+            } else if !bestKnot && candKnot {
+              // Keep best.
+            } else {
+              return ty
+            }
           }
         }
       }
@@ -180,6 +192,23 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
       return best!
     }
     return ty
+  }
+
+  // True if any parameter of |tn| is the bare name |selfName| (a nominal
+  // knot from self-referential unification).
+  func hasSelfKnotParam(self, tn: types.TypeName, selfName) -> bool {
+    if isnull(tn.params) {
+      return false
+    }
+    for el in tn.params.elements {
+      r = self.typechecker.resolve(el)
+      if r.type == types.Type.TypeClass.Typename {
+        if r.tyname!.name == selfName && isnull(r.tyname!.params) {
+          return true
+        }
+      }
+    }
+    return false
   }
 
   func genCTypename(self, ty: types.TypeName) -> CTypeExpr? {

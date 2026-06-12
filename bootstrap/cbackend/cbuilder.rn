@@ -191,6 +191,7 @@ class CBuilder(self, tc: types.TypeChecker) {
   func build(self, module: db.Function) -> CProgram {
     self.registerFunctions(module)
     self.registerModuleVariables(module)
+    self.resolveNestedInstantiations(module)
     module.genC(self)
     // Destroy module-level objects with destructors when main exits.
     for index in range(self.mainFinalSyms.length()) {
@@ -545,6 +546,54 @@ class CBuilder(self, tc: types.TypeChecker) {
 
   func findDeclaration(self, name: string) -> CDeclaration? {
     return self.program.findCDeclaration(name)
+  }
+
+  // A constructor call inside a polymorphic method records an
+  // instantiation whose bindings reference the method's type variables;
+  // it only resolves concretely under one of the method's own concrete
+  // instantiations.  Bake those in before emission so class struct names
+  // (e.g. a template class's arrayof(Element) field) resolve.
+  func resolveNestedInstantiations(self, module: db.Function) {
+    polys = arrayof(db.Function)
+    self.collectPolyFns(module, polys)
+    for outer in polys {
+      oty = outer.typedValue!
+      pi = oty.poly.instantiations
+      if !isnull(pi) {
+        for inst in pi {
+          self.resolveInstantiation(inst)
+          if self.instantiationIsConcrete(inst) {
+            self.instantiate(oty.poly!, inst)
+            for innerFn in polys {
+              resolveInner = innerFn != outer
+              if resolveInner {
+                if innerFn.type == db.FuncType.Constructor {
+                  ity = innerFn.typedValue!
+                  ipi = ity.poly.instantiations
+                  if !isnull(ipi) {
+                    for iinst in ipi {
+                      self.resolveInstantiation(iinst)
+                    }
+                  }
+                }
+              }
+            }
+            self.deInstantiate(oty.poly!)
+          }
+        }
+      }
+    }
+  }
+
+  func collectPolyFns(self, fn: db.Function, var out: [db.Function]) {
+    for childfunc in fn.childFunctions() {
+      if !isnull(childfunc.typedValue) {
+        if childfunc.typedValue.type == types.Type.TypeClass.Polymorphic {
+          out.append(childfunc)
+        }
+      }
+      self.collectPolyFns(childfunc, out)
+    }
   }
 
   func resolveInstantiation(self, inst: types.TyvarInstantiation) {

@@ -2020,6 +2020,10 @@ class TypeChecker(self) {
         // named and default arguments normalize for it too.
         didRewrite = self.rewriteModuleMember(fnchild)
         if fnchild.type == db.ExprType.Ident {
+          // A constructor call may precede the class's own typechecking
+          // (e.g. a hoisted nested class defined after its user); resolving
+          // it loosely would record no instantiation for the C backend.
+          self.demandClass(fnchild.val.symVal!)
           callee = self.lookupFunctionDef(fnchild.val.symVal!)
           if !isnull(callee) {
             self.normalizeCallArgs(expr, callee!)
