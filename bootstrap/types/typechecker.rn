@@ -3707,8 +3707,15 @@ class TypeChecker(self) {
 
     // must walk through all return statements.
     returnType = null(Type)
-    for statement in fn.subBlock.statements() {
-      self.statement(statement, fn.subBlock)
+    emptyBody = arrayof(db.Statement)
+    bodyStatements = emptyBody
+    if !isnull(fn.subBlock) {
+      for s in fn.subBlock.statements() {
+        bodyStatements.append(s)
+      }
+    }
+    for statement in bodyStatements {
+      self.statement(statement, fn.subBlock!)
       if !isnull(fn.subBlock.returnType) {
         if isnull(returnType) {
           returnType = fn.subBlock.returnType
