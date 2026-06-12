@@ -567,6 +567,85 @@ class TypeChecker(self) {
     self.insertFunctionDef(fd)
   }
 
+  // Nested classes (class Entry inside class Dict) hoist to module level:
+  // the bootstrap has one flat namespace.  References through the outer
+  // class name (Dict.Entry) rewrite to plain identifiers, including in
+  // relation statements, before relations execute.
+  func hoistNestedClasses(self, module: db.Function) {
+    outers = arrayof(db.Function)
+    for childfunc in module.childFunctions() {
+      if childfunc.type == db.FuncType.Constructor {
+        outers.append(childfunc)
+      }
+    }
+    for outer in outers {
+      nested = arrayof(db.Function)
+      for inner in outer.childFunctions() {
+        if inner.type == db.FuncType.Constructor {
+          nested.append(inner)
+        }
+      }
+      for inner in nested {
+        outer.removeChildFunction(inner)
+        module.appendChildFunction(inner)
+        self.rewriteNestedClassRefs(module, outer.sym.name, inner.sym.name)
+      }
+    }
+  }
+
+  func rewriteNestedClassRefs(self, fn: db.Function, outerName: string,
+                              innerName: string) {
+    if !isnull(fn.subBlock) {
+      self.rewriteNestedRefsInBlock(fn.subBlock!, outerName, innerName)
+    }
+    for variable in fn.variables() {
+      if !isnull(variable.typeExpr) {
+        self.rewriteNestedRefsInExpr(variable.typeExpr!, outerName, innerName)
+      }
+      if !isnull(variable.initializerExpr) {
+        self.rewriteNestedRefsInExpr(variable.initializerExpr!, outerName,
+            innerName)
+      }
+    }
+    for childfunc in fn.childFunctions() {
+      self.rewriteNestedClassRefs(childfunc, outerName, innerName)
+    }
+  }
+
+  func rewriteNestedRefsInBlock(self, block: db.Block, outerName: string,
+                                innerName: string) {
+    for statement in block.statements() {
+      if !isnull(statement.expr) {
+        self.rewriteNestedRefsInExpr(statement.expr!, outerName, innerName)
+      }
+      if !isnull(statement.subBlock) {
+        self.rewriteNestedRefsInBlock(statement.subBlock!, outerName, innerName)
+      }
+    }
+  }
+
+  func rewriteNestedRefsInExpr(self, expr: db.Expr, outerName: string,
+                               innerName: string) {
+    if expr.type == db.ExprType.Dot {
+      dlhs = expr.firstChildExpr!
+      dmem = dlhs.nextExprChildExpr
+      if (dlhs.type == db.ExprType.Ident && !isnull(dmem) &&
+          dmem.type == db.ExprType.Ident &&
+          dlhs.val.symVal.name == outerName &&
+          dmem.val.symVal.name == innerName) {
+        innerSym = dmem.val.symVal!
+        expr.removeChildExpr(dlhs)
+        expr.removeChildExpr(dmem!)
+        expr.type = db.ExprType.Ident
+        expr.val = db.Value(innerSym)
+        return
+      }
+    }
+    for child in expr.childExprs() {
+      self.rewriteNestedRefsInExpr(child, outerName, innerName)
+    }
+  }
+
   // Functions nested inside plain functions or methods (e.g. the resize
   // helper inside the Hashed transformer's insert method) hoist to module
   // level under a unique name: the bootstrap has one flat namespace and C
@@ -3265,6 +3344,9 @@ class TypeChecker(self) {
             self.function(childfunc)
           }
         }
+        // Nested classes hoist to module level before anything references
+        // them (relations name them as Outer.Inner).
+        self.hoistNestedClasses(fn)
         // Every class gets a generated destroy(self) method before
         // relations execute, so that A.destroy code blocks have a target.
         for childfunc in fn.childFunctions() {
