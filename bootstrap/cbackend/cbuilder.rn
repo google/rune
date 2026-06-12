@@ -1081,9 +1081,12 @@ class CBuilder(self, tc: types.TypeChecker) {
           dec.addDependency(depdec!)
         }
       } else if exists.cElementType.type == CTypeExpr.Type.Array {
-        depdec = self.findDeclaration(exists.cElementType.cArrayType.name)
-        assert !isnull(depdec)
-        dec.addDependency(depdec!)
+        // By name: an array-of-array element type may not be declared yet.
+        dec.addDependencyName(exists.cElementType.cArrayType.name)
+        if elementType.type == types.Type.TypeClass.Array {
+          // Make sure the element array's declaration exists to resolve to.
+          self.ensureArrayDeclared(location, elementType.array.elementType)
+        }
       } else if exists.cElementType.type == CTypeExpr.Type.Pointer {
         // Arrays of class instances need the class struct typedef first.
         // By name: the class may not have been declared yet (e.g. a

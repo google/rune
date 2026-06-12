@@ -160,6 +160,24 @@ transformer ExprTree() {
             // (expr op expr) with the operator token kept.
             return self.buildInfixExpr(node)
           }
+          if !isnull(ruleSym) && ruleSym.name == "arrayTypeExpr" {
+            // [type] in a type position (e.g. arrayof([u32])); the bracket
+            // and comma tokens are kept by the grammar and skipped here
+            // (the element may itself be a bare type token like u32).
+            arrExpr = db.Expr(db.ExprType.Array, node.location)
+            arrChild = node.firstChildNode
+            while !isnull(arrChild) {
+              arrKsym = arrChild.getKeywordSym()
+              arrSkip = (!isnull(arrKsym) &&
+                  (arrKsym.name == "[" || arrKsym.name == "]" ||
+                   arrKsym.name == ","))
+              if !arrSkip {
+                arrExpr.appendChildExpr(self.buildExprTree(arrChild!))
+              }
+              arrChild = arrChild.nextNodeChildNode
+            }
+            return arrExpr
+          }
           // Pass through single-child wrapper rules (e.g. the layered type
           // expression rules) rather than dropping them.
           first = node.firstChildNode
