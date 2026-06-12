@@ -555,6 +555,13 @@ class TypeChecker(self) {
     }
   }
 
+  // Open a polymorphic type with fresh variables, recording the
+  // instantiation.  Used by the C backend to synthesize specializations
+  // for call sites whose recorded instantiations never resolved.
+  func openPoly(self, poly: PolymorphicType) -> Type {
+    return poly.open(self.unifier, &self.unifier.newVar())
+  }
+
   func lookupTyname(self, tyname: Sym) -> Type? {
     res = null(Type)
     td = TynameDefinition(tyname, null(Type))

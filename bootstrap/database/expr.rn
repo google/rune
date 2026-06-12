@@ -1560,7 +1560,19 @@ class Expr(self, type: ExprType, location: Location) {
       }
     }
 
-    if fntype.type == types.Type.TypeClass.Polymorphic {
+    // The call expression's own type can lose its polymorphic wrapper (the
+    // typechecker resolves shallowly), e.g. for recursive calls inside the
+    // function's body; fall back to the definition's type.
+    polyType = fntype
+    if polyType.type != types.Type.TypeClass.Polymorphic && left.type == ExprType.Ident {
+      polyCallee = builder.findFunction(left.val.symVal.name)
+      if !isnull(polyCallee) && !isnull(polyCallee.typedValue) &&
+          polyCallee.typedValue.type == types.Type.TypeClass.Polymorphic &&
+          !polyCallee.isExtern {
+        polyType = polyCallee.typedValue!
+      }
+    }
+    if polyType.type == types.Type.TypeClass.Polymorphic {
       // A function expression need not be a simple identifier; it may be the
       // result of an expression, for example, a higher-order function that
       // returns a function. Moreover, that function may be polymorphic, and
@@ -1584,19 +1596,19 @@ class Expr(self, type: ExprType, location: Location) {
         // while that binding is active.
         callee = builder.findFunction(left.val.symVal.name)
         if !isnull(callee) {
-          pi = fntype.poly.instantiations
+          pi = polyType.poly.instantiations
           emitted = false
           for inst in pi {
             if !emitted {
               // Find the recorded instantiation matching this call site by
               // comparing specialization names under the current bindings.
-              builder.instantiate(fntype.poly!, inst)
+              builder.instantiate(polyType.poly!, inst)
               ptypes = arrayof(types.Type)
               for variable in callee.variables() {
                 ptypes.append(builder.typechecker.resolve(variable.typedValue!))
               }
               iname = types.Type(types.TupleType(ptypes)).genSpecializationName(callee.sym.name)
-              builder.deInstantiate(fntype.poly!)
+              builder.deInstantiate(polyType.poly!)
               if iname == specializedName {
                 if callee.type == FuncType.Struct {
                   callee.genCStructInstance(builder, inst)
@@ -1604,6 +1616,29 @@ class Expr(self, type: ExprType, location: Location) {
                   callee.genCPolyInstantiation(builder, inst)
                 }
                 emitted = true
+              }
+            }
+          }
+          if !emitted {
+            // No recorded instantiation matches (e.g. a recursive call
+            // whose definition-time instantiation never resolved):
+            // synthesize one by opening the polymorphic type fresh and
+            // unifying its parameters with this call's argument types.
+            openedFn = builder.typechecker.openPoly(polyType.poly!)
+            if openedFn.type == types.Type.TypeClass.Function {
+              te = builder.typechecker.unify(openedFn.function.params!, argTypes)
+              if isnull(te) {
+                newInst = polyType.poly.instantiations.lastTyvarInstantiation
+                if !isnull(newInst) {
+                  builder.resolveInstantiation(newInst!)
+                  if builder.instantiationIsConcrete(newInst!) {
+                    if callee.type == FuncType.Struct {
+                      callee.genCStructInstance(builder, newInst!)
+                    } else {
+                      callee.genCPolyInstantiation(builder, newInst!)
+                    }
+                  }
+                }
               }
             }
           }
