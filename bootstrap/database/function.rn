@@ -86,6 +86,9 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   // name, so sym.typedValue is unreliable when functions share a name
   // (e.g. the same operator overloaded by two classes).
   self.typedValue = null(types.Type)
+  // The body needs structural knowledge of unconstrained parameters and
+  // typechecks again under a concrete instantiation before emission.
+  self.deferredTypecheck = false
   if !isnull(parent) {
     parent.appendChildFunction(self)
     Ident(parent!, self, sym, location)

@@ -312,6 +312,10 @@ class TypeChecker(self) {
   self.hoistCounter = 0u32
   // True while typechecking a statement instantiated by a transformer.
   self.currentStatementGenerated = false
+  // Set when a body errors on member access or indexing of an
+  // unconstrained variable: the signature per-instantiation
+  // typechecking (deferral) can fix.
+  self.sawStructuralGenericError = false
   // Transformer definitions, looked up by relation statements.
   self.transformerNames = arrayof(string)
   self.transformerFns = arrayof(db.Function)
@@ -560,6 +564,44 @@ class TypeChecker(self) {
       self.function(classFn!)
       self.restoreBindings(snapSyms, snapVals)
     }
+  }
+
+  // Re-typecheck a deferred function's body under a concrete
+  // instantiation's bindings.  Runs BEFORE emission so any statement
+  // rewriting (iterator inlining) completes first.
+  func retypecheckDeferred(self, fn: db.Function) {
+    prevClassInfo = self.currentClassInfo
+    prevSelfType = self.currentSelfType
+    prevClassBoundVars = self.classBoundVars
+    if !isnull(fn.parentFunction) {
+      if fn.parentFunction.type == db.FuncType.Constructor {
+        dinfo = self.lookupClass(fn.parentFunction.sym)
+        if !isnull(dinfo) {
+          self.currentClassInfo = dinfo
+          self.currentSelfType = dinfo.selfType
+          self.classBoundVars = dinfo.paramVars
+        }
+      }
+    }
+    self.openScope()
+    for variable in fn.variables() {
+      if variable.isParam && !isnull(variable.typedValue) {
+        self.newSymbol(variable.sym, variable.typedValue)
+      }
+    }
+    if !isnull(fn.subBlock) {
+      bodySnapshot = arrayof(db.Statement)
+      for s in fn.subBlock.statements() {
+        bodySnapshot.append(s)
+      }
+      for s in bodySnapshot {
+        self.statement(s, fn.subBlock!)
+      }
+    }
+    self.closeScope()
+    self.currentClassInfo = prevClassInfo
+    self.currentSelfType = prevSelfType
+    self.classBoundVars = prevClassBoundVars
   }
 
   func clearExprTypes(self, block: db.Block) {
@@ -1978,6 +2020,7 @@ class TypeChecker(self) {
           // the member, the value must be an instance of that class.
           duckInfo = self.findClassByMember(field.toString())
           if isnull(duckInfo) {
+            self.sawStructuralGenericError = true
             self.typeError(
               "Field Selection on %s, which is neither an array nor a struct" % sty.toString(),
               expr.location)
@@ -4039,6 +4082,9 @@ class TypeChecker(self) {
     self.openScope()
 
     // must walk through all return statements.
+    preBodyErrors = self.countTypeErrors()
+    prevStructuralFlag = self.sawStructuralGenericError
+    self.sawStructuralGenericError = false
     returnType = null(Type)
     emptyBody = arrayof(db.Statement)
     bodyStatements = emptyBody
@@ -4087,6 +4133,48 @@ class TypeChecker(self) {
     if isnull(returnType) {
       returnType = Type(TypeName(Sym.new("none")))
     }
+    // A body that errors on member access or indexing of unconstrained
+    // parameters typechecks again under a concrete instantiation before
+    // emission, like the legacy compiler.  Concrete functions keep their
+    // errors: instantiation cannot improve them.
+    if self.countTypeErrors() > preBodyErrors && self.sawStructuralGenericError {
+      deferVars = arrayof(Type)
+      for variable in fn.variables() {
+        if variable.isParam && !isnull(variable.typedValue) {
+          dpv = self.resolve(variable.typedValue!)
+          if dpv.type == Type.TypeClass.Var {
+            deferVars.append(Type(dpv.tyvar!))
+          }
+        }
+      }
+      if deferVars.length() > 0 {
+        while self.countTypeErrors() > preBodyErrors {
+          self.popTypeError()
+        }
+        if !isnull(fn.subBlock) {
+          self.clearExprTypes(fn.subBlock!)
+        }
+        rres = self.resolve(monoResult)
+        if rres.type == Type.TypeClass.Var {
+          deferVars.append(Type(rres.tyvar!))
+        }
+        deferredType = Type(PolymorphicType(deferVars,
+            Type(FunctionType(paramType, monoResult))))
+        self.closeScope()  // The body's locals.
+        self.closeScope()  // The parameters.
+        deferIsMethod = (!isnull(fn.parentFunction) &&
+            fn.parentFunction.type == db.FuncType.Constructor &&
+            fn.type != db.FuncType.Operator)
+        if !deferIsMethod {
+          self.newSymbolGlobal(fn.sym, deferredType)
+        }
+        fn.typedValue = deferredType
+        fn.deferredTypecheck = true
+        self.sawStructuralGenericError = prevStructuralFlag
+        return
+      }
+    }
+    self.sawStructuralGenericError = prevStructuralFlag
     // Recursive call sites typed against the in-progress result variable
     // must agree with the actual return type.
     te = self.unify(monoResult, returnType!)

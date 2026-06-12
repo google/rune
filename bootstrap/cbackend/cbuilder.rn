@@ -204,6 +204,33 @@ class CBuilder(self, tc: types.TypeChecker) {
     self.registerFunctions(module)
     self.registerModuleVariables(module)
     self.resolveNestedInstantiations(module)
+    // Deferred bodies typecheck under their first concrete instantiation
+    // BEFORE any emission: statement rewriting (iterator inlining) must
+    // finish before the emitter walks code.  Their expression types are
+    // shared variables; each emission resolves them under its own
+    // instantiation bindings.
+    for dfn in self.functions {
+      if dfn.deferredTypecheck && !isnull(dfn.typedValue) {
+        dfty = dfn.typedValue!
+        if dfty.type == types.Type.TypeClass.Polymorphic {
+          dpi = dfty.poly.instantiations
+          if !isnull(dpi) {
+            dDone = false
+            for dinst in dpi {
+              if !dDone {
+                self.resolveInstantiation(dinst)
+                if self.instantiationIsConcrete(dinst) {
+                  self.instantiate(dfty.poly!, dinst)
+                  self.typechecker.retypecheckDeferred(dfn)
+                  self.deInstantiate(dfty.poly!)
+                  dDone = true
+                }
+              }
+            }
+          }
+        }
+      }
+    }
     module.genC(self)
     // Destroy module-level objects with destructors when main exits.
     for index in range(self.mainFinalSyms.length()) {
