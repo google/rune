@@ -890,6 +890,8 @@ enum CRuntimeFunction {
    RotateLeft
    RotateRight
    FloatModulus
+   FloatAbs
+   IntAbs
 
    // Process and byte-level IO builtins
    Exit
@@ -944,6 +946,16 @@ enum CRuntimeFunction {
    // A call to an extern "C" function: emitted as rn_<name>, implemented by
    // the extern_io runtime fragment.
    ExternC
+
+   // Modular arithmetic for "expr mod m" expressions.
+   ModReduce
+   ModReduceSigned
+   ModAdd
+   ModSub
+   ModMul
+   ModDiv
+   ModExp
+   ModNegate
 }
 
 class CCall(self, location: db.Location, fntype: CRuntimeFunction, args: CExpr?, fn: CExpr? = null(CExpr),
@@ -1009,6 +1021,16 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.FloatModulus => {
         e.include("<math.h>")
         e.write("fmod")
+      }
+
+      CRuntimeFunction.FloatAbs => {
+        e.include("<math.h>")
+        e.write("fabs")
+      }
+
+      CRuntimeFunction.IntAbs => {
+        e.include("<stdlib.h>")
+        e.write("llabs")
       }
 
       CRuntimeFunction.Exit => {
@@ -1101,6 +1123,46 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.ArraySlice => {
         e.needArraySlice()
         e.write("array_slice")
+      }
+
+      CRuntimeFunction.ModReduce => {
+        e.needModular()
+        e.write("mod_reduce")
+      }
+
+      CRuntimeFunction.ModReduceSigned => {
+        e.needModular()
+        e.write("mod_reduce_signed")
+      }
+
+      CRuntimeFunction.ModAdd => {
+        e.needModular()
+        e.write("mod_add")
+      }
+
+      CRuntimeFunction.ModSub => {
+        e.needModular()
+        e.write("mod_sub")
+      }
+
+      CRuntimeFunction.ModMul => {
+        e.needModular()
+        e.write("mod_mul")
+      }
+
+      CRuntimeFunction.ModDiv => {
+        e.needModular()
+        e.write("mod_div")
+      }
+
+      CRuntimeFunction.ModExp => {
+        e.needModular()
+        e.write("mod_exp")
+      }
+
+      CRuntimeFunction.ModNegate => {
+        e.needModular()
+        e.write("mod_neg")
       }
 
       CRuntimeFunction.StringToHex => {

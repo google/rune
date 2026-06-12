@@ -1147,6 +1147,35 @@ class TypeChecker(self) {
         result = trueTy
       }
 
+      db.ExprType.Modint => {
+        // <left> mod <m>: the left expression evaluates in Z/m.  The result
+        // has the modulus's type, or bool when the left expression is a
+        // comparison (both comparison operands reduce mod m).
+        modLeft = expr.firstChildExpr!
+        modModulus = modLeft.nextExprChildExpr!
+        modLeftTy = self.expr(modLeft)
+        modTy = self.expr(modModulus)
+        if isnull(modLeftTy) || isnull(modTy) {
+          return modLeftTy
+        }
+        te = self.unify(modTy!, UINTEGER())
+        if !isnull(te) {
+          self.typeError(
+            "Modulus must be an unsigned integer: %s" % te.msg, expr.location)
+          return null(Type)
+        }
+        rModLeftTy = self.resolve(modLeftTy!)
+        if (rModLeftTy.type == Type.TypeClass.Typename &&
+            rModLeftTy.tyname.name.name == "bool") {
+          result = rModLeftTy
+        } else {
+          // Sign differences (e.g. -1 mod 13) are fine: values reduce into
+          // [0, m), so only adapt widths when both sides are concrete.
+          te = self.unify(modLeftTy!, modTy!)
+          result = modTy
+        }
+      }
+
       db.ExprType.Slice => {
         sliceBase = expr.firstChildExpr!
         sliceLower = sliceBase.nextExprChildExpr!

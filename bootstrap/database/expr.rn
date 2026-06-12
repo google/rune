@@ -819,6 +819,7 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Tuple => return self.genCTuple(builder)
       ExprType.Index => return self.genCIndex(builder)
       ExprType.Slice => return self.genCSlice(builder)
+      ExprType.Modint => return self.genCModint(builder)
 
       // Structs
       ExprType.Dot => return self.genCFieldSel(builder)
@@ -1178,6 +1179,90 @@ class Expr(self, type: ExprType, location: Location) {
     return builder.cIndex(self.location, indexee.typedValue, left, i)
   }
 
+  // <left> mod <m>: emit the left expression tree with every arithmetic
+  // operator mapped to a modular runtime helper and every leaf reduced into
+  // [0, m).  The modulus expression re-generates per use site (it appears as
+  // an argument of each helper call); a C expression object can only sit in
+  // one argument list.
+  func genCModint(self, builder: c.CBuilder) -> c.CExpr {
+    left = self.firstChildExpr!
+    modulus = left.nextExprChildExpr!
+    return left.genCModular(builder, modulus)
+  }
+
+  func genCModular(self, builder: c.CBuilder, modulus: Expr) -> c.CExpr {
+    switch self.type {
+      ExprType.Add, ExprType.Sub, ExprType.Mul, ExprType.Div => {
+        l = self.firstChildExpr!
+        r = l.nextExprChildExpr!
+        switch self.type {
+          ExprType.Add => modfn = c.CRuntimeFunction.ModAdd
+          ExprType.Sub => modfn = c.CRuntimeFunction.ModSub
+          ExprType.Mul => modfn = c.CRuntimeFunction.ModMul
+          default => modfn = c.CRuntimeFunction.ModDiv
+        }
+        args = c.CExprList()
+        args.appendCExpr(l.genCModular(builder, modulus))
+        args.appendCExpr(r.genCModular(builder, modulus))
+        args.appendCExpr(modulus.genC(builder))
+        return builder.cCall(self.location, modfn, c.CExpr(args))
+      }
+      ExprType.Exp => {
+        // The base reduces mod m; the exponent is an ordinary integer.
+        b = self.firstChildExpr!
+        e = b.nextExprChildExpr!
+        expArgs = c.CExprList()
+        expArgs.appendCExpr(b.genCModular(builder, modulus))
+        expArgs.appendCExpr(e.genC(builder))
+        expArgs.appendCExpr(modulus.genC(builder))
+        return builder.cCall(self.location, c.CRuntimeFunction.ModExp, c.CExpr(expArgs))
+      }
+      ExprType.Negate, ExprType.NegateTrunc => {
+        negChild = self.firstChildExpr!
+        negArgs = c.CExprList()
+        negArgs.appendCExpr(negChild.genCModular(builder, modulus))
+        negArgs.appendCExpr(modulus.genC(builder))
+        return builder.cCall(self.location, c.CRuntimeFunction.ModNegate, c.CExpr(negArgs))
+      }
+      ExprType.Equal, ExprType.Notequal, ExprType.Lt, ExprType.Le, ExprType.Gt, ExprType.Ge => {
+        // Compare values after reduction.
+        l = self.firstChildExpr!
+        r = l.nextExprChildExpr!
+        switch self.type {
+          ExprType.Equal => cmpop = c.CBinaryOperator.Type.Equals
+          ExprType.Notequal => cmpop = c.CBinaryOperator.Type.NotEquals
+          ExprType.Lt => cmpop = c.CBinaryOperator.Type.LessThan
+          ExprType.Le => cmpop = c.CBinaryOperator.Type.LessThanEqual
+          ExprType.Gt => cmpop = c.CBinaryOperator.Type.GreaterThan
+          default => cmpop = c.CBinaryOperator.Type.GreaterThanEqual
+        }
+        // Reduced values are uint64; equality emits isequal_uint64_t.
+        return c.CExpr(c.CBinaryOperator(self.location, cmpop,
+            builder.cIntType(self.location, false, 64u32),
+            l.genCModular(builder, modulus), r.genCModular(builder, modulus)))
+      }
+      default => {
+        // A leaf value: reduce it into [0, m), respecting its sign.
+        leafIsSigned = false
+        if !isnull(self.typedValue) {
+          leafTy = builder.typechecker.resolve(self.typedValue!)
+          if leafTy.type == types.Type.TypeClass.Int {
+            leafIsSigned = leafTy.int.isSigned
+          } else if leafTy.type == types.Type.TypeClass.AnyInt {
+            leafIsSigned = leafTy.anyInt.isSigned
+          }
+        }
+        leafArgs = c.CExprList()
+        leafArgs.appendCExpr(self.genC(builder))
+        leafArgs.appendCExpr(modulus.genC(builder))
+        if leafIsSigned {
+          return builder.cCall(self.location, c.CRuntimeFunction.ModReduceSigned, c.CExpr(leafArgs))
+        }
+        return builder.cCall(self.location, c.CRuntimeFunction.ModReduce, c.CExpr(leafArgs))
+      }
+    }
+  }
+
   func genCSlice(self, builder: c.CBuilder) -> c.CExpr {
     base = self.firstChildExpr!
     lower = base.nextExprChildExpr!
@@ -1362,6 +1447,33 @@ class Expr(self, type: ExprType, location: Location) {
     // Process and byte-level IO builtins map to runtime helpers.
     if left.type == ExprType.Ident {
       builtinName = left.val.symVal.name
+      if builtinName == "secret" || builtinName == "reveal" {
+        // The bootstrap has no constant-time mode; secrecy wrappers are
+        // identity functions.
+        inner = right
+        if right.type == ExprType.List && !isnull(right.firstChildExpr) {
+          inner = right.firstChildExpr!
+        }
+        return inner.genC(builder)
+      }
+      if builtinName == "abs" && isnull(builder.findFunction("abs")) {
+        // abs() maps to fabs for floats, llabs for integers; C's abs()
+        // truncates doubles to int.
+        absArg = right
+        if right.type == ExprType.List && !isnull(right.firstChildExpr) {
+          absArg = right.firstChildExpr!
+        }
+        absFn = c.CRuntimeFunction.IntAbs
+        if !isnull(absArg.typedValue) {
+          absTy = builder.typechecker.resolve(absArg.typedValue!)
+          if absTy.type == types.Type.TypeClass.Float {
+            absFn = c.CRuntimeFunction.FloatAbs
+          }
+        }
+        absArgs = c.CExprList()
+        absArgs.appendCExpr(absArg.genC(builder))
+        return builder.cCall(self.location, absFn, c.CExpr(absArgs))
+      }
       if (builtinName == "exit" || builtinName == "readByte" ||
           builtinName == "writeByte" || builtinName == "readBytes" ||
           builtinName == "writeBytes") {

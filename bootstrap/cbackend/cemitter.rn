@@ -96,6 +96,11 @@ class CEmitter(self, filename: string) {
     self.runtime.needStringMethods()
   }
 
+  func needModular(self) {
+    self.include("<stdint.h>")
+    self.runtime.cFragment("modular", "cbackend/cruntime/modular.inc")
+  }
+
   func needExternIo(self) {
     self.include("<stdio.h>")
     self.include("<stdlib.h>")

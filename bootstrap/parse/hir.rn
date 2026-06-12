@@ -773,8 +773,13 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
 
   // Format: unitTest(IDENT? block(...))
   func buildUnitTest(self: HirBuilder, statementNode: Node) {
-    // A unittest block runs inline where it appears.
-    self.buildBlockStatement(statementNode.lastChildNode!)
+    // A unittest block runs inline where it appears, but only in the
+    // top-level module (whose parent is the root Package function); tests
+    // in imported modules are not built.
+    parent = self.destModule.parentFunction
+    if !isnull(parent) && parent.type == db.FuncType.Package {
+      self.buildBlockStatement(statementNode.lastChildNode!)
+    }
   }
 
   // Format: yield(expr(...))
