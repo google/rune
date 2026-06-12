@@ -753,12 +753,25 @@ class CBinaryOperator(self, location: db.Location, type: CBinaryOperator.Type,
 
 
   func emitEquality(self, e: CEmitter) {
+     assert !isnull(self.ctype)
+     if self.ctype.type == CTypeExpr.Type.Pointer {
+       // Class instances are pointers; equality is pointer identity.
+       e.write("(")
+       self.leftCExpr.emit(e)
+       if self.type == CBinaryOperator.Type.NotEquals {
+         e.write(" != ")
+       } else {
+         e.write(" == ")
+       }
+       self.rightCExpr.emit(e)
+       e.write(")")
+       return
+     }
      e.needPrimitiveTypeEqualities()
      if self.type == CBinaryOperator.Type.NotEquals {
        e.write("!")
      }
 
-     assert !isnull(self.ctype)
      e.write("isequal_%s_t(" % self.ctype.toString())
 
      self.leftCExpr.emit(e)
@@ -1345,7 +1358,7 @@ relevantType: CTypeExpr?) {
 	// because array_append can change the address in memory where the
 	// array lives.
         array = self.args.cExprList.index(0)
-        if array.type == CExpr.Type.Identifier {
+        if array.type == CExpr.Type.Identifier || array.type == CExpr.Type.Field {
           array.emit(e)
           e.write(" = ")
         }
@@ -1362,7 +1375,7 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.ArrayResize => {
         // Resizing can move the array; assign the result back.
         array = self.args.cExprList.index(0)
-        if array.type == CExpr.Type.Identifier {
+        if array.type == CExpr.Type.Identifier || array.type == CExpr.Type.Field {
           array.emit(e)
           e.write(" = ")
         }
@@ -2254,6 +2267,7 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
       switch self.type {
         CDeclaration.Type.Function => self.cFunctionDeclaration.emit(e, true)
         CDeclaration.Type.Struct => self.cStructDeclaration.emit(e, true)
+        CDeclaration.Type.Array => self.cArrayDeclaration.emit(e, true)
         CDeclaration.Type.Class => self.cClassDeclaration.emit(e, true)
       }
       self.protoEmitted = true

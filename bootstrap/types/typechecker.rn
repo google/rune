@@ -304,6 +304,8 @@ class TypeChecker(self) {
   // State for iterator inlining: a counter making inlined variable names
   // unique, and the rename map (old name -> new Sym) for the current inline.
   self.iteratorInlineCounter = 0u32
+  // Counter making hoisted nested-function names unique.
+  self.hoistCounter = 0u32
   // Transformer definitions, looked up by relation statements.
   self.transformerNames = arrayof(string)
   self.transformerFns = arrayof(db.Function)
@@ -557,6 +559,76 @@ class TypeChecker(self) {
     fd = FunctionDef(fn.sym)
     fd.fn = fn
     self.insertFunctionDef(fd)
+  }
+
+  // Functions nested inside plain functions or methods (e.g. the resize
+  // helper inside the Hashed transformer's insert method) hoist to module
+  // level under a unique name: the bootstrap has one flat namespace and C
+  // has no nested functions.  Call sites in the parent body are renamed.
+  func hoistNestedFunctions(self, module: db.Function) {
+    for childfunc in module.childFunctions() {
+      if childfunc.type == db.FuncType.Constructor {
+        for method in childfunc.childFunctions() {
+          self.hoistNestedFrom(method, module)
+        }
+      } else if childfunc.type == db.FuncType.Plain {
+        self.hoistNestedFrom(childfunc, module)
+      }
+    }
+  }
+
+  func hoistNestedFrom(self, parent: db.Function, module: db.Function) {
+    nested = arrayof(db.Function)
+    for childfunc in parent.childFunctions() {
+      if childfunc.type == db.FuncType.Plain {
+        nested.append(childfunc)
+      }
+    }
+    for hoisted in nested {
+      // Deeper nesting hoists first so its renames apply inside |hoisted|.
+      self.hoistNestedFrom(hoisted, module)
+      oldName = hoisted.sym.name
+      self.hoistCounter += 1u32
+      newSym = Sym.new("%s_h%u" % (oldName, self.hoistCounter))
+      hoisted.sym = newSym
+      parent.removeChildFunction(hoisted)
+      module.appendChildFunction(hoisted)
+      if !isnull(parent.subBlock) {
+        self.renameIdentsInBlock(parent.subBlock!, oldName, newSym)
+      }
+      // A nested function's parameter named self is an ordinary parameter,
+      // not a method receiver; rename it so the method machinery (implicit
+      // self in call normalization, self-type binding) leaves it alone.
+      for variable in hoisted.variables() {
+        if variable.isParam && variable.sym.name == "self" {
+          newSelfSym = Sym.new("self_h%u" % self.hoistCounter)
+          variable.sym = newSelfSym
+          if !isnull(hoisted.subBlock) {
+            self.renameIdentsInBlock(hoisted.subBlock!, "self", newSelfSym)
+          }
+        }
+      }
+    }
+  }
+
+  func renameIdentsInBlock(self, block: db.Block, oldName: string, newSym: Sym) {
+    for statement in block.statements() {
+      if !isnull(statement.expr) {
+        self.renameIdentsInExpr(statement.expr!, oldName, newSym)
+      }
+      if !isnull(statement.subBlock) {
+        self.renameIdentsInBlock(statement.subBlock!, oldName, newSym)
+      }
+    }
+  }
+
+  func renameIdentsInExpr(self, expr: db.Expr, oldName: string, newSym: Sym) {
+    if expr.type == db.ExprType.Ident && expr.val.symVal.name == oldName {
+      expr.val = db.Value(newSym)
+    }
+    for child in expr.childExprs() {
+      self.renameIdentsInExpr(child, oldName, newSym)
+    }
   }
 
   // The function type to apply for an operator expression: user-defined
@@ -1617,6 +1689,9 @@ class TypeChecker(self) {
         field = expr.firstChildExpr!.nextExprChildExpr!
         isClassAccess = false
         if sty.type == Type.TypeClass.Typename {
+          // The class may not have typechecked yet (e.g. an element of a
+          // relation iterated from an earlier class's method).
+          self.demandClass(sty.tyname.name)
           info = self.lookupClass(sty.tyname.name)
           einfo = self.lookupEnum(sty.tyname.name)
           if !isnull(info) {
@@ -3134,6 +3209,9 @@ class TypeChecker(self) {
             self.instantiateCodeBlock(statement, emptyEnv2, true)
           }
         }
+        // Hoist functions nested inside plain functions and methods (the
+        // relation transformers just instantiated may have copied them in).
+        self.hoistNestedFunctions(fn)
         // Register all functions first so call sites can look up parameter
         // names and defaults regardless of definition order.  Module
         // children stay out of the registry: their names may collide with

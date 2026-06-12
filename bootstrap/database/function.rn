@@ -740,6 +740,11 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     for variable in self.variables() {
       variable.copy(newFunction)
     }
+    // Nested function definitions (e.g. a helper inside a transformer's
+    // method template) copy along with their parent.
+    for childFunction in self.childFunctions() {
+      childFunction.copy(newFunction)
+    }
     newBlock = self.subBlock.copy()
     newFunction.insertSubBlock(newBlock)
     if !isnull(self.typeExpr) {

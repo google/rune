@@ -989,11 +989,11 @@ class CBuilder(self, tc: types.TypeChecker) {
         dec.addDependency(depdec!)
       } else if exists.cElementType.type == CTypeExpr.Type.Pointer {
         // Arrays of class instances need the class struct typedef first.
-        depdec = self.findDeclaration(
+        // By name: the class may not have been declared yet (e.g. a
+        // relation hash-table field in an earlier class); names resolve
+        // when declarations are ordered.
+        dec.addDependencyName(
             exists.cElementType.cPointerType.target.toString() + "_class")
-        if !isnull(depdec) {
-          dec.addDependency(depdec!)
-        }
       }
 
       self.addDeclaration(dec)

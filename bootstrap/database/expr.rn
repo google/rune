@@ -1773,7 +1773,12 @@ class Expr(self, type: ExprType, location: Location) {
         }
         args = c.CExprList()
         args.append(array.genC(builder))
-        args.append(right.genC(builder))
+        // No-arg methods like length() must not emit an empty tuple object.
+        emptyArgs = ((right.type == ExprType.List || right.type == ExprType.Tuple) &&
+            isnull(right.firstChildExpr))
+        if !emptyArgs {
+          args.append(right.genC(builder))
+        }
         return builder.cCall(self.location, fn, c.CExpr(args), right.typedValue)
       }
     }
