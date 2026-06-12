@@ -1278,6 +1278,32 @@ class Expr(self, type: ExprType, location: Location) {
     return builder.cBinaryOperator(self.location, op, left.typedValue, l, r)
   }
 
+  // True if |e| is a recursive call to the wide-resulted function instance
+  // currently being emitted (its snapshot type may be stale).
+  func exprIsRecursiveWideCall(self, builder: c.CBuilder, e: Expr) -> bool {
+    if e.type != ExprType.Call {
+      return false
+    }
+    if isnull(builder.currentEmittingFn) {
+      return false
+    }
+    target = e.firstChildExpr
+    if isnull(target) {
+      return false
+    }
+    if target.type != ExprType.Ident {
+      return false
+    }
+    callee = builder.findFunction(target.val.symVal.name)
+    if isnull(callee) {
+      return false
+    }
+    if callee! != builder.currentEmittingFn! {
+      return false
+    }
+    return builder.currentEmittingResultWide > 0u32
+  }
+
   // Binary operators on integers wider than 64 bits map to wide_* runtime
   // helpers.  Shift and exponent right-hand sides stay 64-bit scalars.
   func genCWideBinaryOp(self, builder: c.CBuilder, l: c.CExpr, r: c.CExpr,
@@ -1287,7 +1313,9 @@ class Expr(self, type: ExprType, location: Location) {
         self.type == ExprType.Exp)
     wl = l
     wr = r
-    if builder.wideWidth(left.typedValue) == 0u32 {
+    leftWideAnyway = self.exprIsRecursiveWideCall(builder, left)
+    rightWideAnyway = self.exprIsRecursiveWideCall(builder, right)
+    if builder.wideWidth(left.typedValue) == 0u32 && !leftWideAnyway {
       wl = builder.cWideFromU64(self.location, l, wideW,
           builder.wideSigned(right.typedValue))
     }
@@ -1297,7 +1325,7 @@ class Expr(self, type: ExprType, location: Location) {
         toArgs.appendCExpr(r)
         wr = builder.cWideCall(self.location, "wide_to_u64", toArgs)
       }
-    } else if builder.wideWidth(right.typedValue) == 0u32 {
+    } else if builder.wideWidth(right.typedValue) == 0u32 && !rightWideAnyway {
       wr = builder.cWideFromU64(self.location, r, wideW,
           builder.wideSigned(left.typedValue))
     }
@@ -2008,6 +2036,17 @@ class Expr(self, type: ExprType, location: Location) {
         specializedName = builder.classCName(ctorResultTy!)
       } else {
         specializedName = argTypes.genSpecializationName(left.val.symVal.name)
+      }
+      // A recursive call inside the instance being emitted is a call to
+      // that same instance; its argument snapshots may chain to stale
+      // definition-time bindings and compose the wrong name.
+      if !isnull(builder.currentEmittingFn) {
+        recCallee = builder.findFunction(left.val.symVal.name)
+        if !isnull(recCallee) {
+          if recCallee! == builder.currentEmittingFn! {
+            specializedName = builder.currentEmittingName
+          }
+        }
       }
       if !builder.alreadyEmitted(specializedName) {
         // The definition-side sweep skips instantiations whose bindings only

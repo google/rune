@@ -320,7 +320,16 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     // as depedencies of this function.
     builder.openDependencyList();
     savedTryBase = builder.openFunctionTryContext()
+    prevEmittingFn = builder.currentEmittingFn
+    prevEmittingName = builder.currentEmittingName
+    prevEmittingResultWide = builder.currentEmittingResultWide
+    builder.currentEmittingFn = self
+    builder.currentEmittingName = specializedName
+    builder.currentEmittingResultWide = builder.wideWidth(fntype.poly.scope.function.result)
     body = self.subBlock.genC(builder)
+    builder.currentEmittingFn = prevEmittingFn
+    builder.currentEmittingName = prevEmittingName
+    builder.currentEmittingResultWide = prevEmittingResultWide
     builder.closeFunctionTryContext(savedTryBase)
     builder.deInstantiate(fntype.poly!)
     builder.closeScope()

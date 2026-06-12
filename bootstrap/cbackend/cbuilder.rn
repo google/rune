@@ -145,6 +145,12 @@ class CBuilder(self, tc: types.TypeChecker) {
   // Names of module-level variables: emitted as file-scope C statics so
   // functions can reference them (a main-local would be out of scope).
   self.moduleVarNames = arrayof(string)
+  // The polymorphic function instance currently being emitted: recursive
+  // calls inside it reuse its specialization name and result width
+  // directly (their snapshot types can chain to stale def-time bindings).
+  self.currentEmittingFn = null(db.Function)
+  self.currentEmittingName = ""
+  self.currentEmittingResultWide = 0u32
   self.insertDependencyStack(DependencyStack())
 
   func registerModuleVariable(self, name: string) {
