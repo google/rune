@@ -1685,7 +1685,8 @@ class Expr(self, type: ExprType, location: Location) {
         method = base.nextExprChildExpr!
         name = builder.methodCallCName(base.typedValue!, method.toString(), right.typedValue)
         if !builder.alreadyEmitted(name) {
-          builder.emitMethodOnDemand(base.typedValue!, method.toString(), name)
+          builder.emitMethodOnDemand(base.typedValue!, method.toString(), name,
+              right.typedValue)
         }
         args = c.CExprList()
         args.appendCExpr(base.genC(builder))

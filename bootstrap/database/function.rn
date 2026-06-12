@@ -401,7 +401,13 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       } else if ctype.type == c.CTypeExpr.Type.Pointer {
         fieldDeps.append(ctype.cPointerType.target.toString() + "_class")
       }
-      fields.append(c.CParameter(self.location, info.strct.fieldnames[i].name, ctype!))
+      fieldParam = c.CParameter(self.location, info.strct.fieldnames[i].name, ctype!)
+      for gname in info.generatedFieldNames {
+        if gname == info.strct.fieldnames[i].name {
+          fieldParam.noPrint = true
+        }
+      }
+      fields.append(fieldParam)
     }
     toStringMethod = ""
     for childfunc in self.childFunctions() {

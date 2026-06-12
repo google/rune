@@ -419,7 +419,7 @@ class CBuilder(self, tc: types.TypeChecker) {
   // sweep has not produced it (its recorded instantiation only resolves
   // under an outer binding, e.g. a call from another class's method).
   func emitMethodOnDemand(self, instanceTy: types.Type, methodName: string,
-      wantName: string) {
+      wantName: string, argsTy: types.Type? = null(types.Type)) {
     inst = self.typechecker.resolve(instanceTy)
     if inst.type != types.Type.TypeClass.Typename {
       return
@@ -448,6 +448,43 @@ class CBuilder(self, tc: types.TypeChecker) {
                     childfunc.genCMethodInstance(self, mfn!)
                   }
                   self.deInstantiate(mty.poly!)
+                }
+              }
+            }
+          }
+          if !self.alreadyEmitted(wantName) {
+            // No recorded instantiation produced the wanted specialization
+            // (e.g. it only resolved under an outer binding): synthesize
+            // one from this call's instance and argument types.
+            opened = self.typechecker.openPoly(mty.poly!)
+            if opened.type == types.Type.TypeClass.Function {
+              params3 = opened.function.params
+              te = null(types.TypeError)
+              if (params3.type == types.Type.TypeClass.Tuple &&
+                  params3.tuple.elements.length() > 0) {
+                te = self.typechecker.unify(params3.tuple.elements[0], inst)
+                if isnull(te) && !isnull(argsTy) {
+                  rest = arrayof(types.Type)
+                  for pidx in range(params3.tuple.elements.length()) {
+                    if pidx > 0 {
+                      rest.append(params3.tuple.elements[pidx])
+                    }
+                  }
+                  if rest.length() == 1 {
+                    restTy = rest[0]
+                  } else {
+                    restTy = types.Type(types.TupleType(rest))
+                  }
+                  te = self.typechecker.unify(restTy, argsTy!)
+                }
+              } else {
+                te = self.typechecker.unify(params3, inst)
+              }
+              if isnull(te) {
+                mfn3 = self.typechecker.resolve(opened)
+                if (mfn3.type == types.Type.TypeClass.Function &&
+                    self.methodDefCName(mfn3!, methodName) == wantName) {
+                  childfunc.genCMethodInstance(self, mfn3!)
                 }
               }
             }

@@ -1637,6 +1637,9 @@ class CParameter(self, location: db.Location, name: string, type: CTypeExpr) {
   self.location = location
   self.name = name
   self.type = type
+  // Relation-generated class fields are skipped by the print helper,
+  // which would otherwise recurse through the relation cycle.
+  self.noPrint = false
 
   func emit(self, e: CEmitter) {
     // Need more advanced logic here for declarators.
@@ -2140,19 +2143,21 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
       e.writeln("tostring_string_t(\"{\");")
       first = true
       for field in self.cParamList.cParameters() {
-        if !first {
-          e.writeln("tostring_string_t(\", \");")
+        if !field.noPrint {
+          if !first {
+            e.writeln("tostring_string_t(\", \");")
+          }
+          first = false
+          e.writeln("tostring_string_t(\"%s = \");" % field.name)
+          if field.type.type == CTypeExpr.Type.Pointer {
+            e.write("tostring_%s_t(" % field.type.toString())
+          } else {
+            e.write("tostring_")
+            field.type.emit(e)
+            e.write("(")
+          }
+          e.writeln("self->%s);" % field.name)
         }
-        first = false
-        e.writeln("tostring_string_t(\"%s = \");" % field.name)
-        if field.type.type == CTypeExpr.Type.Pointer {
-          e.write("tostring_%s_t(" % field.type.toString())
-        } else {
-          e.write("tostring_")
-          field.type.emit(e)
-          e.write("(")
-        }
-        e.writeln("self->%s);" % field.name)
       }
       e.writeln("tostring_string_t(\"}\");")
     }

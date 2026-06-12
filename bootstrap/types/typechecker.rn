@@ -223,6 +223,10 @@ class ClassInfo(self, sym: Sym) {
   self.strct = null(StructType(arrayof(Sym), arrayof(Type)))
   self.selfType = null(Type)
   self.paramVars = arrayof(Type)
+  // Fields created by relation-instantiated code (back-pointers, link
+  // fields): kept in the struct but skipped by the print helper, which
+  // would otherwise recurse through the relation cycle.
+  self.generatedFieldNames = arrayof(string)
 
   func hash(self) -> u64 {
     return hashValue(self.sym.name)
@@ -306,6 +310,8 @@ class TypeChecker(self) {
   self.iteratorInlineCounter = 0u32
   // Counter making hoisted nested-function names unique.
   self.hoistCounter = 0u32
+  // True while typechecking a statement instantiated by a transformer.
+  self.currentStatementGenerated = false
   // Transformer definitions, looked up by relation statements.
   self.transformerNames = arrayof(string)
   self.transformerFns = arrayof(db.Function)
@@ -2479,6 +2485,7 @@ class TypeChecker(self) {
       self.typeError("internal: null statement in block", parent.location)
       return NONETY()
     }
+    self.currentStatementGenerated = statement.generated
     switch statement.type {
       db.StateType.Assign => {
         if isnull(statement.expr) {
@@ -3135,6 +3142,7 @@ class TypeChecker(self) {
   }
 
   func expandTransStatementTree(self, statement: db.Statement, env: TransEnv) {
+    statement.generated = true
     if !isnull(statement.expr) {
       self.expandTransExprTree(statement.expr!, env)
     }
@@ -3474,6 +3482,9 @@ class TypeChecker(self) {
       fresh = Type(self.newTyvar())
       info.strct.fieldnames.append(Sym.new(name))
       info.strct.fieldtypes.append(fresh)
+      if self.currentStatementGenerated {
+        info.generatedFieldNames.append(name)
+      }
       return fresh
     }
     self.typeError("Class %s has no member %s" % (info.sym.name, name), location)
