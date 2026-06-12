@@ -1761,6 +1761,18 @@ class Expr(self, type: ExprType, location: Location) {
       strBase = left.firstChildExpr!
       if builder.typechecker.isStringType(strBase.typedValue) {
         field = strBase.nextExprChildExpr!
+        if field.toString() == "toUint" {
+          // result = (T)rn_string_touint(s, &ok)
+          tuArgs = c.CExprList()
+          tuArgs.appendCExpr(strBase.genC(builder))
+          tuOk = right.firstChildExpr.nextExprChildExpr
+          if !isnull(tuOk) {
+            tuArgs.appendCExpr(c.CExpr(c.CPrefixOperator(self.location,
+                c.CPrefixOperator.Type.AddressOf, tuOk.genC(builder))))
+          }
+          return builder.cCall(self.location, "rn_string_touint",
+              c.CExpr(tuArgs))
+        }
         switch field.toString() {
           "length" => strfn = c.CRuntimeFunction.StringLength
           "append" => strfn = c.CRuntimeFunction.StringAppendChar

@@ -289,3 +289,11 @@ static inline uint64_t rn_max(uint64_t a, uint64_t b) {
 static inline uint64_t rn_min(uint64_t a, uint64_t b) {
   return a < b ? a : b;
 }
+
+// "123".toUint(type, var ok): decimal parse with success flag.
+static inline uint64_t rn_string_touint(const char *s, unsigned char *ok) {
+  char *end;
+  unsigned long long v = strtoull(s, &end, 10);
+  *ok = (end != s && *end == '\0');
+  return (uint64_t)v;
+}

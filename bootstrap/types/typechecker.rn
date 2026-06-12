@@ -2058,6 +2058,45 @@ class TypeChecker(self) {
         // A <moduleAlias>.<member> target becomes a plain identifier, so
         // named and default arguments normalize for it too.
         didRewrite = self.rewriteModuleMember(fnchild)
+        // "123".toUint(type, var ok): the result type is the type argument.
+        if fnchild.type == db.ExprType.Dot {
+          suBase = fnchild.firstChildExpr!
+          suMember = suBase.nextExprChildExpr
+          suIsToUint = false
+          if !isnull(suMember) {
+            if suMember.type == db.ExprType.Ident {
+              if suMember.val.symVal.name == "toUint" {
+                suIsToUint = true
+              }
+            }
+          }
+          if suIsToUint {
+            suBaseTy = self.expr(suBase)
+            suIsString = false
+            if !isnull(suBaseTy) {
+              suIsString = self.isStringType(self.resolve(suBaseTy!))
+            }
+            if suIsString {
+              suArgs = fnchild.nextExprChildExpr!
+              suTypeArg = suArgs.firstChildExpr!
+              suResult = self.explicitType(suTypeArg)
+              suTypeArg.typedValue = suResult
+              suOkArg = suTypeArg.nextExprChildExpr
+              if !isnull(suOkArg) {
+                if suOkArg.type == db.ExprType.Ident {
+                  suOkTy = self.symbol(suOkArg.val.symVal!)
+                  if !isnull(suOkTy) {
+                    self.unify(suOkTy!, BOOL)
+                  }
+                  suOkArg.typedValue = BOOL
+                }
+              }
+              fnchild.typedValue = FN(suResult, suResult)
+              expr.typedValue = suResult
+              return suResult
+            }
+          }
+        }
         if fnchild.type == db.ExprType.Ident {
           // A constructor call may precede the class's own typechecking
           // (e.g. a hoisted nested class defined after its user); resolving
