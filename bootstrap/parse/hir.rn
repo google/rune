@@ -547,8 +547,10 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
       node = node.nextNodeChildNode
     }
     assert isnull(node)
-    db.Variable(function, /*isParam=*/ true, /*isConst=*/ !isVarParam, varSym, initializerExpr,
-        typeConstraintExpr, /*generated=*/ false, paramNode.location)
+    newVariable = db.Variable(function, /*isParam=*/ true, /*isConst=*/ !isVarParam,
+        varSym, initializerExpr, typeConstraintExpr, /*generated=*/ false,
+        paramNode.location)
+    newVariable.inTemplateSig = isTemplateParam
   }
 
   // Format: enum(IDENT entry(IDENT INTEGER?)*)
