@@ -290,7 +290,12 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     builder.instantiate(fntype.poly!, instantiation)
     paramTypes = arrayof(types.Type)
     for variable in self.variables() {
-      paramTypes.append(builder.typechecker.resolve(variable.typedValue!))
+      if isnull(variable.typedValue) {
+        // A parameter that never typechecked (poisoned method).
+        paramTypes.append(types.NONETY())
+      } else {
+        paramTypes.append(builder.typechecker.resolve(variable.typedValue!))
+      }
     }
     // The specialization name comes from the resolved parameter
     // types, matching genSpecializationName at call sites.

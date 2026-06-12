@@ -2025,7 +2025,12 @@ class Expr(self, type: ExprType, location: Location) {
               builder.instantiate(polyType.poly!, inst)
               ptypes = arrayof(types.Type)
               for variable in callee.variables() {
-                ptypes.append(builder.typechecker.resolve(variable.typedValue!))
+                if isnull(variable.typedValue) {
+                  // A parameter that never typechecked (poisoned method).
+                  ptypes.append(types.NONETY())
+                } else {
+                  ptypes.append(builder.typechecker.resolve(variable.typedValue!))
+                }
               }
               iname = types.Type(types.TupleType(ptypes)).genSpecializationName(callee.sym.name)
               builder.deInstantiate(polyType.poly!)
