@@ -209,8 +209,35 @@ class CBuilder(self, tc: types.TypeChecker) {
     // finish before the emitter walks code.  Their expression types are
     // shared variables; each emission resolves them under its own
     // instantiation bindings.
+    // Deferred constructors first: they re-create the class fields the
+    // deferred methods and operators reference.
+    for dctor in self.functions {
+      if dctor.deferredTypecheck && dctor.type == db.FuncType.Constructor {
+        if !isnull(dctor.typedValue) {
+          dcty = dctor.typedValue!
+          if dcty.type == types.Type.TypeClass.Polymorphic {
+            dcpi = dcty.poly.instantiations
+            if !isnull(dcpi) {
+              dcDone = false
+              for dcinst in dcpi {
+                if !dcDone {
+                  self.resolveInstantiation(dcinst)
+                  if self.instantiationIsConcrete(dcinst) {
+                    self.instantiate(dcty.poly!, dcinst)
+                    self.typechecker.retypecheckDeferred(dctor)
+                    dctor.deferredRetypechecked = true
+                    self.deInstantiate(dcty.poly!)
+                    dcDone = true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
     for dfn in self.functions {
-      if dfn.deferredTypecheck && !isnull(dfn.typedValue) {
+      if dfn.deferredTypecheck && !dfn.deferredRetypechecked && !isnull(dfn.typedValue) {
         dfty = dfn.typedValue!
         if dfty.type == types.Type.TypeClass.Polymorphic {
           dpi = dfty.poly.instantiations

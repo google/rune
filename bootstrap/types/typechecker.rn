@@ -573,7 +573,15 @@ class TypeChecker(self) {
     prevClassInfo = self.currentClassInfo
     prevSelfType = self.currentSelfType
     prevClassBoundVars = self.classBoundVars
-    if !isnull(fn.parentFunction) {
+    if fn.type == db.FuncType.Constructor {
+      // A deferred constructor re-discovers its fields concretely.
+      cinfo = self.lookupClass(fn.sym)
+      if !isnull(cinfo) {
+        self.currentClassInfo = cinfo
+        self.currentSelfType = cinfo.selfType
+        self.classBoundVars = cinfo.paramVars
+      }
+    } else if !isnull(fn.parentFunction) {
       if fn.parentFunction.type == db.FuncType.Constructor {
         dinfo = self.lookupClass(fn.parentFunction.sym)
         if !isnull(dinfo) {
@@ -1834,6 +1842,7 @@ class TypeChecker(self) {
           // Indexing a string yields a byte.
           result = U(8)
         } else if rightChild.type != db.ExprType.Constant {
+          self.sawStructuralGenericError = true
           self.typeError(
            "Indexes must be unsigned integer literals, not %s." % rightChild.toString(),
            expr.location)
@@ -3732,9 +3741,38 @@ class TypeChecker(self) {
     self.classBoundVars = info.paramVars
 
     // Typecheck the constructor body; this discovers the data members.
+    preCtorErrors = self.countTypeErrors()
+    prevCtorStructural = self.sawStructuralGenericError
+    self.sawStructuralGenericError = false
+    preCtorFields = info.strct.fieldnames.length()
     for statement in fn.subBlock.statements() {
       self.statement(statement, fn.subBlock)
     }
+    // A constructor body that errors structurally on unconstrained
+    // parameters (self.rows = m.length()) typechecks again under a
+    // concrete instantiation before emission; the fields it created in
+    // the failed pass are dropped and re-created concretely then.
+    if self.countTypeErrors() > preCtorErrors && self.sawStructuralGenericError {
+      ctorHasGenericParam = false
+      for pv in info.paramVars {
+        rpv2 = self.resolve(pv)
+        if rpv2.type == Type.TypeClass.Var {
+          ctorHasGenericParam = true
+        }
+      }
+      if ctorHasGenericParam {
+        while self.countTypeErrors() > preCtorErrors {
+          self.popTypeError()
+        }
+        info.strct.fieldnames.resize(preCtorFields)
+        info.strct.fieldtypes.resize(preCtorFields)
+        if !isnull(fn.subBlock) {
+          self.clearExprTypes(fn.subBlock!)
+        }
+        fn.deferredTypecheck = true
+      }
+    }
+    self.sawStructuralGenericError = prevCtorStructural
 
     self.currentClassInfo = prevClassInfo
     self.currentSelfType = prevSelfType
@@ -3852,6 +3890,20 @@ class TypeChecker(self) {
         fieldParent.parentExpr.type == db.ExprType.Equals &&
         fieldParent.parentExpr.firstChildExpr == fieldParent) {
       isAssignTarget = true
+    }
+    // A deferred constructor has not discovered its fields yet: member
+    // misses (and assignment-creations, which would duplicate the real
+    // field) defer the accessing body instead.
+    ctorDeferredPending = false
+    if !inOwnConstructor && !isnull(info.fn) {
+      if info.fn.deferredTypecheck && !info.fn.deferredRetypechecked {
+        ctorDeferredPending = true
+      }
+    }
+    if ctorDeferredPending {
+      self.sawStructuralGenericError = true
+      self.typeError("Class %s has no member %s" % (info.sym.name, name), location)
+      return null(Type)
     }
     if inOwnConstructor || isAssignTarget {
       // First assignment to self.<name> creates the data member.
