@@ -749,7 +749,18 @@ class Expr(self, type: ExprType, location: Location) {
     switch self.type {
       // First, the operators that map directly to C binary operators
       ExprType.AddTrunc => return self.genCBinaryOp(builder)
-      ExprType.Constant => return self.val.genC(builder, false)
+      ExprType.Constant => {
+        wlit = builder.wideWidth(self.typedValue)
+        if (wlit > 0u32 && (self.val.type == DatatypeType.Int ||
+            self.val.type == DatatypeType.Uint) && self.val.intVal.width <= 64u32) {
+          // An unsuffixed literal adapted to a wide type: widen its 64-bit
+          // form at runtime.
+          return builder.cWideFromU64(self.location,
+              self.val.genC(builder, false), wlit,
+              builder.wideSigned(self.typedValue))
+        }
+        return self.val.genC(builder, false)
+      }
       ExprType.Ident => {
         if self.val.symVal.name == "argv" && !self.bindingInstance {
           // The program's argument list, built from main()'s argc/argv.
@@ -839,6 +850,14 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Index => return self.genCIndex(builder)
       ExprType.Slice => return self.genCSlice(builder)
       ExprType.Modint => return self.genCModint(builder)
+      ExprType.RandUint => {
+        randArgs = c.CExprList()
+        randArgs.appendCExpr(c.CExpr(c.CLiteral(Bigint(<u64>self.width), false)))
+        if self.width <= 64u32 {
+          return builder.cWideCall(self.location, "rn_rand_u64", randArgs)
+        }
+        return builder.cWideCall(self.location, "wide_rand", randArgs)
+      }
 
       // Structs
       ExprType.Dot => return self.genCFieldSel(builder)
@@ -993,6 +1012,46 @@ class Expr(self, type: ExprType, location: Location) {
         builder.typechecker.isStringType(valueChild.typedValue)) {
       return v
     }
+    wTo = builder.wideWidth(self.typedValue)
+    wFrom = builder.wideWidth(valueChild.typedValue)
+    if wTo > 0u32 || wFrom > 0u32 {
+      isTruncCast = self.type == ExprType.CastTrunc
+      if wTo > 0u32 && wFrom > 0u32 {
+        castArgs = c.CExprList()
+        castArgs.appendCExpr(v)
+        castArgs.appendCExpr(c.CExpr(c.CLiteral(Bigint(<u64>wTo), false)))
+        castArgs.appendCExpr(c.CExpr(c.CLiteral(
+            Bigint(builder.wideSigned(self.typedValue) ? 1u64 : 0u64), false)))
+        castArgs.appendCExpr(c.CExpr(c.CLiteral(
+            Bigint(isTruncCast ? 1u64 : 0u64), false)))
+        return builder.cWideCall(self.location, "wide_cast", castArgs)
+      }
+      if wTo > 0u32 {
+        // A 64-bit-or-narrower value widening: extend by the source's sign,
+        // then adopt the target signedness.
+        srcSigned = false
+        srcTy = builder.typechecker.resolve(valueChild.typedValue!)
+        if srcTy.type == types.Type.TypeClass.Int {
+          srcSigned = srcTy.int.isSigned
+        } else if srcTy.type == types.Type.TypeClass.AnyInt {
+          srcSigned = srcTy.anyInt.isSigned
+        }
+        widened = builder.cWideFromU64(self.location, v, wTo, srcSigned)
+        adoptArgs = c.CExprList()
+        adoptArgs.appendCExpr(widened)
+        adoptArgs.appendCExpr(c.CExpr(c.CLiteral(Bigint(<u64>wTo), false)))
+        adoptArgs.appendCExpr(c.CExpr(c.CLiteral(
+            Bigint(builder.wideSigned(self.typedValue) ? 1u64 : 0u64), false)))
+        adoptArgs.appendCExpr(c.CExpr(c.CLiteral(Bigint(1u64), false)))
+        return builder.cWideCall(self.location, "wide_cast", adoptArgs)
+      }
+      // Wide to 64 bits or narrower.
+      narrowArgs = c.CExprList()
+      narrowArgs.appendCExpr(v)
+      narrowed = builder.cWideCall(self.location, "wide_to_u64", narrowArgs)
+      cty = builder.genCType(target)
+      return c.CExpr(c.CCastExpr(self.location, cty!, narrowed))
+    }
     ctype = builder.genCType(target)
     if isnull(ctype) {
       raise Status.Unimplemented, "Cast target type not supported by C backend"
@@ -1019,6 +1078,20 @@ class Expr(self, type: ExprType, location: Location) {
     parent = self.parentExpr
     left = self.firstChildExpr!
 
+    if builder.wideWidth(left.typedValue) > 0u32 {
+      wideFn = ""
+      switch self.type {
+        ExprType.Negate => wideFn = "wide_neg"
+        ExprType.NegateTrunc => wideFn = "wide_negtrunc"
+        ExprType.Bitnot => wideFn = "wide_not"
+        default => wideFn = ""
+      }
+      if wideFn != "" {
+        wideArgs = c.CExprList()
+        wideArgs.appendCExpr(left.genC(builder))
+        return builder.cWideCall(self.location, wideFn, wideArgs)
+      }
+    }
     switch self.type {
       ExprType.Negate, ExprType.NegateTrunc => {
         // C unary minus on unsigned types already truncates (wraps).
@@ -1051,6 +1124,15 @@ class Expr(self, type: ExprType, location: Location) {
     l = left.genC(builder)
     self.bindingInstance = false
     r = right.genC(builder)
+
+    wideW = builder.wideWidth(left.typedValue)
+    if wideW == 0u32 {
+      wideW = builder.wideWidth(right.typedValue)
+    }
+    if wideW > 0u32 && self.type != ExprType.Equals {
+      return self.genCWideBinaryOp(builder, l, r, left, right, wideW)
+    }
+
     if (self.type != ExprType.Equals &&
         (builder.isClassType(left.typedValue) || builder.isClassType(right.typedValue))) {
       uop = self.genCUserOperator(builder, l, r, left, right)
@@ -1161,6 +1243,99 @@ class Expr(self, type: ExprType, location: Location) {
     return builder.cBinaryOperator(self.location, op, left.typedValue, l, r)
   }
 
+  // Binary operators on integers wider than 64 bits map to wide_* runtime
+  // helpers.  Shift and exponent right-hand sides stay 64-bit scalars.
+  func genCWideBinaryOp(self, builder: c.CBuilder, l: c.CExpr, r: c.CExpr,
+                        left: Expr, right: Expr, wideW: u32) -> c.CExpr {
+    scalarRhs = (self.type == ExprType.Shl || self.type == ExprType.Shr ||
+        self.type == ExprType.Rotl || self.type == ExprType.Rotr ||
+        self.type == ExprType.Exp)
+    wl = l
+    wr = r
+    if builder.wideWidth(left.typedValue) == 0u32 {
+      wl = builder.cWideFromU64(self.location, l, wideW,
+          builder.wideSigned(right.typedValue))
+    }
+    if scalarRhs {
+      if builder.wideWidth(right.typedValue) > 0u32 {
+        toArgs = c.CExprList()
+        toArgs.appendCExpr(r)
+        wr = builder.cWideCall(self.location, "wide_to_u64", toArgs)
+      }
+    } else if builder.wideWidth(right.typedValue) == 0u32 {
+      wr = builder.cWideFromU64(self.location, r, wideW,
+          builder.wideSigned(left.typedValue))
+    }
+    args = c.CExprList()
+    args.appendCExpr(wl)
+    args.appendCExpr(wr)
+    extraFlag = -1i32
+    cmpOp = c.CBinaryOperator.Type.LessThan
+    isCmp = false
+    switch self.type {
+      ExprType.Add => wideName = "wide_add"
+      ExprType.Sub => wideName = "wide_sub"
+      ExprType.AddTrunc => wideName = "wide_addtrunc"
+      ExprType.SubTrunc => wideName = "wide_subtrunc"
+      ExprType.Mul => {
+        wideName = "wide_mul"
+        extraFlag = 0i32
+      }
+      ExprType.MulTrunc => {
+        wideName = "wide_mul"
+        extraFlag = 1i32
+      }
+      ExprType.Div => wideName = "wide_div"
+      ExprType.Mod => wideName = "wide_rem"
+      ExprType.Exp => wideName = "wide_exp"
+      ExprType.Shl => wideName = "wide_shl"
+      ExprType.Shr => wideName = "wide_shr"
+      ExprType.Rotl => wideName = "wide_rotl"
+      ExprType.Rotr => wideName = "wide_rotr"
+      ExprType.Bitand => {
+        wideName = "wide_bitop"
+        extraFlag = 0i32
+      }
+      ExprType.Bitor => {
+        wideName = "wide_bitop"
+        extraFlag = 1i32
+      }
+      ExprType.Bitxor => {
+        wideName = "wide_bitop"
+        extraFlag = 2i32
+      }
+      ExprType.Equal => {
+        return builder.cWideCall(self.location, "wide_eq", args)
+      }
+      ExprType.Notequal => {
+        eqCall = builder.cWideCall(self.location, "wide_eq", args)
+        return c.CExpr(c.CPrefixOperator(self.location,
+            c.CPrefixOperator.Type.LogNot, eqCall))
+      }
+      ExprType.Lt, ExprType.Le, ExprType.Gt, ExprType.Ge => {
+        isCmp = true
+        wideName = "wide_cmp"
+        switch self.type {
+          ExprType.Lt => cmpOp = c.CBinaryOperator.Type.LessThan
+          ExprType.Le => cmpOp = c.CBinaryOperator.Type.LessThanEqual
+          ExprType.Gt => cmpOp = c.CBinaryOperator.Type.GreaterThan
+          default => cmpOp = c.CBinaryOperator.Type.GreaterThanEqual
+        }
+      }
+      default => raise Status.Unimplemented, "Wide integer operator not supported: ", getExprTypeName(self.type)
+    }
+    if extraFlag >= 0i32 {
+      args.appendCExpr(c.CExpr(c.CLiteral(Bigint(<u64>extraFlag), false)))
+    }
+    wideCall = builder.cWideCall(self.location, wideName, args)
+    if isCmp {
+      zeroLit = c.CExpr(c.CLiteral(Bigint(0u64), false))
+      return c.CExpr(c.CBinaryOperator(self.location, cmpOp,
+          null(c.CTypeExpr), wideCall, zeroLit))
+    }
+    return wideCall
+  }
+
   func genCArrayOf(self, builder: c.CBuilder) -> c.CExpr {
     left = self.firstChildExpr!
     elements = arrayof(c.CExpr)
@@ -1220,6 +1395,9 @@ class Expr(self, type: ExprType, location: Location) {
   }
 
   func genCModular(self, builder: c.CBuilder, modulus: Expr) -> c.CExpr {
+    if builder.wideWidth(modulus.typedValue) > 0u32 {
+      return self.genCModularWide(builder, modulus)
+    }
     switch self.type {
       ExprType.Add, ExprType.Sub, ExprType.Mul, ExprType.Div => {
         l = self.firstChildExpr!
@@ -1288,6 +1466,91 @@ class Expr(self, type: ExprType, location: Location) {
           return builder.cCall(self.location, c.CRuntimeFunction.ModReduceSigned, c.CExpr(leafArgs))
         }
         return builder.cCall(self.location, c.CRuntimeFunction.ModReduce, c.CExpr(leafArgs))
+      }
+    }
+  }
+
+  // Modular arithmetic with a modulus wider than 64 bits: every operand
+  // becomes a wide value and the wide_mod* helpers keep results in [0, m).
+  func genCWideModOperand(self, builder: c.CBuilder, modulus: Expr) -> c.CExpr {
+    mW = builder.wideWidth(modulus.typedValue)
+    v = self.genC(builder)
+    if builder.wideWidth(self.typedValue) == 0u32 {
+      leafSigned = false
+      leafTy = builder.typechecker.resolve(self.typedValue!)
+      if leafTy.type == types.Type.TypeClass.Int {
+        leafSigned = leafTy.int.isSigned
+      } else if leafTy.type == types.Type.TypeClass.AnyInt {
+        leafSigned = leafTy.anyInt.isSigned
+      }
+      v = builder.cWideFromU64(self.location, v, mW, leafSigned)
+    }
+    return v
+  }
+
+  func genCModularWide(self, builder: c.CBuilder, modulus: Expr) -> c.CExpr {
+    switch self.type {
+      ExprType.Add, ExprType.Sub, ExprType.Mul, ExprType.Div => {
+        l = self.firstChildExpr!
+        r = l.nextExprChildExpr!
+        switch self.type {
+          ExprType.Add => wmName = "wide_modadd"
+          ExprType.Sub => wmName = "wide_modsub"
+          ExprType.Mul => wmName = "wide_modmul"
+          default => wmName = "wide_moddiv"
+        }
+        args = c.CExprList()
+        args.appendCExpr(l.genCModularWide(builder, modulus))
+        args.appendCExpr(r.genCModularWide(builder, modulus))
+        args.appendCExpr(modulus.genC(builder))
+        return builder.cWideCall(self.location, wmName, args)
+      }
+      ExprType.Exp => {
+        b = self.firstChildExpr!
+        e = b.nextExprChildExpr!
+        expArgs = c.CExprList()
+        expArgs.appendCExpr(b.genCModularWide(builder, modulus))
+        expArgs.appendCExpr(e.genCWideModOperand(builder, modulus))
+        expArgs.appendCExpr(modulus.genC(builder))
+        return builder.cWideCall(self.location, "wide_modexp", expArgs)
+      }
+      ExprType.Negate, ExprType.NegateTrunc => {
+        negChild = self.firstChildExpr!
+        negArgs = c.CExprList()
+        negArgs.appendCExpr(negChild.genCModularWide(builder, modulus))
+        negArgs.appendCExpr(modulus.genC(builder))
+        return builder.cWideCall(self.location, "wide_modneg", negArgs)
+      }
+      ExprType.Equal, ExprType.Notequal, ExprType.Lt, ExprType.Le, ExprType.Gt, ExprType.Ge => {
+        l = self.firstChildExpr!
+        r = l.nextExprChildExpr!
+        cmpArgs = c.CExprList()
+        cmpArgs.appendCExpr(l.genCModularWide(builder, modulus))
+        cmpArgs.appendCExpr(r.genCModularWide(builder, modulus))
+        if self.type == ExprType.Equal {
+          return builder.cWideCall(self.location, "wide_eq", cmpArgs)
+        }
+        if self.type == ExprType.Notequal {
+          wEqCall = builder.cWideCall(self.location, "wide_eq", cmpArgs)
+          return c.CExpr(c.CPrefixOperator(self.location,
+              c.CPrefixOperator.Type.LogNot, wEqCall))
+        }
+        switch self.type {
+          ExprType.Lt => wCmpOp = c.CBinaryOperator.Type.LessThan
+          ExprType.Le => wCmpOp = c.CBinaryOperator.Type.LessThanEqual
+          ExprType.Gt => wCmpOp = c.CBinaryOperator.Type.GreaterThan
+          default => wCmpOp = c.CBinaryOperator.Type.GreaterThanEqual
+        }
+        wCmpCall = builder.cWideCall(self.location, "wide_cmp", cmpArgs)
+        return c.CExpr(c.CBinaryOperator(self.location, wCmpOp,
+            null(c.CTypeExpr), wCmpCall, c.CExpr(c.CLiteral(Bigint(0u64), false))))
+      }
+      default => {
+        // A leaf value: reduce it into [0, m).
+        redArgs = c.CExprList()
+        redArgs.appendCExpr(self.genCWideModOperand(builder, modulus))
+        redArgs.appendCExpr(modulus.genC(builder))
+        return builder.cWideCall(self.location, "wide_modreduce", redArgs)
       }
     }
   }
@@ -1586,8 +1849,18 @@ class Expr(self, type: ExprType, location: Location) {
       // Append the instantiated types to the name (its specialization).
       // Resolve the argument types first: inside the body of another
       // polymorphic emission they are type variables bound by the currently
-      // active instantiation.
-      argTypes = builder.typechecker.resolve(right.typedValue!)
+      // active instantiation.  Rebuild tuples from the child expressions:
+      // the list's own snapshot resolved at typecheck time, losing
+      // variables that adapt per instantiation.
+      if right.type == ExprType.List || right.type == ExprType.Tuple {
+        argElems = arrayof(types.Type)
+        for argChild in right.childExprs() {
+          argElems.append(builder.typechecker.resolve(argChild.typedValue!))
+        }
+        argTypes = types.Type(types.TupleType(argElems))
+      } else {
+        argTypes = builder.typechecker.resolve(right.typedValue!)
+      }
       specializedName = argTypes.genSpecializationName(left.val.symVal.name)
       if !builder.alreadyEmitted(specializedName) {
         // The definition-side sweep skips instantiations whose bindings only

@@ -459,6 +459,22 @@ class CLiteral(self, value: string | bool | db.Bigint | f64, printf: bool) {
         }
       }
       CLiteral.Type.Int => {
+        if self.intValue.width > 64u32 {
+          // Wide literal: parse the hex digits at runtime.
+          e.needWideInts()
+          hex = self.intValue.toStringInBase(16u32)
+          // Strip the trailing u<width>/i<width> suffix.
+          hexEnd = hex.length()
+          while hexEnd > 0 && hex[hexEnd - 1] != 'u' && hex[hexEnd - 1] != 'i' {
+            hexEnd -= 1
+          }
+          if hexEnd > 0 {
+            hex = hex[0:hexEnd - 1]
+          }
+          e.write("wide_fromhex(%u, %s, \"%s\")" % (self.intValue.width,
+              self.intValue.isSigned ? "1" : "0", hex))
+          return
+        }
         e.write(int2cstring(self.intValue))
       }
       CLiteral.Type.Float => {
@@ -828,12 +844,13 @@ class CSelectExpr(self, location: db.Location, cond: CExpr, trueVal: CExpr, fals
   }
 }
 
-relation OneToOne CCastExpr CExpr: "value" cascade
-
 // A C cast: (type)(value).
+// The value is a plain field: a relation here would conflict with the
+// OneToOne CExpr CCastExpr relation (opposite-direction OneToOne relations
+// between the same classes collide at runtime).
 class CCastExpr(self, location: db.Location, targetType: CTypeExpr, value: CExpr) {
   self.targetType = targetType
-  self.insertValueCExpr(value)
+  self.castValue = value
 
   func precedence(self) -> u8 {
     return 2u8
@@ -851,7 +868,7 @@ class CCastExpr(self, location: db.Location, targetType: CTypeExpr, value: CExpr
     e.write("(")
     self.targetType.emit(e)
     e.write(")(")
-    self.valueCExpr.emit(e)
+    self.castValue.emit(e)
     e.write(")")
   }
 }
@@ -976,6 +993,9 @@ enum CRuntimeFunction {
    // the extern_io runtime fragment.
    ExternC
 
+   // A call to a wide-integer runtime helper; the name is in self.fn.
+   WideCall
+
    // Modular arithmetic for "expr mod m" expressions.
    ModReduce
    ModReduceSigned
@@ -1032,6 +1052,13 @@ relevantType: CTypeExpr?) {
         assert !isnull(self.fn)
         e.needExternIo()
         e.write("rn_")
+        self.fn.emit(e)
+      }
+
+      // Wide-integer runtime helper; self.fn carries the name.
+      CRuntimeFunction.WideCall => {
+        assert !isnull(self.fn)
+        e.needWideInts()
         self.fn.emit(e)
       }
 

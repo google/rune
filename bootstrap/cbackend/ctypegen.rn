@@ -71,7 +71,14 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
     } else if ty.width <= 64u32 {
       primty = ty.isSigned ? CPrimitiveType.Type.Int64 : CPrimitiveType.Type.Uint64
     } else {
-      raise Status.Unimplemented, "genCInt for integral width ", ty.width
+      // Wider integers are heap limb arrays; see cruntime/wide_ints.inc.
+      wideResult = CTypeExpr(CDefinedType("rn_wide"))
+      if ty.isSigned {
+        wideResult.runeSuffix = "i%u" % ty.width
+      } else {
+        wideResult.runeSuffix = "u%u" % ty.width
+      }
+      return wideResult
     }
     result = CTypeExpr(CPrimitiveType(primty))
     if ty.isSigned {

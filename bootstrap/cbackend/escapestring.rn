@@ -88,7 +88,8 @@ class Escaper(self, emitter: CEmitter, stuff: string, printf: bool) {
 
   func convertFormatWidth(self) {
     if self.formatWidth > 64u32 {
-      raise Status.Unimplemented, "Format Widths > 64 bits not yet supported by C backend: ", self.formatWidth
+      // Wide integers format as strings (cFormatArg renders them).
+      self.value += "%s"
     } else if self.formatChar == 'f' {
       self.emitter.needFloatPrintfMacros()
       if self.formatWidth <= 32u32 && self.formatWidth != 0u32 {

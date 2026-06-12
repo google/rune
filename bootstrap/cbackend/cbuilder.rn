@@ -570,6 +570,42 @@ class CBuilder(self, tc: types.TypeChecker) {
     return CTypeExpr(type)
   }
 
+  // True if the type is an integer wider than 64 bits, returning its width
+  // through the runtime header at runtime; 0 if not wide.
+  func wideWidth(self, ty: types.Type?) -> u32 {
+    if isnull(ty) {
+      return 0u32
+    }
+    t = self.typechecker.resolve(ty!)
+    if t.type == types.Type.TypeClass.Int && t.int.width > 64u32 {
+      return t.int.width
+    }
+    return 0u32
+  }
+
+  func wideSigned(self, ty: types.Type?) -> bool {
+    t = self.typechecker.resolve(ty!)
+    return t.type == types.Type.TypeClass.Int && t.int.isSigned
+  }
+
+  // A call to a wide-integer runtime helper.
+  func cWideCall(self, location: db.Location, name: string, args: CExprList) -> CExpr {
+    fn = CExpr(CIdentifier(Sym.new(name), null(CTypeExpr), false, false, false))
+    return CExpr(CCall(location, CRuntimeFunction.WideCall, CExpr(args), fn,
+        null(CTypeExpr)))
+  }
+
+  // Wrap an expression's C form as a wide value if its Rune type is wide
+  // but it emitted as a 64-bit scalar (e.g. an adapted literal).
+  func cWideFromU64(self, location: db.Location, arg: CExpr, width: u32,
+                    isSigned: bool) -> CExpr {
+    args = CExprList()
+    args.appendCExpr(arg)
+    args.appendCExpr(CExpr(CLiteral(db.Bigint(<u64>width), false)))
+    args.appendCExpr(CExpr(CLiteral(db.Bigint(isSigned ? 1u64 : 0u64), false)))
+    return self.cWideCall(location, "wide_from_u64", args)
+  }
+
   // Integer arguments to printf-style format calls must widen to 64 bits:
   // the format emitter translates %u/%i/%x to their PRI*64 forms, which
   // read 8 bytes from the vararg list.
@@ -579,6 +615,12 @@ class CBuilder(self, tc: types.TypeChecker) {
     }
     t = self.typechecker.resolve(ty!)
     if t.type == types.Type.TypeClass.Int {
+      if t.int.width > 64u32 {
+        // Wide integers format via %s as decimal strings.
+        wideArgs = CExprList()
+        wideArgs.appendCExpr(arg)
+        return self.cWideCall(location, "wide_tostring", wideArgs)
+      }
       argSigned = t.int.isSigned
     } else if t.type == types.Type.TypeClass.AnyInt {
       argSigned = t.anyInt.isSigned

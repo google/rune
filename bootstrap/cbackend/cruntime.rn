@@ -348,6 +348,18 @@ class CRuntime(self) {
     return cf
   }
 
+  func needWideInts(self) -> CFragment {
+    self.include("<stdint.h>")
+    self.include("<stdlib.h>")
+    self.include("<string.h>")
+    self.include("<inttypes.h>")
+    self.needRaiseError()
+    cf = self.cFragment("wide_ints", "cbackend/cruntime/wide_ints.inc")
+    cf.addDependencies([self.cFragment("global_string_writer",
+        "cbackend/cruntime/global_string_writer.inc")])
+    return cf
+  }
+
   func needArgvArray(self) -> CFragment {
     cf = self.cFragment("argv_array", "cbackend/cruntime/argv.inc")
     cf.addDependencies([self.needArrayAlloc()])

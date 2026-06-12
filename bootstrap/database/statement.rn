@@ -372,6 +372,18 @@ class Statement(self, block: Block, type: StateType, location: Location) {
             self.genCCall(builder, c.CRuntimeFunction.GlobalStringWriterWrite, cexpr)
           }
         }
+        if isnull(cexpr) && builder.wideWidth(expr.typedValue) > 0u32 {
+          // Wide integers print as plain decimal, like other scalars.
+          wideArgs = c.CExprList()
+          wideArgs.appendCExpr(expr.genC(builder))
+          wideStr = builder.cWideCall(self.location, "wide_tostring", wideArgs)
+          widePrintArgs = c.CExprList()
+          widePrintArgs.append(builder.cStringLiteral("%s"))
+          widePrintArgs.append(wideStr)
+          builder.addStatement(self.location,
+              builder.cCall(self.location, "tostring_string_t", c.CExpr(widePrintArgs)))
+          cexpr = wideStr
+        }
         if isnull(cexpr) {
           cexpr = expr.genC(builder)
           ctype = builder.genCType(expr.typedValue)

@@ -200,6 +200,11 @@ class CEmitter(self, filename: string) {
     return self.runtime.needArgvArray().name
   }
 
+  func needWideInts(self) -> string {
+    self.needStringWriter()
+    return self.runtime.needWideInts().name
+  }
+
   /* layout and string functions ********************************************/
 
   func indent(self) {

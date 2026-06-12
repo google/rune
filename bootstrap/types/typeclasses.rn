@@ -987,6 +987,9 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
     switch self.type {
       Type.TypeClass.Int => return self.int!.width
       Type.TypeClass.AnyInt => return 64u32
+      // An unresolved variable at emission time behaves like an adaptable
+      // 64-bit integer.
+      Type.TypeClass.Var => return 64u32
       Type.TypeClass.Float => return self.float!.width
       default => return 0u32
     }

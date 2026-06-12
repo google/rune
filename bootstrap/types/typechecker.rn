@@ -768,7 +768,9 @@ class TypeChecker(self) {
                          location)
           return null(Type)
         }
-        return self.resolve(ty.function!.result)
+        // Return the unresolved result: expression snapshots keep variables
+        // that resolve to adaptable literal types (per-call polymorphism).
+        return ty.function!.result
       }
 
       Type.TypeClass.Polymorphic => {
@@ -1112,6 +1114,9 @@ class TypeChecker(self) {
     switch expr.type {
       db.ExprType.Constant => result = self.value(expr.val)
       db.ExprType.Ident => result = self.value(expr.val)
+
+      // randN: a random N-bit unsigned integer.
+      db.ExprType.RandUint => result = U(<u64>expr.width)
 
       db.ExprType.List, db.ExprType.Tuple => {
         elements = arrayof(Type)
@@ -1618,10 +1623,40 @@ class TypeChecker(self) {
        }
     }
     if !isnull(result) {
-      result = self.resolve(result!)
+      resolvedResult = self.resolve(result!)
+      if (resolvedResult.type == Type.TypeClass.AnyInt &&
+          result.type == Type.TypeClass.Var) {
+        // Keep the variable: a parameter's literal-induced AnyInt binding
+        // is forgotten at generalization (per-call literal polymorphism),
+        // so codegen must resolve through the variable per instantiation.
+        expr.typedValue = result
+        return result
+      }
+      result = resolvedResult
     }
     expr.typedValue = result
     return result
+  }
+
+  // True if the resolved type contains an adaptable integer anywhere.
+  func containsAnyInt(self, t: Type) -> bool {
+    switch t.type {
+      Type.TypeClass.AnyInt => return true
+      Type.TypeClass.Array => return self.containsAnyInt(self.resolve(t.array.elementType!))
+      Type.TypeClass.Tuple => {
+        for element in t.tuple.elements {
+          if self.containsAnyInt(self.resolve(element)) {
+            return true
+          }
+        }
+        return false
+      }
+      Type.TypeClass.Function => {
+        return (self.containsAnyInt(self.resolve(t.function.params!)) ||
+            self.containsAnyInt(self.resolve(t.function.result!)))
+      }
+      default => return false
+    }
   }
 
 
@@ -2720,6 +2755,35 @@ class TypeChecker(self) {
 
     if isnull(returnType) {
       returnType = Type(TypeName(Sym.new("none")))
+    }
+    // Forget literal-induced AnyInt bindings on parameters: a comparison
+    // like a == 1 must not fix the parameter's width; the call site's
+    // argument decides (per-call literal polymorphism).  Follow the
+    // variable chain and unbind the variable holding the AnyInt itself, so
+    // every variable chained to the parameter stays connected.
+    for variable in fn.variables() {
+      if (variable.isParam && !isnull(variable.typedValue) &&
+          variable.typedValue.type == Type.TypeClass.Var) {
+        boundTo = self.resolve(variable.typedValue!)
+        if boundTo.type == Type.TypeClass.AnyInt {
+          chainVar = variable.typedValue.tyvar!
+          chainDepth = 0
+          while chainDepth < 64 {
+            chainBinding = self.unifier.lookupVar(chainVar.id)
+            if isnull(chainBinding) {
+              chainDepth = 64
+            } else if chainBinding.type == Type.TypeClass.Var {
+              chainVar = chainBinding.tyvar!
+              chainDepth += 1
+            } else {
+              if chainBinding.type == Type.TypeClass.AnyInt {
+                self.unifier.unbindVar(chainVar)
+              }
+              chainDepth = 64
+            }
+          }
+        }
+      }
     }
     // Replace type variables in the parameters and return type with their
     // instantiations, if any.
