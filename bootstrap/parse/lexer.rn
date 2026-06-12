@@ -366,8 +366,22 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
     c = filepath.text[self.pos]
     if c == '.' {
       self.pos += 1
-      fracDigits = self.countDigits()
-      fracVal = self.parseRawInteger()
+      // f64 carries fewer than 19 significant decimal digits; accumulate
+      // at most that many and skip the rest (a full parseRawInteger of a
+      // long fraction overflows 64 bits).
+      fracAccum = 0u64
+      fracDigits = 0u32
+      while isDigit(filepath.text[self.pos]) || filepath.text[self.pos] == '_' {
+        fc = filepath.text[self.pos]
+        if fc != '_' {
+          if fracDigits < 19u32 {
+            fracAccum = fracAccum * 10u64 + <u64>(fc - '0')
+            fracDigits += 1u32
+          }
+        }
+        self.pos += 1
+      }
+      fracVal = db.Bigint(fracAccum)
       c = filepath.text[self.pos]
     }
     if c == 'e' {

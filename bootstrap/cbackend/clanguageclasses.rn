@@ -1074,6 +1074,9 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.ExternC => {
         assert !isnull(self.fn)
         e.needExternIo()
+        if self.args.type == CExpr.Type.List {
+          self.args.cExprList.noCasts = true
+        }
         e.write("rn_")
         self.fn.emit(e)
       }
@@ -1563,6 +1566,8 @@ class CExpr(self, value: CLiteral | CIdentifier | CPrefixOperator | CBinaryOpera
 relation DoublyLinked CExprList CExpr cascade
 
 class CExprList(self) {
+  // extern C helpers take exact types; integer-narrowing casts mangle floats.
+  self.noCasts = false
   func append(self, expr: CExpr) {
     self.appendCExpr(expr)
   }
@@ -1602,6 +1607,9 @@ class CExprList(self) {
       }
       firstTime = false
       width = child.width()
+      if self.noCasts {
+        width = 0u32
+      }
       if width > 0u32 {
         if width <= 8u32 {
           width = 8u32

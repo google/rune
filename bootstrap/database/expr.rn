@@ -1912,6 +1912,30 @@ class Expr(self, type: ExprType, location: Location) {
       if builtinName == "readln" && isnull(builder.findFunction("readln")) {
         return builder.cCall(self.location, c.CRuntimeFunction.ReadLn, null(c.CExpr))
       }
+      if builtinName == "f64tostring" || builtinName == "f32tostring" {
+        floatCallee = builder.findFunction(builtinName)
+        if !isnull(floatCallee) {
+          if floatCallee.isExtern {
+            // The legacy extern writes into its string argument; our
+            // strings are plain char*, so emit dest = rn_..._ret(value).
+            fDest = right.firstChildExpr!
+            fVal = fDest.nextExprChildExpr!
+            fArgs = c.CExprList()
+            fArgs.appendCExpr(fVal.genC(builder))
+            fHelper = "f64tostring_ret"
+            if builtinName == "f32tostring" {
+              fHelper = "f32tostring_ret"
+            }
+            fHelperFn = c.CExpr(c.CIdentifier(Sym.new(fHelper),
+                null(c.CTypeExpr), false, false, false))
+            fCall = c.CExpr(c.CCall(self.location, c.CRuntimeFunction.ExternC,
+                c.CExpr(fArgs), fHelperFn, null(c.CTypeExpr)))
+            return c.CExpr(c.CBinaryOperator(self.location,
+                c.CBinaryOperator.Type.Assign, null(c.CTypeExpr),
+                fDest.genC(builder), fCall))
+          }
+        }
+      }
       if builtinName == "randString" && isnull(builder.findFunction("randString")) {
         rsArg = right
         if right.type == ExprType.List && !isnull(right.firstChildExpr) {

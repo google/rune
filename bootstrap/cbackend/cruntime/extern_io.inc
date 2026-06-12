@@ -47,3 +47,21 @@ static uint8_t rn_fwriteInternal(uint64_t ptr, const char *buf) {
 static uint8_t rn_ferrorInternal(uint64_t ptr) {
   return ferror((FILE*)(uintptr_t)ptr) != 0;
 }
+
+// Float formatting (legacy runtime/float.c semantics, %.Ng round-trip).
+static inline char *rn_f32tostring_ret(float v) {
+  char tmp[64];
+  char *s;
+  snprintf(tmp, sizeof(tmp), "%.9g", v);
+  s = (char *)malloc(strlen(tmp) + 1);
+  strcpy(s, tmp);
+  return s;
+}
+static inline char *rn_f64tostring_ret(double v) {
+  char tmp[64];
+  char *s;
+  snprintf(tmp, sizeof(tmp), "%.17g", v);
+  s = (char *)malloc(strlen(tmp) + 1);
+  strcpy(s, tmp);
+  return s;
+}
