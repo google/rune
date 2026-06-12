@@ -1733,6 +1733,86 @@ class Expr(self, type: ExprType, location: Location) {
       // Handle method calls on class instances.
       if builder.isClassType(base.typedValue) {
         method = base.nextExprChildExpr!
+        nestedInfo = builder.typechecker.lookupClass(Sym.new(method.toString()))
+        if !isnull(nestedInfo) {
+          // instance.B(...): construct the (hoisted) nested class.
+          ncName = builder.classCName(builder.typechecker.resolve(self.typedValue!))
+          if !builder.alreadyEmitted(ncName) {
+            ncFn = nestedInfo.fn
+            ncFty = ncFn.typedValue
+            if !isnull(ncFty) {
+              if ncFty.type == types.Type.TypeClass.Polymorphic {
+                ncPi = ncFty.poly.instantiations
+                if !isnull(ncPi) {
+                  for ncInst in ncPi {
+                    if !builder.alreadyEmitted(ncName) {
+                      builder.resolveInstantiation(ncInst)
+                      if builder.instantiationIsConcrete(ncInst) {
+                        builder.instantiate(ncFty.poly!, ncInst)
+                        ncSelf = builder.typechecker.resolve(nestedInfo.selfType!)
+                        if builder.classCName(ncSelf) == ncName {
+                          ncFn.genCConstructorInstance(builder, nestedInfo!)
+                        }
+                        builder.deInstantiate(ncFty.poly!)
+                      }
+                    }
+                  }
+                }
+                if !builder.alreadyEmitted(ncName) {
+                  // The recorded instantiation only resolves under an
+                  // outer binding; synthesize from this call's arguments.
+                  ncOpened = ncFty.poly!.open(builder.typechecker.unifier,
+                      &builder.typechecker.unifier.newVar())
+                  if ncOpened.type == types.Type.TypeClass.Function {
+                    ncElems = arrayof(types.Type)
+                    for ncChild in right.childExprs() {
+                      if isnull(ncChild.typedValue) {
+                        ncElems.append(types.NONETY())
+                      } else {
+                        ncElems.append(builder.typechecker.resolve(ncChild.typedValue!))
+                      }
+                    }
+                    if ncElems.length() == 1 {
+                      ncArgTy = ncElems[0]
+                    } else {
+                      ncArgTy = types.Type(types.TupleType(ncElems))
+                    }
+                    ncTe = builder.typechecker.unify(ncOpened.function.params!, ncArgTy)
+                    if isnull(ncTe) {
+                      // open() recorded this instantiation; bind it to
+                      // resolve the class's own type variables.
+                      ncNewInst = ncFty.poly.instantiations.lastTyvarInstantiation
+                      if !isnull(ncNewInst) {
+                        builder.resolveInstantiation(ncNewInst!)
+                        if builder.instantiationIsConcrete(ncNewInst!) {
+                          builder.instantiate(ncFty.poly!, ncNewInst!)
+                          ncSelf2 = builder.typechecker.resolve(nestedInfo.selfType!)
+                          if builder.classCName(ncSelf2) == ncName {
+                            ncFn.genCConstructorInstance(builder, nestedInfo!)
+                          }
+                          builder.deInstantiate(ncFty.poly!)
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          ncArgs = c.CExprList()
+          if right.typedValue.type == types.Type.TypeClass.Tuple {
+            for child in right.childExprs() {
+              ncArgs.appendCExpr(child.genC(builder))
+            }
+          } else if right.type == ExprType.List {
+            for child in right.childExprs() {
+              ncArgs.appendCExpr(child.genC(builder))
+            }
+          } else {
+            ncArgs.appendCExpr(right.genC(builder))
+          }
+          return builder.cCall(self.location, ncName, c.CExpr(ncArgs))
+        }
         if method.toString() == "toString" {
           // The auto-generated toString captures the print helper's
           // output, unless the class defines its own.

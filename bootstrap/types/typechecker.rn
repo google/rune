@@ -3909,6 +3909,20 @@ class TypeChecker(self) {
       noToStringArgs = arrayof(Type)
       return FN(TUPLE(noToStringArgs), STRING())
     }
+    // instance.B(...): a (hoisted) nested class constructed through an
+    // instance of its outer class; the member is the constructor.
+    nestedClassFn = self.findClassFunction(name)
+    if !isnull(nestedClassFn) {
+      self.demandClass(nestedClassFn.sym)
+      ncty = nestedClassFn.typedValue
+      if !isnull(ncty) {
+        ncOpen = ncty!
+        if ncOpen.type == Type.TypeClass.Polymorphic {
+          ncOpen = ncOpen.poly!.open(self.unifier, &self.unifier.newVar())
+        }
+        return ncOpen
+      }
+    }
     // A deferred constructor has not discovered its fields yet: member
     // misses (and assignment-creations, which would duplicate the real
     // field) defer the accessing body instead.
