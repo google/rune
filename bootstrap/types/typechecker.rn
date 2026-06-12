@@ -708,7 +708,8 @@ class TypeChecker(self) {
       "toHex" => return FN(TUPLE(noArgs), STRING())
       "fromHex" => return FN(TUPLE(noArgs), STRING())
       "reverse" => return FN(TUPLE(noArgs), NONETY())
-      "resize" => return FN(U(64), NONETY())
+      // resize returns the resized string, so the result can be assigned.
+      "resize" => return FN(U(64), STRING())
       // find/rfind take an optional offset; accept any argument tuple and
       // let the backend supply the default.
       "find", "rfind" => return FN(Type(self.newTyvar()), U(64))
@@ -1809,7 +1810,9 @@ class TypeChecker(self) {
                 result = U(64)
               }
             }
-            "resize" => result = FN(U(64), NONETY())
+            // resize returns the resized array, so the result can be
+            // assigned (a = [0].resize(12)).
+            "resize" => result = FN(U(64), ARRAY(elementType))
             "reverse" => result = FN(TUPLE(nullTypes), NONETY())
             "concat" => result = FN(ARRAY(elementType), NONETY())
 
