@@ -2365,6 +2365,10 @@ class TypeChecker(self) {
   // named arguments move to their parameter's position and omitted
   // parameters take a copy of their default initializer.
   func normalizeCallArgs(self, expr: db.Expr, fn: db.Function) {
+    if expr.argsNormalized {
+      return
+    }
+    expr.argsNormalized = true
     fnchild = expr.firstChildExpr!
     argchild = fnchild.nextExprChildExpr!
     // The parameters, in order.

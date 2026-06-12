@@ -381,6 +381,9 @@ class Expr(self, type: ExprType, location: Location) {
   self.location = location
   self.isType = false
   self.isConst = false
+  // Call arguments already rewritten to full positional form; a second
+  // typecheck pass (deferral retry) must not rebuild them.
+  self.argsNormalized = false
   self.autocast = false  // Set on integer constants without a type suffix.
   self.width = 0u32
   // TODO: add datatype when ported to Rune.
