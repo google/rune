@@ -1731,10 +1731,11 @@ class TypeChecker(self) {
             isClassAccess = true
             result = self.classMemberType(info!, sty!, field, expr.location)
           } else if !isnull(einfo) {
-            // Enum member access like Color.red.
+            // Enum member access like Color.red: typed as the enum itself
+            // so enum-constrained parameters accept it (C emits u32).
             isClassAccess = true
             if einfo.hasMember(field.toString()) {
-              result = U(32)
+              result = Type(TypeName(sty.tyname.name))
             } else {
               self.typeError("Enum %s has no member %s" % (einfo.sym.name, field.toString()),
                              expr.location)
