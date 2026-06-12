@@ -2237,7 +2237,17 @@ class Expr(self, type: ExprType, location: Location) {
               }
               iname = types.Type(types.TupleType(ptypes)).genSpecializationName(callee.sym.name)
               builder.deInstantiate(polyType.poly!)
-              if iname == specializedName {
+              adoptName = iname == specializedName
+              if !adoptName {
+                if callee.deferredTypecheck {
+                  // A deferred function's argument snapshots compose an
+                  // unreliable name; adopt the definition's name for its
+                  // (re-typechecked) instantiation.
+                  adoptName = true
+                  specializedName = iname
+                }
+              }
+              if adoptName {
                 if callee.type == FuncType.Struct {
                   callee.genCStructInstance(builder, inst)
                 } else {
@@ -2313,7 +2323,21 @@ class Expr(self, type: ExprType, location: Location) {
         }
       }
     }
-    if right.typedValue.type == types.Type.TypeClass.Tuple {
+    flattenArgs = right.typedValue.type == types.Type.TypeClass.Tuple
+    if flattenArgs {
+      // A single tuple-valued argument is passed whole, not flattened.
+      if !isnull(right.firstChildExpr) {
+        if isnull(right.firstChildExpr.nextExprChildExpr) {
+          oneChildTy = right.firstChildExpr.typedValue
+          if !isnull(oneChildTy) {
+            if builder.typechecker.resolve(oneChildTy!).type == types.Type.TypeClass.Tuple {
+              flattenArgs = false
+            }
+          }
+        }
+      }
+    }
+    if flattenArgs {
       // Special case -- if right is a tuple, we need to encode cargs as a
       // CExprList of parameters, not as an actual tuple object. Otherwise,
       // instead of generating "f(a1, a2, ...)" we'll generate

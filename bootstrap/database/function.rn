@@ -298,7 +298,13 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
         // A parameter that never typechecked (poisoned method).
         paramTypes.append(types.NONETY())
       } else {
-        paramTypes.append(builder.typechecker.resolve(variable.typedValue!))
+        ptResolved = builder.typechecker.resolve(variable.typedValue!)
+        if ptResolved.type == types.Type.TypeClass.Tuple {
+          // Tuple-typed parameters need the typedef even when no tuple
+          // literal has emitted yet.
+          builder.ensureTupleDeclared(self.location, ptResolved)
+        }
+        paramTypes.append(ptResolved)
       }
     }
     // The specialization name comes from the resolved parameter
@@ -355,6 +361,9 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     for pt in paramTypes {
       if builder.isClassType(pt) {
         fundec.addDependencyName(builder.classCName(pt) + "_class")
+      }
+      if pt.type == types.Type.TypeClass.Tuple {
+        fundec.addDependencyName(builder.typeGenerator.genCTuple(pt.tuple!).name)
       }
     }
     fundec.addDependencies(builder.topDependencyList().names)

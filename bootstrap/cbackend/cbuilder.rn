@@ -1167,11 +1167,11 @@ class CBuilder(self, tc: types.TypeChecker) {
   // this tuple appears. To do this, we use a hash table, and the tuple type as a key.
   //
   // NOTE: tuples with element types with unbound type variables are not supported.
-  func cTuple(self, location: db.Location, type: types.Type?, elements: CExprList) -> CExpr {
-    ty = self.typechecker.resolve(type!);
-    assert ty.type == types.Type.TypeClass.Tuple
+  // Declare the C struct for a tuple type (typedef, constructor, tostring,
+  // isequal); parameters of deferred functions need this without a tuple
+  // literal in sight.
+  func ensureTupleDeclared(self, location: db.Location, ty: types.Type) {
     exists = self.typeGenerator.genCTuple(ty.tuple!)!
-
     if !exists.defined {
       // Create the C struct definition -------------
       params = CParamList()
@@ -1185,17 +1185,7 @@ class CBuilder(self, tc: types.TypeChecker) {
         }
         params.append(CParameter(location, "el%s" % int2cstring(pair[0]), ctype!))
       }
-
-      // The struct declaration will emit as 'typedef struct <exists.name>_t {...} <exists.name>_t'
-      // It will also emit:
-      //    '<exists.name>(<params>)' and
-      //    'tostring_<exists.name>_t'(<exists.name>_t tuple) method
-      //    'isequal_<exists.name>_t'(<exists.name>_t t1, <exists.name>_t t2) method.
-      //
       dec = CDeclaration(CStructDeclaration(location, exists.name, params, true))
-
-      // Walk through the list of dependent type names to add dependent declarations to
-      // dec, so that they will be emitted before this one.
       for name in deps {
         depdec = self.findDeclaration(name)
         if !isnull(depdec) {
@@ -1205,6 +1195,13 @@ class CBuilder(self, tc: types.TypeChecker) {
       self.addDeclaration(dec)
       exists.defined = true
     }
+  }
+
+  func cTuple(self, location: db.Location, type: types.Type?, elements: CExprList) -> CExpr {
+    ty = self.typechecker.resolve(type!);
+    assert ty.type == types.Type.TypeClass.Tuple
+    self.ensureTupleDeclared(location, ty)
+    exists = self.typeGenerator.genCTuple(ty.tuple!)!
 
     constructorName = CIdentifier(Sym.new("%s" % exists.name), null(CTypeExpr),
                                   false, false, false)
