@@ -2096,6 +2096,15 @@ class Expr(self, type: ExprType, location: Location) {
         }
         return builder.cCall(self.location, mmHelper, c.CExpr(mmArgs))
       }
+      if builtinName == "randRange" && isnull(builder.findFunction("randRange")) {
+        rrArg = right
+        if right.type == ExprType.List && !isnull(right.firstChildExpr) {
+          rrArg = right.firstChildExpr!
+        }
+        rrArgs = c.CExprList()
+        rrArgs.appendCExpr(rrArg.genC(builder))
+        return builder.cCall(self.location, "rn_rand_range", c.CExpr(rrArgs))
+      }
       if builtinName == "randString" && isnull(builder.findFunction("randString")) {
         rsArg = right
         if right.type == ExprType.List && !isnull(right.firstChildExpr) {

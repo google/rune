@@ -282,6 +282,16 @@ static inline char *rn_rand_string(uint64_t n) {
   return s;
 }
 
+// Random unsigned integer in [0, bound); bound 0 returns 0.
+static inline uint64_t rn_rand_range(uint64_t bound) {
+  uint64_t r;
+  if (bound == 0) {
+    return 0;
+  }
+  r = ((uint64_t)rand() << 32) ^ (uint64_t)rand();
+  return r % bound;
+}
+
 // Builtin max/min on 64-bit unsigned values.
 static inline uint64_t rn_max(uint64_t a, uint64_t b) {
   return a > b ? a : b;
