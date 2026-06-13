@@ -1616,9 +1616,17 @@ class TypeChecker(self) {
     index = 0u32
     for caseStatement in statement.subBlock.statements() {
       if selected == 0xffffffffu32 {
-        if caseStatement.type == db.StateType.Case {
+        if caseStatement.type == db.StateType.Case && !isnull(caseStatement.expr) {
+          hadPatternChild = false
           for typeExpr in caseStatement.expr.childExprs() {
+            hadPatternChild = true
             if self.casePatternMatches(typeExpr, rty) {
+              selected = index
+            }
+          }
+          if !hadPatternChild {
+            // A single unwrapped pattern is the case expression itself.
+            if self.casePatternMatches(caseStatement.expr!, rty) {
               selected = index
             }
           }
@@ -3054,11 +3062,17 @@ class TypeChecker(self) {
               armWasUnbound = isnull(self.unifier.lookupVar(rty.tyvar.id))
               bound = false
               if caseStatement.type == db.StateType.Case {
-                firstPattern = caseStatement.expr.firstChildExpr
-                t = self.typeswitchPatternType(firstPattern!)
-                if !isnull(t) {
-                  self.unifier.bindVar(rty.tyvar!, t!)
-                  bound = true
+                if !isnull(caseStatement.expr) {
+                  firstPattern = caseStatement.expr.firstChildExpr
+                  if isnull(firstPattern) {
+                    // A single unwrapped pattern is the case expression.
+                    firstPattern = caseStatement.expr
+                  }
+                  t = self.typeswitchPatternType(firstPattern!)
+                  if !isnull(t) {
+                    self.unifier.bindVar(rty.tyvar!, t!)
+                    bound = true
+                  }
                 }
               }
               // An arm that fails to typecheck under its binding is only an
