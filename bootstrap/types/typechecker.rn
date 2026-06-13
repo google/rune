@@ -1400,6 +1400,15 @@ class TypeChecker(self) {
       self.demandClass(name)
       info = self.lookupClass(name)
       if !isnull(info) {
+        if isnull(info.selfType) {
+          // The class is still typechecking, so its parameter list is
+          // incomplete (a self-referential constraint like mother: Human?
+          // inside Human's own constructor would bake the wrong arity).
+          // The bare nominal knot unifies with any specialization.
+          bareKnot = TypeName(name)
+          bareKnot.isNullable = t.tyname.isNullable
+          return Type(bareKnot)
+        }
         // A class name constraint matches any instantiation of the class;
         // parameterize it with fresh variables so unification against a
         // concrete instance (e.g. Integer(u64,)) succeeds.
