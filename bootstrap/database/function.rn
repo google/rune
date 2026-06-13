@@ -533,6 +533,11 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     // from user calls, so emit it per instantiation like toString below.
     for childfunc in self.childFunctions() {
       if childfunc.type == FuncType.Final {
+        if isnull(childfunc.typedValue) {
+          // Never typechecked (no user call site): demand it now so the
+          // body's expressions carry types into emission.
+          builder.typechecker.demandMethod(info, childfunc)
+        }
         fty = childfunc.typedValue
         if isnull(fty) {
           fty = childfunc.sym.typedValue
@@ -555,18 +560,51 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     // it per instantiation like final above.
     for childfunc in self.childFunctions() {
       if childfunc.sym.name == "destroy" && childfunc.type == FuncType.Plain {
+        if isnull(childfunc.typedValue) {
+          builder.typechecker.demandMethod(info, childfunc)
+        }
         dty = childfunc.typedValue
         if isnull(dty) {
           dty = childfunc.sym.typedValue
         }
         if !isnull(dty) {
           if dty.type == types.Type.TypeClass.Polymorphic {
-            dfn = builder.typechecker.resolve(dty.poly.scope)
+            // A deferred destroy resolves only under its (synthesized)
+            // instantiation bindings.
+            dInstE = dty.poly.instantiations.firstTyvarInstantiation
+            if !isnull(dInstE) {
+              builder.instantiate(dty.poly!, dInstE!)
+              if childfunc.deferredTypecheck && !childfunc.deferredRetypechecked {
+                // The recorded instantiation only resolves under this
+                // class instantiation's bindings (the pre-emission pass
+                // saw open variables); retypecheck here like the
+                // genCPolyInstantiation fallback.
+                builder.typechecker.retypecheckDeferred(childfunc)
+                childfunc.deferredRetypechecked = true
+              }
+              dInstFn = builder.typechecker.resolve(dty.poly.scope)
+              if !builder.typechecker.hasFreeVars(dInstFn) {
+                childfunc.genCMethodInstance(builder, dInstFn)
+              }
+              builder.deInstantiate(dty.poly!)
+              dfn = null(types.Type)
+            } else {
+              if childfunc.deferredTypecheck && !childfunc.deferredRetypechecked {
+                // No instantiation was ever recorded (method dispatch does
+                // not open the poly); the class bindings active here are
+                // enough for the body to retypecheck concretely.
+                builder.typechecker.retypecheckDeferred(childfunc)
+                childfunc.deferredRetypechecked = true
+              }
+              dfn = builder.typechecker.resolve(dty.poly.scope)
+            }
           } else {
             dfn = dty!
           }
-          if !builder.typechecker.hasFreeVars(dfn) {
-            childfunc.genCMethodInstance(builder, dfn)
+          if !isnull(dfn) {
+            if !builder.typechecker.hasFreeVars(dfn!) {
+              childfunc.genCMethodInstance(builder, dfn!)
+            }
           }
         }
       }
@@ -578,6 +616,9 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     // method's type resolves concretely.
     for childfunc in self.childFunctions() {
       if childfunc.sym.name == "toString" && childfunc.type == FuncType.Plain {
+        if isnull(childfunc.typedValue) {
+          builder.typechecker.demandMethod(info, childfunc)
+        }
         mty = childfunc.typedValue
         if isnull(mty) {
           mty = childfunc.sym.typedValue

@@ -3808,6 +3808,52 @@ class TypeChecker(self) {
             self.function(childfunc)
           }
         }
+        // Generated destroy() methods have no user call sites, so nothing
+        // demands them; typecheck them eagerly or cleanup emission walks
+        // untyped bodies.
+        for childfunc in fn.childFunctions() {
+          if childfunc.type == db.FuncType.Constructor {
+            dInfo = self.lookupClass(childfunc.sym)
+            if !isnull(dInfo) {
+              for dchild in childfunc.childFunctions() {
+                if dchild.sym.name == "destroy" && dchild.type == db.FuncType.Plain {
+                  if isnull(dchild.typedValue) {
+                    self.demandMethod(dInfo!, dchild)
+                  }
+                  if dchild.deferredTypecheck && !dchild.deferredRetypechecked {
+                    // No call site records an instantiation for a deferred
+                    // destroy; synthesize one from the class instance type
+                    // and retypecheck now, or emission walks a cleared body.
+                    ddty = dchild.typedValue!
+                    if ddty.type == Type.TypeClass.Polymorphic {
+                      if isnull(ddty.poly.instantiations.firstTyvarInstantiation) {
+                        dErrs = self.countTypeErrors()
+                        dopened = ddty.poly.open(self.unifier, &self.unifier.newVar())
+                        dSelfSlot = dopened.function.params
+                        if dSelfSlot.type == Type.TypeClass.Tuple {
+                          if dSelfSlot.tuple.elements.length() > 0 {
+                            dSelfSlot = dSelfSlot.tuple.elements[0]
+                          }
+                        }
+                        self.unify(dSelfSlot!, dInfo.selfType!)
+                        dSynthInst = ddty.poly.instantiations.lastTyvarInstantiation
+                        if !isnull(dSynthInst) {
+                          self.instantiate(ddty.poly!, dSynthInst!)
+                          self.retypecheckDeferred(dchild)
+                          dchild.deferredRetypechecked = true
+                          self.deInstantiate(ddty.poly!)
+                        }
+                        while self.countTypeErrors() > dErrs {
+                          self.popTypeError()
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
         for statement in fn.subBlock.statements() {
           self.statement(statement, fn.subBlock)
         }

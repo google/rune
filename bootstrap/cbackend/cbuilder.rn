@@ -539,6 +539,12 @@ class CBuilder(self, tc: types.TypeChecker) {
                 self.resolveInstantiation(minst)
                 if self.instantiationIsConcrete(minst) {
                   self.instantiate(mty.poly!, minst)
+                  if childfunc.deferredTypecheck && !childfunc.deferredRetypechecked {
+                    // A deferred body must retypecheck under these
+                    // bindings before its statements emit.
+                    self.typechecker.retypecheckDeferred(childfunc)
+                    childfunc.deferredRetypechecked = true
+                  }
                   mfn = self.typechecker.resolve(mty.poly.scope)
                   if (mfn.type == types.Type.TypeClass.Function &&
                       self.methodDefCName(mfn!, methodName) == wantName) {
@@ -578,6 +584,12 @@ class CBuilder(self, tc: types.TypeChecker) {
                 te = self.typechecker.unify(params3, inst)
               }
               if isnull(te) {
+                if childfunc.deferredTypecheck && !childfunc.deferredRetypechecked {
+                  // openPoly's bindings stay active; retypecheck the
+                  // deferred body under them before emission.
+                  self.typechecker.retypecheckDeferred(childfunc)
+                  childfunc.deferredRetypechecked = true
+                }
                 mfn3 = self.typechecker.resolve(opened)
                 if (mfn3.type == types.Type.TypeClass.Function &&
                     self.methodDefCName(mfn3!, methodName) == wantName) {
