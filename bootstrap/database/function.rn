@@ -276,7 +276,12 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       // variable instead of sharing the module static.
       monoPrevEmittingFn = builder.currentEmittingFn
       builder.currentEmittingFn = self
-      body = self.subBlock.genC(builder)
+      builder.openBlock(self.subBlock.location)
+      for bodyStatement in self.subBlock.statements() {
+        bodyStatement.genC(builder)
+      }
+      self.emitScopeExitFinals(builder)
+      body = builder.closeBlock()
       builder.currentEmittingFn = monoPrevEmittingFn
       builder.closeFunctionTryContext(savedTryBase)
       builder.closeScope()
@@ -285,6 +290,111 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       builder.closeDependencyList()
       builder.addDeclaration(fundec)
     }
+  }
+
+  // Rune frees an object when its last reference drops.  The C backend has no
+  // reference counts, so it approximates the common case: a function that
+  // returns nothing cannot hand a locally built array of objects back to its
+  // caller, so when it returns those objects are unreachable and their
+  // destructors must run.  Only object arrays that are plain locals (not
+  // parameters) of a void function qualify; anything that might escape (a
+  // non-void return, an object stored in a relation or global) is left alone.
+  // Must be called while the function body block and parameter scope are still
+  // open so the array locals resolve and the loop index declares into the body.
+  func emitScopeExitFinals(self: Function, builder: c.CBuilder) {
+    fntype = self.typedValue
+    if isnull(fntype) {
+      return
+    }
+    if fntype.type != types.Type.TypeClass.Function {
+      return
+    }
+    resTy = builder.typechecker.resolve(fntype.function.result!)
+    isVoid = (resTy.type == types.Type.TypeClass.Typename &&
+              resTy.tyname.name.name == "none")
+    if !isVoid {
+      return
+    }
+    // Function locals are not tracked as Variables, so find the object arrays
+    // from their defining assignments: a top-level `name = <array-of-class>`
+    // statement.  Each local is destroyed once, in declaration order.
+    seen = arrayof(string)
+    for statement in self.subBlock.statements() {
+      if (statement.type == StateType.Assign && !isnull(statement.expr) &&
+          statement.expr.type == ExprType.Equals) {
+        lhs = statement.expr.firstChildExpr
+        if (!isnull(lhs) && lhs.type == ExprType.Ident &&
+            !isnull(lhs.typedValue) && !isnull(lhs.val.symVal)) {
+          vty = builder.typechecker.resolve(lhs.typedValue!)
+          if vty.type == types.Type.TypeClass.Array {
+            sym = lhs.val.symVal!
+            already = false
+            for s in seen {
+              if s == sym.name {
+                already = true
+              }
+            }
+            if !already {
+              elemTy = vty.array.elementType!
+              destroyName = builder.classDestroyName(elemTy)
+              if destroyName == "" {
+                destroyName = builder.classFinalName(elemTy)
+              }
+              if destroyName != "" {
+                seen.append(sym.name)
+                self.emitArrayElementFinals(builder, sym, vty, destroyName)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Emit `for (i = 0; i < array_length(arr); i++) if (arr[i]) destroy(arr[i]);`
+  // into the current (open) block, destroying every live element of |arrSym|.
+  func emitArrayElementFinals(self: Function, builder: c.CBuilder, arrSym: Sym,
+                              arrTy: types.Type, destroyName: string) {
+    loc = self.location
+    u64type = builder.cIntType(loc, false, 64u32)
+    idxSym = Sym.new("%s_finalidx" % arrSym.name)
+    idxDecl = builder.declareLocal(idxSym, u64type)
+    zero = Bigint(0u64)
+    init = c.CExpr(c.CBinaryOperator(loc, c.CBinaryOperator.Type.Assign,
+        null(c.CTypeExpr), idxDecl, builder.cIntLiteral(zero)))
+    lenCall = builder.cCall(loc, c.CRuntimeFunction.ArrayLength,
+        builder.cIdentifier(arrSym, false, arrTy))
+    idxRef1 = c.CExpr(c.CIdentifier(idxSym, null(c.CTypeExpr), false, false, false))
+    cond = c.CExpr(c.CBinaryOperator(loc, c.CBinaryOperator.Type.LessThan,
+        null(c.CTypeExpr), idxRef1, lenCall))
+    one = Bigint(1u64)
+    idxRef2 = c.CExpr(c.CIdentifier(idxSym, null(c.CTypeExpr), false, false, false))
+    idxRef3 = c.CExpr(c.CIdentifier(idxSym, null(c.CTypeExpr), false, false, false))
+    plus = c.CExpr(c.CBinaryOperator(loc, c.CBinaryOperator.Type.Plus,
+        null(c.CTypeExpr), idxRef2, builder.cIntLiteral(one)))
+    incr = c.CExpr(c.CBinaryOperator(loc, c.CBinaryOperator.Type.Assign,
+        null(c.CTypeExpr), idxRef3, plus))
+    forList = c.CExprList()
+    forList.appendCExpr(init)
+    forList.appendCExpr(cond)
+    forList.appendCExpr(incr)
+    builder.openBlock(loc)
+    idxRef4 = c.CExpr(c.CIdentifier(idxSym, null(c.CTypeExpr), false, false, false))
+    condElem = c.CExpr(c.CIndexExpr(loc,
+        builder.cIdentifier(arrSym, false, arrTy), idxRef4))
+    idxRef5 = c.CExpr(c.CIdentifier(idxSym, null(c.CTypeExpr), false, false, false))
+    callElem = c.CExpr(c.CIndexExpr(loc,
+        builder.cIdentifier(arrSym, false, arrTy), idxRef5))
+    destroyArgs = c.CExprList()
+    destroyArgs.appendCExpr(callElem)
+    builder.openBlock(loc)
+    builder.addStatement(loc, builder.cCall(loc, destroyName, c.CExpr(destroyArgs)))
+    ifBody = builder.closeBlock()
+    builder.addStatement(loc,
+        c.CStatement(loc, c.CStatementType.If, condElem, ifBody))
+    loopBody = builder.closeBlock()
+    builder.addStatement(loc,
+        c.CStatement(loc, c.CStatementType.For, c.CExpr(forList), loopBody))
   }
 
   // Emit a single specialization of a polymorphic function under the given
