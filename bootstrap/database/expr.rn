@@ -1150,6 +1150,15 @@ class Expr(self, type: ExprType, location: Location) {
 
     if self.type == ExprType.Equals {
       self.bindingInstance = true
+      // An assignment target that lost its type (deferral retypecheck
+      // does not re-type plain assignment LHS idents) takes the value's
+      // type; the interned-sym fallback may belong to another function's
+      // same-named local.
+      if left.type == ExprType.Ident && isnull(left.typedValue) {
+        if !isnull(right.typedValue) {
+          left.typedValue = right.typedValue
+        }
+      }
     }
     l = left.genC(builder)
     self.bindingInstance = false
