@@ -480,6 +480,10 @@ class Statement(self, block: Block, type: StateType, location: Location) {
         builder.cCall(self.location, c.CRuntimeFunction.GlobalStringWriterString,
                       null(c.CExpr)))
     self.genCCall(builder, c.CRuntimeFunction.Printf, c.CExpr(printfArgs))
+    // Flush-and-clear: a later print appends to a fresh buffer, so a nested
+    // print evaluated inside this one's arguments (which left its own line in
+    // the shared writer) does not get re-emitted when this print flushes.
+    self.genCCall(builder, c.CRuntimeFunction.GlobalStringWriterReset, null(c.CExpr))
   }
 
   // raise Status.Foo, msg... composes the message in the global string
