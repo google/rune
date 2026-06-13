@@ -1351,17 +1351,17 @@ class Expr(self, type: ExprType, location: Location) {
     // same subtree scan its own genC uses, not by the node's resolved type:
     // in a generic body a wide operand's type can resolve to a scalar
     // default, and re-wrapping the wide value as a scalar is a type error.
-    if left.findWideWidth(builder) == 0u32 && !leftWideAnyway {
+    if !left.emittedWide(builder) && !leftWideAnyway {
       wl = builder.cWideFromU64(self.location, l, wideW,
           builder.wideSigned(right.typedValue))
     }
     if scalarRhs {
-      if right.findWideWidth(builder) > 0u32 {
+      if right.emittedWide(builder) {
         toArgs = c.CExprList()
         toArgs.appendCExpr(r)
         wr = builder.cWideCall(self.location, "wide_to_u64", toArgs)
       }
-    } else if right.findWideWidth(builder) == 0u32 && !rightWideAnyway {
+    } else if !right.emittedWide(builder) && !rightWideAnyway {
       wr = builder.cWideFromU64(self.location, r, wideW,
           builder.wideSigned(left.typedValue))
     }
@@ -1512,6 +1512,21 @@ class Expr(self, type: ExprType, location: Location) {
     return 0u32
   }
 
+  // True if the C value this expression emits is wide.  Besides a wide node
+  // type anywhere in the subtree, a bare reference to a local that was
+  // declared wide also emits a wide value, even when the reference's own
+  // type resolved to a scalar default (a generic body generalizes a local's
+  // type variable independently of the parameters it depends on).
+  func emittedWide(self, builder: c.CBuilder) -> bool {
+    if self.findWideWidth(builder) > 0u32 {
+      return true
+    }
+    if self.type == ExprType.Ident {
+      return builder.localWide(self.val.symVal!)
+    }
+    return false
+  }
+
   func genCModular(self, builder: c.CBuilder, modulus: Expr) -> c.CExpr {
     modW = builder.wideWidth(modulus.typedValue)
     if modW == 0u32 {
@@ -1606,9 +1621,10 @@ class Expr(self, type: ExprType, location: Location) {
     }
     v = self.genC(builder)
     // A generic body's node types can resolve to a scalar default even when
-    // the value is wide; any wide node in this operand's subtree means the
-    // emitted value is already wide and must not be re-wrapped as a scalar.
-    if self.findWideWidth(builder) == 0u32 {
+    // the value is wide; if any wide node is in this operand's subtree, or
+    // it is a bare reference to a wide-declared local, the emitted value is
+    // already wide and must not be re-wrapped as a scalar.
+    if !self.emittedWide(builder) {
       leafSigned = false
       leafTy = builder.typechecker.resolve(self.typedValue!)
       if leafTy.type == types.Type.TypeClass.Int {

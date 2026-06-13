@@ -30,6 +30,22 @@ class CurrentScope(self) {
     self.depth += 1
   }
 
+  // True if a local named |sym| is already declared with the wide-integer
+  // C type in the current emission scope.  A use of the local then carries
+  // a wide value even when the reference's own type resolved to a scalar.
+  func declaredWide(self, sym: Sym) -> bool {
+    probe = CIdentifier(sym, null(CTypeExpr), false, false, false)
+    found = self.findCIdentifier(probe)
+    if isnull(found) || isnull(found.type) {
+      return false
+    }
+    ft = found.type!
+    if ft.type == CTypeExpr.Type.Defined {
+      return ft.cDefinedType.name == "rn_wide"
+    }
+    return false
+  }
+
   func close(self) {
     // Forget identifiers that were bound in the scope being closed, so that
     // the same name can be re-declared in a different function.
@@ -937,6 +953,12 @@ class CBuilder(self, tc: types.TypeChecker) {
       return t.int.width
     }
     return 0u32
+  }
+
+  // True if a local variable named |sym| has been declared with the wide
+  // C type in the current function's emission scope.
+  func localWide(self, sym: Sym) -> bool {
+    return self.identifierScope.declaredWide(sym)
   }
 
   func wideSigned(self, ty: types.Type?) -> bool {
