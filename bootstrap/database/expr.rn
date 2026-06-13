@@ -1983,8 +1983,34 @@ class Expr(self, type: ExprType, location: Location) {
 
       // Built-in methods on arrays.
       array = left.firstChildExpr!
+      if array.typedValue.type == types.Type.TypeClass.Tuple {
+        tField = array.nextExprChildExpr!
+        if tField.toString() == "toString" {
+          // Capture the tuple print helper's output as a string.
+          tTy = builder.typechecker.resolve(array.typedValue!)
+          builder.ensureTupleDeclared(self.location, tTy)
+          tDef = builder.typeGenerator.genCTuple(tTy.tuple!)
+          ttsArgs = c.CExprList()
+          ttsInner = c.CExprList()
+          ttsInner.appendCExpr(array.genC(builder))
+          ttsArgs.appendCExpr(builder.cCall(self.location,
+              "tostring_%s_t" % tDef.name, c.CExpr(ttsInner)))
+          return builder.cCall(self.location, "RN_TOSTRING_RET", c.CExpr(ttsArgs))
+        }
+      }
       if array.typedValue.type == types.Type.TypeClass.Array {
         field = array.nextExprChildExpr!
+        if field.toString() == "toString" {
+          // Capture the array print helper's output as a string.
+          aTy = builder.typechecker.resolve(array.typedValue!)
+          aDef = builder.ensureArrayDeclared(self.location, aTy.array.elementType!)
+          atsArgs = c.CExprList()
+          atsInner = c.CExprList()
+          atsInner.appendCExpr(array.genC(builder))
+          atsArgs.appendCExpr(builder.cCall(self.location,
+              "tostring_%s_t" % aDef.typeName, c.CExpr(atsInner)))
+          return builder.cCall(self.location, "RN_TOSTRING_RET", c.CExpr(atsArgs))
+        }
         switch field.toString() {
           "append" => fn = c.CRuntimeFunction.ArrayAppend
           "concat" => fn = c.CRuntimeFunction.ArrayConcat

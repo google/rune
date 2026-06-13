@@ -2098,6 +2098,8 @@ class TypeChecker(self) {
                                     ARRAY(elementType))
             "reverse" => result = FN(TUPLE(nullTypes), NONETY())
             "concat" => result = FN(ARRAY(elementType), NONETY())
+            // toString captures the array print form ("[1u64, 2u64]").
+            "toString" => result = FN(TUPLE(nullTypes), STRING())
 
             // The following two require support for iterators:
             // "values" => result = FN(TUPLE(nullTypes), ITERATOR(elementType))
@@ -2109,6 +2111,15 @@ class TypeChecker(self) {
             }
           }
 
+        } else if sty.type == Type.TypeClass.Tuple {
+          // Tuples have a built-in toString() capturing their print form.
+          if field.toString() == "toString" {
+            noTupleArgs = arrayof(Type)
+            result = FN(TUPLE(noTupleArgs), STRING())
+          } else {
+            self.typeError(
+              "Unsupported tuple method '%s'" % field.toString(), expr.location)
+          }
         } else if sty.type == Type.TypeClass.Int || sty.type == Type.TypeClass.AnyInt {
           // Built-in integer methods like toString().
           result = self.intMethodType(field.toString(), expr.location)
