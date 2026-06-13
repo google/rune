@@ -901,6 +901,33 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     for caseStatement in self.subBlock.statements() {
       if i == index {
         if caseStatement.typecheckPoisoned {
+          // The arm failed under the definition's open scrutinee; the
+          // current instantiation's bindings are active, so it can
+          // typecheck cleanly now (e.g. hashValue's Class arm).
+          tc = builder.typechecker
+          preArmErrs = tc.countTypeErrors()
+          tc.openScope()
+          encFn = builder.currentEmittingFn
+          if !isnull(encFn) {
+            for variable in encFn.variables() {
+              if variable.isParam && !isnull(variable.typedValue) {
+                tc.newSymbol(variable.sym, variable.typedValue)
+              }
+            }
+          }
+          for ps in caseStatement.subBlock.statements() {
+            tc.statement(ps, caseStatement.subBlock!)
+          }
+          tc.closeScope()
+          if tc.countTypeErrors() == preArmErrs {
+            caseStatement.typecheckPoisoned = false
+          } else {
+            while tc.countTypeErrors() > preArmErrs {
+              tc.popTypeError()
+            }
+          }
+        }
+        if caseStatement.typecheckPoisoned {
           raise Status.InvalidArgument, "typeswitch case selected at ",
               caseStatement.location.line,
               " did not typecheck under this instantiation"

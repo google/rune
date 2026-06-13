@@ -1519,6 +1519,22 @@ class TypeChecker(self) {
 
   // True if a typeswitch case pattern matches the resolved scrutinee type.
   func typePatternMatches(self, pattern: Type, actual: Type) -> bool {
+    if pattern.type == Type.TypeClass.Typename && isnull(pattern.tyname.params) {
+      pname = pattern.tyname.name.name
+      if pname == "Class" {
+        // The Class meta-pattern matches any class instance type.
+        if actual.type == Type.TypeClass.Typename {
+          if !isnull(self.lookupClass(actual.tyname.name)) {
+            return pattern.tyname.isNullable == actual.tyname.isNullable
+          }
+        }
+        return false
+      }
+      if pname == "Array" {
+        // The Array meta-pattern matches any array type.
+        return actual.type == Type.TypeClass.Array
+      }
+    }
     if (pattern.type == Type.TypeClass.Typename &&
         actual.type == Type.TypeClass.Typename &&
         isnull(pattern.tyname.params)) {
