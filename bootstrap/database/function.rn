@@ -421,6 +421,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   // instantiation of a class.  Must be called with the class's type
   // variables instantiated in the typechecker.
   func genCConstructorInstance(self: Function, builder: c.CBuilder, info: types.ClassInfo) {
+    if isnull(info.selfType) {
+      println "DBGNST class=", self.sym.name
+      return
+    }
     instType = builder.typechecker.resolve(info.selfType!)
     className = builder.classCName(instType)
     if builder.alreadyEmitted(className) {
@@ -435,6 +439,39 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     fields = c.CParamList()
     for i in range(info.strct.fieldnames.length()) {
       fieldty = builder.typechecker.resolve(info.strct.fieldtypes[i])
+      if fieldty.type == types.Type.TypeClass.Var {
+        // A field whose baked type stayed an open variable (e.g. its
+        // create-on-assign unification reverted with the deferral
+        // rollback): recover the type from the constructor body's
+        // self.<field> = <expr> assignment.
+        for fstmt in self.subBlock.statements() {
+          if !isnull(fstmt.expr) {
+            if fstmt.expr.type == ExprType.Equals {
+              flhs = fstmt.expr.firstChildExpr!
+              if flhs.type == ExprType.Dot {
+                fbase = flhs.firstChildExpr!
+                fmem = fbase.nextExprChildExpr!
+                if (fbase.type == ExprType.Ident &&
+                    fmem.type == ExprType.Ident) {
+                  if fbase.val.symVal.name == "self" &&
+                      fmem.val.symVal.name == info.strct.fieldnames[i].name {
+                    frhs = flhs.nextExprChildExpr!
+                    if !isnull(frhs.typedValue) {
+                      fr = builder.typechecker.resolve(frhs.typedValue!)
+                      if fr.type != types.Type.TypeClass.Var {
+                        fieldty = fr
+                        // Later retypechecks (the generated destroy) read
+                        // the field type from the class info; persist it.
+                        info.strct.fieldtypes[i] = fr
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
       ctype = builder.genCType(fieldty)
       if ctype.type == c.CTypeExpr.Type.Defined {
         fieldDeps.append(ctype.toString())
