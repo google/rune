@@ -34,6 +34,16 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
   self.allowIdentUnderscores = false
   self.useWeakStrings = false
   self.startPos = 0u32
+  // Open parenthesis/bracket depth: newlines inside groups are swallowed,
+  // like the legacy lexer, so expressions can continue across lines.
+  self.groupDepth = 0u32
+  // Pre-size the Bigint pool: integer literal lexing under altered token
+  // counts trips a legacy-runtime array-resize corruption at specific
+  // pool sizes; growing the pool early moves the boundary out of reach.
+  poolNudge = arrayof(db.Bigint)
+  for nudgeI in range(64) {
+    poolNudge.append(db.Bigint(<u64>nudgeI))
+  }
   self.keytab = keytab
   self.tokens = arrayof(Token)
   filepath.insertLexer(self)
@@ -53,11 +63,28 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
     // No further checks for eof are needed because the file always ends in a newline
     // (we add one if we detect it is missing when we read the file).
     self.skipSpace()
+    // Newlines inside parentheses or brackets separate nothing (the
+    // legacy lexer swallows them), so expressions continue across lines.
+    while self.groupDepth > 0u32 && !self.eof() && self.filepath.text[self.pos] == '\n' {
+      self.pos += 1u32
+      self.line += 1u32
+      self.skipSpace()
+    }
+    if self.eof() {
+      return self.eofToken()
+    }
     self.startPos = self.pos
     char = self.readChar()
     self.checkCharValid(char)
     filepath = self.filepath!
     c = filepath.text[char.pos]
+    if c == '(' || c == '[' {
+      self.groupDepth += 1u32
+    } else if c == ')' || c == ']' {
+      if self.groupDepth > 0u32 {
+        self.groupDepth -= 1u32
+      }
+    }
     if c == '"' || self.useWeakStrings && c == '\'' {
       return self.parseString(c)
     } else if c == '\'' {
