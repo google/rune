@@ -229,9 +229,14 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
     } else {
        tyname = "%s_%s" % (ty.name.name, spec)
     }
-    if !isnull(self.typechecker.lookupEnum(ty.name)) {
+    einfo = self.typechecker.lookupEnum(ty.name)
+    if !isnull(einfo) {
       // Enum values are plain unsigned integers in C.
-      return CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Uint32))
+      enumResult = CTypeExpr(CPrimitiveType(CPrimitiveType.Type.Uint32))
+      if einfo.valueWidth > 0u32 {
+        enumResult.runeSuffix = "u%u" % einfo.valueWidth
+      }
+      return enumResult
     }
     return CTypeExpr(CDefinedType(tyname))
   }

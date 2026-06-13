@@ -185,6 +185,9 @@ class EnumInfo(self, sym: Sym) {
   self.sym = sym
   self.memberNames = arrayof(Sym)
   self.memberValues = arrayof(u32)
+  // Width of explicitly typed member values (red = 1u8 -> 8); 0 when the
+  // members are untyped.  Composite printing suffixes values with it.
+  self.valueWidth = 0u32
 
   func hash(self) -> u64 {
     return hashValue(self.sym.name)
@@ -3889,6 +3892,9 @@ class TypeChecker(self) {
       init = variable.initializerExpr
       if !isnull(init) && init.type == db.ExprType.Constant {
         value = <u32>init.val.intVal.uint64()
+        if !init.autocast {
+          info.valueWidth = init.val.intVal.width
+        }
       }
       info.memberNames.append(variable.sym)
       info.memberValues.append(value)

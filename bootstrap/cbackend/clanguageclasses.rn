@@ -2086,11 +2086,14 @@ relation OneToOne CClassDeclaration CParamList cascade
 // Class instances are heap allocated and passed by pointer; the constructor
 // function itself is emitted separately as a CFunctionDeclaration.
 class CClassDeclaration(self, location: db.Location, name: string, fields: CParamList,
-                        toStringMethod: string) {
+                        toStringMethod: string, refWidth: u32) {
   self.location = location
   self.name = name
   // The C name of the user-defined toString method, or "" if there is none.
   self.toStringMethod = toStringMethod
+  // Nonzero when the class declared an explicit reference width; instances
+  // then print as <rn_id>u<refWidth> and null prints as 0u<refWidth>.
+  self.refWidth = refWidth
   self.insertCParamList(fields)
   self.protoEmitted = false
 
@@ -2140,6 +2143,14 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
     }
     e.write("void tostring_%s_t(%s_t *self)" % (self.name, self.name))
     e.writeopenln(" {")
+    if self.refWidth > 0u32 {
+      suffix = "u%u" % self.refWidth
+      e.writeln("if (self == 0) { tostring_string_t(\"0" + suffix + "\"); return; }")
+      e.writeln("tostring_string_t(\"%u" + suffix + "\", self->rn_id);")
+      e.writecloseln("}")
+      e.newline()
+      return
+    }
     // A null reference prints as null.
     e.writeln("if (self == 0) { tostring_string_t(\"null\"); return; }")
     if self.toStringMethod != "" {

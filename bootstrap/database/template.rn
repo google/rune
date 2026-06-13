@@ -19,6 +19,9 @@ use sym
 
 class Template(self, constructor: Function, refWidth: u32, location: Location) {
   self.refWidth = refWidth
+  // True when the source spelled the width (class Foo: u4 (...)); such
+  // classes print instances as <id>u<width> rather than field dumps.
+  self.explicitWidth = false
   self.location = location
   constructor.insertTemplate(self)
 }

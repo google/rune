@@ -453,7 +453,14 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
         toStringMethod = className + "_toString"
       }
     }
-    classDec = builder.cClassDeclaration(self.location, className, fields, toStringMethod)
+    refWidth = 0u32
+    if !isnull(self.template) {
+      if self.template.explicitWidth {
+        refWidth = self.template.refWidth
+      }
+    }
+    classDec = builder.cClassDeclaration(self.location, className, fields,
+        toStringMethod, refWidth)
     for depName in fieldDeps {
       classDec.addDependencyName(depName)
     }

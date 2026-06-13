@@ -610,8 +610,10 @@ class CBuilder(self, tc: types.TypeChecker) {
   }
 
   func cClassDeclaration(self, location: db.Location, name: string,
-                         fields: CParamList, toStringMethod: string) -> CDeclaration {
-    return CDeclaration(CClassDeclaration(location, name, fields, toStringMethod))
+                         fields: CParamList, toStringMethod: string,
+                         refWidth: u32 = 0u32) -> CDeclaration {
+    return CDeclaration(CClassDeclaration(location, name, fields, toStringMethod,
+                                          refWidth))
   }
 
   // Create a function definition whose return type is given directly as a C

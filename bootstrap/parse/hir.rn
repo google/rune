@@ -490,6 +490,9 @@ class HirBuilder(self, goalNode: Node, destModule: db.Function) {
       }
     }
     template = db.Template(constructor, width, statementNode.location)
+    if !isnull(optWidthNode) {
+      template.explicitWidth = true
+    }
     self.fillSubBlock(constructor, constructor.subBlock, blockNode!)
   }
 
