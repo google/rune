@@ -1898,10 +1898,9 @@ class TypeChecker(self) {
         // comparison (both comparison operands reduce mod m).
         modLeft = expr.firstChildExpr!
         modModulus = modLeft.nextExprChildExpr!
-        modLeftTy = self.expr(modLeft)
         modTy = self.expr(modModulus)
-        if isnull(modLeftTy) || isnull(modTy) {
-          return modLeftTy
+        if isnull(modTy) {
+          return null(Type)
         }
         te = self.unify(modTy!, UINTEGER())
         if !isnull(te) {
@@ -1909,15 +1908,39 @@ class TypeChecker(self) {
             "Modulus must be an unsigned integer: %s" % te.msg, expr.location)
           return null(Type)
         }
-        rModLeftTy = self.resolve(modLeftTy!)
-        if (rModLeftTy.type == Type.TypeClass.Typename &&
-            rModLeftTy.tyname.name.name == "bool") {
-          result = rModLeftTy
+        // A modular congruence `a == b mod m` (also !=, <, <=, >, >=) reduces
+        // each operand into [0, m) and then compares, so the operands need
+        // not share a type: `i*i == -1 mod m` compares an unsigned square
+        // with a signed -1.  Typecheck the operands individually instead of
+        // applying the comparison operator, which would couple them.
+        isModCompare = (modLeft.type == db.ExprType.Equal ||
+                        modLeft.type == db.ExprType.Notequal ||
+                        modLeft.type == db.ExprType.Lt ||
+                        modLeft.type == db.ExprType.Le ||
+                        modLeft.type == db.ExprType.Gt ||
+                        modLeft.type == db.ExprType.Ge)
+        if isModCompare {
+          cmpL = modLeft.firstChildExpr!
+          cmpR = cmpL.nextExprChildExpr!
+          self.expr(cmpL)
+          self.expr(cmpR)
+          modLeft.typedValue = BOOL
+          result = BOOL
         } else {
-          // Sign differences (e.g. -1 mod 13) are fine: values reduce into
-          // [0, m), so only adapt widths when both sides are concrete.
-          te = self.unify(modLeftTy!, modTy!)
-          result = modTy
+          modLeftTy = self.expr(modLeft)
+          if isnull(modLeftTy) {
+            return modLeftTy
+          }
+          rModLeftTy = self.resolve(modLeftTy!)
+          if (rModLeftTy.type == Type.TypeClass.Typename &&
+              rModLeftTy.tyname.name.name == "bool") {
+            result = rModLeftTy
+          } else {
+            // Sign differences (e.g. -1 mod 13) are fine: values reduce into
+            // [0, m), so only adapt widths when both sides are concrete.
+            te = self.unify(modLeftTy!, modTy!)
+            result = modTy
+          }
         }
       }
 
