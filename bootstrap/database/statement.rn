@@ -308,6 +308,23 @@ class Statement(self, block: Block, type: StateType, location: Location) {
         }
       }
     }
+    // A freshly inferred local takes the resolved type of its initializer.
+    // A generic function generalizes a local's type variable independently
+    // of the parameter variables it was unified with, so under a concrete
+    // instantiation the local's own variable can resolve to the default
+    // width (uint64) or a stale class while its initializer resolves
+    // correctly.  Declaring the local from the initializer's resolved type
+    // keeps them in sync (e.g. `q = a mod p` is wide when a, p are wide).
+    if self.expr.type == ExprType.Equals {
+      eqLhs = self.expr.firstChildExpr!
+      eqRhs = self.expr.lastChildExpr!
+      if eqLhs.type == ExprType.Ident && !isnull(eqRhs.typedValue) {
+        eqRhsTy = builder.typechecker.resolve(eqRhs.typedValue!)
+        if eqRhsTy.type != types.Type.TypeClass.Var {
+          eqLhs.typedValue = eqRhsTy
+        }
+      }
+    }
     cexpr = self.expr.genC(builder)
     builder.addStatement(self.location, c.CStatement(self.location, c.CStatementType.Assignment, cexpr))
   }

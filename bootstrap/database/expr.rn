@@ -1347,17 +1347,21 @@ class Expr(self, type: ExprType, location: Location) {
     wr = r
     leftWideAnyway = self.exprIsRecursiveWideCall(builder, left)
     rightWideAnyway = self.exprIsRecursiveWideCall(builder, right)
-    if builder.wideWidth(left.typedValue) == 0u32 && !leftWideAnyway {
+    // Whether each operand's emitted value is already wide is decided by the
+    // same subtree scan its own genC uses, not by the node's resolved type:
+    // in a generic body a wide operand's type can resolve to a scalar
+    // default, and re-wrapping the wide value as a scalar is a type error.
+    if left.findWideWidth(builder) == 0u32 && !leftWideAnyway {
       wl = builder.cWideFromU64(self.location, l, wideW,
           builder.wideSigned(right.typedValue))
     }
     if scalarRhs {
-      if builder.wideWidth(right.typedValue) > 0u32 {
+      if right.findWideWidth(builder) > 0u32 {
         toArgs = c.CExprList()
         toArgs.appendCExpr(r)
         wr = builder.cWideCall(self.location, "wide_to_u64", toArgs)
       }
-    } else if builder.wideWidth(right.typedValue) == 0u32 && !rightWideAnyway {
+    } else if right.findWideWidth(builder) == 0u32 && !rightWideAnyway {
       wr = builder.cWideFromU64(self.location, r, wideW,
           builder.wideSigned(left.typedValue))
     }
@@ -1597,8 +1601,14 @@ class Expr(self, type: ExprType, location: Location) {
   // becomes a wide value and the wide_mod* helpers keep results in [0, m).
   func genCWideModOperand(self, builder: c.CBuilder, modulus: Expr) -> c.CExpr {
     mW = builder.wideWidth(modulus.typedValue)
+    if mW == 0u32 {
+      mW = modulus.findWideWidth(builder)
+    }
     v = self.genC(builder)
-    if builder.wideWidth(self.typedValue) == 0u32 {
+    // A generic body's node types can resolve to a scalar default even when
+    // the value is wide; any wide node in this operand's subtree means the
+    // emitted value is already wide and must not be re-wrapped as a scalar.
+    if self.findWideWidth(builder) == 0u32 {
       leafSigned = false
       leafTy = builder.typechecker.resolve(self.typedValue!)
       if leafTy.type == types.Type.TypeClass.Int {
