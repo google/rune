@@ -3047,6 +3047,11 @@ class TypeChecker(self) {
             // variable temporarily bound to that arm's pattern type.  The
             // case itself is selected at codegen time, per instantiation.
             for caseStatement in statement.subBlock.statements() {
+              // The scrutinee variable must come out of each arm exactly
+              // as it went in: an arm body can bind it even when the
+              // pattern provided no binding (t null), and a leaked binding
+              // poisons every later arm (duplicate unifier mappings).
+              armWasUnbound = isnull(self.unifier.lookupVar(rty.tyvar.id))
               bound = false
               if caseStatement.type == db.StateType.Case {
                 firstPattern = caseStatement.expr.firstChildExpr
@@ -3074,8 +3079,10 @@ class TypeChecker(self) {
               if !isnull(caseStatement.subBlock.returnType) {
                 parent.returnType = caseStatement.subBlock.returnType
               }
-              if bound {
-                self.unifier.unbindVar(rty.tyvar!)
+              if armWasUnbound {
+                while !isnull(self.unifier.lookupVar(rty.tyvar.id)) {
+                  self.unifier.unbindVar(rty.tyvar!)
+                }
               }
             }
           } else {
