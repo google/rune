@@ -118,7 +118,7 @@ func loadTopModule(parser: Peg, fileName: string, parent: db.Function,
 func loadBuiltinModules(parser: Peg, module: db.Function) {
   builtinNames = ["doublylinked", "onetoone",
       "taillinked", "linkedlist", "arraylist", "heapqlist",
-      "hashed", "hashedclass"]
+      "hashed", "hashedclass", "misc"]
   for name in builtinNames {
     fileName = findModuleFile("builtin/" + name, "")
     if fileName != "" {
