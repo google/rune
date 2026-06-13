@@ -1061,6 +1061,14 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
       // C identifiers cannot contain brackets.
       return "%s_array" % self.array.elementType.specializationName()
     }
+    if self.type == Type.TypeClass.AnyInt {
+      // An adaptable literal defaults to 64 bits in C; naming it u64/i64
+      // makes Point(1, 2) and null(Point(u64, u64)) the same struct.
+      if self.anyInt.isSigned {
+        return "i64"
+      }
+      return "u64"
+    }
     return self.toString()
   }
 
@@ -1068,7 +1076,15 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
     switch self.type {
       Type.TypeClass.Var => newname = baseName
       Type.TypeClass.Int => newname = baseName + "_" + self.int.toString()
-      Type.TypeClass.AnyInt => newname = baseName + "_" + self.anyInt.toString()
+      Type.TypeClass.AnyInt => {
+        // Match specializationName: adaptable literals name as their
+        // 64-bit C default.
+        if self.anyInt.isSigned {
+          newname = baseName + "_i64"
+        } else {
+          newname = baseName + "_u64"
+        }
+      }
       Type.TypeClass.Float => newname = baseName + "_" + self.float.toString()
       Type.TypeClass.Typename => newname = baseName + "_" + self.specializationName()
       Type.TypeClass.Array => newname = baseName

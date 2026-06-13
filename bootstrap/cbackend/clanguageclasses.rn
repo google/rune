@@ -1893,6 +1893,8 @@ class CArrayDeclaration(self, location: db.Location, typeName: string, elementTy
       e.writeln("array_t *array = ((array_t*)a) - 1;")
       e.writeln("size_t i;");
 
+      // A null array reference prints as the empty array.
+      e.writeln("if (a == 0) { tostring_string_t(\"[]\"); return; }")
       e.writeln("tostring_string_t(\"[\");")
       e.writeopenln("for(i = 0; i < array->used; ++i) {")
       e.writeln("if (i > 0) tostring_string_t(\", \");")

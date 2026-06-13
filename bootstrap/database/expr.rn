@@ -993,8 +993,25 @@ class Expr(self, type: ExprType, location: Location) {
   // becomes a zero (null) pointer of the class's C struct type.
   func genCTypeDummy(self, builder: c.CBuilder) -> c.CExpr {
     dummyType = builder.typechecker.resolve(self.typedValue!)
+    if dummyType.type == types.Type.TypeClass.Array {
+      // null([u32]) may be the only mention of the array type; its
+      // typedef and tostring helper must exist.
+      builder.ensureArrayDeclared(self.location, dummyType.array.elementType!)
+    }
+    if builder.typechecker.isStringType(dummyType) {
+      // null(string) is the empty string; a null char* would print as
+      // "(null)" through printf.
+      return builder.cStringLiteral("")
+    }
     dummyZero = Bigint(0u64)
     zeroExpr = builder.cIntLiteral(dummyZero)
+    dummyWide = builder.wideWidth(self.typedValue)
+    if dummyWide > 0u32 {
+      // A wide null must be a real zero limb array, not a null pointer:
+      // printing or arithmetic dereferences it.
+      return builder.cWideFromU64(self.location, zeroExpr, dummyWide,
+          builder.wideSigned(self.typedValue))
+    }
     dummyCType = builder.genCType(dummyType)
     if isnull(dummyCType) {
       return zeroExpr
