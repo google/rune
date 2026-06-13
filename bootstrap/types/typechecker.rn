@@ -3181,6 +3181,11 @@ class TypeChecker(self) {
             } else if self.isStringType(rty) {
               elemTy = U(8)
             } else {
+              if rty.type == Type.TypeClass.Var {
+                // An unconstrained parameter: iterability is decided per
+                // instantiation, like member access on a variable.
+                self.sawStructuralGenericError = true
+              }
               self.typeError("Cannot iterate over %s" % rty.toString(), iterExpr.location)
               elemTy = Type(self.newTyvar())
             }

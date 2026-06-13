@@ -547,6 +547,7 @@ class CBuilder(self, tc: types.TypeChecker) {
                   }
                   mfn = self.typechecker.resolve(mty.poly.scope)
                   if (mfn.type == types.Type.TypeClass.Function &&
+                      !self.typechecker.hasFreeVars(mfn!) &&
                       self.methodDefCName(mfn!, methodName) == wantName) {
                     childfunc.genCMethodInstance(self, mfn!)
                   }
@@ -592,6 +593,7 @@ class CBuilder(self, tc: types.TypeChecker) {
                 }
                 mfn3 = self.typechecker.resolve(opened)
                 if (mfn3.type == types.Type.TypeClass.Function &&
+                    !self.typechecker.hasFreeVars(mfn3!) &&
                     self.methodDefCName(mfn3!, methodName) == wantName) {
                   childfunc.genCMethodInstance(self, mfn3!)
                 }

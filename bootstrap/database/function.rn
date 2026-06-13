@@ -365,6 +365,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       if pt.type == types.Type.TypeClass.Tuple {
         fundec.addDependencyName(builder.typeGenerator.genCTuple(pt.tuple!).name)
       }
+      if pt.type == types.Type.TypeClass.Array {
+        ptDef = builder.ensureArrayDeclared(self.location, pt.array.elementType!)
+        fundec.addDependencyName(ptDef.typeName)
+      }
     }
     fundec.addDependencies(builder.topDependencyList().names)
     builder.closeDependencyList()
@@ -740,6 +744,19 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       fundec.addDependencyName(builder.classCName(params2.tuple.elements[0]) + "_class")
     } else {
       fundec.addDependencyName(builder.classCName(params2) + "_class")
+    }
+    // Array- and tuple-typed parameters need their typedefs first too.
+    if params2.type == types.Type.TypeClass.Tuple {
+      for p2el in params2.tuple.elements {
+        p2r = builder.typechecker.resolve(p2el)
+        if p2r.type == types.Type.TypeClass.Array {
+          p2def = builder.ensureArrayDeclared(self.location, p2r.array.elementType!)
+          fundec.addDependencyName(p2def.typeName)
+        } else if p2r.type == types.Type.TypeClass.Tuple {
+          builder.ensureTupleDeclared(self.location, p2r)
+          fundec.addDependencyName(builder.typeGenerator.genCTuple(p2r.tuple!).name)
+        }
+      }
     }
     fundec.addDependencies(builder.topDependencyList().names)
     builder.closeDependencyList()

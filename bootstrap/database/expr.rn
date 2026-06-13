@@ -791,6 +791,7 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.NegateTrunc => return self.genCPrefixOp(builder)
       ExprType.And => return self.genCBinaryOp(builder)
       ExprType.Or => return self.genCBinaryOp(builder)
+      ExprType.Xor => return self.genCBinaryOp(builder)
       ExprType.Bitand => return self.genCBinaryOp(builder)
       ExprType.Bitor => return self.genCBinaryOp(builder)
       ExprType.Bitxor => return self.genCBinaryOp(builder)
@@ -1211,6 +1212,8 @@ class Expr(self, type: ExprType, location: Location) {
       }
       ExprType.And => op = c.CBinaryOperator.Type.LogAnd
       ExprType.Or =>  op = c.CBinaryOperator.Type.LogOr
+      // Boolean xor: C has no ^^; != on bools is equivalent.
+      ExprType.Xor => op = c.CBinaryOperator.Type.NotEquals
       ExprType.Bitand => op = c.CBinaryOperator.Type.BitAnd
       ExprType.Bitor => op = c.CBinaryOperator.Type.BitOr
       ExprType.Bitxor => {
