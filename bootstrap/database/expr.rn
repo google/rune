@@ -1474,8 +1474,34 @@ class Expr(self, type: ExprType, location: Location) {
     return left.genCModular(builder, modulus)
   }
 
+  // First wide (>64-bit) width found on any node of this subtree, or 0.
+  // Modular expressions reduce every operand to the modulus width, so any
+  // wide node means the whole reduction is wide.
+  func findWideWidth(self, builder: c.CBuilder) -> u32 {
+    w = builder.wideWidth(self.typedValue)
+    if w > 0u32 {
+      return w
+    }
+    for child in self.childExprs() {
+      w = child.findWideWidth(builder)
+      if w > 0u32 {
+        return w
+      }
+    }
+    return 0u32
+  }
+
   func genCModular(self, builder: c.CBuilder, modulus: Expr) -> c.CExpr {
-    if builder.wideWidth(modulus.typedValue) > 0u32 {
+    modW = builder.wideWidth(modulus.typedValue)
+    if modW == 0u32 {
+      // Deferral rollbacks can leave nodes untyped; any typed node in the
+      // reduction or the modulus subtree decides the width.
+      modW = self.findWideWidth(builder)
+    }
+    if modW == 0u32 {
+      modW = modulus.findWideWidth(builder)
+    }
+    if modW > 0u32 {
       return self.genCModularWide(builder, modulus)
     }
     switch self.type {
