@@ -610,14 +610,22 @@ class TypeChecker(self) {
       }
       // Connect the body's return type to the function's result variable
       // so the call site's type resolves under this instantiation.
-      if !isnull(fn.subBlock.returnType) {
-        drfty = fn.typedValue
-        if !isnull(drfty) {
-          if drfty.type == Type.TypeClass.Polymorphic {
+      drfty = fn.typedValue
+      if !isnull(drfty) {
+        if drfty.type == Type.TypeClass.Polymorphic {
+          if !isnull(fn.subBlock.returnType) {
             // Resolve first: the body's type binds through instantiation
             // variables that deInstantiate will pop.
             self.unify(drfty.poly.scope.function.result!,
                 self.resolve(fn.subBlock.returnType!))
+          } else {
+            // No return statement: the function returns none.  Without
+            // this the instantiation's result slot stays an open variable
+            // and emission cannot type the C function.
+            drres = self.resolve(drfty.poly.scope.function.result!)
+            if drres.type == Type.TypeClass.Var {
+              self.unify(drres, Type(TypeName(Sym.new("none"))))
+            }
           }
         }
       }
@@ -3465,11 +3473,56 @@ class TypeChecker(self) {
         st = st.prevBlockStatement
       }
     } else {
-      st2 = container.subBlock.firstStatement
-      while !isnull(st2) {
-        cp2 = st2.appendCopy(destBlock)
-        self.expandTransStatementTree(cp2, env)
-        st2 = st2.nextBlockStatement
+      // Cascade blocks appended to a destroy method stack in reverse
+      // relation-declaration order (LIFO), matching the legacy compiler's
+      // destruction order: each block inserts right after the final()
+      // call, or at the front when the class has no final().
+      anchor = null(db.Statement)
+      isDestroy = target.sym.name == "destroy"
+      if isDestroy {
+        scan = destBlock.firstStatement
+        while !isnull(scan) {
+          if !isnull(scan.expr) {
+            if scan.expr.type == db.ExprType.Call {
+              fcallee = scan.expr.firstChildExpr
+              if !isnull(fcallee) {
+                if fcallee.type == db.ExprType.Dot {
+                  fmember = fcallee.firstChildExpr.nextExprChildExpr
+                  if !isnull(fmember) {
+                    if fmember.type == db.ExprType.Ident {
+                      if fmember.val.symVal.name == "final" {
+                        anchor = scan
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          scan = scan.nextBlockStatement
+        }
+      }
+      if isDestroy && isnull(anchor) {
+        stf = container.subBlock.lastStatement
+        while !isnull(stf) {
+          cpf = stf.prependCopy(destBlock)
+          self.expandTransStatementTree(cpf, env)
+          stf = stf.prevBlockStatement
+        }
+      } else if isDestroy {
+        sta = container.subBlock.lastStatement
+        while !isnull(sta) {
+          cpa = sta.appendCopyAfterStatement(anchor!)
+          self.expandTransStatementTree(cpa, env)
+          sta = sta.prevBlockStatement
+        }
+      } else {
+        st2 = container.subBlock.firstStatement
+        while !isnull(st2) {
+          cp2 = st2.appendCopy(destBlock)
+          self.expandTransStatementTree(cp2, env)
+          st2 = st2.nextBlockStatement
+        }
       }
     }
   }
