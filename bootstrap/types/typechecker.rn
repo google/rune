@@ -3056,6 +3056,15 @@ class TypeChecker(self) {
         assert !isnull(statement.subBlock)
         if !isnull(scrutTy) {
           rty = self.resolve(scrutTy!)
+          // A scrutinee that is not fully concrete selects its arm per
+          // instantiation at codegen, never once during generalization.
+          // This covers a bare type variable and, just as importantly, a
+          // composite still holding free variables (e.g. a tuple of
+          // polymorphic parameters): caching one arm there would emit the
+          // same arm for every instantiation.
+          scrutFreeVars = arrayof(Type)
+          scrutFreeVars = self.collectFreeTyvars(rty, scrutFreeVars)
+          scrutHasFreeVars = scrutFreeVars.length() != 0
           // A typeswitch whose case patterns are value expressions (e.g.
           // enum members) is really a value switch.
           isValueSwitch = false
@@ -3073,28 +3082,36 @@ class TypeChecker(self) {
           if isValueSwitch {
             statement.type = db.StateType.Switch
             self.statement(statement, parent)
-          } else if rty.type == Type.TypeClass.Var {
+          } else if rty.type == Type.TypeClass.Var || scrutHasFreeVars {
             // Polymorphic scrutinee: typecheck every arm with the scrutinee
             // variable temporarily bound to that arm's pattern type.  The
             // case itself is selected at codegen time, per instantiation.
+            // When the scrutinee is a composite holding free variables
+            // (e.g. a tuple of polymorphic params) there is no single
+            // scrutinee variable to bind, so the arms typecheck unbound;
+            // selection still defers to codegen, which is the whole point.
+            scrutIsVar = rty.type == Type.TypeClass.Var
             for caseStatement in statement.subBlock.statements() {
               // The scrutinee variable must come out of each arm exactly
               // as it went in: an arm body can bind it even when the
               // pattern provided no binding (t null), and a leaked binding
               // poisons every later arm (duplicate unifier mappings).
-              armWasUnbound = isnull(self.unifier.lookupVar(rty.tyvar.id))
+              armWasUnbound = false
               bound = false
-              if caseStatement.type == db.StateType.Case {
-                if !isnull(caseStatement.expr) {
-                  firstPattern = caseStatement.expr.firstChildExpr
-                  if isnull(firstPattern) {
-                    // A single unwrapped pattern is the case expression.
-                    firstPattern = caseStatement.expr
-                  }
-                  t = self.typeswitchPatternType(firstPattern!)
-                  if !isnull(t) {
-                    self.unifier.bindVar(rty.tyvar!, t!)
-                    bound = true
+              if scrutIsVar {
+                armWasUnbound = isnull(self.unifier.lookupVar(rty.tyvar.id))
+                if caseStatement.type == db.StateType.Case {
+                  if !isnull(caseStatement.expr) {
+                    firstPattern = caseStatement.expr.firstChildExpr
+                    if isnull(firstPattern) {
+                      // A single unwrapped pattern is the case expression.
+                      firstPattern = caseStatement.expr
+                    }
+                    t = self.typeswitchPatternType(firstPattern!)
+                    if !isnull(t) {
+                      self.unifier.bindVar(rty.tyvar!, t!)
+                      bound = true
+                    }
                   }
                 }
               }
