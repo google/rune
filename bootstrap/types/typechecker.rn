@@ -1222,6 +1222,60 @@ class TypeChecker(self) {
     }
   }
 
+
+  // Append every free (unbound) type variable nested anywhere in |ty| to
+  // |acc|, once, returning the extended array.  Generalization must capture
+  // variables inside composite parameter types (e.g. Complex(v1, v2) from
+  // duck typing), not only parameters whose whole type is a variable.
+  func collectFreeTyvars(self, ty: Type, acc: [Type]) -> [Type] {
+    out = acc
+    t = ty
+    if t.type == Type.TypeClass.Var {
+      t = self.resolve(t)
+    }
+    switch t.type {
+      Type.TypeClass.Var => {
+        for existing in out {
+          if existing.tyvar.id == t.tyvar.id {
+            return out
+          }
+        }
+        out.append(Type(t.tyvar!))
+      }
+      Type.TypeClass.Typename => {
+        if !isnull(t.tyname.params) {
+          for el in t.tyname.params.elements {
+            out = self.collectFreeTyvars(el, out)
+          }
+        }
+      }
+      Type.TypeClass.Array => {
+        out = self.collectFreeTyvars(t.array.elementType!, out)
+      }
+      Type.TypeClass.Tuple => {
+        for el in t.tuple.elements {
+          out = self.collectFreeTyvars(el, out)
+        }
+      }
+      Type.TypeClass.Struct => {
+        for ft in t.strct.fieldtypes {
+          out = self.collectFreeTyvars(ft, out)
+        }
+      }
+      Type.TypeClass.Function => {
+        out = self.collectFreeTyvars(t.function.params, out)
+        out = self.collectFreeTyvars(t.function.result, out)
+      }
+      Type.TypeClass.Choice => {
+        for ch in t.choice.choices {
+          out = self.collectFreeTyvars(ch, out)
+        }
+      }
+      default => return out
+    }
+    return out
+  }
+
   func apply(self, function: Type, args: Type,
              location: db.Location? = null(db.Location)) -> Type? {
     ty = function
@@ -4174,6 +4228,10 @@ class TypeChecker(self) {
     // open new scope - new parameter bindings are added to the scope
     // automatically
     self.openScope()
+    // Variables issued from here on belong to this function's typecheck;
+    // generalization of nested free variables is limited to them so the
+    // enclosing class's type parameters stay shared across call sites.
+    varWindowStart = self.unifier.nextFreshVar
     params = arrayof(Type)
     for variable in fn.variables() {
       param = self.variable(variable)!
@@ -4350,7 +4408,36 @@ class TypeChecker(self) {
         // Has this type variable been instantiated?
         ty = self.resolve(sm.value!)
         if ty.type == Type.TypeClass.Var {
-          boundVars.append(Type(ty.tyvar!))
+          exists = false
+          for bv in boundVars {
+            if bv.tyvar.id == ty.tyvar.id {
+              exists = true
+            }
+          }
+          if !exists {
+            boundVars.append(Type(ty.tyvar!))
+          }
+        }
+      }
+    }
+    // Variables nested inside composite parameter or return types (e.g. a
+    // duck-typed parameter resolved to Complex(v1, v2)) generalize too;
+    // otherwise the first call site binds them for every later call.  Only
+    // variables created during this function's typecheck qualify: older
+    // ones belong to enclosing context (class instantiations, globals).
+    nestedVars = arrayof(Type)
+    nestedVars = self.collectFreeTyvars(paramType, nestedVars)
+    nestedVars = self.collectFreeTyvars(returnType!, nestedVars)
+    for nv in nestedVars {
+      if nv.tyvar.id <= varWindowStart {
+        exists = false
+        for bv in boundVars {
+          if bv.tyvar.id == nv.tyvar.id {
+            exists = true
+          }
+        }
+        if !exists {
+          boundVars.append(nv)
         }
       }
     }
