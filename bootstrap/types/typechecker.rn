@@ -2885,6 +2885,9 @@ class TypeChecker(self) {
       db.StateType.Call => self.expr(statement.expr)
       db.StateType.Print => self.expr(statement.expr)
       db.StateType.Println => self.expr(statement.expr)
+      // panic prints its arguments and aborts; arguments typecheck like
+      // println's.
+      db.StateType.Panic => self.expr(statement.expr)
       db.StateType.Raise => {
         // The first expression is the error code path (e.g. Status.Foo),
         // not a value; the rest are message values.

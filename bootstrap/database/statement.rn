@@ -215,6 +215,12 @@ class Statement(self, block: Block, type: StateType, location: Location) {
       StateType.Assign => self.genCAssign(builder)
       StateType.Print => self.genCPrint(builder, newline=false)
       StateType.Println => self.genCPrint(builder, newline=true)
+      StateType.Panic => {
+        // Print the message, then abort: panic is uncatchable.
+        self.genCPrint(builder, newline=true)
+        builder.addStatement(self.location,
+            builder.cCall(self.location, "abort", null(c.CExpr)))
+      }
       StateType.If => self.genCIf(builder)
       StateType.Else => self.genElse(builder)
       StateType.ElseIf => self.genElseIf(builder)
