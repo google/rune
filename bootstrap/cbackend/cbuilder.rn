@@ -904,10 +904,17 @@ class CBuilder(self, tc: types.TypeChecker) {
     }
     id = self.identifierScope.getIdentifier(symbol, ctype, bindingInstance, false)
     if !isnull(ctype) && id.firstInstance {
-      if self.isModuleVariable(symbol.name) {
+      // A module-variable name that is first assigned INSIDE a function body
+      // is a function local that shadows the module variable (e.g. msqrt's
+      // local counter `m` vs a caller's module-level `m`); declare it as a
+      // local so it does not share the module static.  A bare reference
+      // (read) still resolves to the module static.
+      if self.isModuleVariable(symbol.name) &&
+          !(bindingInstance && !isnull(self.currentEmittingFn)) {
         // A module-level variable: declared once at file scope, never as
         // a local of whatever function mentions it first.
-        if isnull(self.findDeclaration(symbol.name)) {
+        existingDec = self.findDeclaration(symbol.name)
+        if isnull(existingDec) {
           vdec = CDeclaration(CVariableDeclaration(symbol.name, ctype!))
           if ctype.type == CTypeExpr.Type.Defined {
             vdec.addDependencyName(ctype.cDefinedType.name)
@@ -917,6 +924,19 @@ class CBuilder(self, tc: types.TypeChecker) {
             vdec.addDependencyName(ctype.cPointerType.target.toString() + "_class")
           }
           self.addDeclaration(vdec)
+        } else if (ctype.type == CTypeExpr.Type.Defined &&
+                   ctype.cDefinedType.name == "rn_wide" &&
+                   existingDec.type == CDeclaration.Type.Variable) {
+          // A later wide assignment upgrades a module static first declared
+          // with a scalar type: an earlier emission pass can see the
+          // initializer's still-open polymorphic result type before it
+          // resolves wide.
+          existingVar = existingDec.cVariableDeclaration
+          if !(existingVar.ctype.type == CTypeExpr.Type.Defined &&
+               existingVar.ctype.cDefinedType.name == "rn_wide") {
+            existingVar.ctype = ctype!
+            existingDec.addDependencyName("rn_wide")
+          }
         }
       } else {
         target = self.declarationBlock()

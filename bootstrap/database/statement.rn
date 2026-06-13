@@ -322,6 +322,15 @@ class Statement(self, block: Block, type: StateType, location: Location) {
         eqRhsTy = builder.typechecker.resolve(eqRhs.typedValue!)
         if eqRhsTy.type != types.Type.TypeClass.Var {
           eqLhs.typedValue = eqRhsTy
+        } else {
+          // The initializer's type is still an open variable (e.g. a
+          // polymorphic call result whose result slot stays open at the
+          // call site), but if its value is wide the local must be declared
+          // wide too.  The exact width is a runtime property of the wide
+          // value; any width over 64 makes the C type rn_wide.
+          if eqRhs.subtreeWide(builder) {
+            eqLhs.typedValue = types.Type(types.IntType(false, 128u32))
+          }
         }
       }
     }

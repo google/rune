@@ -1098,7 +1098,8 @@ class Expr(self, type: ExprType, location: Location) {
       narrowArgs.appendCExpr(v)
       narrowed = builder.cWideCall(self.location, "wide_to_u64", narrowArgs)
       cty = builder.genCType(target)
-      return c.CExpr(c.CCastExpr(self.location, cty!, narrowed))
+      casted = c.CExpr(c.CCastExpr(self.location, cty!, narrowed))
+      return self.maskToWidth(builder, casted, target)
     }
     ctype = builder.genCType(target)
     if isnull(ctype) {
@@ -1112,6 +1113,26 @@ class Expr(self, type: ExprType, location: Location) {
       return c.CExpr(c.CCastExpr(self.location, ctype!, idSel))
     }
     return c.CExpr(c.CCastExpr(self.location, ctype!, v))
+  }
+
+  // A value cast to an unsigned integer whose bit width is narrower than its C
+  // storage type (e.g. u3 lives in a uint8_t) must drop the bits above the
+  // width so the result equals the source taken mod 2**width. Standard widths
+  // (8/16/32/64) need no masking — the C type already truncates.
+  func maskToWidth(self, builder: c.CBuilder, expr: c.CExpr, target: types.Type) -> c.CExpr {
+    if target.type != types.Type.TypeClass.Int {
+      return expr
+    }
+    if target.int.isSigned {
+      return expr
+    }
+    w = target.int.width
+    if w >= 64u32 || w == 8u32 || w == 16u32 || w == 32u32 {
+      return expr
+    }
+    mask = (1u64 << <u64>w) - 1u64
+    return c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.BitAnd,
+        null(c.CTypeExpr), expr, c.CExpr(c.CLiteral(Bigint(mask), false))))
   }
 
   func genCSelect(self, builder: c.CBuilder) -> c.CExpr {
@@ -1168,6 +1189,9 @@ class Expr(self, type: ExprType, location: Location) {
 
     if self.type == ExprType.Equals {
       self.bindingInstance = true
+      // Mark the assignment target so the backend knows this mention is a
+      // write (a local declaration when inside a function), not a read.
+      left.bindingInstance = true
       // An assignment target that lost its type (deferral retypecheck
       // does not re-type plain assignment LHS idents) takes the value's
       // type; the interned-sym fallback may belong to another function's
@@ -1523,6 +1547,22 @@ class Expr(self, type: ExprType, location: Location) {
     }
     if self.type == ExprType.Ident {
       return builder.localWide(self.val.symVal!)
+    }
+    return false
+  }
+
+  // True if any node anywhere in this expression emits a wide value — like
+  // emittedWide but recursing so that a wide-declared local nested in the
+  // subtree (e.g. a wide argument of a call whose result type is still an
+  // open variable) is found.
+  func subtreeWide(self, builder: c.CBuilder) -> bool {
+    if self.emittedWide(builder) {
+      return true
+    }
+    for child in self.childExprs() {
+      if child.subtreeWide(builder) {
+        return true
+      }
     }
     return false
   }

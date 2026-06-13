@@ -271,7 +271,13 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       paramList = builder.closeParamList()
       builder.openDependencyList();
       savedTryBase = builder.openFunctionTryContext()
+      // Mark that a function body is being emitted so its first-assigned
+      // locals (including loop variables) shadow any same-named module
+      // variable instead of sharing the module static.
+      monoPrevEmittingFn = builder.currentEmittingFn
+      builder.currentEmittingFn = self
       body = self.subBlock.genC(builder)
+      builder.currentEmittingFn = monoPrevEmittingFn
       builder.closeFunctionTryContext(savedTryBase)
       builder.closeScope()
       fundec = builder.cFunDef(self.location, self.sym, paramList, body)
