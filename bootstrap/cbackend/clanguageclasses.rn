@@ -823,36 +823,35 @@ class CDotExpr(self, location: db.Location, left: CExpr, field: string, arrow: b
   }
 }
 
-relation OneToOne CSelectExpr CExpr: "cond" cascade
-relation OneToOne CSelectExpr CExpr: "trueVal" cascade
-relation OneToOne CSelectExpr CExpr: "falseVal" cascade
-
 // The C conditional operator: cond ? trueVal : falseVal.
+// Children are plain fields: relations here would conflict with the
+// OneToOne CExpr CSelectExpr relation (opposite-direction OneToOne
+// relations between the same classes collide at runtime).
 class CSelectExpr(self, location: db.Location, cond: CExpr, trueVal: CExpr, falseVal: CExpr) {
-  self.insertCondCExpr(cond)
-  self.insertTrueValCExpr(trueVal)
-  self.insertFalseValCExpr(falseVal)
+  self.cond = cond
+  self.trueVal = trueVal
+  self.falseVal = falseVal
 
   func precedence(self) -> u8 {
     return 13u8
   }
 
   func isSigned(self) -> bool {
-    return self.trueValCExpr.isSigned()
+    return self.trueVal.isSigned()
   }
 
   func width(self) -> u32 {
-    return self.trueValCExpr.width()
+    return self.trueVal.width()
   }
 
   func emit(self, e: CEmitter) {
     // Always parenthesized: the conditional operator binds loosely.
     e.write("(")
-    self.condCExpr.emit(e)
+    self.cond.emit(e)
     e.write(" ? ")
-    self.trueValCExpr.emit(e)
+    self.trueVal.emit(e)
     e.write(" : ")
-    self.falseValCExpr.emit(e)
+    self.falseVal.emit(e)
     e.write(")")
   }
 }
@@ -886,12 +885,12 @@ class CCastExpr(self, location: db.Location, targetType: CTypeExpr, value: CExpr
   }
 }
 
-relation OneToOne CIndexExpr CExpr: "array" cascade
-relation OneToOne CIndexExpr CExpr: "index" cascade
-
+// Children are plain fields: relations here would conflict with the
+// OneToOne CExpr CIndexExpr relation (opposite-direction OneToOne
+// relations between the same classes collide at runtime).
 class CIndexExpr(self, location: db.Location, left: CExpr, index: CExpr) {
-  self.insertArrayCExpr(left)
-  self.insertIndexCExpr(index)
+  self.array = left
+  self.index = index
 
   func precedence(self) -> u8 {
     return 1u8
@@ -912,15 +911,15 @@ class CIndexExpr(self, location: db.Location, left: CExpr, index: CExpr) {
   }
 
   func emit(self, e: CEmitter) {
-    if self.precedence() < self.cExpr.precedence() {
+    if self.precedence() < self.array.precedence() {
       e.write("(")
-      self.arrayCExpr.emit(e)
+      self.array.emit(e)
       e.write(")")
     } else {
-      self.arrayCExpr.emit(e)
+      self.array.emit(e)
     }
     e.write("[")
-    self.indexCExpr.emit(e)
+    self.index.emit(e)
     e.write("]")
   }
 }
