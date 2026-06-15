@@ -2066,6 +2066,18 @@ class TypeChecker(self) {
           return null(Type)
         }
         field = expr.firstChildExpr!.nextExprChildExpr!
+        // Distinguish `self.<field>` from a field read through any other
+        // instance: only self returns the class's canonical field variable
+        // (so assignments through self constrain the real field type); every
+        // other instance projects onto its own type arguments (see
+        // classMemberType / substituteClassVars).
+        lhsIsSelf = false
+        lhsExpr = expr.firstChildExpr!
+        if lhsExpr.type == db.ExprType.Ident {
+          if lhsExpr.val.symVal!.name == "self" {
+            lhsIsSelf = true
+          }
+        }
         isClassAccess = false
         if sty.type == Type.TypeClass.Typename {
           // The class may not have typechecked yet (e.g. an element of a
@@ -2076,7 +2088,7 @@ class TypeChecker(self) {
           if !isnull(info) {
             // Member access on a class instance.
             isClassAccess = true
-            result = self.classMemberType(info!, sty!, field, expr.location)
+            result = self.classMemberType(info!, sty!, field, lhsIsSelf, expr.location)
           } else if !isnull(einfo) {
             // Enum member access like Color.red: typed as the enum itself
             // so enum-constrained parameters accept it (C emits u32).
@@ -2206,7 +2218,7 @@ class TypeChecker(self) {
             if !isnull(duckTe) {
               self.typeError(duckTe.msg, expr.location)
             }
-            result = self.classMemberType(duckInfo!, duckTy, field, expr.location)
+            result = self.classMemberType(duckInfo!, duckTy, field, lhsIsSelf, expr.location)
           }
         } else {
           self.typeError(
@@ -4169,7 +4181,7 @@ class TypeChecker(self) {
   // a method.  Inside the class's own constructor, unknown members are
   // created as new data members.
   func classMemberType(self, info: ClassInfo, instanceType: Type, field: db.Expr,
-                       location: db.Location?) -> Type? {
+                       selfAccess: bool, location: db.Location?) -> Type? {
     name = field.toString()
     method = self.findMethod(info, name)
     if !isnull(method) {
@@ -4178,7 +4190,15 @@ class TypeChecker(self) {
     inOwnConstructor = !isnull(self.currentClassInfo) && self.currentClassInfo.sym == info.sym
     ty = info.strct.select(name)
     if !isnull(ty) {
-      if inOwnConstructor {
+      // Only `self.<field>` returns the class's canonical field variable, so
+      // that assignments through self constrain the real field type.  A field
+      // read through any OTHER instance — including a different instance of
+      // this same class inside one of its own methods (e.g. an operator's
+      // element1/element2 parameters) — must project onto that instance's
+      // type arguments via substituteClassVars.  Returning the canonical var
+      // there lets a field-vs-field comparison knot the class's field types
+      // to whatever the operands unify with (the template-class knot).
+      if inOwnConstructor && selfAccess {
         return ty
       }
       return self.substituteClassVars(info, instanceType, ty!)
