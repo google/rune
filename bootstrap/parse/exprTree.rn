@@ -113,6 +113,9 @@ transformer ExprTree() {
           if !isnull(ruleSym) && ruleSym.name == "signedExpr" {
             return self.buildPrefixExpr(node, db.ExprType.Signed)
           }
+          if !isnull(ruleSym) && ruleSym.name == "funcPtrExpr" {
+            return self.buildFuncPtrExpr(node)
+          }
           if (!isnull(ruleSym) && ruleSym.name == "basicTypeExpr" &&
               !isnull(node.firstChildNode) &&
               !isnull(node.firstChildNode.nextNodeChildNode)) {
@@ -200,6 +203,31 @@ transformer ExprTree() {
       result.appendChildExpr(self.buildExprTree(trueNode))
       result.appendChildExpr(self.buildExprTree(falseNode))
       return result
+    }
+
+    // Format: funcPtrExpr('&' pathExpr '(' exprs ')') — the literal tokens are
+    // dropped, leaving the callee pathExpr and an optional exprs node.  Build
+    // it as Funcaddr wrapping the call it addresses, mirroring &foo() in the
+    // dump (a prefix '&' on the call), so the typechecker and C backend can
+    // read the callee and its sample arguments out of the inner Call.
+    func buildFuncPtrExpr(self: HirBuilder, node: Node) -> db.Expr {
+      pathExprNode = node.firstChildNode!
+      callee = self.buildExprTree(pathExprNode)
+      exprsNode = pathExprNode.nextNodeChildNode
+      children = arrayof(db.Expr)
+      if !isnull(exprsNode) {
+        for child in exprsNode.childNodes() {
+          children.append(self.buildExprTree(child))
+        }
+      }
+      if children.length() == 1 {
+        args = children[0]
+      } else {
+        // Zero or several arguments use a tuple, like a normal call's args.
+        args = db.Expr.newTuple(children, node.location)
+      }
+      call = db.Expr.newBinary(db.ExprType.Call, callee, args, node.location)
+      return db.Expr.newUnary(db.ExprType.Funcaddr, call, node.location)
     }
 
     // Format: tupleTypeExpr('(' typeExpr* ')') — token children are skipped.

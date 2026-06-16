@@ -873,6 +873,10 @@ class Expr(self, type: ExprType, location: Location) {
       ExprType.Cast => return self.genCCast(builder)
       ExprType.CastTrunc => return self.genCCast(builder)
 
+      // &foo(...): the address of a function.  A C function name decays to a
+      // function pointer, so emitting the callee's name suffices.
+      ExprType.Funcaddr => return self.genCFuncaddr(builder)
+
       default => raise Status.Unimplemented, "Expression type not yet supported by C backend: ", getExprTypeName(self.type)
     }
   }
@@ -1847,6 +1851,16 @@ class Expr(self, type: ExprType, location: Location) {
       return c.CExpr(c.CDotExpr(self.location, left, field.toString(), true))
     }
     return builder.cFieldSelect(self.location, left, field.val.symVal!)
+  }
+
+  // &foo(...): emit the callee's C name.  In C a function name decays to a
+  // function pointer, so the bare name is the address.  Naming goes through
+  // the same identifier path as a monomorphic call's callee, so the reference
+  // agrees with the emitted definition.
+  func genCFuncaddr(self, builder: c.CBuilder) -> c.CExpr {
+    faCall = self.firstChildExpr!
+    faCallee = faCall.firstChildExpr!
+    return faCallee.genC(builder)
   }
 
   func genCCall(self, builder: c.CBuilder) -> c.CExpr {

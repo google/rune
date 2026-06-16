@@ -2234,7 +2234,46 @@ class CVariableDeclaration(self, varName: string, ctype: CTypeExpr) {
   }
 }
 
-class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration | CArrayDeclaration | CClassDeclaration | CVariableDeclaration) {
+relation OneToOne CDeclaration CFunctionPtrDeclaration cascade
+
+// A function-pointer typedef: `typedef RET (*name)(PARAMS);`.  Emitted so a
+// parameter or variable whose Rune type is a function (e.g. a callback passed
+// by &func()) has a single nameable C type.  A none result emits as void; an
+// empty parameter list emits as (void).
+class CFunctionPtrDeclaration(self, location: db.Location, name: string,
+    paramTypes: [CTypeExpr], resultType: CTypeExpr) {
+  self.location = location
+  self.name = name
+  self.paramTypes = paramTypes
+  self.resultType = resultType
+
+  func emit(self, e: CEmitter) {
+    self.resultType.requestRuntimeTypes(e)
+    for pt in self.paramTypes {
+      pt.requestRuntimeTypes(e)
+    }
+    e.write("typedef ")
+    self.resultType.emit(e)
+    // References to this type append _t (see CDefinedType.emit), so the
+    // typedef name must too.
+    e.write(" (*%s_t)(" % self.name)
+    if self.paramTypes.length() == 0 {
+      e.write("void")
+    } else {
+      first = true
+      for pt in self.paramTypes {
+        if !first {
+          e.write(", ")
+        }
+        pt.emit(e)
+        first = false
+      }
+    }
+    e.writeln(");")
+  }
+}
+
+class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration | CArrayDeclaration | CClassDeclaration | CVariableDeclaration | CFunctionPtrDeclaration) {
   self.dependencies = arrayof(string)
 
   enum Type {
@@ -2243,6 +2282,7 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
     Array
     Class
     Variable
+    FunctionPtr
   }
 
   typeswitch declaration {
@@ -2266,6 +2306,10 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
       self.type = Type.Variable
       self.insertCVariableDeclaration(declaration)
     }
+    CFunctionPtrDeclaration => {
+      self.type = Type.FunctionPtr
+      self.insertCFunctionPtrDeclaration(declaration)
+    }
   }
   // Don't emit the declaration or its prototype more than once.
   self.emitted = false
@@ -2279,6 +2323,7 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
       // constructor function, which uses the plain class name.
       CDeclaration.Type.Class => return self.cClassDeclaration.name + "_class"
       CDeclaration.Type.Variable => return self.cVariableDeclaration.varName
+      CDeclaration.Type.FunctionPtr => return self.cFunctionPtrDeclaration.name
     }
   }
 
@@ -2317,6 +2362,11 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
           self.cVariableDeclaration.emit(e)
           self.protoEmitted = true
         }
+        CDeclaration.Type.FunctionPtr => {
+          // A typedef emits once; there is no proto/impl split.
+          self.cFunctionPtrDeclaration.emit(e)
+          self.protoEmitted = true
+        }
       }
       self.emitted = true
     }
@@ -2334,6 +2384,11 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
         CDeclaration.Type.Variable => {
           // A static definition emits once; there is no proto/impl split.
           self.cVariableDeclaration.emit(e)
+          self.emitted = true
+        }
+        CDeclaration.Type.FunctionPtr => {
+          // A typedef emits once; there is no proto/impl split.
+          self.cFunctionPtrDeclaration.emit(e)
           self.emitted = true
         }
       }

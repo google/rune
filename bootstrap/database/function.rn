@@ -286,6 +286,19 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       builder.closeFunctionTryContext(savedTryBase)
       builder.closeScope()
       fundec = builder.cFunDef(self.location, self.sym, paramList, body)
+      // Function-pointer parameters need their fnptr<N> typedef emitted first.
+      for monoVar in self.variables() {
+        if monoVar.isParam && !isnull(monoVar.typedValue) {
+          monoPt = builder.typechecker.resolve(monoVar.typedValue!)
+          if monoPt.type == types.Type.TypeClass.Function {
+            builder.ensureFunctionPtrDeclared(self.location, monoPt)
+            monoFnptrCType = builder.typeGenerator.genCFunction(monoPt.function!)
+            if !isnull(monoFnptrCType) {
+              fundec.addDependencyName(monoFnptrCType.cDefinedType.name)
+            }
+          }
+        }
+      }
       fundec.addDependencies(builder.topDependencyList().names)
       builder.closeDependencyList()
       builder.addDeclaration(fundec)
@@ -484,6 +497,14 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       if pt.type == types.Type.TypeClass.Array {
         ptDef = builder.ensureArrayDeclared(self.location, pt.array.elementType!)
         fundec.addDependencyName(ptDef.typeName)
+      }
+      if pt.type == types.Type.TypeClass.Function {
+        // A function-pointer parameter needs its fnptr<N> typedef emitted.
+        builder.ensureFunctionPtrDeclared(self.location, pt)
+        fnptrCType = builder.typeGenerator.genCFunction(pt.function!)
+        if !isnull(fnptrCType) {
+          fundec.addDependencyName(fnptrCType.cDefinedType.name)
+        }
       }
     }
     fundec.addDependencies(builder.topDependencyList().names)

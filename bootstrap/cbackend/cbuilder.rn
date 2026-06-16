@@ -941,10 +941,16 @@ class CBuilder(self, tc: types.TypeChecker) {
     ctype = null(CTypeExpr)
     if !isnull(type) {
       ty = self.typechecker.resolve(type!)
-      ctype = self.typeGenerator.genCType(ty)
-      if self.typechecker.isClassType(ty) {
-        // Anything referencing a class instance needs its struct typedef.
-        self.dependencyStack.append(self.classCName(ty) + "_class")
+      // A bare function name (or a function-pointer value) is not a variable
+      // to declare here; leave its C type null, exactly as when genCFunction
+      // was a stub.  Function-pointer parameters get their fnptr type through
+      // cParameter; emitting a function name just needs the identifier.
+      if ty.type != types.Type.TypeClass.Function {
+        ctype = self.typeGenerator.genCType(ty)
+        if self.typechecker.isClassType(ty) {
+          // Anything referencing a class instance needs its struct typedef.
+          self.dependencyStack.append(self.classCName(ty) + "_class")
+        }
       }
     }
     id = self.identifierScope.getIdentifier(symbol, ctype, bindingInstance, false)
@@ -1300,6 +1306,54 @@ class CBuilder(self, tc: types.TypeChecker) {
     }
   }
 
+  // Ensure the function-pointer typedef for |ty| (a FunctionType) exists.
+  // A none result emits as void; an empty parameter tuple emits as (void).
+  func ensureFunctionPtrDeclared(self, location: db.Location, ty: types.Type) {
+    fnTy = ty.function!
+    // genCFunction names the definition (fnptr<N>); fetch it to fill in.
+    self.typeGenerator.genCFunction(fnTy)
+    def = self.typeGenerator.findFnptrDef(fnTy)!
+    if def.defined {
+      return
+    }
+    resTy = self.typechecker.resolve(fnTy.result!)
+    if resTy.type == types.Type.TypeClass.Typename && resTy.tyname.name.name == "none" {
+      resultCType = self.cVoidType(location)
+    } else {
+      resultCType = self.genCType(resTy)!
+    }
+    paramCTypes = arrayof(CTypeExpr)
+    pTy = self.typechecker.resolve(fnTy.params!)
+    if pTy.type == types.Type.TypeClass.Tuple {
+      for el in pTy.tuple.elements {
+        paramCTypes.append(self.genCType(el)!)
+      }
+    } else {
+      pIsNone = pTy.type == types.Type.TypeClass.Typename && pTy.tyname.name.name == "none"
+      if !pIsNone {
+        paramCTypes.append(self.genCType(pTy)!)
+      }
+    }
+    decl = CDeclaration(CFunctionPtrDeclaration(location, def.name, paramCTypes, resultCType))
+    // A defined-type result or parameter must be declared first.
+    if resultCType.type == CTypeExpr.Type.Defined {
+      rdep = self.findDeclaration(resultCType.cDefinedType.name)
+      if !isnull(rdep) {
+        decl.addDependency(rdep!)
+      }
+    }
+    for pc in paramCTypes {
+      if pc.type == CTypeExpr.Type.Defined {
+        pdep = self.findDeclaration(pc.cDefinedType.name)
+        if !isnull(pdep) {
+          decl.addDependency(pdep!)
+        }
+      }
+    }
+    self.addDeclaration(decl)
+    def.defined = true
+  }
+
   func cTuple(self, location: db.Location, type: types.Type?, elements: CExprList) -> CExpr {
     ty = self.typechecker.resolve(type!);
     assert ty.type == types.Type.TypeClass.Tuple
@@ -1475,7 +1529,6 @@ class CBuilder(self, tc: types.TypeChecker) {
         raise Status.InvalidArgument, "The type of function ", id.name, " should be a function"
       }
     }
-    returntype = self.genCType(type)
     return CDeclaration(CFunctionDeclaration(location, id, params, returnType!, body))
   }
 

@@ -2463,6 +2463,41 @@ class TypeChecker(self) {
         }
       }
 
+      // &foo(sampleArgs): the address of a function, typed as that function's
+      // FunctionType so it unifies with a function-pointer parameter.  The
+      // sample arguments select the instantiation of a polymorphic callee.
+      db.ExprType.Funcaddr => {
+        faCall = expr.firstChildExpr!
+        if faCall.type != db.ExprType.Call {
+          self.typeError("'&' must be applied to a function call", expr.location)
+          return null(Type)
+        }
+        faCallee = faCall.firstChildExpr!
+        faArgs = faCallee.nextExprChildExpr
+        faFnTy = self.expr(faCallee)
+        if isnull(faFnTy) {
+          return faFnTy
+        }
+        faArgsTy = null(Type)
+        if !isnull(faArgs) {
+          faArgsTy = self.expr(faArgs!)
+        }
+        faResolved = self.resolve(faFnTy!)
+        faResult = faResolved
+        if faResolved.type == Type.TypeClass.Polymorphic && !isnull(faArgsTy) {
+          // Open the callee and apply the sample args so the concrete
+          // signature (and its instantiation, recorded for the C backend)
+          // is selected; the opened FunctionType is the resulting type.
+          faOpened = faResolved.poly!.open(self.unifier, &self.unifier.newVar())
+          faApplied = self.apply(faOpened, faArgsTy!, expr.location)
+          if !isnull(faApplied) {
+            faResult = self.resolve(faOpened)
+          }
+        }
+        faCall.typedValue = faResult
+        result = faResult
+      }
+
       default => raise Status.Unimplemented, "Expression type not yet supported by typechecker: ", db.getExprTypeName(expr.type)
     }
 

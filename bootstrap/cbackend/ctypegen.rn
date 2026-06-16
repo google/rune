@@ -54,12 +54,48 @@ class CTupleDefinition(self, type: types.TupleType, name: string) {
   }
 }
 
+// A function-pointer C type, named fnptr<N>, keyed by the Rune FunctionType
+// it represents so identical signatures share one typedef.  The C param and
+// result types are computed lazily when the typedef is emitted (see
+// CBuilder.ensureFunctionPtrDeclared), so merely naming the type is cheap.
+class CFunctionPtrDefinition(self, type: types.FunctionType, name: string) {
+  self.type = type
+  self.name = name
+  self.defined = false
+  self.ctype = null(CTypeExpr)
+
+  func hash(self) -> u64 {
+    return self.type.hash()
+  }
+
+  func equals(self, other: CFunctionPtrDefinition) -> bool {
+    return self.type!.equals(other.type!)
+  }
+}
+
 relation HashedClass CTypeGenerator CArrayDefinition cascade
 relation HashedClass CTypeGenerator CTupleDefinition cascade
+// Function-pointer typedefs are few (one per distinct callback signature), so
+// a DoublyLinked list with linear lookup suffices.  It is deliberately NOT a
+// HashedClass relation: that relation's startup hash-bucket pool shifts every
+// other allocation, and the legacy runtime's array-resize codegen corrupts at
+// specific pool sizes (it broke graph.rn).  A linked list adds no bucket pool.
+relation DoublyLinked CTypeGenerator CFunctionPtrDefinition cascade
 
 class CTypeGenerator(self, typechecker: types.TypeChecker) {
   self.typechecker = typechecker
   self.nextTupleNumber = 1
+  self.nextFnptrNumber = 1
+
+  // The existing definition for |ty|, or null.
+  func findFnptrDef(self, ty: types.FunctionType) -> CFunctionPtrDefinition? {
+    for d in self.cFunctionPtrDefinitions() {
+      if d.type!.equals(ty) {
+        return d
+      }
+    }
+    return null(CFunctionPtrDefinition)
+  }
 
   func genCInt(self, ty: types.IntType) -> CTypeExpr? {
     if ty.width <= 8u32 {
@@ -272,8 +308,19 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
     return self.findCTupleDefinition(def)!
   }
 
+  // The C type of a function pointer: a named fnptr<N> typedef.  Find or
+  // create the definition keyed by the signature; the typedef itself is
+  // emitted on demand by CBuilder.ensureFunctionPtrDeclared.
   func genCFunction(self, ty: types.FunctionType) -> CTypeExpr? {
-    return null(CTypeExpr)
+    exists = self.findFnptrDef(ty)
+    if !isnull(exists) {
+      return exists.ctype
+    }
+    def = CFunctionPtrDefinition(ty, "fnptr%u64" % self.nextFnptrNumber)
+    self.nextFnptrNumber += 1
+    def.ctype = CTypeExpr(CDefinedType(def.name))
+    self.appendCFunctionPtrDefinition(def)
+    return def.ctype
   }
 
   func genCPolymorphic(self, ty: types.PolymorphicType) -> CTypeExpr? {

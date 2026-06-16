@@ -1069,6 +1069,17 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
       }
       return "u64"
     }
+    if self.type == Type.TypeClass.Function {
+      // A function-pointer-typed argument contributes no width to a
+      // specialization name (its C type is a single fnptr typedef): a
+      // higher-order function instantiated over it names like a monomorphic
+      // one.  This keeps the call-site name (a bare Function argument, whose
+      // genSpecializationName returns the base name) in agreement with the
+      // definition name (built from a parameter tuple containing the
+      // Function).  Distinct signatures sharing one callee would collide
+      // here, but that needs positive-var generalization to even typecheck.
+      return ""
+    }
     return self.toString()
   }
 
