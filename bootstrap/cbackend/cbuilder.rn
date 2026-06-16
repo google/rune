@@ -553,6 +553,21 @@ class CBuilder(self, tc: types.TypeChecker) {
                 // the definition-side sweep; raw bindings can still hold
                 // type variables and must not enter the unifier.
                 self.resolveInstantiation(minst)
+                if !self.instantiationIsConcrete(minst) {
+                  // A method only ever called with bare class-name arguments
+                  // (e.g. a relation's _compare, fed elements from a heap
+                  // array typed by the bare class) records only non-concrete
+                  // instantiations.  Under its instantiation bindings, pin the
+                  // free class-instance params to the class's unique concrete
+                  // instantiation, then re-resolve so the standard concrete
+                  // path below emits its signature and body alike.  When no
+                  // param can be pinned the instantiation stays non-concrete
+                  // and is left for the on-demand synthesis below, as before.
+                  self.instantiate(mty.poly!, minst)
+                  self.concretizeMethodParams(childfunc)
+                  self.deInstantiate(mty.poly!)
+                  self.resolveInstantiation(minst)
+                }
                 if self.instantiationIsConcrete(minst) {
                   self.instantiate(mty.poly!, minst)
                   if childfunc.deferredTypecheck && !childfunc.deferredRetypechecked {
@@ -620,6 +635,36 @@ class CBuilder(self, tc: types.TypeChecker) {
           mfn2 = self.typechecker.resolve(mty!)
           if self.methodDefCName(mfn2, methodName) == wantName {
             childfunc.genCMethodInstance(self, mfn2)
+          }
+        }
+      }
+    }
+  }
+
+  // Under an active instantiation, bind each of the method's class-instance
+  // parameters whose type-args are still free to the class's unique concrete
+  // instantiation (concreteClassTyname's fallback).  This pins a relation
+  // _compare's element params — which only ever see bare class-name arguments
+  // from the heap array — so the instantiation re-resolves concrete and both
+  // its signature and body (the user operator it dispatches to) emit.
+  func concretizeMethodParams(self, fn: db.Function) {
+    for variable in fn.variables() {
+      // Only the non-self parameters (a relation _compare's children) need
+      // pinning; self's instance type is already fixed by the call, and
+      // resolving a self-referential self under the instantiation can walk a
+      // variable chain the unifier forbids.
+      if variable.isParam && variable.sym.name != "self" {
+        if !isnull(variable.typedValue) {
+          vt = self.typechecker.resolve(variable.typedValue!)
+          if vt.type == types.Type.TypeClass.Typename {
+            if !isnull(self.typechecker.lookupClass(vt.tyname.name)) {
+              if self.typechecker.hasFreeVars(vt) {
+                concrete = types.Type(self.typeGenerator.concreteClassTyname(vt.tyname!))
+                if !self.typechecker.hasFreeVars(concrete) {
+                  self.typechecker.unify(variable.typedValue!, concrete)
+                }
+              }
+            }
           }
         }
       }

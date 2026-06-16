@@ -308,6 +308,11 @@ class TypeChecker(self) {
   // Overloaded operator functions and their types, in definition order.
   self.operatorFns = arrayof(db.Function)
   self.operatorTypes = arrayof(Type)
+  // While typechecking an operator's own body, the operator is hidden from
+  // operatorChoices so a field comparison inside it (e.g. element1.age <
+  // element2.age) cannot re-dispatch back to itself and knot the operand's
+  // type-args to the bare class name.
+  self.suppressedOperatorFn = null(db.Function)
   // State for iterator inlining: a counter making inlined variable names
   // unique, and the rename map (old name -> new Sym) for the current inline.
   self.iteratorInlineCounter = 0u32
@@ -840,7 +845,10 @@ class TypeChecker(self) {
     found = arrayof(Type)
     for i in range(self.operatorFns.length()) {
       if self.operatorFns[i].opType == op {
-        found.append(self.operatorTypes[i])
+        if isnull(self.suppressedOperatorFn) ||
+            self.operatorFns[i] != self.suppressedOperatorFn {
+          found.append(self.operatorTypes[i])
+        }
       }
     }
     if !isnull(builtin) {
@@ -3974,7 +3982,10 @@ class TypeChecker(self) {
         // entry in the operator registry consulted at operator expressions.
         // A signature pre-registered in the module pre-pass is replaced
         // with the real generalized type.
+        prevSuppressed = self.suppressedOperatorFn
+        self.suppressedOperatorFn = fn
         self.plainFunction(fn)
+        self.suppressedOperatorFn = prevSuppressed
         opIdx = -1i64
         for opi in range(self.operatorFns.length()) {
           if self.operatorFns[opi] == fn {

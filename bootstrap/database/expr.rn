@@ -954,13 +954,27 @@ class Expr(self, type: ExprType, location: Location) {
               }
               iname = types.Type(types.TupleType(ptypes)).genSpecializationName(opfn.sym.name)
               builder.deInstantiate(opty.poly!)
+              // Skip an instantiation whose parameter types still hold free
+              // variables: it was recorded while the operator was applied to
+              // unconstrained operands (e.g. a relation _compare's generic
+              // children) and would emit an un-typeable C function.  A
+              // concrete instantiation for these operands is recorded when the
+              // caller's body is retypechecked, and matches below.
+              ptypesFree = false
+              for pt in ptypes {
+                if tc.hasFreeVars(pt) {
+                  ptypesFree = true
+                }
+              }
               if (ptypes.length() == 2 &&
                   typeArgCompatible(ltype, ptypes[0]) &&
                   typeArgCompatible(rtype, ptypes[1])) {
-                if !builder.alreadyEmitted(iname) {
-                  opfn.genCPolyInstantiation(builder, inst)
+                if !ptypesFree {
+                  if !builder.alreadyEmitted(iname) {
+                    opfn.genCPolyInstantiation(builder, inst)
+                  }
+                  callName = iname
                 }
-                callName = iname
               }
             }
           }
@@ -1220,6 +1234,41 @@ class Expr(self, type: ExprType, location: Location) {
       if !isnull(uop) {
         return uop!
       }
+    }
+
+    // String ordering comparisons are lexicographic, not the char* pointer
+    // comparison C's <, <=, > and >= would give (== and != already route
+    // through isequal_string_t).  Emit strcmp(l, r) <op> 0.
+    isStrOrder = false
+    if builder.typechecker.isStringType(left.typedValue) {
+      if self.type == ExprType.Lt {
+        isStrOrder = true
+      }
+      if self.type == ExprType.Le {
+        isStrOrder = true
+      }
+      if self.type == ExprType.Gt {
+        isStrOrder = true
+      }
+      if self.type == ExprType.Ge {
+        isStrOrder = true
+      }
+    }
+    if isStrOrder {
+      switch self.type {
+        ExprType.Lt => strCmpOp = c.CBinaryOperator.Type.LessThan
+        ExprType.Le => strCmpOp = c.CBinaryOperator.Type.LessThanEqual
+        ExprType.Gt => strCmpOp = c.CBinaryOperator.Type.GreaterThan
+        default => strCmpOp = c.CBinaryOperator.Type.GreaterThanEqual
+      }
+      strCmpArgs = c.CExprList()
+      strCmpArgs.appendCExpr(l)
+      strCmpArgs.appendCExpr(r)
+      strCmpCall = builder.cCall(self.location, "strcmp", c.CExpr(strCmpArgs))
+      // strcmp returns a signed int; compare against a signed 0 so a negative
+      // result is not converted to a large unsigned value (0i32 emits "0").
+      return c.CExpr(c.CBinaryOperator(self.location, strCmpOp,
+          null(c.CTypeExpr), strCmpCall, c.CExpr(c.CLiteral(Bigint(0i32), false))))
     }
     if (self.type == ExprType.Equals && right.type == ExprType.Constant &&
         right.val.type == DatatypeType.String) {
