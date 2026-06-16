@@ -267,7 +267,12 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     // declaration to that loop's body.
     loopVarExpr = self.expr.firstChildExpr!
     if loopVarExpr.type == ExprType.Ident {
-      builder.cIdentifier(loopVarExpr.val.symVal!, true)
+      // Pass the loop variable's own typechecked type: syms are interned by
+      // name, so without it cIdentifier falls back to the (possibly clobbered)
+      // interned sym binding from another instantiation's same-named loop var
+      // (e.g. a LinkedList _findPrev's `prevChild` is Edge in one relation's
+      // method but the sym's binding is Node from another's).
+      builder.cIdentifier(loopVarExpr.val.symVal!, true, loopVarExpr.typedValue)
     }
     for s in self.subBlock.statements() {
       s.genC(builder)

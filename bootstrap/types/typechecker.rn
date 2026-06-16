@@ -2891,6 +2891,20 @@ class TypeChecker(self) {
     for s in newBlock.statements() {
       self.statement(s, newBlock)
     }
+
+    // Record the loop variable's resolved type on the (original) loop-var
+    // expression.  convertYields binds the loop variable through *copies* of
+    // this expression, so the original — which the C backend uses to declare
+    // the local in the enclosing scope — would otherwise stay untyped and, at
+    // emission, fall back to the interned sym's clobbered binding from another
+    // instantiation's same-named loop variable (e.g. a LinkedList _findPrev's
+    // `prevChild`, Edge here but Node in a sibling relation's method).
+    if loopVarExpr.type == db.ExprType.Ident && isnull(loopVarExpr.typedValue) {
+      loopVarTy = self.getSymbolType(loopVarExpr.val.symVal!)
+      if !isnull(loopVarTy) {
+        loopVarExpr.typedValue = self.resolve(loopVarTy!)
+      }
+    }
   }
 
   // Statements -------------------------------------------------------------
