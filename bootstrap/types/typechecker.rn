@@ -289,6 +289,13 @@ class TransEnv(self) {
   }
 }
 
+// An iterator (or method) added to the builtin Array type via `appendcode
+// Array { ... }`.  Arrays have no ClassInfo, so these are kept in a registry on
+// the typechecker and dispatched when a `.method()` call's base is an array.
+class ArrayExtMethod(self, fn: db.Function) {
+  self.fn = fn
+}
+
 relation HashedClass TypeChecker SymbolMapping cascade
 relation HashedClass TypeChecker TynameDefinition cascade
 relation HashedClass TypeChecker ClassInfo cascade
@@ -296,6 +303,9 @@ relation HashedClass TypeChecker EnumInfo cascade
 relation HashedClass TypeChecker FunctionDef cascade
 relation DoublyLinked TypeChecker BindingScope cascade
 relation DoublyLinked TypeChecker TypeError cascade
+// DoublyLinked, not HashedClass: the latter's startup bucket pool trips the
+// legacy runtime's array-resize bug (see the funcptr / phantom-mask notes).
+relation DoublyLinked TypeChecker ArrayExtMethod cascade
 
 class TypeChecker(self) {
   self.unifier = TypeUnifier()
@@ -2710,6 +2720,10 @@ class TypeChecker(self) {
       return null(db.Function)
     }
     rbase = self.resolve(baseTy!)
+    if rbase.type == Type.TypeClass.Array {
+      // An iterator added to Array via `appendcode Array` (no ClassInfo).
+      return self.findArrayExtIterator(methodName)
+    }
     info = null(ClassInfo)
     if rbase.type == Type.TypeClass.Var {
       // Duck-type an unconstrained base (e.g. a forward-referenced module
@@ -2732,6 +2746,22 @@ class TypeChecker(self) {
     for childfunc in info.fn.childFunctions() {
       if childfunc.type == db.FuncType.Iterator && childfunc.sym.name == methodName {
         return childfunc
+      }
+    }
+    return null(db.Function)
+  }
+
+  // Register an iterator/method added to the Array type via `appendcode Array`.
+  func registerArrayExtMethod(self, fn: db.Function) {
+    m = ArrayExtMethod(fn)
+    self.appendArrayExtMethod(m)
+  }
+
+  // An Array-extension iterator named |name|, or null.
+  func findArrayExtIterator(self, name: string) -> db.Function? {
+    for m in self.arrayExtMethods() {
+      if m.fn.sym.name == name && m.fn.type == db.FuncType.Iterator {
+        return m.fn
       }
     }
     return null(db.Function)
@@ -3639,6 +3669,17 @@ class TypeChecker(self) {
       }
       self.copyCodeBlockInto(container!, methodFn!, env, prepend)
       return
+    }
+    // `appendcode Array { iterator ... }` extends the builtin Array type, which
+    // has no class to copy into; register its iterators so a `.method()` call
+    // on an array value dispatches to them (and inlines, like a class iterator).
+    if statement.expr.type == db.ExprType.Ident {
+      if statement.expr.val.symVal.name == "Array" {
+        for childfunc in container.childFunctions() {
+          self.registerArrayExtMethod(childfunc)
+        }
+        return
+      }
     }
     targetVal = self.evalTransExpr(statement.expr!, env, statement.location)
     if targetVal.kind != 0u32 || isnull(targetVal.classFn) {
