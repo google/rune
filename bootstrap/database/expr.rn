@@ -2419,7 +2419,9 @@ class Expr(self, type: ExprType, location: Location) {
         }
       }
       if !isnull(ctorResultTy) {
-        specializedName = builder.classCName(ctorResultTy!)
+        // The constructor is named with phantom parameters kept (classCtorCName),
+        // matching its definition; the struct it builds collapses them.
+        specializedName = builder.classCtorCName(ctorResultTy!)
       } else {
         specializedName = argTypes.genSpecializationName(left.val.symVal.name)
       }
@@ -2526,8 +2528,9 @@ class Expr(self, type: ExprType, location: Location) {
                builder.typechecker.resolve(self.typedValue!).tyname.name.name ==
                    left.val.symVal.name) {
       // Monomorphic class constructor: the definition is emitted under the
-      // specialized class name even when no type variables are involved.
-      specializedName = builder.classCName(
+      // specialized class name even when no type variables are involved.  Use
+      // the constructor name (phantom parameters kept) to match its definition.
+      specializedName = builder.classCtorCName(
           builder.typechecker.resolve(self.typedValue!))
       cfn = builder.cIdentifier(Sym.new(specializedName), false)
     } else {

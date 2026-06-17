@@ -438,12 +438,33 @@ class CBuilder(self, tc: types.TypeChecker) {
 
   // The C name for a class instantiation, e.g. Point_u64_u64.  This matches
   // both the call-site specialization name and the typedef name (minus _t).
+  // The C name of a class instance: its struct typedef, methods, fields, and
+  // the instances declared with that type.  Phantom parameters (see
+  // TypeUnifier.registerPhantomMask) are dropped, so two instances differing
+  // only in a phantom position (MyString(string) vs MyString([u8])) name the
+  // same struct and assign to one another.  Use classCtorCName for the
+  // constructor, which must stay distinct per argument type.
   func classCName(self, ty: types.Type) -> string {
+    return self.classCNameImpl(ty, true)
+  }
+
+  // The C name of a class constructor: keeps every parameter, including
+  // phantom ones, so a class whose constructor body branches on a phantom
+  // parameter's type (a compile-time typeswitch) emits one C function per
+  // argument type even though they all build the same struct.
+  func classCtorCName(self, ty: types.Type) -> string {
+    return self.classCNameImpl(ty, false)
+  }
+
+  func classCNameImpl(self, ty: types.Type, dropPhantom: bool) -> string {
     t = self.typechecker.resolve(ty)
     assert t.type == types.Type.TypeClass.Typename
     // Unresolved class parameters fall back to the class's single concrete
     // instantiation, matching the names the type generator emits.
     tn = self.typeGenerator.concreteClassTyname(t.tyname!)
+    if dropPhantom {
+      tn = self.typechecker.dropPhantomParams(tn)
+    }
     if isnull(tn.params) {
       return tn.name.name
     }

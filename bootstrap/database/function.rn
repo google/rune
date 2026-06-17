@@ -563,12 +563,23 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       return
     }
     instType = builder.typechecker.resolve(info.selfType!)
+    // The struct (and methods, final, toString) is named without phantom
+    // parameters and emitted once; the constructor keeps them and emits per
+    // argument type (its body's typeswitch picks a different conversion).  For
+    // a class with no phantom parameters these names are identical, so the
+    // behavior is unchanged.
     className = builder.classCName(instType)
-    if builder.alreadyEmitted(className) {
+    ctorName = builder.classCtorCName(instType)
+    if builder.alreadyEmitted(ctorName) {
       return
     }
-    builder.markEmitted(className)
+    structAlready = builder.alreadyEmitted(className)
+    builder.markEmitted(ctorName)
+    if !structAlready {
+      builder.markEmitted(className)
+    }
 
+    if !structAlready {
     // The struct fields, with this instantiation's concrete types.  Field
     // types that name other declarations (structs, arrays, other classes)
     // must be emitted before this class.
@@ -643,9 +654,11 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       classDec.addDependencyName(depName)
     }
     builder.addDeclaration(classDec)
+    }
 
     // The constructor function: allocates the instance, runs the body, and
-    // returns the instance pointer.
+    // returns the instance pointer.  Named with phantom parameters kept, so
+    // each argument-type variant is its own C function.
     builder.openScope()
     builder.openParamList()
     for variable in self.variables() {
@@ -701,12 +714,13 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     body = builder.closeBlock()
     builder.closeScope()
 
-    fundec = builder.cFunDefWithReturnType(self.location, className, paramList, body, ptrType!)
+    fundec = builder.cFunDefWithReturnType(self.location, ctorName, paramList, body, ptrType!)
     fundec.addDependencyName(className + "_class")
     fundec.addDependencies(builder.topDependencyList().names)
     builder.closeDependencyList()
     builder.addDeclaration(fundec)
 
+    if !structAlready {
     // A final() destructor is called from generated cleanup code, never
     // from user calls, so emit it per instantiation like toString below.
     for childfunc in self.childFunctions() {
@@ -812,6 +826,7 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
           }
         }
       }
+    }
     }
   }
 

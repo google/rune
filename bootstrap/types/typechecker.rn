@@ -1246,6 +1246,33 @@ class TypeChecker(self) {
   // |acc|, once, returning the extended array.  Generalization must capture
   // variables inside composite parameter types (e.g. Complex(v1, v2) from
   // duck typing), not only parameters whose whole type is a variable.
+  // Drop the phantom-parameter positions from a class type name (positions a
+  // bare-variable parameter that appears in no field occupies, recorded by
+  // constructorFunction via TypeUnifier.registerPhantomMask).  Leaves a class
+  // with no recorded mask, or a mask that does not match the parameter count,
+  // unchanged.  The struct, methods, and instance declarations name themselves
+  // through this; the constructor does not (it keeps every parameter).
+  func dropPhantomParams(self, tn: TypeName) -> TypeName {
+    mask = self.unifier.phantomMaskFor(tn.name)
+    if mask.length() == 0 || isnull(tn.params) {
+      return tn
+    }
+    els = tn.params.elements
+    if els.length() != mask.length() {
+      return tn
+    }
+    kept = arrayof(Type)
+    for i in range(els.length()) {
+      if !mask[i] {
+        kept.append(els[i])
+      }
+    }
+    if kept.length() == 0 {
+      return TypeName(tn.name)
+    }
+    return TypeName(tn.name, TupleType(kept))
+  }
+
   func collectFreeTyvars(self, ty: Type, acc: [Type]) -> [Type] {
     out = acc
     t = ty
@@ -4177,6 +4204,59 @@ class TypeChecker(self) {
     }
     self.newSymbolGlobal(fn.sym, fnType)
     fn.typedValue = fnType
+
+    // Record which constructor parameters are "phantom": a plain parameter
+    // whose type stays a bare type variable appearing in no field type (so it
+    // does not affect the struct, e.g. MyString(self, value) whose body always
+    // stores `self.value: string`).  Instances differing only in such a
+    // position must unify even though their constructors monomorphize per
+    // argument type.  Excluded:
+    //  - template parameters (`<key>`): they parameterize the class through
+    //    relations/methods even when no field names them (maptest's
+    //    `Symtab(self, <key>)`), so collapsing them loses the specialization.
+    //  - parameters with a concrete or constrained type (value.rn's
+    //    `value: string | bool | i64` resolves to a constrained variable, not a
+    //    bare one) — though such a class collapses harmlessly when its struct
+    //    really is argument-type-independent.
+    // The mask aligns with info.paramVars: both walk the non-self parameters in
+    // order.
+    fieldVars = arrayof(Type)
+    for ft in info.strct.fieldtypes {
+      fieldVars = self.collectFreeTyvars(ft, fieldVars)
+    }
+    phantomMask = arrayof(bool)
+    anyPhantom = false
+    for variable in fn.variables() {
+      if variable.sym.name != "self" {
+        isPhantom = false
+        // Require an UNANNOTATED parameter (no type expression).  A constrained
+        // parameter (`value: Int | Uint`) resolves to a constrained variable
+        // that the field check cannot reliably exclude once the field type bakes
+        // concrete (integer.rn's Integer stores `self.value = value` yet its
+        // field var resolves away), so it would falsely read as phantom.  An
+        // unannotated parameter that genuinely reaches a field keeps its var in
+        // that field type, so the field check excludes it correctly.
+        if (!variable.inTemplateSig && isnull(variable.typeExpr) &&
+            !isnull(variable.typedValue)) {
+          rpv = self.resolve(variable.typedValue!)
+          if rpv.type == Type.TypeClass.Var {
+            isPhantom = true
+            for fv in fieldVars {
+              if fv.tyvar.id == rpv.tyvar.id {
+                isPhantom = false
+              }
+            }
+          }
+        }
+        if isPhantom {
+          anyPhantom = true
+        }
+        phantomMask.append(isPhantom)
+      }
+    }
+    if anyPhantom {
+      self.unifier.registerPhantomMask(fn.sym, phantomMask)
+    }
 
     // Typecheck the methods after the fields and the constructor type are
     // recorded: method bodies may reference other classes (triggering

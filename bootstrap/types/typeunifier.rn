@@ -22,6 +22,7 @@ import database as db
 use typeclasses
 use typebuilder
 use typeerror
+use sym
 
 STR = STRING()
 BOOL = BOOLEAN()
@@ -31,6 +32,19 @@ ANYINT = ANYINTEGER()
 NUM = NUMBER()
 
 relation HashedClass TypeUnifier TypeUnifier.Mapping cascade
+
+// A class's phantom-parameter mask (see TypeUnifier.registerPhantomMask).
+// |name| is the class name; |mask[i]| is true when parameter i is a phantom.
+class PhantomMask(self, name: Sym, mask: [bool]) {
+  self.name = name
+  self.mask = mask
+}
+
+// Held in a DoublyLinked relation, not a plain array field: appending class
+// instances to an arrayof(ClassType) FIELD is broken in the legacy compiler
+// (iteration silently yields nothing), and a HashedClass relation's startup
+// bucket pool trips its array-resize bug.  A linked list avoids both.
+relation DoublyLinked TypeUnifier PhantomMask cascade
 
 /**
  * @brief Type unification algorithm, maps type variables to types.
@@ -47,6 +61,32 @@ class TypeUnifier(self) {
     result = self.nextFreshVar
     self.nextFreshVar -= 1
     return result
+  }
+
+  // Record (or replace) the phantom-parameter mask for a class.  |mask[i]| is
+  // true when class parameter i is a phantom (don't-care for instance-type
+  // unification).
+  func registerPhantomMask(self, name: Sym, mask: [bool]) {
+    for entry in self.phantomMasks() {
+      if entry.name.name == name.name {
+        entry.mask = mask
+        return
+      }
+    }
+    pm = PhantomMask(name, mask)
+    self.appendPhantomMask(pm)
+  }
+
+  // The phantom-parameter mask for a class, or an empty array if the class has
+  // none recorded (so every position is treated as significant).
+  func phantomMaskFor(self, name: Sym) -> [bool] {
+    for entry in self.phantomMasks() {
+      if entry.name.name == name.name {
+        return entry.mask
+      }
+    }
+    empty = arrayof(bool)
+    return empty
   }
 
   /**
@@ -450,6 +490,27 @@ class TypeUnifier(self) {
       // tuple), or a nominal knot from a self-referential class type (see
       // instantiateVar), which stands for any specialization of the class.
       return null(TypeError)
+    }
+    // Phantom parameters (a bare-variable class parameter used in no field, so
+    // it does not change the struct) are don't-cares for instance-type
+    // unification: two instances differing only there (MyString(string) vs
+    // MyString([u8])) are the same struct and must unify.  Skip those positions
+    // when a mask is recorded and the tuples are the same arity.
+    mask = self.phantomMaskFor(t1.name)
+    if mask.length() > 0 {
+      e1 = t1.params.elements
+      e2 = t2.params!.elements
+      if e1.length() == e2.length() && e1.length() == mask.length() {
+        for pi in range(e1.length()) {
+          if !mask[pi] {
+            te = self.unify(e1[pi], e2[pi], location)
+            if !isnull(te) {
+              return te
+            }
+          }
+        }
+        return null(TypeError)
+      }
     }
     return self.unifyTuple(t1.params!, Type(t2.params!), location)
   }

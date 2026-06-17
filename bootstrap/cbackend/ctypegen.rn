@@ -249,7 +249,10 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
 
   func genCTypename(self, ty: types.TypeName) -> CTypeExpr? {
     if !isnull(self.typechecker.lookupClass(ty.name)) {
-      cname = self.concreteClassTyname(ty)
+      // The instance's struct collapses phantom parameters (see
+      // TypeChecker.dropPhantomParams), so two instances differing only there
+      // share one C type and assign to one another.
+      cname = self.typechecker.dropPhantomParams(self.concreteClassTyname(ty))
       cspec = cname.specializationString()
       if cspec == "" {
         ctyname = cname.name.name
