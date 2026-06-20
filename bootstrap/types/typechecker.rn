@@ -4718,6 +4718,37 @@ class TypeChecker(self) {
     // emission, like the legacy compiler.  Concrete functions keep their
     // errors: instantiation cannot improve them.
     if self.countTypeErrors() > preBodyErrors && self.sawStructuralGenericError {
+      // Forget literal-induced AnyInt bindings on parameters before deferring,
+      // exactly as the non-deferred generalization path does below.  A body
+      // like `d + 1` or `d mod m` binds the parameter's variable to AnyInt
+      // (defaulting to u64); without unbinding it, the parameter is excluded
+      // from deferVars and bakes in as u64 even though the call passes a wider
+      // type (e.g. a u255 modulus).  Unbind so it generalizes and the call
+      // site's argument width decides (per-call literal polymorphism).
+      for unbindVar in fn.variables() {
+        if (unbindVar.isParam && !isnull(unbindVar.typedValue) &&
+            unbindVar.typedValue.type == Type.TypeClass.Var) {
+          unbindBoundTo = self.resolve(unbindVar.typedValue!)
+          if unbindBoundTo.type == Type.TypeClass.AnyInt {
+            unbindChainVar = unbindVar.typedValue.tyvar!
+            unbindChainDepth = 0
+            while unbindChainDepth < 64 {
+              unbindChainBinding = self.unifier.lookupVar(unbindChainVar.id)
+              if isnull(unbindChainBinding) {
+                unbindChainDepth = 64
+              } else if unbindChainBinding.type == Type.TypeClass.Var {
+                unbindChainVar = unbindChainBinding.tyvar!
+                unbindChainDepth += 1
+              } else {
+                if unbindChainBinding.type == Type.TypeClass.AnyInt {
+                  self.unifier.unbindVar(unbindChainVar)
+                }
+                unbindChainDepth = 64
+              }
+            }
+          }
+        }
+      }
       deferVars = arrayof(Type)
       for variable in fn.variables() {
         if variable.isParam && !isnull(variable.typedValue) {

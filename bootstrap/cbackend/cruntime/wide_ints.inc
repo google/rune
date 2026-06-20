@@ -513,15 +513,28 @@ static inline rn_wide wide_modreduce(rn_wide v, rn_wide m) {
 }
 
 static inline rn_wide wide_modadd(rn_wide a, rn_wide b, rn_wide m) {
-  rn_wide s = wide_addsub(a, b, 0, 1);
-  // A carry past the width cannot happen when m fits with one spare bit;
-  // handle the general case via remainder.
-  if (wide_cmp_limbs(s, m) >= 0) {
-    rn_wide t = wide_rem(s, m);
+  // Add in a representation one limb wider than the modulus so the carry out
+  // of the top bit survives.  A full-width modulus (e.g. Curve25519's
+  // 2**255 - 19) leaves no spare bit, so a + b can exceed 2**width and
+  // truncating to the modulus width would silently drop 2**width, which is
+  // congruent to a small nonzero residue mod m.
+  uint64_t w = WIDE_WIDTH(m);
+  uint64_t w2 = w + 64;
+  rn_wide wa = wide_cast(a, w2, 0, 1);
+  rn_wide wb = wide_cast(b, w2, 0, 1);
+  rn_wide wm = wide_cast(m, w2, 0, 1);
+  rn_wide s = wide_addsub(wa, wb, 0, 1);
+  if (wide_cmp_limbs(s, wm) >= 0) {
+    rn_wide t = wide_rem(s, wm);
     free(s);
     s = t;
   }
-  return s;
+  rn_wide r = wide_cast(s, w, 0, 1);
+  free(wa);
+  free(wb);
+  free(wm);
+  free(s);
+  return r;
 }
 
 static inline rn_wide wide_modsub(rn_wide a, rn_wide b, rn_wide m) {
