@@ -266,6 +266,19 @@ static inline rn_wide wide_mul(rn_wide a, rn_wide b, int trunc) {
 
 // Bit-by-bit long division of magnitudes: q = a / b, rem = a % b.
 static inline void wide_divmod(rn_wide a, rn_wide b, rn_wide *qp, rn_wide *remp) {
+  // Operate at the wider of the two operand widths so neither's high limbs
+  // are read out of bounds or silently dropped.  In modular arithmetic the
+  // modulus is frequently a different width than the dividend (e.g. reducing
+  // a 2**256 value modulo a 255-bit prime).
+  rn_wide divmodWideA = (rn_wide)0;
+  rn_wide divmodWideB = (rn_wide)0;
+  if (WIDE_WIDTH(a) != WIDE_WIDTH(b)) {
+    uint64_t divmodW = WIDE_WIDTH(a) > WIDE_WIDTH(b) ? WIDE_WIDTH(a) : WIDE_WIDTH(b);
+    divmodWideA = wide_cast(a, divmodW, WIDE_SIGNED(a), 1);
+    divmodWideB = wide_cast(b, divmodW, WIDE_SIGNED(b), 1);
+    a = divmodWideA;
+    b = divmodWideB;
+  }
   uint64_t w = WIDE_WIDTH(a);
   int n = WIDE_NLIMBS(w);
   int allz = 1;
@@ -317,6 +330,12 @@ static inline void wide_divmod(rn_wide a, rn_wide b, rn_wide *qp, rn_wide *remp)
     rn_wide t = wide_negtrunc(rem);
     free(rem);
     rem = t;
+  }
+  if (divmodWideA) {
+    free(divmodWideA);
+  }
+  if (divmodWideB) {
+    free(divmodWideB);
   }
   if (qp) {
     *qp = q;

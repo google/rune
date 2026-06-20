@@ -1332,6 +1332,43 @@ class TypeChecker(self) {
     return out
   }
 
+  // The arithmetic node kinds that combine values inside a modular
+  // expression `... mod m`.  Their operands reduce into [0, m) first, so
+  // they may have different widths.
+  func isModularArith(self, t: db.ExprType) -> bool {
+    return (t == db.ExprType.Add || t == db.ExprType.Sub ||
+            t == db.ExprType.Mul || t == db.ExprType.Div ||
+            t == db.ExprType.Exp || t == db.ExprType.Negate ||
+            t == db.ExprType.NegateTrunc)
+  }
+
+  // Typecheck an operand of a modular expression.  Arithmetic nodes combine
+  // values that are each reduced into [0, m), so their operands need not
+  // share a width; only leaves typecheck normally (they reduce mod m at
+  // codegen, mirroring genCModular's leaf handling).
+  func typecheckModularOperand(self, e: db.Expr, modTy: Type) {
+    if e.type == db.ExprType.Exp {
+      // The base reduces mod m; the exponent is an ordinary integer.
+      base = e.firstChildExpr!
+      exponent = base.nextExprChildExpr!
+      self.typecheckModularOperand(base, modTy)
+      self.expr(exponent)
+      e.typedValue = modTy
+    } else if e.type == db.ExprType.Negate || e.type == db.ExprType.NegateTrunc {
+      self.typecheckModularOperand(e.firstChildExpr!, modTy)
+      e.typedValue = modTy
+    } else if self.isModularArith(e.type) {
+      opLeft = e.firstChildExpr!
+      opRight = opLeft.nextExprChildExpr!
+      self.typecheckModularOperand(opLeft, modTy)
+      self.typecheckModularOperand(opRight, modTy)
+      e.typedValue = modTy
+    } else {
+      // A leaf value (variable, literal, call, cast, ...).
+      self.expr(e)
+    }
+  }
+
   func apply(self, function: Type, args: Type,
              location: db.Location? = null(db.Location)) -> Type? {
     ty = function
@@ -1967,10 +2004,17 @@ class TypeChecker(self) {
         if isModCompare {
           cmpL = modLeft.firstChildExpr!
           cmpR = cmpL.nextExprChildExpr!
-          self.expr(cmpL)
-          self.expr(cmpR)
+          self.typecheckModularOperand(cmpL, modTy!)
+          self.typecheckModularOperand(cmpR, modTy!)
           modLeft.typedValue = BOOL
           result = BOOL
+        } else if self.isModularArith(modLeft.type) {
+          // Modular arithmetic reduces every operand into [0, m) before
+          // combining, so the operands need not share a width: `a * R mod N`
+          // with a:u256 and R:u257 is fine.  Typecheck the subtree without
+          // coupling operand types; the result has the modulus's type.
+          self.typecheckModularOperand(modLeft, modTy!)
+          result = modTy
         } else {
           modLeftTy = self.expr(modLeft)
           if isnull(modLeftTy) {
@@ -4911,6 +4955,23 @@ class TypeChecker(self) {
       self.newSymbolGlobal(fn.sym, fnType)
     }
     fn.typedValue = fnType
+
+    // The parameters' interned symbols still point at the variables that were
+    // just generalized into boundVars.  Clear those mappings so a later
+    // same-named module-level (or other-function) variable does not reuse a
+    // generalized boundVar through symbol()'s forward-reference path and then
+    // bind it — that would monomorphize this polymorphic function (e.g. a
+    // module local `T` colliding with a `func f(T: Uint)` parameter).  Codegen
+    // reads each parameter's type from the Variable, not the interned symbol.
+    if boundVars.length() > 0 {
+      for clearParam in fn.variables() {
+        if !isnull(clearParam.sym.typedValue) {
+          if self.resolve(clearParam.sym.typedValue!).type == Type.TypeClass.Var {
+            clearParam.sym.typedValue = null(Type)
+          }
+        }
+      }
+    }
 
     if db.getRoot().traceTypes {
        fn.location.annotation("\n[Typecheck] ", TypeLoggingPrefix)

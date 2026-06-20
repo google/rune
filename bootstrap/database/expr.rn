@@ -1505,7 +1505,10 @@ class Expr(self, type: ExprType, location: Location) {
     }
     wideCall = builder.cWideCall(self.location, wideName, args)
     if isCmp {
-      zeroLit = c.CExpr(c.CLiteral(Bigint(0u64), false))
+      // wide_cmp returns a signed int; compare against a signed 0 so a
+      // negative result is not converted to a large unsigned value, which
+      // would make `>= 0` always true and `< 0` always false (0i32 emits "0").
+      zeroLit = c.CExpr(c.CLiteral(Bigint(0i32), false))
       return c.CExpr(c.CBinaryOperator(self.location, cmpOp,
           null(c.CTypeExpr), wideCall, zeroLit))
     }
@@ -1785,7 +1788,7 @@ class Expr(self, type: ExprType, location: Location) {
         }
         wCmpCall = builder.cWideCall(self.location, "wide_cmp", cmpArgs)
         return c.CExpr(c.CBinaryOperator(self.location, wCmpOp,
-            null(c.CTypeExpr), wCmpCall, c.CExpr(c.CLiteral(Bigint(0u64), false))))
+            null(c.CTypeExpr), wCmpCall, c.CExpr(c.CLiteral(Bigint(0i32), false))))
       }
       default => {
         // A leaf value: reduce it into [0, m).
