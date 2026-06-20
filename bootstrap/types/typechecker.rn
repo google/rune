@@ -1391,6 +1391,12 @@ class TypeChecker(self) {
     }
   }
 
+  func isComparisonOp(self, t: db.ExprType) -> bool {
+    return (t == db.ExprType.Lt || t == db.ExprType.Le ||
+            t == db.ExprType.Gt || t == db.ExprType.Ge ||
+            t == db.ExprType.Equal || t == db.ExprType.Notequal)
+  }
+
   // The arithmetic node kinds that combine values inside a modular
   // expression `... mod m`.  Their operands reduce into [0, m) first, so
   // they may have different widths.
@@ -1962,8 +1968,32 @@ class TypeChecker(self) {
           return left
         }
         bopty = self.operatorChoices(expr.type, builtinType(expr.type))!
-        argty = Type(TupleType([left!, right!]))
-        result = self.apply(bopty, argty, expr.location)
+        // In a plain top-level function (no enclosing class context), a user
+        // operator overload applied to bare-variable operands must NOT commit
+        // to that overload -- doing so binds the operands to the overload's
+        // class and monomorphizes the function.  Keep the operands polymorphic;
+        // the C backend re-dispatches the operator per concrete instantiation.
+        // Scoped to isnull(currentClassInfo) so it does not fire inside class
+        // methods / relation-transformer compares (e.g. classheapsort's
+        // _compareElement), which rely on the commit.
+        ddDefer = false
+        if bopty.type == Type.TypeClass.Choice && isnull(self.currentClassInfo) {
+          ddL = self.resolve(left!)
+          ddR = self.resolve(right!)
+          if ddL.type == Type.TypeClass.Var && ddR.type == Type.TypeClass.Var {
+            ddDefer = true
+          }
+        }
+        if ddDefer {
+          if self.isComparisonOp(expr.type) {
+            result = BOOL
+          } else {
+            result = left
+          }
+        } else {
+          argty = Type(TupleType([left!, right!]))
+          result = self.apply(bopty, argty, expr.location)
+        }
      }
 
       db.ExprType.Cast, db.ExprType.CastTrunc => {

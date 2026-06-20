@@ -363,6 +363,14 @@ export func getCompoundAssignBaseOp(type: ExprType) -> ExprType {
 // specialization name: Type.equals does not see structurally equal
 // parameter tuples as equal.
 func typeArgCompatible(argType: types.Type, paramType: types.Type) -> bool {
+  // An unresolved type variable on either side is a "don't know" slot that
+  // matches anything: a deferred operator's operand (e.g. a recursive call's
+  // result type) or an operator parameter whose own type-arg stayed a variable.
+  // The other operand disambiguates which overload is meant.
+  if argType.type == types.Type.TypeClass.Var ||
+      paramType.type == types.Type.TypeClass.Var {
+    return true
+  }
   if argType.specializationName() == paramType.specializationName() {
     return true
   }
@@ -371,8 +379,34 @@ func typeArgCompatible(argType: types.Type, paramType: types.Type) -> bool {
   if argType.type == types.Type.TypeClass.AnyInt && paramIsInt {
     return true
   }
-  return (paramType.type == types.Type.TypeClass.AnyInt &&
-          argType.type == types.Type.TypeClass.Int)
+  if paramType.type == types.Type.TypeClass.AnyInt &&
+      argType.type == types.Type.TypeClass.Int {
+    return true
+  }
+  // Two instantiations of the same parameterized class (e.g. Foo(u100) vs the
+  // operator parameter Foo(v46)) match when their type-args match slot by slot,
+  // with a variable slot treated as a wildcard (above).  specializationName
+  // misses this because a variable slot stringifies differently.
+  if (argType.type == types.Type.TypeClass.Typename &&
+      paramType.type == types.Type.TypeClass.Typename &&
+      argType.tyname.name.name == paramType.tyname.name.name) {
+    if isnull(argType.tyname.params) && isnull(paramType.tyname.params) {
+      return true
+    }
+    if !isnull(argType.tyname.params) && !isnull(paramType.tyname.params) {
+      aels = argType.tyname.params.elements
+      pels = paramType.tyname.params.elements
+      if aels.length() == pels.length() {
+        for slot in range(aels.length()) {
+          if !typeArgCompatible(aels[slot], pels[slot]) {
+            return false
+          }
+        }
+        return true
+      }
+    }
+  }
+  return false
 }
 
 // The expression class represents all expression trees in Rune.
@@ -1130,7 +1164,109 @@ class Expr(self, type: ExprType, location: Location) {
       idSel = c.CExpr(c.CDotExpr(self.location, v, "rn_id", true))
       return c.CExpr(c.CCastExpr(self.location, ctype!, idSel))
     }
+    // Casting TO a class type that defines a `<>` conversion operator invokes
+    // that operator (e.g. <Foo>1 builds Foo(1)); a plain C pointer cast would
+    // reinterpret the integer as a Foo* and crash.
+    if builder.isClassType(self.typedValue) &&
+        !builder.isClassType(valueChild.typedValue) {
+      castOp = self.genCCastOperator(builder, target, valueChild, v, ctype!)
+      if !isnull(castOp) {
+        return castOp!
+      }
+    }
     return c.CExpr(c.CCastExpr(self.location, ctype!, v))
+  }
+
+  // Emit a call to a user-defined `<>` cast operator for `<Class>value`.  The
+  // operator is `operator <>(self: Class, other)`; a cast has no self instance,
+  // so a null Class pointer is passed (the operator body uses only `other`).
+  // The operator is not dispatched at typecheck, so its instantiation is
+  // synthesized here.  Returns null if no matching `<>` operator exists.
+  func genCCastOperator(self, builder: c.CBuilder, target: types.Type,
+                        valueChild: Expr, v: c.CExpr, ctype: c.CTypeExpr) -> c.CExpr? {
+    tc = builder.typechecker
+    vtype = tc.resolve(valueChild.typedValue!)
+    for i in range(tc.operatorFns.length()) {
+      opfn = tc.operatorFns[i]
+      if opfn.opType == ExprType.Cast {
+        opty = tc.operatorTypes[i]
+        callName = ""
+        argPair = types.Type(types.TupleType([target, vtype]))
+        if opty.type == types.Type.TypeClass.Polymorphic {
+          for inst in opty.poly.instantiations {
+            if callName == "" {
+              builder.instantiate(opty.poly!, inst)
+              cptypes = arrayof(types.Type)
+              for variable in opfn.variables() {
+                cptypes.append(tc.resolve(variable.typedValue!))
+              }
+              cFree = false
+              for pt in cptypes {
+                if tc.hasFreeVars(pt) {
+                  cFree = true
+                }
+              }
+              ciname = types.Type(types.TupleType(cptypes)).genSpecializationName(opfn.sym.name)
+              builder.deInstantiate(opty.poly!)
+              if (cptypes.length() == 2 && !cFree &&
+                  typeArgCompatible(target, cptypes[0]) &&
+                  typeArgCompatible(vtype, cptypes[1])) {
+                if !builder.alreadyEmitted(ciname) {
+                  opfn.genCPolyInstantiation(builder, inst)
+                }
+                callName = ciname
+              }
+            }
+          }
+          if callName == "" {
+            // Synthesize: open the operator poly, unify its parameters with
+            // (target class, value type), and emit.
+            openedOp = opty.poly!.open(tc.unifier, &tc.unifier.newVar())
+            if openedOp.type == types.Type.TypeClass.Function {
+              cTe = tc.unify(openedOp.function.params!, argPair)
+              if isnull(cTe) {
+                synInst = opty.poly.instantiations.lastTyvarInstantiation
+                if !isnull(synInst) {
+                  builder.resolveInstantiation(synInst!)
+                  if builder.instantiationIsConcrete(synInst!) {
+                    builder.instantiate(opty.poly!, synInst!)
+                    synCp = arrayof(types.Type)
+                    for variable in opfn.variables() {
+                      synCp.append(tc.resolve(variable.typedValue!))
+                    }
+                    synName = types.Type(types.TupleType(synCp)).genSpecializationName(opfn.sym.name)
+                    builder.deInstantiate(opty.poly!)
+                    if !builder.alreadyEmitted(synName) {
+                      opfn.genCPolyInstantiation(builder, synInst!)
+                    }
+                    callName = synName
+                  }
+                }
+              }
+            }
+          }
+        } else if opty.type == types.Type.TypeClass.Function {
+          mtypes = arrayof(types.Type)
+          for variable in opfn.variables() {
+            mtypes.append(tc.resolve(variable.typedValue!))
+          }
+          if (mtypes.length() == 2 &&
+              typeArgCompatible(target, mtypes[0]) &&
+              typeArgCompatible(vtype, mtypes[1])) {
+            callName = opfn.sym.name
+          }
+        }
+        if callName != "" {
+          dummySelf = c.CExpr(c.CCastExpr(self.location, ctype,
+              c.CExpr(c.CLiteral(Bigint(0u64), false))))
+          castArgs = c.CExprList()
+          castArgs.appendCExpr(dummySelf)
+          castArgs.appendCExpr(v)
+          return builder.cCall(self.location, callName, c.CExpr(castArgs))
+        }
+      }
+    }
+    return null(c.CExpr)
   }
 
   // A value cast to an unsigned integer whose bit width is narrower than its C
