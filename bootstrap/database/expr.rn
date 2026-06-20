@@ -2428,14 +2428,24 @@ class Expr(self, type: ExprType, location: Location) {
       } else {
         specializedName = argTypes.genSpecializationName(left.val.symVal.name)
       }
-      // A recursive call inside the instance being emitted is a call to
-      // that same instance; its argument snapshots may chain to stale
-      // definition-time bindings and compose the wrong name.
+      // A recursive call inside the instance being emitted is usually a call
+      // to that same instance; its argument snapshots may chain to stale
+      // definition-time bindings and compose the wrong name, so force the
+      // current instance's name.  BUT argTypes above is live-resolved under
+      // the active instantiation, so when it is fully concrete the arg-based
+      // name is already correct -- and a recursive call whose concrete arg
+      // types DIFFER from the current instance is a genuinely different
+      // instantiation (type-shrinking recursion like depth(x[0]), or
+      // manySignatures' rotated params) that must keep its own name so that
+      // instantiation gets emitted.  Only override when argTypes is not
+      // concrete (its snapshot is unreliable).
       if !isnull(builder.currentEmittingFn) {
         recCallee = builder.findFunction(left.val.symVal.name)
         if !isnull(recCallee) {
           if recCallee! == builder.currentEmittingFn! {
-            specializedName = builder.currentEmittingName
+            if builder.typechecker.containsAdaptableType(argTypes) {
+              specializedName = builder.currentEmittingName
+            }
           }
         }
       }

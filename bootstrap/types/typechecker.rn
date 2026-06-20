@@ -1332,6 +1332,65 @@ class TypeChecker(self) {
     return out
   }
 
+  // True if the type tree contains any type variable or adaptable AnyInt
+  // literal -- i.e. its specialization name is unreliable: an AnyInt names as
+  // its u64/i64 default rather than the concrete width it will adapt to, and a
+  // free var has no name at all.  Used to decide whether a recursive call's
+  // live-resolved argument types reliably name a (possibly different)
+  // instantiation, or must fall back to the current instance's name.
+  func containsAdaptableType(self, ty: Type) -> bool {
+    t = ty
+    if t.type == Type.TypeClass.Var {
+      t = self.resolve(t)
+    }
+    switch t.type {
+      Type.TypeClass.Var => return true
+      Type.TypeClass.AnyInt => return true
+      Type.TypeClass.Typename => {
+        if !isnull(t.tyname.params) {
+          for el in t.tyname.params.elements {
+            if self.containsAdaptableType(el) {
+              return true
+            }
+          }
+        }
+        return false
+      }
+      Type.TypeClass.Array => return self.containsAdaptableType(t.array.elementType!)
+      Type.TypeClass.Tuple => {
+        for el in t.tuple.elements {
+          if self.containsAdaptableType(el) {
+            return true
+          }
+        }
+        return false
+      }
+      Type.TypeClass.Struct => {
+        for ft in t.strct.fieldtypes {
+          if self.containsAdaptableType(ft) {
+            return true
+          }
+        }
+        return false
+      }
+      Type.TypeClass.Function => {
+        if self.containsAdaptableType(t.function.params) {
+          return true
+        }
+        return self.containsAdaptableType(t.function.result)
+      }
+      Type.TypeClass.Choice => {
+        for ch in t.choice.choices {
+          if self.containsAdaptableType(ch) {
+            return true
+          }
+        }
+        return false
+      }
+      default => return false
+    }
+  }
+
   // The arithmetic node kinds that combine values inside a modular
   // expression `... mod m`.  Their operands reduce into [0, m) first, so
   // they may have different widths.

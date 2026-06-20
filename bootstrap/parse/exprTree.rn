@@ -230,12 +230,18 @@ transformer ExprTree() {
       return db.Expr.newUnary(db.ExprType.Funcaddr, call, node.location)
     }
 
-    // Format: tupleTypeExpr('(' typeExpr* ')') — token children are skipped.
+    // Format: tupleTypeExpr('(' typeExpr* ')') — only the punctuation tokens
+    // '(' ')' ',' are skipped.  A type element may itself be a bare token (e.g.
+    // `u2` in the pattern `(u2, u3)`), so skipping ALL token children would
+    // drop the tuple's elements and yield an empty tuple type.
     func buildTupleTypeExpr(self: HirBuilder, node: Node) -> db.Expr {
       elements = arrayof(db.Expr)
       child = node.firstChildNode
       while !isnull(child) {
-        if isnull(child.token) {
+        ksym = child.getKeywordSym()
+        skip = (!isnull(ksym) &&
+            (ksym.name == "(" || ksym.name == ")" || ksym.name == ","))
+        if !skip {
           elements.append(self.buildExprTree(child!))
         }
         child = child.nextNodeChildNode
