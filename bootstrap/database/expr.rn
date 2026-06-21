@@ -2562,7 +2562,26 @@ class Expr(self, type: ExprType, location: Location) {
         // matching its definition; the struct it builds collapses them.
         specializedName = builder.classCtorCName(ctorResultTy!)
       } else {
-        specializedName = argTypes.genSpecializationName(left.val.symVal.name)
+        // The definition (genCPolyInstantiation) names from TupleType(paramTypes)
+        // -- a one-element tuple for a single-parameter function.  When a single
+        // value (not a List/Tuple args node) is passed to a one-parameter
+        // function, wrap the arg type the same way so the call name matches the
+        // def; otherwise a tuple-typed argument's name is one nesting level too
+        // shallow (genSpecializationName of a tuple flattens to its elements).
+        nameTy = argTypes
+        if right.type != ExprType.List && right.type != ExprType.Tuple {
+          nameCallee = builder.findFunction(left.val.symVal.name)
+          if !isnull(nameCallee) {
+            nameParamCount = 0
+            for nameVar in nameCallee.variables() {
+              nameParamCount += 1
+            }
+            if nameParamCount == 1 {
+              nameTy = types.Type(types.TupleType([argTypes]))
+            }
+          }
+        }
+        specializedName = nameTy.genSpecializationName(left.val.symVal.name)
       }
       // A recursive call inside the instance being emitted is usually a call
       // to that same instance; its argument snapshots may chain to stale
