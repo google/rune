@@ -2655,10 +2655,23 @@ class Expr(self, type: ExprType, location: Location) {
                 }
               }
               iname = types.Type(types.TupleType(ptypes)).genSpecializationName(callee.sym.name)
+              // A recorded instantiation whose resolved parameters still hold
+              // free variables is not emittable (genCType of a Var is null).
+              // Such an instantiation is the artifact of a deferred recursive
+              // function typechecking its own recursive call before its type
+              // is known (turing's addParens(decParens(a), incParens(b))
+              // records a v-NN self-instantiation).  Never adopt it; let a
+              // concrete recorded match, or the synthesis path below, win.
+              pConcrete = true
+              for pt in ptypes {
+                if builder.typechecker.hasFreeVars(pt) {
+                  pConcrete = false
+                }
+              }
               builder.deInstantiate(polyType.poly!)
-              adoptName = iname == specializedName
+              adoptName = iname == specializedName && pConcrete
               if !adoptName {
-                if callee.deferredTypecheck {
+                if callee.deferredTypecheck && pConcrete {
                   // A deferred function's argument snapshots compose an
                   // unreliable name; adopt the definition's name for its
                   // (re-typechecked) instantiation.
