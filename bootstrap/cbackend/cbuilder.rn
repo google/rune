@@ -1303,6 +1303,16 @@ class CBuilder(self, tc: types.TypeChecker) {
   func ensureTupleDeclared(self, location: db.Location, ty: types.Type) {
     exists = self.typeGenerator.genCTuple(ty.tuple!)!
     if !exists.defined {
+      // Declare nested tuple element types FIRST so a tuple struct containing a
+      // tuple field (tuple1_t { tuple2_t el0; }) is emitted after the inner
+      // tuple's typedef (otherwise the dependency below cannot be found and the
+      // outer struct emits first -> "unknown type name").
+      for nestedEl in ty.tuple.elements {
+        nestedRes = self.typechecker.resolve(nestedEl)
+        if nestedRes.type == types.Type.TypeClass.Tuple {
+          self.ensureTupleDeclared(location, nestedRes)
+        }
+      }
       // Create the C struct definition -------------
       params = CParamList()
       deps = arrayof(string)

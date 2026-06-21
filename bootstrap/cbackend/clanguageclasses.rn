@@ -2011,11 +2011,11 @@ class CStructDeclaration(self, location: db.Location, name: string, fields: CPar
       e.writeln(");")
     } else {
       e.writeopenln(") {")
-      if self.cParamList.countCParameters() == 0 {
-        e.writeln("%s_t str;" % self.name)
-      } else {
-        e.writeln("%s_t str = {0};" % self.name)
-      }
+      // Declare without an initializer: every field is assigned from a
+      // constructor parameter immediately below, so `= {0}` is redundant -- and
+      // it is INVALID C when a field is itself an empty struct (the empty tuple
+      // ()), giving "initializer for aggregate with no elements".
+      e.writeln("%s_t str;" % self.name)
       for field in self.cParamList.cParameters() {
         e.writeln("str.%s = %s;" % (field.name, field.name))
       }
