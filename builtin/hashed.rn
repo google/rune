@@ -127,7 +127,7 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
       }
     }
 
-    func insert$labelB$B(self, entry) {
+    func insert$labelB$B(self, entry: B) {
       func updateHashTableAfterResize(self) {
         newLength = self.$labelB$B_Table.length()
         oldLength = newLength >> 1
