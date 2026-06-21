@@ -491,6 +491,13 @@ class TypeChecker(self) {
       }
       return Type(TypeName(info.sym, TupleType(cparams)))
     }
+    if isnull(info.selfType) {
+      // The class's constructor has not been typechecked yet -- a mutually
+      // recursive cascade relation can duck-type a field selection onto a peer
+      // class before its selfType is established.  Build the monomorphic
+      // instance type on demand, the same form constructorFunction records.
+      info.selfType = Type(TypeName(info.sym, TupleType(info.paramVars)))
+    }
     return info.selfType!
   }
 
