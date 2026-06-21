@@ -56,6 +56,7 @@ func hashValue(value) -> u64 {
   typeswitch value {
     String => return hashString(value)
     Uint, Int => return hashInteger(value)
+    Bool => return hashValues(0u64, <u64>value)
     Array => {
       hash = 0u64
       for i in range(value.length) {
