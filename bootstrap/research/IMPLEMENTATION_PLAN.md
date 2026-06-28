@@ -112,6 +112,22 @@ generic-table machinery is involved.
    the live AST — re-typechecking an already-iterator-inlined body re-inlines and corrupts it
    (§9, `ground-bootstrap.md §2`). This is why `retypecheckDeferred` snapshots.
 
+**Discovered 2026-06-28 (refines the above — read before implementing):**
+- **Precise cause** (HANDOFF LAYER 4 + code read): under mutual recursion the destroy body's
+  **method-call nodes** (`.length()`, `range(...)`) finish with `null typedValue` — only field
+  accesses resolve (via field types). They are NOT caught by the once-only retypecheck because
+  the destroys don't set `deferredTypecheck` (Foo/Bar are monomorphic); the call to the
+  not-yet-seeded peer types to null and nothing revisits it. Non-mutual cascade (`graph.rn`)
+  types fine. So pre-seeding the peer BEFORE the body walk is the real fix, not just a fixpoint.
+- **Hot-path wrinkle:** `plainFunction` (now ~4839) early-returns at the top when
+  `fn.typedValue != null` (~4840) and mints `monoResult` at ~4877-78. A raw pre-seed of
+  `fn.typedValue` would make it skip the body. The pre-seed must mark the fn (e.g. a
+  TypeChecker-side `seededFns` set), and plainFunction must (a) NOT early-return for a seeded
+  fn, and (b) reuse the seeded `monoResult` instead of minting a new one. Watch that the
+  seeded arrow's param vars line up with the body's fresh param vars (`self.variable()` at
+  ~4865) — unify if needed.
+- **Eager-destroy loop** is now ~4267-4309; `retypecheckDeferred` snapshot still at ~629-633.
+
 **Files:** `types/typechecker.rn`, `cbackend/cbuilder.rn` (does NOT touch safe/funcptr).
 **Validation:** `./bootstrap/rune tests/recursiveDestructor.rn` compiles; the executable's
 output `diff`s clean against `tests/recursiveDestructor.stdout`; full suite **188, zero drops**.
