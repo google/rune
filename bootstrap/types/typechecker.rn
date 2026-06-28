@@ -296,6 +296,37 @@ class ArrayExtMethod(self, fn: db.Function) {
   self.fn = fn
 }
 
+// === Named-blocker groundwork (Stage 0 of the binding fix; see
+// bootstrap/research/IMPLEMENTATION_PLAN.md). ===
+// A binding can stall for exactly three reasons, mirroring the legacy C
+// binder's three deEvent kinds (UNDEFINED / SIGNATURE / VARIABLE).  Rune
+// enums carry no payload, so the design doc's payload-carrying `Blocker`
+// enum is split into a discriminator (BlockerKind) plus a Blocker class.
+enum BlockerKind {
+  ClassRegistered  // waiting for a class Sym to be registered/typechecked
+  SignatureKnown   // waiting for a function's signature to become known
+  VarBound         // waiting for a type variable to be bound
+}
+
+// The reason a binding is stuck, recorded alongside the existing once-deferral
+// flag (sawStructuralGenericError).  Payload fields are populated per kind; the
+// others keep their null/zero defaults.
+class Blocker(self, kind: BlockerKind) {
+  self.kind = kind
+  self.className = null(Sym)  // ClassRegistered: the awaited class
+  self.spec = ""              // SignatureKnown: the awaited function's name
+  self.tyvarId = 0i32         // VarBound: the awaited type variable id (i32)
+}
+
+// A parked binding plus the reason it waits.  The Function may be null when the
+// stall is recorded deep in expression typechecking, where the enclosing
+// function is not threaded through.  Consumed by the deferral fixpoint
+// (Stage 1+) and per-signature class materialization (Stage 2+).
+class Deferred(self, fn: db.Function?, blocker: Blocker) {
+  self.fn = fn
+  self.blocker = blocker
+}
+
 relation HashedClass TypeChecker SymbolMapping cascade
 relation HashedClass TypeChecker TynameDefinition cascade
 relation HashedClass TypeChecker ClassInfo cascade
@@ -334,6 +365,13 @@ class TypeChecker(self) {
   // unconstrained variable: the signature per-instantiation
   // typechecking (deferral) can fix.
   self.sawStructuralGenericError = false
+  // Named-blocker groundwork (Stage 0): parked bindings + their reasons,
+  // recorded alongside sawStructuralGenericError.  Not yet consumed, so
+  // behaviour is unchanged; the deferral fixpoint (Stage 1+) and per-signature
+  // class materialization (Stage 2+) read these.
+  self.deferredWorklist = arrayof(Deferred)
+  self.definedSignatures = arrayof(string)  // dedup keys (Stage 2 materializeInner)
+  self.boundTyvarIds = arrayof(i32)         // tyvars known bound (Stage 3)
   // Transformer definitions, looked up by relation statements.
   self.transformerNames = arrayof(string)
   self.transformerFns = arrayof(db.Function)
@@ -552,6 +590,31 @@ class TypeChecker(self) {
     for bindingIndex in range(syms.length()) {
       syms[bindingIndex].typedValue = vals[bindingIndex]
     }
+  }
+
+  // Stage 0 groundwork: record that the current binding stalled on an unbound
+  // type variable, next to the sawStructuralGenericError flag.  Additive and
+  // not yet consumed, so behaviour is unchanged.
+  func recordVarBlocker(self, ty: Type?) {
+    if isnull(ty) {
+      return
+    }
+    rvb = self.resolve(ty!)
+    vid = 0i32
+    if rvb.type == Type.TypeClass.Var {
+      vid = rvb.tyvar!.id
+    }
+    blocker = Blocker(BlockerKind.VarBound)
+    blocker.tyvarId = vid
+    self.deferredWorklist.append(Deferred(null(db.Function), blocker))
+  }
+
+  // Stage 0 groundwork: record that the current binding stalled on a function
+  // whose signature is not yet known (e.g. a deferred constructor).
+  func recordSignatureBlocker(self, fn: db.Function?, name: string) {
+    blocker = Blocker(BlockerKind.SignatureKnown)
+    blocker.spec = name
+    self.deferredWorklist.append(Deferred(fn, blocker))
   }
 
   // Typecheck a class method on demand, in its class's context.
@@ -2183,6 +2246,7 @@ class TypeChecker(self) {
           result = U(8)
         } else if rightChild.type != db.ExprType.Constant {
           self.sawStructuralGenericError = true
+          self.recordVarBlocker(leftChild.typedValue!)
           self.typeError(
            "Indexes must be unsigned integer literals, not %s." % rightChild.toString(),
            expr.location)
@@ -2208,6 +2272,7 @@ class TypeChecker(self) {
           }
           if left.type != Type.TypeClass.Tuple && left.type != Type.TypeClass.Struct && left.type != Type.TypeClass.Array {
             self.sawStructuralGenericError = true
+            self.recordVarBlocker(left)
             self.typeError(
               "Cannot index into type %s." % left.toString(), expr.location)
           } else {
@@ -2394,6 +2459,7 @@ class TypeChecker(self) {
           duckInfo = self.findClassByMember(field.toString())
           if isnull(duckInfo) {
             self.sawStructuralGenericError = true
+            self.recordVarBlocker(sty)
             self.typeError(
               "Field Selection on %s, which is neither an array nor a struct" % sty.toString(),
               expr.location)
@@ -2440,6 +2506,18 @@ class TypeChecker(self) {
          }
          expr.firstChildExpr.typedValue = aofTy
          result = ARRAY(self.resolve(aofTy!))
+         // Stage 0: note an as-yet-unregistered class element so Stage 2's
+         // per-signature materialization can be demanded here.  Today this arm
+         // is silent, which is why Dict's ctor never defers.  Recording only --
+         // no deferral is forced yet (that coupling lands in Stage 2).
+         aofElem = self.resolve(aofTy!)
+         if aofElem.type == Type.TypeClass.Typename {
+           if isnull(self.lookupClass(aofElem.tyname.name)) {
+             aofBlocker = Blocker(BlockerKind.ClassRegistered)
+             aofBlocker.className = aofElem.tyname.name
+             self.deferredWorklist.append(Deferred(null(db.Function), aofBlocker))
+           }
+         }
       }
 
       db.ExprType.Array => {
@@ -3543,6 +3621,7 @@ class TypeChecker(self) {
                 // An unconstrained parameter: iterability is decided per
                 // instantiation, like member access on a variable.
                 self.sawStructuralGenericError = true
+                self.recordVarBlocker(rty)
               }
               self.typeError("Cannot iterate over %s" % rty.toString(), iterExpr.location)
               elemTy = Type(self.newTyvar())
@@ -4566,6 +4645,7 @@ class TypeChecker(self) {
     }
     if ctorDeferredPending {
       self.sawStructuralGenericError = true
+      self.recordSignatureBlocker(info.fn, info.sym.name)
       self.typeError("Class %s has no member %s" % (info.sym.name, name), location)
       return null(Type)
     }
