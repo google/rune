@@ -246,6 +246,25 @@ legacy), accepting duplication. Never place at emission.
 
 ## Stage 3 — depth-guarded mono walk, RESTRUCTURE `genCPolyInstantiation`  →  `turing`, `edwards2`
 
+**✅ recursiveDestructor is GREEN (2026-06-28, commit `5356723`, suite 188/205 zero drops).**
+It needed Stage 1 (destroy-SCC, `85e6569`) PLUS the Stage-3 relation-method-emission pieces that
+turned out to be the bulk of the work.  The chain of bugs, each fixed in order (a useful map of
+how a cascade flows through the whole pipeline):
+1. duck-typed ambiguous field `child.hash` (both Foo and Bar have hash) → resolve to the common
+   concrete field type u64 (`commonMemberFieldType`), not a disconnected fresh var.
+2. deferred void relation method (`remove`/`insert`) generalized a free RESULT var → tie
+   monoResult to the body's return type (none) in the deferral path, so its instantiation is
+   concrete and actually emitted.
+3. deferred method body emitted with leaked vars → `genCMethodInstance` must set emitting fn/name
+   and `retypecheckDeferred` under the concrete instantiation (parity with genCPolyInstantiation).
+4. mutual-recursive destroys called before defined → method-call emission records the callee as a
+   dependency (`noteDependency`) so the C emitter emits a prototype on the cycle.
+5. mutual cascade infinite-recursed at RUNTIME (stack overflow) → the cascade clears its hash
+   bucket BEFORE recursing (builtin/hashed.rn), so a re-entrant destructor finds nothing to
+   recurse into.  `rn_id` stays the object identity (read by `<u32>self`), reset last — do NOT
+   zero it before the body (breaks one-way cascades' identity prints: graph/onetoone/arraylist).
+Remaining Stage 3 work below (turing/edwards2 — the polymorphic-recursion mono walk) is separate.
+
 **recursiveDestructor's remaining blocker lives here (probed 2026-06-28, commit `62840e9`):**
 After the destroy-SCC fix (Stage 1) + the ambiguous-duck-typed-field fresh-var fix (this stage,
 committed) the test now compiles past typecheck and the `hashValue_none` poison, but FAILS at C
