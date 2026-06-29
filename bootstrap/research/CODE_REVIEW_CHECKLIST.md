@@ -51,12 +51,20 @@ rm -f tests/recursiveDestructor && ./bootstrap/rune tests/recursiveDestructor.rn
   idempotent (Polymorphic arm returns unchanged, no assert; at worst path-compresses), and the lone
   force-unwrap `leftChild.typedValue!` @2287 is already proven non-null by @2278 in the same chain.
 
-- [ ] **`85e6569`** — destroy-SCC: `ClassInfo.constructing` flag + `methodCallType` provisional
+- [x] **`85e6569`** — destroy-SCC: `ClassInfo.constructing` flag + `methodCallType` provisional
   `self→none` + `ClassInfo.expectedParamArity` (typechecker.rn).
   Scrutinize: is `constructing` set/cleared on EVERY exit path of `constructorFunction` (incl. the
   early-return and the deferral path)? Does the provisional only fire for destroys mid-construction
   (not other methods)? Does `expectedParamArity` ever over/under-count vs the real instance arity?
-  Verdict: ___
+  Verdict: ✅ clean. `constructing` correctly paired: set true @4439 (after the already-typechecked
+  early-return @4426, before any work), cleared @4634; NO `return` between them and the deferral path
+  @4488-4511 falls through (only sets `deferredTypecheck`), so only a fatal raise could skip it.
+  Provisional fires only on `isnull(mty) && name=="destroy" && constructing` (non-destroys short-
+  circuit; `unify` null-guarded). `expectedParamArity` is computed by the same `variables()`/`!=self`
+  loop that fills `paramVars` with no body run between, so it == final `paramVars.length()`; `null()`
+  takes `max(len, arity)` (identical for built classes → no `null(Class)` regression) and the `>=0i64`
+  guard blocks the -1 sentinel from the u64 cast. Note: provisional relies on the eager-destroy pass
+  to later walk every deferred destroy body (by design; suite stable, zero drops).
 
 - [ ] **`62840e9`** — fresh var for ambiguous duck-typed field (typechecker.rn).
   **SUPERSEDED:** at HEAD the fresh var is a fallback behind `commonMemberFieldType` (added in
