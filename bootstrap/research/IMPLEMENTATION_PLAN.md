@@ -128,7 +128,57 @@ generic-table machinery is involved.
   ~4865) — unify if needed.
 - **Eager-destroy loop** is now ~4267-4309; `retypecheckDeferred` snapshot still at ~629-633.
 
-**Files:** `types/typechecker.rn`, `cbackend/cbuilder.rn` (does NOT touch safe/funcptr).
+**Discovered 2026-06-28 (attempt #1 — full instrumented trace; reverted, suite went 187→185):**
+The naive pre-seed is necessary but FAR from sufficient. Instrumenting `plainFunction`
+(enter/DEFER/DONE + depth), the constructor methods-loop, and the emitter (`expr.rn:2058`,
+`function.rn` genCMethodInstance) revealed the actual sequence for `recursiveDestructor`:
+
+1. `constructorFunction(Foo)` runs first. **Inside Foo's ctor BODY** (`bar.insertFoo(self)`),
+   `constructorFunction(Bar)` is demanded (nested). Bar records its 5 fields, then Bar's
+   methods-loop walks `Bar.destroy` (depth d1), which cross-calls `Foo.destroy` (demanded at
+   depth d2). **At d2 Foo's own fields are only partially recorded** (Foo's ctor body is
+   suspended mid-way at the `insertFoo` call), so `Foo.destroy`'s body cannot fully type:
+   it finishes with `untypedCalls=2` — the WHOLE for-loop header `range(self.$Bar_Table.length())`
+   is untyped (iterator inlining never ran in that broken context). Its function-level type is
+   still set (`Foo() -> none`), so every later pass EARLY-RETURNS and never revisits it.
+2. The methods-loop's generated-method guard (typechecker.rn ~4549, `isGeneratedMethod &&
+   errsAdded`) NULLs+`clearExprTypes` the destroy that *adds errors during its own iteration*.
+   Because Foo's errors are raised during **Bar's** iteration, **Bar** gets cleared (and
+   re-typed later) while **Foo** keeps its half-typed body. Asymmetric: the inner-demanded
+   destroy is the one that rots.
+3. At emission, `genCMethodInstance` walks `Foo.destroy`'s body and hits the untyped
+   `self.$Bar_Table.length` Dot → `expr.rn:2058 "call emitted without a type"`. (`currentEmittingFn`
+   is empty there because the destroy-emission path never sets it — NOT diagnostic.)
+
+**Two coupled root causes, not one:**
+- (a) **cross-CALL** to an unseeded peer types null — fixed by pre-seeding an in-progress arrow.
+- (b) **cross-class FIELD ACCESS** (`entry.nextHashed<...>`, `entry.hash`) on a peer whose
+  constructor hasn't finished recording fields — pre-seed does NOT fix this; the body must be
+  walked only AFTER every class is fully built (i.e. defer the destroy walk to the eager pass).
+
+**Why attempt #1 regressed (key gotchas for attempt #2):**
+- Pre-seeding ALL destroys + **skipping them in the methods-loop** (so the eager pass walks a
+  pristine, never-inlined body) is the right shape for (b), BUT it **leaks seeds**: any class
+  whose destroy the eager pass doesn't reach (nested classes, instantiation-only emission via
+  `function.rn` genCMethod) is emitted with the placeholder arrow `FN(tyvar,tyvar)` → **segfault**
+  (`classheapsort`, `symtest` newly broke; 2 core-dumps during compile).
+- The seed's **self-parameter must be the real `selfType`**, not a bare tyvar. With a bare tyvar,
+  `methodCallType`'s `unify(selfParam, instance)` + `null(self)` produced a malformed `Foo()`
+  (empty-param) instance that then failed later unifications (`Foo()?` vs `Foo(Bar?,u64)?`).
+  → seed LAZILY inside `constructorFunction` once `selfType` exists, not in a pre-pass.
+- Re-walking an already-inlined destroy body **re-inlines and corrupts** it (HANDOFF hazard);
+  this is why the eager-pass walk must be the FIRST and ONLY walk (hence the methods-loop skip),
+  or must restore a pristine pre-inline body snapshot.
+
+**Attempt #2 shape (proposed, NOT yet validated — run by user first):** seed each destroy lazily
+in `constructorFunction` with the real `selfType`; skip seeded destroys in the methods-loop;
+make the eager pass the single walk site; and **leak-proof emission** — in `function.rn`
+`genCMethod`/`genCMethodInstance`, if `seededInProgress` still set, demand-walk before emitting
+(covers nested/instantiation-only classes the eager pass misses). Gate on full suite ≥187 zero
+drops AND no new core-dumps.
+
+**Files:** `types/typechecker.rn`, `database/function.rn` (seededInProgress flag + emission
+leak-proof), `cbackend/cbuilder.rn` (does NOT touch safe/funcptr).
 **Validation:** `./bootstrap/rune tests/recursiveDestructor.rn` compiles; the executable's
 output `diff`s clean against `tests/recursiveDestructor.stdout`; full suite **188, zero drops**.
 **Commit:** `Bootstrap: tie mutual-recursion destroy SCC to a fixpoint (recursiveDestructor green).`
