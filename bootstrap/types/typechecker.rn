@@ -2471,6 +2471,16 @@ class TypeChecker(self) {
           if isnull(duckInfo) {
             self.sawStructuralGenericError = true
             self.recordVarBlocker(sty)
+            // The member is ambiguous (e.g. `child.hash` where both Foo and
+            // Bar define hash) so the receiver cannot be duck-typed yet.  Yield
+            // a fresh variable rather than null: this access defers with the
+            // enclosing function and re-resolves under a concrete instantiation.
+            // A null here would propagate as `none` into any consuming call
+            // (e.g. hashValue(child.hash)), recording a spurious none-typed
+            // instantiation that the C backend later emits and fails to
+            // typecheck (a poisoned typeswitch arm).  A fresh variable keeps
+            // that instantiation non-concrete, so it is skipped at emission.
+            result = Type(self.newTyvar())
             self.typeError(
               "Field Selection on %s, which is neither an array nor a struct" % sty.toString(),
               expr.location)
