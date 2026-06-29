@@ -246,6 +246,26 @@ legacy), accepting duplication. Never place at emission.
 
 ## Stage 3 — depth-guarded mono walk, RESTRUCTURE `genCPolyInstantiation`  →  `turing`, `edwards2`
 
+**recursiveDestructor's remaining blocker lives here (probed 2026-06-28, commit `62840e9`):**
+After the destroy-SCC fix (Stage 1) + the ambiguous-duck-typed-field fresh-var fix (this stage,
+committed) the test now compiles past typecheck and the `hashValue_none` poison, but FAILS at C
+link: the deferred relation-method specializations the destroy calls — `removeBar_Bar_Foo_u64`,
+`insertBar_Bar_Foo_u64` — are CALLED but NEVER DEFINED, and `removeBar`'s body emits with a leaked
+type variable (`hashValue_v_u45129`). Root: a deferred class method (relation `remove(self,
+child)` / `find(self, key)` with an unconstrained param) is emitted via `genCMethodInstance`
+(`database/function.rn` ~:863), which — UNLIKE `genCPolyInstantiation` (~:460-473) — sets neither
+`currentEmittingFn`/`currentEmittingName` NOR calls `retypecheckDeferred`. Adding both to
+`genCMethodInstance` is NON-regressing (187) but INSUFFICIENT alone: the concrete instantiation
+`removeBar_Bar_Foo_u64` the destroy references is never recorded/emitted at all (genCMethod finds
+no concrete instantiation — only a non-concrete one). So the fix needs (a) the deferred-method
+retypecheck in `genCMethodInstance` (pattern parity with plain functions), AND (b) the concrete
+relation-method instantiation to actually be recorded + emitted on demand from the destroy's call
+site (emission-ordering / late-instantiation). This is squarely the §4.4 collector-worklist /
+restructure work below. **So recursiveDestructor needs Stage 1 (done) + this Stage 3 emission
+restructure.** Likely-needed first step here: give `genCMethodInstance` the same
+deferred-retypecheck + emitting-name handling that `genCPolyInstantiation` already has.
+
+
 - Make `PolyInstantiations` a real **collector worklist** (§4.4) with a per-base-fn
   recursion-depth counter (REJECTS at `RECURSION_LIMIT`, error not hang) + `visited` dedup.
 - **Restructure** (§4.4.1): replace the shared-poly `instantiate`/`deInstantiate` bind/unbind in
