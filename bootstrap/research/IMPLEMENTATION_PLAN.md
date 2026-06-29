@@ -18,6 +18,57 @@ checklist**; the design doc is the **why**. Read both before editing.
 
 ---
 
+## Current status & next steps (2026-06-28, after Stage 1)
+
+**Suite: 188/205, zero drops.** Stage 1 GREEN (recursiveDestructor passes). Commits:
+`85e6569` (destroy-SCC) + `5356723` (Stage-3 relation-method emission) + docs `704fc60`.
+Branch `bootstrap`, tree clean. The full Stage-1 bug chain is in the Stage 3 section below.
+
+### Triage of the 17 remaining failures (current modes, captured 2026-06-28)
+Re-run after Stage 1; my Stage-3 emission work shifted some of these.
+
+| Cluster | Tests | Current failure mode |
+|---|---|---|
+| **Same cluster as recursiveDestructor** | `safe` | `tests/safe.c:745: call to undeclared function 'Dad_string_remove…'` — a relation `remove` specialization is referenced but NOT emitted. Now generates C (my Stage-3 fixes got it this far) but one specialization still missing. |
+| **Dict / generic unify** (Stage 2) | `dicttest` (`:20 could not unify`), `gf2` (`:304 could not unify`), `integer` (`:71 could not unify`) | typecheck `could not unify` |
+| **Poly recursion** (Stage 3) | `funcptr` (`Unification of two bound types Poly[…]`), `turingTypeConstraints`, `edwards2` | polymorphic-recursion mono-walk |
+| **C codegen** | `edwards` | `tests/edwards.c:1623: incompatible integer to pointer conversion` |
+| **Object-pool / default methods** | `defaultMethods` (`:21 Class Foo has no member show`), `allocfree` | per HANDOFF, the object-pool cluster |
+| **Other NO-COMPILE** | `dictitr`, `heapqtest`, `heapsort`, `heapqlisttest` (`Exception in database/statement.rn`), `in`, `uint2string` | not yet drilled into |
+| **Runtime-diff (not typecheck)** | `escapedCharTest` | compiles, wrong output — likely unrelated to binding |
+
+### `safe` — the immediate lead (same cluster I just fixed)
+`safe` uses a relation with a `remove` method; after Stage 1 it COMPILES the C but
+`Dad_string_remove…` is undeclared (called, never emitted). Likely cause to check first:
+**my `noteDependency` only covers the METHOD-call emission path** (`database/expr.rn` ~:2197).
+Plain-function calls and constructor calls do NOT register a callee dependency, so a callee
+emitted later (or a specialization never emitted) has the same forward-decl / missing-emit gap.
+So `safe` is either a quick second green or it pinpoints where the dependency/emission fix is
+still incomplete. **Start here before widening to Stage 2.**
+
+### Refactors considered (decisions, so we don't re-litigate)
+- **Deferred-retypecheck duplication — DEFER to Stage 3.** The `if deferredTypecheck &&
+  !deferredRetypechecked { retypecheckDeferred; mark }` dance now lives in ~4-5 places
+  (`function.rn` genCPolyInstantiation ~:468, the new genCMethodInstance ~:890, the two destroy
+  paths ~:769/:784, and `cbuilder.rn`'s pre-emission pass ~:255). Real debt, but Stage 3 already
+  RESTRUCTURES genCPolyInstantiation — extract a `emitDeferredRetypecheck(fn)` helper as Stage 3's
+  opening move, not as standalone churn now.
+- **Sibling cascade templates — SKIP (not worth it).** `doublylinked`/`onetoone`/`taillinked`/
+  `arraylist`/`heapqlist` use a DIFFERENT cascade shape (re-read head + rely on child removal),
+  so the `hashed.rn` clear-before-recurse fix does NOT transfer, and none are exercised by a
+  mutual cascade. Speculative; leave them.
+- **Code review — DO before widening.** Long session with two reverted approaches; review
+  `85e6569` + `5356723` (esp. the `commonMemberFieldType` ambiguity heuristic in
+  `typechecker.rn` and the `noteDependency` coverage) before building further.
+
+### Recommended order
+1. Investigate `safe` (same cluster; quick win or gap-finder for the dependency/emission fix).
+2. `/code-review` the two Stage-1 commits.
+3. Stage 2 (Dict): `dicttest`/`dictitr`, likely pulling in `gf2`/`integer`.
+4. Stage 3 (poly recursion), opening with the deferred-retypecheck consolidation.
+
+---
+
 ## Build & test recipe (verified commands)
 
 All paths relative to repo root `/home/ah/src/rune`. Use `$TMPDIR` for scratch, never `/tmp`.
