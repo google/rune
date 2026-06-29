@@ -226,6 +226,17 @@ class ClassInfo(self, sym: Sym) {
   self.strct = null(StructType(arrayof(Sym), arrayof(Type)))
   self.selfType = null(Type)
   self.paramVars = arrayof(Type)
+  // The final instance-type arity (count of non-self constructor parameters),
+  // recorded before the param loop fills paramVars one-by-one.  null(ThisClass)
+  // evaluated re-entrantly mid-construction reads this so it does not mint a
+  // too-short instance from a half-filled paramVars.  -1 = not yet recorded.
+  self.expectedParamArity = -1i64
+  // True while this class's constructorFunction is on the stack (fields not yet
+  // fully recorded).  A destroy cross-called during this window (a mutual
+  // cascade peer) is given a provisional type instead of being walked in the
+  // incomplete context; the eager-destroy pass walks it once construction is
+  // complete.  See methodCallType.
+  self.constructing = false
   // Fields created by relation-instantiated code (back-pointers, link
   // fields): kept in the struct but skipped by the print helper, which
   // would otherwise recurse through the relation cycle.
@@ -2668,8 +2679,17 @@ class TypeChecker(self) {
             // null(Foo): a nullable instance of a not-yet-known instantiation
             // of the class.  Instance types always carry a params tuple
             // (possibly empty), so mirror that shape with fresh variables.
+            // Use the recorded final arity when paramVars is still being filled
+            // (re-entrant null(Foo) during Foo's own param loop, reached via a
+            // cascade peer's constructor) so the instance is not too short.
+            nullArity = nullInfo.paramVars.length()
+            if nullInfo.expectedParamArity >= 0i64 {
+              if <u64>nullInfo.expectedParamArity > nullArity {
+                nullArity = <u64>nullInfo.expectedParamArity
+              }
+            }
             nullParams = arrayof(Type)
-            for pv in nullInfo.paramVars {
+            for npi in range(nullArity) {
               nullParams.append(Type(self.newTyvar()))
             }
             nullName = TypeName(nullChild.val.symVal!, TupleType(nullParams))
@@ -4371,7 +4391,20 @@ class TypeChecker(self) {
     emptyFieldtypes = arrayof(Type)
     info.strct = StructType(emptyFieldnames, emptyFieldtypes)
     self.insertClassInfo(info)
+    info.constructing = true
 
+    // Record the final non-self parameter count BEFORE filling paramVars, so a
+    // re-entrant null(ThisClass) (a cascade peer's constructor referencing this
+    // class while this param loop is suspended on a peer demand) reads the
+    // right arity instead of a half-filled paramVars.  fn.variables() holds
+    // only parameters at this point (locals are added when the body runs).
+    arityCount = 0i64
+    for variable in fn.variables() {
+      if variable.sym.name != "self" {
+        arityCount += 1i64
+      }
+    }
+    info.expectedParamArity = arityCount
     params = arrayof(Type)
     for variable in fn.variables() {
       if variable.sym.name != "self" {
@@ -4553,6 +4586,7 @@ class TypeChecker(self) {
     self.currentClassInfo = methodPrevClassInfo
     self.currentSelfType = methodPrevSelfType
     self.classBoundVars = methodPrevClassBoundVars
+    info.constructing = false
   }
 
   // Typecheck an enum declaration: record the members and their values, and
@@ -4682,6 +4716,20 @@ class TypeChecker(self) {
     // by name, so method.sym.typedValue may be a stale local (e.g. a local
     // named hash next to a hash() method).
     mty = method.typedValue
+    if isnull(mty) && method.sym.name == "destroy" && info.constructing {
+      // A cascade destroy cross-called while its own class is still under
+      // construction (mutual recursion: destroy_Foo <-> destroy_Bar, each
+      // demanded from inside the other's class body).  Walking it now would
+      // typecheck against half-recorded fields and cache a broken body that
+      // nothing revisits.  Leave it untyped and resolve this cross-call
+      // against a provisional `self -> none` arrow; the eager-destroy pass
+      // walks the real body once every class is fully built.
+      if !isnull(info.selfType) {
+        self.unify(info.selfType!, instanceType)
+      }
+      provArgs = arrayof(Type)
+      return FN(TUPLE(provArgs), NONETY())
+    }
     if isnull(mty) {
       // The method has not typechecked yet (e.g. a reference from another
       // class checked on demand): typecheck it now in its class's context.
