@@ -112,6 +112,34 @@ generic-table machinery is involved.
    the live AST — re-typechecking an already-iterator-inlined body re-inlines and corrupts it
    (§9, `ground-bootstrap.md §2`). This is why `retypecheckDeferred` snapshots.
 
+**RESOLVED 2026-06-28 — destroy-SCC mechanic landed (commit `85e6569`), but recursiveDestructor
+is NOT green: it is a DUAL-cluster test.** The pre-seed designs above were all abandoned (they
+either regressed generic/container classes via seed leaks + selfType capture, or only fixed the
+cross-CALL while leaving cross-class FIELD ACCESS broken). The approach that worked, far simpler
+and zero-regression:
+- **Per-class `ClassInfo.constructing` flag** (true while its `constructorFunction` is on the
+  stack). In `methodCallType`, a `destroy` cross-called while `info.constructing` is true (the
+  exact mutual-cascade trigger: destroy_Foo demanded from inside Bar's class body, or vice-versa)
+  returns a provisional `self -> none` arrow instead of being walked in the incomplete context.
+  The eager-destroy pass walks the real body once every class is built. Naturally scoped to the
+  true bug — one-way cascades (classheapsort Root/Element) and non-cascade classes (symtest) are
+  untouched because their destroys are never demanded mid-construction.
+- **`ClassInfo.expectedParamArity`**, recorded before the param loop fills `paramVars`, used by
+  `null(ThisClass)` so a re-entrant null during nested construction mints the right instance
+  arity (fixes the `Foo()` vs `Foo(Bar?,u64)` unify failures). DO NOT try to fix this by
+  pre-reserving paramVars in the param loop (perturbs var-id order → breaks generic-class
+  generalization, e.g. Symtab_findSym_*) or by counting `fn.variables()` at the null() site
+  (over-counts for classes where ctor params != instance arity → `Root(tuple1())` too-many-args).
+- These two carry recursiveDestructor PAST the whole destroy-SCC failure. It now dies at a
+  **SEPARATE cluster = Stage 3 (generic relation-method instantiation)**: `remove(self, child)` /
+  `find(self, key)` / `insert` have UNTYPED params, so their generic typecheck records a spurious
+  `hashValue_none` instantiation (unconstrained key defaults to none). At emission that concrete-
+  looking instantiation hits `hashValue`'s poisoned `default` arm (builtin/hashed.rn:70) ->
+  "typeswitch case selected at 70 did not typecheck". Verified via probe: `emittingName=
+  [hashValue_none] scrutinee=none`. So **recursiveDestructor needs BOTH Stage 1 (done) AND
+  Stage 3**; the plan's premise that it was a pure Stage-1 first-green was wrong. Candidate
+  first-greens that are pure single-cluster should be re-evaluated.
+
 **Discovered 2026-06-28 (refines the above — read before implementing):**
 - **Precise cause** (HANDOFF LAYER 4 + code read): under mutual recursion the destroy body's
   **method-call nodes** (`.length()`, `range(...)`) finish with `null typedValue` — only field
