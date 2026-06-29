@@ -77,21 +77,50 @@ rm -f tests/recursiveDestructor && ./bootstrap/rune tests/recursiveDestructor.rn
   (not none) is strictly more deferrable than the old null; ordering vs `typeError` is irrelevant. No
   regression.
 
-- [ ] **`5356723`** — Stage 3: relation-method emission + cascade recursion (188 green).
+- [x] **`5356723`** — Stage 3: relation-method emission + cascade recursion (188 green).
   Five sub-changes, review each:
-  - [ ] `commonMemberFieldType` (typechecker.rn) — agreement check via `toString()`; concrete-only
+  - [x] `commonMemberFieldType` (typechecker.rn) — agreement check via `toString()`; concrete-only
     via `hasFreeVars`. Is `toString()` a sound equality proxy? Any class with a same-named field of
     a DIFFERENT type that this would wrongly unify? Generic classes excluded correctly?
-  - [ ] deferral-path `unify(monoResult, returnType)` (typechecker.rn) — mirrors non-deferred path;
+    ⚠️ `toString()` IS sound for concrete types (`IntType.toString` emits `u%/i%`+width, so u64≠i64≠u32;
+    differing types bail via the string compare), and `hasFreeVars(rfty)` correctly excludes any
+    field with a free var (generic `T`-typed field bails; a generic class's CONCRETE `hash:u64`
+    field correctly contributes). BUT scope gap: it consults only `strct` fields, so when ≥2 classes
+    share a name as a FIELD in one and a METHOD in another, it returns the field type and pins the
+    access (no defer) — wrong if the unconstrained receiver is actually the method-bearing class. See
+    Findings. (Not hit by the suite; the prior fresh-var/defer path was safe here.)
+  - [x] deferral-path `unify(monoResult, returnType)` (typechecker.rn) — mirrors non-deferred path;
     confirm it can't bind a result that should stay polymorphic.
-  - [ ] `genCMethodInstance` retypecheck + emitting fn/name save/restore (function.rn) — restore on
+    ✅ Mirrors the non-deferred `unify(monoResult, returnType!)` @5125. After the unify, `resolve(monoResult)`
+    is checked for `Var` and only then added to `deferVars`, so a genuinely polymorphic result stays
+    generalized; a concrete `none` is correctly NOT generalized. The `!isnull(returnType)` guard is a
+    safe superset of the non-deferred path (which force-unwraps). Can't over-bind.
+  - [x] `genCMethodInstance` retypecheck + emitting fn/name save/restore (function.rn) — restore on
     ALL exit paths? once-only `deferredRetypechecked` interaction with the cbuilder pre-emission pass?
-  - [ ] `noteDependency` (expr.rn, cbuilder.rn) — `appendIfOpen` guard correct at module level?
+    ✅ Mirrors `genCPolyInstantiation` @462-477 exactly. The two early `return`s (@861/864) precede the
+    save @886; restore @942-943 is unconditional with no `return` between (only a fatal raise could
+    skip it, same as the sibling openScope/tryContext saves). Once-only via the shared
+    `deferredTypecheck && !deferredRetypechecked` flag: it participates in the same protocol as the
+    pre-emission pass (cbuilder.rn:253-306) — whichever reaches the method first retypechecks+marks,
+    the rest skip. (Doesn't manage `currentEmittingResultWide` like the poly path, but the method path
+    never did — pre-existing, not introduced here.)
+  - [x] `noteDependency` (expr.rn, cbuilder.rn) — `appendIfOpen` guard correct at module level?
     **KNOWN GAP (see triage):** only the METHOD-call path registers deps; plain-function and
     constructor calls do not — confirm and note (this is the `safe` lead).
-  - [ ] `builtin/hashed.rn` clear-bucket-before-recurse — does clearing `table[x]` before the while
+    ✅+gap. `appendIfOpen`'s `!isnull(lastDependencyList)` guard correctly skips module-level calls
+    (no open list; top-level code emitted in main() after decls). The recorded `name` is the MANGLED
+    C decl name (`methodCallCName`), so it matches the emitted function; noted unconditionally per call.
+    CONFIRMED GAP: the sole caller is expr.rn:2200 (method calls); plain-function and constructor
+    calls register no deps — see Findings (the `safe` lead).
+  - [x] `builtin/hashed.rn` clear-bucket-before-recurse — does clearing `table[x]` before the while
     loop ever drop entries in the non-mutual case? (chain still walked via local head.)
-  Verdict: ___
+    ✅ No drop. The line is byte-identical to the old post-loop reset, just MOVED before the while; the
+    local head `$labelB$B_Entry` was grabbed the line above, so the chain is still fully walked via the
+    local + `next` pointers. Correctly uses `null(entry)` WITHOUT `!` (head may be null on an empty
+    bucket; the `!` form stays only on the while-guarded in-loop line). Mutual case now terminates.
+  Verdict: ✅ green (with one ⚠️ scope concern + one confirmed known gap, both in Findings). Four
+  sub-changes are clean; `commonMemberFieldType` has a narrow field-vs-method unsoundness, and
+  `noteDependency` covers only method calls (the tracked `safe` lead). Neither is hit by the suite.
 
 ---
 
@@ -107,4 +136,17 @@ only if a Stage-2/3 bug points back at them.
 ---
 
 ## Findings to address (batch-fix AFTER the loop)
-- (none yet)
+**REVIEW COMPLETE — all 4 CODE commits + 5356723's 5 sub-items reviewed; suite-stable. No 🔴 bugs; 2 noted items below (1 ⚠️ scope, 1 known gap), neither hit by the current suite.**
+
+- ⚠️ **`commonMemberFieldType` field-vs-method unsoundness** (typechecker.rn ~530, 5356723). It consults
+  only `strct` data fields. When ≥2 classes share a member name as a FIELD in one class and a METHOD in
+  another, `findClassByMember` returns null (ambiguous) → `commonMemberFieldType` returns the field's
+  concrete type and the access is pinned with NO deferral. If the unconstrained receiver is actually the
+  method-bearing class, `child.m` is typed as the field's type instead of the method. Not triggered by the
+  suite (188/205), and the pre-5356723 fresh-var/defer path handled it safely. Fix idea: also bail (return
+  null) if any class declares the name as a METHOD, not just on field-type disagreement.
+- 📌 **`noteDependency` covers only method calls** (expr.rn:2200, 5356723 — the tracked `safe` lead). Plain-
+  function and constructor call emissions register no dependency, so the C emitter won't order/forward-
+  declare a cycle that runs through a plain function or constructor. Confirmed: the only caller is the
+  method-call path. Already noted in IMPLEMENTATION_PLAN.md:43; extend coverage to plain/constructor calls
+  when a non-method emission cycle surfaces.
