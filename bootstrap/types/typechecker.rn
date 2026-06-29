@@ -530,6 +530,33 @@ class TypeChecker(self) {
     return null(ClassInfo)
   }
 
+  // When a member is defined as a data field by more than one class but every
+  // such class gives it the SAME concrete type, that type is the member's type
+  // regardless of which class the receiver turns out to be.  Lets an ambiguous
+  // duck-typed access like `child.hash` (both Foo and Bar declare hash: u64)
+  // resolve to u64 instead of leaking a disconnected variable.  Returns null if
+  // no class defines the field, the types disagree, or any is non-concrete.
+  func commonMemberFieldType(self, name: string) -> Type? {
+    result = null(Type)
+    for info in self.classInfos() {
+      if !isnull(info.strct) {
+        fty = info.strct.select(name)
+        if !isnull(fty) {
+          rfty = self.resolve(fty!)
+          if self.hasFreeVars(rfty) {
+            return null(Type)
+          }
+          if isnull(result) {
+            result = rfty
+          } else if result.toString() != rfty.toString() {
+            return null(Type)
+          }
+        }
+      }
+    }
+    return result
+  }
+
   // An instance type of the class suitable for unification: polymorphic
   // classes parameterize with fresh type variables.
   func classInstanceType(self, info: ClassInfo) -> Type {
@@ -2469,21 +2496,29 @@ class TypeChecker(self) {
           // the member, the value must be an instance of that class.
           duckInfo = self.findClassByMember(field.toString())
           if isnull(duckInfo) {
-            self.sawStructuralGenericError = true
-            self.recordVarBlocker(sty)
-            // The member is ambiguous (e.g. `child.hash` where both Foo and
-            // Bar define hash) so the receiver cannot be duck-typed yet.  Yield
-            // a fresh variable rather than null: this access defers with the
-            // enclosing function and re-resolves under a concrete instantiation.
-            // A null here would propagate as `none` into any consuming call
-            // (e.g. hashValue(child.hash)), recording a spurious none-typed
-            // instantiation that the C backend later emits and fails to
-            // typecheck (a poisoned typeswitch arm).  A fresh variable keeps
-            // that instantiation non-concrete, so it is skipped at emission.
-            result = Type(self.newTyvar())
-            self.typeError(
-              "Field Selection on %s, which is neither an array nor a struct" % sty.toString(),
-              expr.location)
+            // The receiver cannot be pinned to a single class, but if every
+            // class declaring this member as a field agrees on its (concrete)
+            // type, the access has that type regardless of the eventual class
+            // (e.g. `child.hash` is u64 whether child is Foo or Bar).  Resolve
+            // it directly so a consuming call (hashValue(child.hash)) gets a
+            // concrete argument and the method need not leak a disconnected
+            // variable into emission.
+            commonFieldTy = self.commonMemberFieldType(field.toString())
+            if !isnull(commonFieldTy) {
+              result = commonFieldTy
+            } else {
+              self.sawStructuralGenericError = true
+              self.recordVarBlocker(sty)
+              // Genuinely ambiguous: yield a fresh variable rather than null so
+              // this access defers with the enclosing function and re-resolves
+              // under a concrete instantiation (a null would propagate as none
+              // and record a spurious none-typed instantiation that the C
+              // backend emits and fails to typecheck).
+              result = Type(self.newTyvar())
+              self.typeError(
+                "Field Selection on %s, which is neither an array nor a struct" % sty.toString(),
+                expr.location)
+            }
           } else {
             duckTy = self.classInstanceType(duckInfo!)
             duckTe = self.unify(sty!, duckTy)
@@ -5053,6 +5088,16 @@ class TypeChecker(self) {
         }
         if !isnull(fn.subBlock) {
           self.clearExprTypes(fn.subBlock!)
+        }
+        // Tie the in-progress result to the body's actual return type before
+        // deciding whether to generalize it, exactly as the non-deferred path
+        // does below.  A void method (bare `return` -> none) otherwise leaves
+        // monoResult an unresolved variable that gets generalized; its
+        // instantiations then carry a free result var, never pass the
+        // concreteness check, and are never emitted -- so a caller's
+        // `obj.voidMethod()` references an undeclared specialization.
+        if !isnull(returnType) {
+          self.unify(monoResult, returnType!)
         }
         rres = self.resolve(monoResult)
         if rres.type == Type.TypeClass.Var {

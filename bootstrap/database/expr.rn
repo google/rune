@@ -2194,6 +2194,10 @@ class Expr(self, type: ExprType, location: Location) {
           builder.emitMethodOnDemand(base.typedValue!, method.toString(), name,
               right.typedValue)
         }
+        // The enclosing function depends on this method; the C emitter uses it
+        // to order definitions (and emit a prototype when they are mutually
+        // recursive, e.g. cascade destroy_Foo <-> destroy_Bar).
+        builder.noteDependency(name)
         args = c.CExprList()
         args.appendCExpr(base.genC(builder))
         // The args list may have no type when the enclosing method was

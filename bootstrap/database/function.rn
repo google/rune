@@ -883,10 +883,32 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     paramList = builder.closeParamList()
     builder.openDependencyList()
     savedTryBase = builder.openFunctionTryContext()
+    methodPrevEmittingFn = builder.currentEmittingFn
+    methodPrevEmittingName = builder.currentEmittingName
+    builder.currentEmittingFn = self
+    builder.currentEmittingName = methodName
+    if self.deferredTypecheck && !self.deferredRetypechecked {
+      // A deferred method (e.g. a relation's remove/insert whose `child`/`key`
+      // parameter is unconstrained) re-typechecks its body under this concrete
+      // instantiation's bindings before emission, exactly as deferred plain
+      // functions do (see genCPolyInstantiation).  Otherwise the body emits
+      // with leaked type variables -- e.g. an ambiguous `child.hash` left as a
+      // fresh variable resolves to u64 only under the concrete instantiation,
+      // and without this re-typecheck the call stays hashValue_v<N>, an
+      // undeclared specialization.
+      builder.typechecker.retypecheckDeferred(self)
+      self.deferredRetypechecked = true
+    }
     if self.sym.name == "destroy" {
       // destroy() must be idempotent: cleanup paths (cascade deletion,
       // reference overwrite, program exit) can reach an object more than
       // once.  Emit: if (self) { if (self->rn_id) { <body> rn_id = 0; } }
+      // rn_id doubles as the object's identity (read by <u32>self, e.g. in a
+      // final() print), so it must stay intact for the body and is reset last.
+      // Mutual-cascade recursion is broken structurally instead: a cascade
+      // clears its container slot before recursing (see builtin relation
+      // transformers), so a re-entrant destroy finds nothing left to recurse
+      // into.
       destroySelfSym = Sym.new("self")
       builder.openBlock(self.location)
       builder.openBlock(self.location)
@@ -917,6 +939,8 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     } else {
       body = self.subBlock.genC(builder)
     }
+    builder.currentEmittingFn = methodPrevEmittingFn
+    builder.currentEmittingName = methodPrevEmittingName
     builder.closeFunctionTryContext(savedTryBase)
     builder.closeScope()
 

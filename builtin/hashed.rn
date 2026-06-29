@@ -230,6 +230,12 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
     appendcode A.destroy {
       for x$labelB$B in range(self.$labelB$B_Table.length()) {
         $labelB$B_Entry = self.$labelB$B_Table[x$labelB$B]
+        // Clear the bucket BEFORE recursing into the children.  In a mutual
+        // cascade (A and B each cascade-delete the other) a child's destructor
+        // can re-enter this object's destructor; with the bucket already empty
+        // it finds nothing to recurse into and the recursion terminates.  The
+        // chain is still walked through the local head grabbed above.
+        self.$labelB$B_Table[x$labelB$B] = null($labelB$B_Entry)
         while !isnull($labelB$B_Entry) {
           next$labelB$B_Entry = $labelB$B_Entry.nextHashed$A$labelB$B
           $labelB$B_Entry.nextHashed$A$labelB$B = null($labelB$B_Entry!)
@@ -237,7 +243,6 @@ transformer Hashed(A: Class, B: Class, cascadeDelete: bool = false,
           $labelB$B_Entry.destroy()
           $labelB$B_Entry = next$labelB$B_Entry
         }
-        self.$labelB$B_Table[x$labelB$B] = null($labelB$B_Entry)
       }
     }
   } else {
