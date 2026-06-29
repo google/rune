@@ -42,10 +42,14 @@ rm -f tests/recursiveDestructor && ./bootstrap/rune tests/recursiveDestructor.rn
 
 ## CODE commits to review (chronological)
 
-- [ ] **`53a16dd`** — Stage 0: named `Blocker`/`BlockerKind`/`Deferred` + deferral worklist (typechecker.rn).
+- [x] **`53a16dd`** — Stage 0: named `Blocker`/`BlockerKind`/`Deferred` + deferral worklist (typechecker.rn).
   Additive scaffolding, NOT YET CONSUMED at this commit — confirm it's truly inert (no behavior
   change) and the 5 recording sites + Arrayof producer are side-effect-free.
-  Verdict: ___
+  Verdict: ✅ clean. Truly inert: the three new fields are only declared/appended, never read at
+  this commit; the 5 sites (VarBound×4 @2287/2313/2511/3689, SignatureKnown @4727) + Arrayof
+  producer @2571 only allocate + append. `recordVarBlocker`'s extra `resolve()` is total and
+  idempotent (Polymorphic arm returns unchanged, no assert; at worst path-compresses), and the lone
+  force-unwrap `leftChild.typedValue!` @2287 is already proven non-null by @2278 in the same chain.
 
 - [ ] **`85e6569`** — destroy-SCC: `ClassInfo.constructing` flag + `methodCallType` provisional
   `self→none` + `ClassInfo.expectedParamArity` (typechecker.rn).
