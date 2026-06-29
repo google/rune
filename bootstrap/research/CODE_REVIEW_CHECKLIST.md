@@ -66,11 +66,16 @@ rm -f tests/recursiveDestructor && ./bootstrap/rune tests/recursiveDestructor.rn
   guard blocks the -1 sentinel from the u64 cast. Note: provisional relies on the eager-destroy pass
   to later walk every deferred destroy body (by design; suite stable, zero drops).
 
-- [ ] **`62840e9`** — fresh var for ambiguous duck-typed field (typechecker.rn).
+- [x] **`62840e9`** — fresh var for ambiguous duck-typed field (typechecker.rn).
   **SUPERSEDED:** at HEAD the fresh var is a fallback behind `commonMemberFieldType` (added in
   `5356723`). Review the LIVE branch at HEAD: does the fallback still fire correctly when types
   disagree, and does it still set `sawStructuralGenericError`/defer as intended?
-  Verdict: ___
+  Verdict: ✅ clean (net-at-HEAD @2509-2520). The fresh-var now sits in the `else` (genuine-ambiguity)
+  branch reached exactly when `commonMemberFieldType` returns null — i.e. when types disagree / are
+  non-concrete — so it still fires correctly there, and still sets `sawStructuralGenericError = true`
+  + `recordVarBlocker(sty)` so the access defers and re-resolves concretely. Yielding a fresh tyvar
+  (not none) is strictly more deferrable than the old null; ordering vs `typeError` is irrelevant. No
+  regression.
 
 - [ ] **`5356723`** — Stage 3: relation-method emission + cascade recursion (188 green).
   Five sub-changes, review each:
