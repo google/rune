@@ -5,160 +5,274 @@ relation/desugar/monomorphization architecture **while keeping Rune's secret typ
 memory-safety guarantee**. Re-baselines the stage structure of `IMPLEMENTATION_PLAN.md`
 around the Lyric-confirmed design in `RELATIONS_DESUGAR.md`.
 
-Companion docs: `RELATIONS_DESUGAR.md` (design synthesis + evidence), `BINDING_DESIGN.md`
-(research, the A1–A7 areas + direction C), `IMPLEMENTATION_PLAN.md` (failure triage, Stage
-0–1 history), `CODE_REVIEW_CHECKLIST.md` (review loop).
+**Folded in the `lyric-relations-extract` workflow (run `wf_35efec1e-261`, 16 agents):
+file:line detail in `WORKFLOW_FINDINGS.md`; completeness-critic corrections applied below.**
+
+Companion docs: `WORKFLOW_FINDINGS.md` (full Rune-grounded steps + critic), `RELATIONS_DESUGAR.md`
+(design synthesis + Lyric evidence), `BINDING_DESIGN.md` / `BINDING_RESEARCH.md` (research,
+direction C, A1–A7), `IMPLEMENTATION_PLAN.md` (failure triage, Stage 0–1 history),
+`CODE_REVIEW_CHECKLIST.md` (review loop).
 
 ---
 
 ## Objective / definition of done
 
 1. **Architecture:** transformer/relation expansion happens in a dedicated **desugar pass
-   before typecheck**; generated members bind through the normal path; no special-case
-   late-binding scaffolding. Forward refs resolve via name pre-registration; generics
-   specialize in an iterative monomorphization pass.
-2. **Tests:** full bootstrap suite green where binding-architecture is the cause —
-   target ≥ **200/205** (the 4 representation-only failures, §Stage D, may stay out of
-   scope). Never below the current **188/205**, zero drops, at any commit.
-3. **Guarantees preserved:** Rune secret-type propagation and `ref`/`unref` memory safety
-   cover generated members **at least as well as today** (the desugar must not open a hole).
+   before typecheck**; generated members bind through the normal path; class names are
+   pre-registered so forward refs resolve; generics specialize per-signature in an explicit
+   monomorphization step.
+2. **Tests:** green where binding-architecture is the cause — target ≥ **200/205** (the 4
+   representation-only failures, §Stage D-repr, may stay out of scope). Never below the
+   current **188/205**, zero drops, at any commit.
+3. **Guarantees preserved:** Rune secret-type propagation (`secret(...)`/`reveal(...)`) and
+   `ref`/`unref` ownership ops cover generated members **at least as well as today** — the
+   desugar must add no bypass.
 
 ## Guardrails (must hold at EVERY commit)
 
 - Branch `bootstrap`. Commit-on-green: commit after every clean, regression-free step.
   **Never commit a regression.** (See [[commit-on-green-steps]].)
-- Gate every step on the full suite: `rm -f` each exe, compile, require `[ -x ]`, diff
-  stdout. Baseline floor = **188/205, zero drops**.
-- Keep secrets + memory safety. Any step that touches generated-member binding re-runs the
-  secret/safety guardrail check (workflow theme E).
+- **Gate = the runtests stdout-diff suite, floor 188/205 zero drops.** `runtests.sh` builds
+  the bootstrap with the legacy `../rune`, then the built `./bootstrap/rune` compiles each
+  `tests/*.rn` (rm exe → compile → require `[ -x ]` → diff stdout). **Rune has NO Lyric-style
+  stage2/stage3 byte-identical self-compile** — do not import that gate language (the
+  workflow mapping did; corrected here). The bootstrap *building itself via `make`* is the
+  integration check, because the typechecker dogfoods these very relations for its own
+  registries (`typechecker.rn:341–345`).
+- Keep secrets + memory safety. Any step touching generated-member binding re-runs the
+  secret/`ref`-`unref` guardrail (theme E / §Stage A pre-reqs).
 - Rune's transformer SURFACE stays (`transformer` + `prependcode`/`appendcode` + `$label`).
-  We port Lyric's PIPELINE SHAPE, not its `interface`/`embed` syntax.
+  Port Lyric's PIPELINE SHAPE, not its `interface`/`embed` syntax.
 
 ## Verified build/test recipe
 
 ```bash
-cd /home/ah/src/rune/bootstrap && make && cd ..          # rebuild after ANY .rn / hashed.rn edit
+cd /home/ah/src/rune/bootstrap && make && cd ..          # legacy ../rune rebuilds ./bootstrap/rune; run after ANY .rn / builtin edit
 rm -f tests/<name> && ./bootstrap/rune tests/<name>.rn \   # bootstrap compiles by default; no -g
   && ./tests/<name> | diff - tests/<name>.stdout && echo PASS
-# full suite harness: rm exe → compile → require [ -x ] → diff stdout (bootstrap exits 0 on type errors)
+./runtests.sh                                            # full suite; floor 188/205 zero drops
 ```
 
 ---
 
 ## Status snapshot (2026-06-30)
 
-- HEAD on `bootstrap`; suite **188/205**, zero drops. Stage 0 (named Blocker scaffolding)
-  + Stage 1 (destroy-SCC) landed; `recursiveDestructor` green.
-- **17 remaining failures**, bucketed by this plan's stages:
-  - **Stage B (Dict/forward-ref), 6:** `dicttest dictitr in heapqtest heapsort heapqlisttest`
-  - **Stage C (poly-recursion mono), 3:** `turingTypeConstraints edwards edwards2`
-  - **Stage D-binding, 4:** `gf2 integer` (param-merge generalization), `safe funcptr`
-    (positive-var generalization)
-  - **Stage D-representation (may stay out of scope), 4:** `escapedCharTest uint2string
-    allocfree defaultMethods`
-- Lyric-extraction workflow `wwsd6ixgr` (run `wf_35efec1e-261`) is producing the file:line
-  implementation detail + a completeness-critic gap list — **fold in as Step 0 below.**
+- HEAD on `bootstrap`; suite **188/205**, zero drops. Stage 0 (named Blocker scaffolding,
+  inert) + Stage 1 (destroy-SCC) landed; `recursiveDestructor` green.
+- **17 remaining failures**, re-bucketed by this plan (note: the Dict cluster spans B **and**
+  C — see §correction):
+  - **Forward-ref + per-signature (Dict/Heapq), 6:** `dicttest dictitr in heapqtest heapsort
+    heapqlisttest` — `in`/`heapqlisttest` likely green at **B**; the typecheck-failing
+    `dicttest dictitr heapqtest heapsort` need **C** (per-signature materialization).
+  - **Poly-recursion (mono worklist), ~3:** `turingTypeConstraints edwards2` (+`edwards`?
+    edwards may be a separate C int→ptr codegen bug — verify) → **Stage C**.
+  - **Stage D-binding, 4:** `gf2 integer` (param-merge generalization, `deferVars`/
+    `PolymorphicType` ~`typechecker.rn:4892-4924`), `safe funcptr` (positive-var
+    generalization, tyvar id-space). **UNMAPPED — needs its own analysis pass (§Stage D).**
+  - **Stage D-representation (likely out of scope), 4:** `escapedCharTest uint2string
+    allocfree defaultMethods` — length-prefixed strings / object-pool decisions, NOT binding.
 
 ---
 
-## Step 0 — Fold in the workflow findings (do FIRST, after compaction)
+## Step 0 — already done (this revision)
 
-Before cutting code: read the completed workflow result (`extracted` book corpus,
-`mapped` 5 Rune sub-plans, `critic` gaps). Then:
-1. Append the critic's gaps / unverified-claims / additional-reading to this file.
-2. Drop each theme's `concreteSteps` + `filesAndFunctions` into the matching Stage below.
-3. Resolve any contradiction between a workflow finding and a Stage premise BEFORE starting
-   that Stage. If the critic flags an under-covered region, re-read it.
+Workflow `wf_35efec1e-261` ran; findings folded in; critic corrections applied. The
+**remaining gap** the critic flagged: **Stage D-binding (gf2/integer/safe/funcptr) has no
+file:line mapping** — it was deliberately excluded from the 5 themes. Before executing
+Stage D, run a focused analysis (a 6th theme) grounded in `BINDING_RESEARCH.md`'s
+`deferVars`/param-merge section. A/B/C are execution-ready.
 
 ---
 
-## Stage A — Desugar extraction (FOUNDATION, do next)
+## Stage A — Desugar extraction (FOUNDATION, do next) — FAITHFUL LIFT
 
-**Why first:** removes the special-case late-binding that the Stage-1/3 patches work around,
-and is the substrate B and C build on. Likely greens **0 new tests** by itself — its exit
-criterion is *structural*, not a new pass.
+**Correction (critic):** this is a *faithful relocation*, NOT a redesign. Rune's AST copies
+are **already deep** (`Function/Block/Statement/Expr/Variable.copy`, and `copyCodeBlockInto`
+copies the container template BEFORE expanding — `typechecker.rn:3983/3989/4026/4033/4040`),
+so there is **no cross-relation contamination to fix** — Stage A must *preserve* it. The
+"adopt deep destructor copies" idea (and the claim that it subsumes the `hashed.rn`
+clear-bucket lines) was **wrong** and is dropped. Verified: the whole expansion cluster
+touches **zero typed state** (no unifier/resolve/Type/ClassInfo) — only db AST, Sym,
+TransEnv, two registries — which is exactly why the lift is safe.
 
-**Work items** (refine with workflow theme A):
-- Move `executeTransformStatement` / `interpretTransBlock` / `instantiateCodeBlock` /
-  `copyCodeBlockInto` / `evalTransExpr` out of `Typechecker` (`typechecker.rn:3735–3970`,
-  driver at `:4234`) into a standalone **desugar pass run after `hir.rn` build, before
-  `function()` typecheck.**
-- Decouple from typechecker state: `typeError` (keep as diagnostics), `findClassFunction`
-  (walks db AST by name — movable), `registerArrayExtMethod` (becomes AST injection — the
-  `appendcode Array` path gets *simpler*).
-- Preserve ordering deps: `hoistNestedClasses` + `synthesizeDestroy` run before/within
-  desugar so `A.destroy` targets and `Outer.Inner` names resolve. Mirror Lyric's fixed
-  sub-pass order where it maps.
-- Adopt **deep destructor copies** (Lyric Ch 14 §14.3: "destructor copies must be deep to
-  prevent cross-relation contamination when method names are renamed"). Verify this
-  subsumes the `builtin/hashed.rn` clear-bucket-before-recurse workaround; if so, revert it.
+Likely greens **0 new tests** — exit criterion is structural.
 
-**Exit criteria:**
-- Suite still **188/205, zero drops**.
+### Pre-reqs (do first, separate commits)
+- **Fix `expr.copy()` fidelity bugs** (`expr.rn:767-781`), since every transformer body is
+  deep-copied through it: line 772 `self.isConst = self.isConst` is a no-op (should set
+  `newExpr.isConst`); `datatype` is not copied (769-770 TODO); `val` is shared by reference
+  (775 — aliases `Bigint.isSecret`). These silently drop const/secret state on copy. (Theme E
+  step 2; also a secrets guardrail.)
+- **Pin current behavior** with a guardrail fixture: a relation whose generated
+  append/remove/destroy bodies contain `secret(...)`, explicit `ref`/`unref`, and a generated
+  back-pointer field; snapshot emitted C + typechecker error stream as the byte-baseline.
+
+### Work items (concrete — `WORKFLOW_FINDINGS.md` theme A steps 1–13)
+1. New file `types/desugar.rn` with a `Desugar` class; add to `bootstrap/Makefile` SRC +
+   `use desugar` in `types/package.rn`. (`types.Desugar()` reachable; no new rune.rn import.)
+2. Move verbatim into `Desugar`: `TransVal`/`TransEnv` (`typechecker.rn:271-301`); the
+   expansion cluster `registerTransformersIn`/`registerTransformer`/`lookupTransformer`
+   (3735-3761), `executeTransformStatement`…`expandTransName` (3783-4192); the pure-AST
+   helpers `synthesizeDestroy` (584-610), `hoistNestedClasses`+rewriters (813-886),
+   `hoistNestedFunctions`+helpers (892-950); carry fields `transformerNames`/`transformerFns`
+   (387-388), `hoistCounter` (372).
+3. Promote `findClassFunction`/`In` (3764-3779) to a free `db.findClassFunction` (also used
+   by `demandClass:688` and member access `:4704`); leave a one-line `TypeChecker` delegate.
+4. Decouple `ArrayExtMethod`: registry STAYS on `TypeChecker` (consumed at `findClassIterator
+   :3008`); `Desugar` collects into a public `arrayExtFns` list handed to `tc` before
+   `tc.function`.
+5. `Desugar` gets its own error sink (`desugarError`→`errors` list); surface in `rune.rn`
+   mirroring `rune.rn:155-158`.
+6. `Desugar.desugarModule(fn)` reproduces the CURRENT Module-arm order EXACTLY:
+   `registerTransformersIn` → depth-first child-module recurse → `hoistNestedClasses` →
+   `synthesizeDestroy` loop → `registerTransformer` loop → expansion loop over
+   Transform/Relation/Appendcode/Prependcode → `hoistNestedFunctions`. Add a
+   `statement.executed` idempotency guard for multi-import reachability.
+7. Gut the `TypeChecker` Module arm: delete the 6 expansion sub-steps (`4201`, `4211-4245`);
+   **KEEP** child-module binding recursion (4205-4209) and everything `4250+`
+   (`registerFunctionDef`, global pre-bind, **operator-signature pre-registration 4279-4323
+   which still scans the inert relation statements**, eager body loop, eager-destroy, module
+   statements). Neutralize the `FuncType.Transformer` arm (4409-4411) to a no-op.
+8. Wire `rune.rn:152`: `desugar = types.Desugar(); desugar.desugarModule(module)`; report+exit
+   on `desugar.errors`; `for f in desugar.arrayExtFns { tc.registerArrayExtMethod(f) }`; then
+   existing `tc.function(module)`.
+
+### Exit criteria
+- Suite still **188/205, zero drops**; bootstrap still builds itself (`make`).
 - Typechecker no longer special-cases transformer expansion; generated members are ordinary
-  pre-Check AST.
-- **Retire the Stage-1/3 patches one at a time, re-running the suite after each removal:**
-  `methodCallType` destroy provisional, `ClassInfo.constructing`, `noteDependency`,
-  `genCMethodInstance` retypecheck dance. (A patch that can't be removed without a drop is a
-  finding — record why it's still load-bearing.)
-- Secret/safety guardrail check passes (theme E).
+  pre-Check AST. Relation/Transform statements stay physically in the AST as inert no-ops
+  (the operator-signature pre-registration still scans them — do NOT remove them).
+- Guardrail fixture: emitted C for generated destroy bodies, `secret`/`reveal` folds,
+  generated-field `noPrint` marking, and `ref`/`unref` placement are **byte-identical**
+  pre/post-move.
+- **Then** retire Stage-1/3 patches one-per-commit, suite-gated (`methodCallType` destroy
+  provisional, `ClassInfo.constructing`, `noteDependency`, `genCMethodInstance` retypecheck).
+  A patch that can't be removed without a drop is a finding — record why.
 
-**Risks:** perturbing var-id ordering (broke generic classes in prior pre-seed attempts —
-see `IMPLEMENTATION_PLAN.md`); the `appendcode Array` registration path; self-hosting
-transformers (`bootstrap/parse/exprTree.rn` runs `transformer ExprTree` on `HirBuilder`) —
-the desugar must run over the bootstrap's OWN source too.
+### Regression surface (critic — the REAL fixtures)
+The compiler's OWN relations are the load-bearing test, not just Hashed/Heapq:
+`typeclasses.rn:823-834` (`Type` in ~12 simultaneous `OneToOne` relations), `rel.rn:26-27`,
+`signature.rn:24-25`, `ident.rn:198`, `expr.rn:2826-2831`. Rune has **8 transformers**
+(LinkedList, ArrayList, OneToOne, TailLinked, DoublyLinked, HeapqList, HashedClass, Hashed) —
+verify faithful lift for ALL, not just Hashed. Plus `bootstrap/parse/exprTree.rn`
+(`transformer ExprTree` on `HirBuilder` — the largest live transformer consumer; if it
+mis-desugars the compiler won't self-build). **`make` after every desugar change.**
 
-## Stage B — Check Phase-0 pre-registration (Dict forward refs → 6 tests)
+### Risks
+Var-id / generated-identifier ordering perturbation (prior refactors regressed 187→184 from
+changed generated names — `$label` expansion + `hoistCounter` must produce byte-identical
+identifiers); `ArrayExtMethod` hand-off timing; error-sink swallowing; **do NOT touch
+`builtin/hashed.rn:230-247,258`** (runtime mutual-cascade guard, unrelated to desugar).
 
-Pre-register all class/type names (incl. a generated inner `Entry`) before binding any body,
-mirroring Lyric Check Phase 0 ("each phase completes across all blocks before the next").
-Dissolves "`lookupClass(Entry)` is null at the table-field typecheck" (`typechecker.rn`
-Arrayof arm ~2416). Targets `dicttest dictitr in heapqtest heapsort heapqlisttest`.
-Refine with workflow themes B + D. Exit: those 6 green, suite ≥ prior, zero drops.
+## Stage B — Check Phase-0 pre-registration (forward refs) — partial Dict greens
 
-## Stage C — Iterative monomorphization pass (poly recursion → 3 tests)
+Pre-register class NAMES before any constructor body binds, mirroring Lyric Check Phase 0.
+**Key divergence (critic):** Rune discovers a class's fields by **executing its constructor
+body** (`typechecker.rn:4480-4487`), so a name-only Phase-0 is NOT Lyric's field-bearing
+Phase-1 — Rune's existing `demandClass` (on-demand body typecheck) is the substitute.
 
-Dedicated post-Check specialization to a fixpoint with a recursion-depth guard; fresh frame
-per `addParens_N_M`. Mirrors Lyric Monomorphize (converges in 2–3 iters). Maps onto existing
-`PolyInstantiations`/deferral/`retypecheckDeferred` hooks. Targets `turingTypeConstraints
-edwards edwards2`. Refine with workflow theme C + `BINDING_DESIGN.md` A4/A5. Exit: those 3
-green, zero drops.
+### Work items (`WORKFLOW_FINDINGS.md` theme B steps 1–5)
+1. **Why null today:** Dict's HashedClass-injected `self.…_Table = arrayof(Entry)` is typed in
+   the arrayof arm (`typechecker.rn:2560-2576`); `Entry` resolves to a bare `TypeName` via
+   `namedType` (1610-1622) which does NOT register/demand; `lookupClass(Entry)` is null
+   because the sole insert site `constructorFunction:4438` hasn't run for `Entry` (appended
+   after Dict by `hoistNestedClasses:829`). The arrayof arm uniquely does NOT `demandClass`.
+2. Add a **Phase-0 loop** before the eager body loop (`:4324`): for each Constructor child,
+   if `lookupClass` is null, insert a **stub** `ClassInfo` (strct/selfType null,
+   `constructing=false`). Classes are already flat (hoist ran at 4212).
+3. Make `constructorFunction` **REUSE the stub** (`:4431-4438`: lookup-or-create, never
+   double-insert) — the `ClassInfo`/`TynameDefinition` registries are HashedClass-backed, so
+   a second insert prepends a DUPLICATE to the bucket and `classInfos()` double-visits.
+   **Mandatory, not optional.**
+4. Fix the **`demandClass` guard** (`:684-687`): today `lookupClass-non-null` doubles as the
+   done/re-entrancy guard; with stubs everywhere it would block all on-demand typechecking.
+   Distinguish three states: in-progress (`info.constructing`, window 4439..4634) → return;
+   done (`classFn.typedValue` non-null) → return; stub → proceed. **Load-bearing for
+   mutual-cascade re-entrancy** — `constructing` must mean "leave alone."
+5. If tracing shows Dict's relation-injected methods need `Entry`'s CONCRETE fields (not just
+   nominal `[Entry]`) while Dict binds, add `demandClass(Entry)` in the arrayof arm (~2569),
+   no-op when the target is currently constructing.
 
-## Stage D — Leak / policy / representation (remaining ≤8)
+### Exit
+`in` + `heapqlisttest` green (single-signature). Suite ≥ prior, zero drops, self-builds.
+The typecheck-failing 4 (`dicttest dictitr heapqtest heapsort`) move to Stage C. Risk:
+stub `ClassInfo` has null `selfType`, which several sites read as "still typechecking"
+(`classInstanceType:570`, `constraintType:1661`, method demand `:4764`) — confirm each still
+demands rather than baking an arity-0 instance for generic `Dict<K,V>`. Coordinate with the
+Stage-0 `ClassRegistered` blocker at the arrayof arm (2572) — Phase-0 makes it never fire.
 
-Orthogonal to pipeline shape; tackle after A–C:
-- **Binding-generalization bugs (4):** `gf2 integer` (two independent type params merge into
-  one bound var — `deferVars`/`PolymorphicType`); `safe funcptr` (positive-var
-  generalization, tyvar id-space). 
-- **Representation (4, may stay out of scope):** `escapedCharTest uint2string allocfree
-  defaultMethods` — length-prefixed strings / object-pool decisions, NOT binding. Decide
-  per-test whether in scope for this migration; document any deferral in Known-Limitations.
+## Stage C — Per-signature + iterative monomorphization (Dict rest + poly-recursion)
+
+Two sub-mechanisms over the EXISTING `PolyInstantiations` + `retypecheckDeferred` hooks (no
+rewrite). (`WORKFLOW_FINDINGS.md` theme C + theme D-dict.)
+
+- **Step 0 (de-risk):** extract the **9 duplicated** `if deferredTypecheck &&
+  !deferredRetypechecked {…}` blocks (`function.rn:468,890,774,788`; `cbuilder.rn:252,292,
+  613,659`) into one `emitDeferredRetypecheck(fn, specKey)`.
+- **C1 — Dict per-signature (fixes `dicttest` v54 leak):** replace the **one-shot
+  `deferredRetypechecked` boolean** with per-specialization dedup against `definedSignatures`
+  (`typechecker.rn:384`), keyed on `genSpecializationName` (`typeclasses.rn:1086`) under
+  active bindings — so `Dict(u32,string).remove` retypechecks under its OWN bindings instead
+  of reusing `Dict(string,u32)`'s baked body. Implement `materializeInner(Dict,K,V)` via
+  `classInstanceType` (562) + `demandClass` (684) + `substituteClassVars` (4832); cache
+  `Entry<K,V>` in `definedSignatures` BEFORE binding its body (breaks the Entry↔Dict knot);
+  drive from the pre-emission pass (`cbuilder.rn:239-263`), NOT phase-5. **Per-signature
+  field-type isolation:** `genCConstructorInstance` persists field types into the SHARED
+  `info.strct.fieldtypes` (`function.rn:613`) — re-resolve per emission or key by specName so
+  `Dict(string,u32)` and `Dict(u32,string)` keep distinct Entry field types.
+- **C3 — poly-recursion (turing/edwards2):** add an explicit `MonoItem{fn,inst,specName,
+  depth}` worklist on CBuilder + a named `RECURSION_LIMIT` const (**must trip below the
+  `resolveDepth` 64 bound** — there is no occurs check; `occursIn` exists at
+  `typeunifier.rn:203-256` but is **unwired** from `unify`). Driver `monomorphize(module)`
+  between `resolveNestedInstantiations` (`cbuilder.rn:231`) and `genC` (:316); reuse
+  `alreadyEmitted`/`markEmitted` as the visited set. Fix the **no-op root**
+  (`typechecker.rn:1193` `if isnull(val)`): in the call-site router (`expr.rn:2620-2733`),
+  when a recursive call's resolved arg types differ from the emitting frame, route to a
+  FRESHLY-OPENED instantiation (`openPoly:1153`) as a new MonoItem instead of matching the
+  already-bound poly. Symmetric `deInstantiate` per item (no frame leakage).
+
+### Exit
+`dicttest dictitr heapqtest heapsort` green at C1; `turingTypeConstraints edwards2` at C3.
+Each commit suite-gated ≥188 zero drops, self-builds. **Top risk:** iterator-inlining
+AST-mutation — `retypecheckDeferred` re-walks `bodySnapshot` (628-635) and now runs N× per
+fn; inlining mutates `subBlock` (`InlinedBlock:3560`); confirm idempotence or clear inlined
+nodes between signatures (gates C1). Keep `genSpecializationName` string-equality sound as
+the dedup key (or switch to structural `TyvarInstantiation` equality).
+
+## Stage D — Leak/policy/representation (remaining ≤8) — D-binding UNMAPPED
+
+- **D-binding (4) — NEEDS A DEDICATED ANALYSIS PASS:** `gf2 integer` (two independent type
+  params merge into one bound var — `deferVars`/`PolymorphicType` ~`typechecker.rn:4892-4924`)
+  and `safe funcptr` (positive-var generalization, tyvar id-space). The 5 workflow themes
+  EXCLUDED these. Run a 6th analysis theme grounded in `BINDING_RESEARCH.md` §3 before coding.
+- **D-representation (4, likely out of scope):** `escapedCharTest uint2string allocfree
+  defaultMethods` — length-prefixed strings / object-pool decisions, not binding. Decide
+  per-test; document any deferral in a Known-Limitations note.
 
 ---
 
 ## Sequencing & commit discipline
 
-A → B → C → D. Each Stage is independently committable and gated on the suite floor. Within
-a Stage, commit each clean sub-step. After Stage A lands green, update this file's status
-snapshot and re-point `IMPLEMENTATION_PLAN.md` here for the stage structure.
+A (pre-reqs → lift → patch-retirement) → B → C (C0 → C1 → C3) → D (analyze D-binding first).
+Each step independently committable and suite-gated at the 188 floor. After Stage A lands
+green, update this snapshot and re-point `IMPLEMENTATION_PLAN.md` here.
 
-## Risk register
+## Open decisions to settle at stage boundaries
 
-- **Var-id ordering perturbation** → generic-class emission breakage. Mitigation: change
-  expansion *timing* without changing var allocation order; diff-test generic tests
-  (classheapsort, symtest) every step.
-- **Self-hosting transformers** (`exprTree.rn`) must desugar correctly or the compiler won't
-  build itself. Mitigation: build bootstrap (`make`) after every desugar change — it's the
-  largest transformer consumer.
-- **Patch removal regressions** in Stage A: remove one patch per commit, suite-gated.
-- **Secret/safety coverage**: re-run guardrail check whenever generated-member binding moves.
+- **A/B boundary:** keep faithful per-module desugar order, OR switch to Lyric-style
+  whole-program phasing (each sub-pass across all modules) — the latter de-risks Phase-0 but
+  changes visitation order under the 188 gate. Recommend faithful for A, decide at B.
+- **B:** name-only stub vs `demandClass(Entry)` in the arrayof arm — answered by tracing
+  whether Dict's relation methods touch `Entry`'s concrete fields during Dict's own binding.
+- **C:** `RECURSION_LIMIT` value + central-constant home; whether `monomorphize(module)` is a
+  new pass or replaces the two deferred-retypecheck sweeps (`cbuilder.rn:239-315`).
 
 ## Doc map
 
 - This file — execution roadmap (how to finish).
+- `WORKFLOW_FINDINGS.md` — full Rune-grounded steps (5 themes) + completeness critic.
 - `RELATIONS_DESUGAR.md` — design synthesis + Lyric evidence (why this shape).
 - `BINDING_DESIGN.md` / `BINDING_RESEARCH.md` — research, direction C, A1–A7.
-- `IMPLEMENTATION_PLAN.md` — failure triage + Stage 0–1 history (stage structure superseded
-  here).
+- `IMPLEMENTATION_PLAN.md` — failure triage + Stage 0–1 history (stage structure superseded).
 - `CODE_REVIEW_CHECKLIST.md` — per-commit review loop.
 - `books/` (gitignored) — The Lyric Book + `_extracted/` chapter text the workflow read.

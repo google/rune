@@ -87,10 +87,16 @@ run **after** `hir.rn` build and **before** `function()` typecheck. Feasible bec
 expansion already consumes only names + string/bool params — never a typed result.
 - Preserve current ordering deps: `hoistNestedClasses` + `synthesizeDestroy` must run
   before/within desugar so `A.destroy` targets and `Outer.Inner` names resolve.
-- Adopt Lyric's **deep destructor copies** to kill cross-relation contamination
-  structurally (likely subsumes the `builtin/hashed.rn` clear-bucket workaround).
-- The `appendcode Array` path that side-registers ext-methods (`registerArrayExtMethod`)
-  becomes *simpler*: inject as AST, let normal registration pick it up.
+- **CORRECTION (workflow critic, `wf_35efec1e-261`):** Rune's AST copies are **already deep**
+  (`Function/Block/Statement/Expr/Variable.copy`, and `copyCodeBlockInto` copies the template
+  BEFORE expanding) — there is **no cross-relation contamination to fix**; Stage A must
+  *preserve* this, not "adopt" it. And `builtin/hashed.rn`'s clear-bucket lines are a
+  **runtime mutual-cascade re-entry guard**, which deep copies do NOT subsume — **do NOT
+  remove them in Stage A.** (Both claims above were unsupported by the code.) Separately, fix
+  the real `expr.copy()` fidelity bugs (`expr.rn:767-781`: isConst no-op, datatype uncopied)
+  as a Stage-A pre-req. See `MIGRATION_PLAN.md` Stage A.
+- The `appendcode Array` path keeps the `ArrayExtMethod` registry on the typechecker; the
+  desugar collects into `Desugar.arrayExtFns` and hands them to `tc` before `tc.function`.
 - Gate: suite ≥188 zero drops. **Enables** retiring the Stage-1/3 patches (`constructing`
   flag, `methodCallType` provisional, `noteDependency`, `genCMethodInstance` retypecheck)
   as generated members now bind through the normal SCC + emission path — verify and remove
