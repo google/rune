@@ -57,6 +57,11 @@ rm -f tests/<name> && ./bootstrap/rune tests/<name>.rn \   # bootstrap compiles 
 
 ## Status snapshot (2026-06-30)
 
+- **Stage A lift LANDED** (`f64d23b`): transformer/relation expansion extracted from
+  `TypeChecker` into a standalone `Desugar` pass (`types/desugar.rn`) run before typecheck.
+  Suite **188/205, zero drops** (structural, 0 new greens as predicted); guardrail fixture
+  emits BYTE-IDENTICAL C (sha256 `dffd86..`). Pre-reqs landed first: `expr.copy()` isConst
+  fidelity (`3bd03ce`), secret/ref-unref guardrail (`85fbbe8`).
 - HEAD on `bootstrap`; suite **188/205**, zero drops. Stage 0 (named Blocker scaffolding,
   inert) + Stage 1 (destroy-SCC) landed; `recursiveDestructor` green.
 - **17 remaining failures**, re-bucketed by this plan (note: the Dict cluster spans B **and**
@@ -145,9 +150,16 @@ Likely greens **0 new tests** — exit criterion is structural.
 - Guardrail fixture: emitted C for generated destroy bodies, `secret`/`reveal` folds,
   generated-field `noPrint` marking, and `ref`/`unref` placement are **byte-identical**
   pre/post-move.
-- **Then** retire Stage-1/3 patches one-per-commit, suite-gated (`methodCallType` destroy
-  provisional, `ClassInfo.constructing`, `noteDependency`, `genCMethodInstance` retypecheck).
-  A patch that can't be removed without a drop is a finding — record why.
+- **Patch retirement — FINDING (not enabled by the lift):** The lift is byte-identical
+  (guardrail proves emitted C unchanged), so it relocated *expansion* without touching
+  *binding/emission mechanics*. The Stage-1/3 patches all live in the binding/emission path,
+  NOT the moved expansion cluster: `ClassInfo.constructing` (`typechecker.rn:239/3745/3940/4070`
+  — destroy-SCC re-entrancy guard, holds up `recursiveDestructor`), `noteDependency`
+  (`expr.rn:2200`/`cbuilder.rn:435` — C-emit dep ordering), `deferredRetypecheck`/
+  `retypecheckDeferred` (`cbuilder.rn:252/265/292/610/656` — deferral emission). Each is
+  exactly as load-bearing as before the lift; removing any would regress the same tests it
+  did pre-lift. **Patch retirement is gated on Stage B/C** (which actually change the binding
+  path), not on Stage A. Re-evaluate after C.
 
 ### Regression surface (critic — the REAL fixtures)
 The compiler's OWN relations are the load-bearing test, not just Hashed/Heapq:
