@@ -54,6 +54,7 @@ cbackend/escapestring.rn\
 cbackend/int2cstring.rn\
 cbackend/package.rn\
 types/builtins.rn\
+types/desugar.rn\
 types/package.rn\
 types/typebuilder.rn\
 types/typechecker.rn\

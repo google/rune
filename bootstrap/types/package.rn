@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use builtins
+use desugar
 use typebuilder
 use typechecker
 use typeclasses

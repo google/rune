@@ -1,0 +1,747 @@
+//  Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// The desugar pass.  Transformer/relation expansion runs here, BEFORE the
+// typechecker, so generated members (relation back-pointers, insert/remove,
+// destroy cascades, hoisted nested classes/functions) are ordinary AST by the
+// time binding starts.  This pass touches no typed state (no unifier, no
+// ClassInfo, no Type) -- only db AST, Syms, and name/string substitution -- so
+// it is a faithful relocation of the steps the typechecker's Module arm used
+// to run inline.  Diagnostics, the Array-extension-method registry, and the
+// class-constructor lookup stay on the TypeChecker (reached through `tc`); the
+// emitted code is byte-identical to the pre-extraction compiler.
+
+import database as db
+use sym
+use typechecker
+
+// A value computed while interpreting a transformer: a class (its
+// constructor function), a string, or a bool.
+class TransVal(self) {
+  self.kind = 9u32  // 0 = class, 1 = string, 2 = bool, 9 = invalid.
+  self.classFn = null(db.Function)
+  self.strVal = ""
+  self.boolVal = false
+}
+
+// The variable bindings of a transformer invocation.
+class TransEnv(self) {
+  self.names = arrayof(string)
+  self.vals = arrayof(TransVal)
+
+  func find(self, name: string) -> i64 {
+    for i in range(self.names.length()) {
+      if self.names[i] == name {
+        return <i64>i
+      }
+    }
+    return -1i64
+  }
+
+  func set(self, name: string, val: TransVal) {
+    idx = self.find(name)
+    if idx >= 0i64 {
+      self.vals[<u64>idx] = val
+    } else {
+      self.names.append(name)
+      self.vals.append(val)
+    }
+  }
+}
+
+// The desugar pass over a parsed module tree.  Holds a reference to the
+// TypeChecker only to share its diagnostic sink (typeError), its
+// Array-extension-method registry (registerArrayExtMethod), and its
+// class-constructor lookup (findClassFunction) -- all stateless utilities.
+class Desugar(self, tc: TypeChecker) {
+  self.tc = tc
+  // Counter making hoisted nested-function names unique.
+  self.hoistCounter = 0u32
+  // Transformer definitions, looked up by relation statements.
+  self.transformerNames = arrayof(string)
+  self.transformerFns = arrayof(db.Function)
+
+  // Desugar a module tree: expand transformers/relations into ordinary
+  // generated members before any typecheck.  Reproduces EXACTLY the order in
+  // which the typechecker's Module arm used to run these steps, recursing into
+  // child modules for desugaring only (their typecheck happens later, in
+  // TypeChecker.function).
+  func desugarModule(self, fn: db.Function) {
+    // Transformers anywhere in the module tree register before any module's
+    // relations execute: an imported module (use sym) can precede the builtin
+    // transformer modules in child order.
+    self.registerTransformersIn(fn)
+    // Desugar imported child modules first: they are appended after this
+    // module's own children but their generated members must exist before this
+    // module's relations reference them.
+    for childfunc in fn.childFunctions() {
+      if childfunc.type == db.FuncType.Module {
+        self.desugarModule(childfunc)
+      }
+    }
+    // Nested classes hoist to module level before anything references them
+    // (relations name them as Outer.Inner).
+    self.hoistNestedClasses(fn)
+    // Every class gets a generated destroy(self) method before relations
+    // execute, so that A.destroy code blocks have a target.
+    for childfunc in fn.childFunctions() {
+      if childfunc.type == db.FuncType.Constructor {
+        self.synthesizeDestroy(childfunc)
+      }
+    }
+    // Transformers defined in this module must register before the relation
+    // statements below execute.
+    for childfunc in fn.childFunctions() {
+      if childfunc.type == db.FuncType.Transformer {
+        self.registerTransformer(childfunc)
+      }
+    }
+    // Execute relation/transform statements and module-level code blocks: they
+    // add fields and methods to classes.
+    for statement in fn.subBlock.statements() {
+      if (statement.type == db.StateType.Transform ||
+          statement.type == db.StateType.Relation) {
+        self.executeTransformStatement(statement)
+      } else if statement.type == db.StateType.Appendcode {
+        emptyEnv = TransEnv()
+        self.instantiateCodeBlock(statement, emptyEnv, false)
+      } else if statement.type == db.StateType.Prependcode {
+        emptyEnv2 = TransEnv()
+        self.instantiateCodeBlock(statement, emptyEnv2, true)
+      }
+    }
+    // Hoist functions nested inside plain functions and methods (the relation
+    // transformers just instantiated may have copied them in).
+    self.hoistNestedFunctions(fn)
+  }
+
+  // Create the generated destroy(self) method on a class: relation
+  // transformers prepend removal code and append cascade deletions around
+  // it, and it runs the user's final() destructor in between.  The C
+  // backend adds the idempotence guard and frees the instance slot.
+  func synthesizeDestroy(self, classFn: db.Function) {
+    hasFinal = false
+    for childfunc in classFn.childFunctions() {
+      if childfunc.sym.name == "destroy" {
+        return
+      }
+      if childfunc.type == db.FuncType.Final {
+        hasFinal = true
+      }
+    }
+    loc = classFn.location
+    destroyFn = db.Function(classFn, db.FuncType.Plain, Sym.new("destroy"),
+        db.Linkage.Module, loc)
+    selfVar = db.Variable(destroyFn, true, true, Sym.new("self"),
+        null(db.Expr), null(db.Expr), true, loc)
+    if hasFinal {
+      st = db.Statement(destroyFn.subBlock!, db.StateType.Call, loc)
+      st.generated = true
+      selfExpr = db.Expr.newIdent(Sym.new("self"), loc)
+      finalExpr = db.Expr.newIdent(Sym.new("final"), loc)
+      dotExpr = db.Expr.newBinary(db.ExprType.Dot, selfExpr, finalExpr, loc)
+      noArgs = arrayof(db.Expr)
+      argsExpr = db.Expr.newTuple(noArgs, loc)
+      callExpr = db.Expr.newBinary(db.ExprType.Call, dotExpr, argsExpr, loc)
+      st.insertExpr(callExpr)
+    }
+  }
+  // Nested classes (class Entry inside class Dict) hoist to module level:
+  // the bootstrap has one flat namespace.  References through the outer
+  // class name (Dict.Entry) rewrite to plain identifiers, including in
+  // relation statements, before relations execute.
+  func hoistNestedClasses(self, module: db.Function) {
+    outers = arrayof(db.Function)
+    for childfunc in module.childFunctions() {
+      if childfunc.type == db.FuncType.Constructor {
+        outers.append(childfunc)
+      }
+    }
+    for outer in outers {
+      nested = arrayof(db.Function)
+      for inner in outer.childFunctions() {
+        if inner.type == db.FuncType.Constructor {
+          nested.append(inner)
+        }
+      }
+      for inner in nested {
+        outer.removeChildFunction(inner)
+        module.appendChildFunction(inner)
+        self.rewriteNestedClassRefs(module, outer.sym.name, inner.sym.name)
+      }
+    }
+  }
+
+  func rewriteNestedClassRefs(self, fn: db.Function, outerName: string,
+                              innerName: string) {
+    if !isnull(fn.subBlock) {
+      self.rewriteNestedRefsInBlock(fn.subBlock!, outerName, innerName)
+    }
+    for variable in fn.variables() {
+      if !isnull(variable.typeExpr) {
+        self.rewriteNestedRefsInExpr(variable.typeExpr!, outerName, innerName)
+      }
+      if !isnull(variable.initializerExpr) {
+        self.rewriteNestedRefsInExpr(variable.initializerExpr!, outerName,
+            innerName)
+      }
+    }
+    for childfunc in fn.childFunctions() {
+      self.rewriteNestedClassRefs(childfunc, outerName, innerName)
+    }
+  }
+
+  func rewriteNestedRefsInBlock(self, block: db.Block, outerName: string,
+                                innerName: string) {
+    for statement in block.statements() {
+      if !isnull(statement.expr) {
+        self.rewriteNestedRefsInExpr(statement.expr!, outerName, innerName)
+      }
+      if !isnull(statement.subBlock) {
+        self.rewriteNestedRefsInBlock(statement.subBlock!, outerName, innerName)
+      }
+    }
+  }
+
+  func rewriteNestedRefsInExpr(self, expr: db.Expr, outerName: string,
+                               innerName: string) {
+    if expr.type == db.ExprType.Dot {
+      dlhs = expr.firstChildExpr!
+      dmem = dlhs.nextExprChildExpr
+      if (dlhs.type == db.ExprType.Ident && !isnull(dmem) &&
+          dmem.type == db.ExprType.Ident &&
+          dlhs.val.symVal.name == outerName &&
+          dmem.val.symVal.name == innerName) {
+        innerSym = dmem.val.symVal!
+        expr.removeChildExpr(dlhs)
+        expr.removeChildExpr(dmem!)
+        expr.type = db.ExprType.Ident
+        expr.val = db.Value(innerSym)
+        return
+      }
+    }
+    for child in expr.childExprs() {
+      self.rewriteNestedRefsInExpr(child, outerName, innerName)
+    }
+  }
+
+  // Functions nested inside plain functions or methods (e.g. the resize
+  // helper inside the Hashed transformer's insert method) hoist to module
+  // level under a unique name: the bootstrap has one flat namespace and C
+  // has no nested functions.  Call sites in the parent body are renamed.
+  func hoistNestedFunctions(self, module: db.Function) {
+    for childfunc in module.childFunctions() {
+      if childfunc.type == db.FuncType.Constructor {
+        for method in childfunc.childFunctions() {
+          self.hoistNestedFrom(method, module)
+        }
+      } else if childfunc.type == db.FuncType.Plain {
+        self.hoistNestedFrom(childfunc, module)
+      }
+    }
+  }
+
+  func hoistNestedFrom(self, parent: db.Function, module: db.Function) {
+    nested = arrayof(db.Function)
+    for childfunc in parent.childFunctions() {
+      if childfunc.type == db.FuncType.Plain {
+        nested.append(childfunc)
+      }
+    }
+    for hoisted in nested {
+      // Deeper nesting hoists first so its renames apply inside |hoisted|.
+      self.hoistNestedFrom(hoisted, module)
+      oldName = hoisted.sym.name
+      self.hoistCounter += 1u32
+      newSym = Sym.new("%s_h%u" % (oldName, self.hoistCounter))
+      hoisted.sym = newSym
+      parent.removeChildFunction(hoisted)
+      module.appendChildFunction(hoisted)
+      if !isnull(parent.subBlock) {
+        self.renameIdentsInBlock(parent.subBlock!, oldName, newSym)
+      }
+      // A nested function's parameter named self is an ordinary parameter,
+      // not a method receiver; rename it so the method machinery (implicit
+      // self in call normalization, self-type binding) leaves it alone.
+      for variable in hoisted.variables() {
+        if variable.isParam && variable.sym.name == "self" {
+          newSelfSym = Sym.new("self_h%u" % self.hoistCounter)
+          variable.sym = newSelfSym
+          if !isnull(hoisted.subBlock) {
+            self.renameIdentsInBlock(hoisted.subBlock!, "self", newSelfSym)
+          }
+        }
+      }
+    }
+  }
+
+  func renameIdentsInBlock(self, block: db.Block, oldName: string, newSym: Sym) {
+    for statement in block.statements() {
+      if !isnull(statement.expr) {
+        self.renameIdentsInExpr(statement.expr!, oldName, newSym)
+      }
+      if !isnull(statement.subBlock) {
+        self.renameIdentsInBlock(statement.subBlock!, oldName, newSym)
+      }
+    }
+  }
+
+  func renameIdentsInExpr(self, expr: db.Expr, oldName: string, newSym: Sym) {
+    if expr.type == db.ExprType.Ident && expr.val.symVal.name == oldName {
+      expr.val = db.Value(newSym)
+    }
+    for child in expr.childExprs() {
+      self.renameIdentsInExpr(child, oldName, newSym)
+    }
+  }
+  func registerTransformersIn(self, fn: db.Function) {
+    for childfunc in fn.childFunctions() {
+      if childfunc.type == db.FuncType.Transformer {
+        self.registerTransformer(childfunc)
+      }
+      if childfunc.type == db.FuncType.Module {
+        self.registerTransformersIn(childfunc)
+      }
+    }
+  }
+
+  func registerTransformer(self, fn: db.Function) {
+    if !isnull(self.lookupTransformer(fn.sym.name)) {
+      return
+    }
+    self.transformerNames.append(fn.sym.name)
+    self.transformerFns.append(fn)
+  }
+
+  func lookupTransformer(self, name: string) -> db.Function? {
+    for i in range(self.transformerNames.length()) {
+      if self.transformerNames[i] == name {
+        return self.transformerFns[i]
+      }
+    }
+    return null(db.Function)
+  }
+  // Execute a relation or transform statement: bind the transformer's
+  // parameters and interpret its body.
+  func executeTransformStatement(self, statement: db.Statement) {
+    expr = statement.expr!
+    if expr.type == db.ExprType.Call {
+      nameExpr = expr.firstChildExpr!
+      argList = nameExpr.nextExprChildExpr
+    } else {
+      nameExpr = expr.firstChildExpr!
+      argList = nameExpr.nextExprChildExpr
+    }
+    if nameExpr.type != db.ExprType.Ident {
+      self.tc.typeError("Unsupported transformer path", statement.location)
+      return
+    }
+    trans = self.lookupTransformer(nameExpr.val.symVal.name)
+    if isnull(trans) {
+      self.tc.typeError("Unknown transformer %s" % nameExpr.val.symVal.name,
+          statement.location)
+      return
+    }
+    env = TransEnv()
+    argExpr = null(db.Expr)
+    if !isnull(argList) {
+      argExpr = argList.firstChildExpr
+    }
+    for variable in trans.variables() {
+      if variable.isParam {
+        if !isnull(argExpr) {
+          v = self.evalTransExpr(argExpr!, env, statement.location)
+          argExpr = argExpr.nextExprChildExpr
+        } else if !isnull(variable.initializerExpr) {
+          v = self.evalTransExpr(variable.initializerExpr!, env, statement.location)
+        } else {
+          v = TransVal()
+        }
+        env.set(variable.sym.name, v)
+      }
+    }
+    self.interpretTransBlock(trans.subBlock!, env, statement.location)
+  }
+
+  func evalTransExpr(self, expr: db.Expr, env: TransEnv,
+      location: db.Location) -> TransVal {
+    v = TransVal()
+    switch expr.type {
+      db.ExprType.Constant => {
+        if expr.val.type == db.DatatypeType.String {
+          v.kind = 1u32
+          v.strVal = self.expandTransName(expr.val.stringVal, env)
+        } else if expr.val.type == db.DatatypeType.Bool {
+          v.kind = 2u32
+          v.boolVal = expr.val.boolVal
+        }
+      }
+      db.ExprType.Ident => {
+        name = expr.val.symVal.name
+        idx = env.find(name)
+        if idx >= 0i64 {
+          return env.vals[<u64>idx]
+        }
+        classFn = self.tc.findClassFunction(name)
+        if !isnull(classFn) {
+          v.kind = 0u32
+          v.classFn = classFn
+        } else {
+          self.tc.typeError("Transformer identifier %s not found" % name, location)
+        }
+      }
+      db.ExprType.Equal, db.ExprType.Notequal => {
+        l = self.evalTransExpr(expr.firstChildExpr!, env, location)
+        r = self.evalTransExpr(expr.firstChildExpr.nextExprChildExpr!, env, location)
+        v.kind = 2u32
+        if l.kind == 1u32 {
+          v.boolVal = l.strVal == r.strVal
+        } else if l.kind == 2u32 {
+          v.boolVal = l.boolVal == r.boolVal
+        } else {
+          v.boolVal = l.classFn == r.classFn
+        }
+        if expr.type == db.ExprType.Notequal {
+          v.boolVal = !v.boolVal
+        }
+      }
+      db.ExprType.Not => {
+        c = self.evalTransExpr(expr.firstChildExpr!, env, location)
+        v.kind = 2u32
+        v.boolVal = !c.boolVal
+      }
+      default => self.tc.typeError("Cannot evaluate transformer expression",
+          location)
+    }
+    return v
+  }
+
+  func interpretTransBlock(self, block: db.Block, env: TransEnv,
+      location: db.Location) {
+    condTaken = false
+    for statement in block.statements() {
+      switch statement.type {
+        db.StateType.Assign => {
+          assignExpr = statement.expr!
+          lhs = assignExpr.firstChildExpr!
+          rhs = lhs.nextExprChildExpr!
+          if lhs.type == db.ExprType.Ident {
+            env.set(lhs.val.symVal.name,
+                self.evalTransExpr(rhs, env, statement.location))
+          }
+        }
+        db.StateType.If => {
+          condTaken = self.evalTransExpr(statement.expr!, env,
+              statement.location).boolVal
+          if condTaken {
+            self.interpretTransBlock(statement.subBlock!, env, statement.location)
+          }
+        }
+        db.StateType.ElseIf => {
+          if !condTaken {
+            c = self.evalTransExpr(statement.expr!, env, statement.location)
+            if c.boolVal {
+              condTaken = true
+              self.interpretTransBlock(statement.subBlock!, env, statement.location)
+            }
+          }
+        }
+        db.StateType.Else => {
+          if !condTaken {
+            self.interpretTransBlock(statement.subBlock!, env, statement.location)
+          }
+        }
+        db.StateType.Prependcode => self.instantiateCodeBlock(statement, env, true)
+        db.StateType.Appendcode => self.instantiateCodeBlock(statement, env, false)
+        default => return
+      }
+    }
+  }
+
+  // Copy a prependcode/appendcode container's functions and statements into
+  // the target class, expanding $-names.
+  func instantiateCodeBlock(self, statement: db.Statement, env: TransEnv,
+      prepend: bool) {
+    container = db.lookupCodeBlock(statement)
+    if isnull(container) {
+      return
+    }
+    if isnull(statement.expr) {
+      self.tc.typeError("appendcode without a target is not supported",
+          statement.location)
+      return
+    }
+    if statement.expr.type == db.ExprType.Dot {
+      // Targets like A.destroy extend a method of the class (the generated
+      // destroy method for relation removal and cascade deletion).
+      lhsExpr = statement.expr.firstChildExpr!
+      memberExpr = lhsExpr.nextExprChildExpr!
+      lhsVal = self.evalTransExpr(lhsExpr, env, statement.location)
+      if lhsVal.kind != 0u32 || isnull(lhsVal.classFn) {
+        self.tc.typeError("Code block target is not a class", statement.location)
+        return
+      }
+      assert memberExpr.type == db.ExprType.Ident
+      memberName = self.expandTransName(memberExpr.val.symVal.name, env)
+      methodFn = null(db.Function)
+      for childfunc in lhsVal.classFn.childFunctions() {
+        if childfunc.sym.name == memberName {
+          methodFn = childfunc
+        }
+      }
+      if isnull(methodFn) {
+        self.tc.typeError("Code block target method %s not found" % memberName,
+            statement.location)
+        return
+      }
+      self.copyCodeBlockInto(container!, methodFn!, env, prepend)
+      return
+    }
+    // `appendcode Array { iterator ... }` extends the builtin Array type, which
+    // has no class to copy into; register its iterators so a `.method()` call
+    // on an array value dispatches to them (and inlines, like a class iterator).
+    if statement.expr.type == db.ExprType.Ident {
+      if statement.expr.val.symVal.name == "Array" {
+        for childfunc in container.childFunctions() {
+          self.tc.registerArrayExtMethod(childfunc)
+        }
+        return
+      }
+    }
+    targetVal = self.evalTransExpr(statement.expr!, env, statement.location)
+    if targetVal.kind != 0u32 || isnull(targetVal.classFn) {
+      self.tc.typeError("Code block target is not a class", statement.location)
+      return
+    }
+    self.copyCodeBlockInto(container!, targetVal.classFn!, env, prepend)
+  }
+
+  // Copy a code block container's functions and statements into the target
+  // function, expanding $-substitutions, prepending or appending the
+  // statements relative to the target's existing body.
+  func copyCodeBlockInto(self, container: db.Function, target: db.Function,
+      env: TransEnv, prepend: bool) {
+    destBlock = target.subBlock!
+    for childfunc in container.childFunctions() {
+      newFn = childfunc.copy(target)
+      self.expandTransFunctionTree(newFn, env)
+    }
+    if prepend {
+      st = container.subBlock.lastStatement
+      while !isnull(st) {
+        cp = st.prependCopy(destBlock)
+        self.expandTransStatementTree(cp, env)
+        st = st.prevBlockStatement
+      }
+    } else {
+      // Cascade blocks appended to a destroy method stack in reverse
+      // relation-declaration order (LIFO), matching the legacy compiler's
+      // destruction order: each block inserts right after the final()
+      // call, or at the front when the class has no final().
+      anchor = null(db.Statement)
+      isDestroy = target.sym.name == "destroy"
+      if isDestroy {
+        scan = destBlock.firstStatement
+        while !isnull(scan) {
+          if !isnull(scan.expr) {
+            if scan.expr.type == db.ExprType.Call {
+              fcallee = scan.expr.firstChildExpr
+              if !isnull(fcallee) {
+                if fcallee.type == db.ExprType.Dot {
+                  fmember = fcallee.firstChildExpr.nextExprChildExpr
+                  if !isnull(fmember) {
+                    if fmember.type == db.ExprType.Ident {
+                      if fmember.val.symVal.name == "final" {
+                        anchor = scan
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          scan = scan.nextBlockStatement
+        }
+      }
+      if isDestroy && isnull(anchor) {
+        stf = container.subBlock.lastStatement
+        while !isnull(stf) {
+          cpf = stf.prependCopy(destBlock)
+          self.expandTransStatementTree(cpf, env)
+          stf = stf.prevBlockStatement
+        }
+      } else if isDestroy {
+        sta = container.subBlock.lastStatement
+        while !isnull(sta) {
+          cpa = sta.appendCopyAfterStatement(anchor!)
+          self.expandTransStatementTree(cpa, env)
+          sta = sta.prevBlockStatement
+        }
+      } else {
+        st2 = container.subBlock.firstStatement
+        while !isnull(st2) {
+          cp2 = st2.appendCopy(destBlock)
+          self.expandTransStatementTree(cp2, env)
+          st2 = st2.nextBlockStatement
+        }
+      }
+    }
+  }
+
+  func expandTransFunctionTree(self, fn: db.Function, env: TransEnv) {
+    newName = self.expandTransName(fn.sym.name, env)
+    if newName != fn.sym.name {
+      newSym = Sym.new(newName)
+      ident = fn.firstNameIdent
+      if !isnull(ident) {
+        ident.rename(newSym)
+      }
+      fn.sym = newSym
+    }
+    if !isnull(fn.typeExpr) {
+      self.expandTransExprTree(fn.typeExpr!, env)
+    }
+    for variable in fn.variables() {
+      // Parameter names parameterize too (e.g. find$labelB$B(self, $B)).
+      newVarName = self.expandTransName(variable.sym.name, env)
+      if newVarName != variable.sym.name {
+        variable.sym = Sym.new(newVarName)
+      }
+      if !isnull(variable.typeExpr) {
+        self.expandTransExprTree(variable.typeExpr!, env)
+      }
+      if !isnull(variable.initializerExpr) {
+        self.expandTransExprTree(variable.initializerExpr!, env)
+      }
+    }
+    self.expandTransBlockTree(fn.subBlock!, env)
+    for childfunc in fn.childFunctions() {
+      self.expandTransFunctionTree(childfunc, env)
+    }
+  }
+
+  func expandTransBlockTree(self, block: db.Block, env: TransEnv) {
+    for statement in block.statements() {
+      self.expandTransStatementTree(statement, env)
+    }
+  }
+
+  func expandTransStatementTree(self, statement: db.Statement, env: TransEnv) {
+    statement.generated = true
+    if !isnull(statement.expr) {
+      self.expandTransExprTree(statement.expr!, env)
+    }
+    if !isnull(statement.subBlock) {
+      self.expandTransBlockTree(statement.subBlock!, env)
+    }
+  }
+
+  func expandTransExprTree(self, expr: db.Expr, env: TransEnv) {
+    if expr.type == db.ExprType.Ident {
+      identName = expr.val.symVal.name
+      idx = env.find(identName)
+      if idx >= 0i64 && env.vals[<u64>idx].kind == 0u32 {
+        expr.val = db.Value(Sym.new(env.vals[<u64>idx].classFn.sym.name))
+      } else {
+        newName = self.expandTransName(identName, env)
+        if newName != identName {
+          expr.val = db.Value(Sym.new(newName))
+        }
+      }
+    } else if (expr.type == db.ExprType.Constant &&
+        expr.val.type == db.DatatypeType.String) {
+      newStr = self.expandTransName(expr.val.stringVal, env)
+      if newStr != expr.val.stringVal {
+        expr.val = db.Value(newStr)
+      }
+    }
+    for child in expr.childExprs() {
+      self.expandTransExprTree(child, env)
+    }
+  }
+
+  // Substitute $-references in a name: $var inserts the variable's value,
+  // capitalized mid-name and lowercased at the start; an _ right after a
+  // substitution is a separator and is dropped; $L uppercases the next
+  // insertion.
+  func expandTransName(self, name: string, env: TransEnv) -> string {
+    hasDollar = false
+    for i in range(name.length()) {
+      if name[i] == '$' {
+        hasDollar = true
+      }
+    }
+    if !hasDollar {
+      return name
+    }
+    out = ""
+    pos = 0
+    upper = false
+    while pos < name.length() {
+      c = name[pos]
+      if c == '$' {
+        pos += 1
+        start = pos
+        while (pos < name.length() &&
+            ((name[pos] >= 'a' && name[pos] <= 'z') ||
+             (name[pos] >= 'A' && name[pos] <= 'Z') ||
+             (name[pos] >= '0' && name[pos] <= '9'))) {
+          pos += 1
+        }
+        varName = name[start:pos]
+        // An _ right after a substitution separates it from following text.
+        if pos < name.length() && name[pos] == '_' {
+          pos += 1
+        }
+        if varName == "L" {
+          upper = true
+        } else {
+          value = ""
+          idx = env.find(varName)
+          if idx >= 0i64 {
+            v = env.vals[<u64>idx]
+            if v.kind == 0u32 {
+              value = v.classFn.sym.name
+            } else if v.kind == 1u32 {
+              value = v.strVal
+            } else if v.kind == 2u32 {
+              value = v.boolVal ? "true" : "false"
+            }
+          }
+          if value.length() > 0 {
+            first = value[0]
+            if out.length() == 0 && !upper {
+              if first >= 'A' && first <= 'Z' {
+                first = first + 32u8
+              }
+            } else {
+              if first >= 'a' && first <= 'z' {
+                first = first - 32u8
+              }
+            }
+            upper = false
+            out.append(first)
+            if value.length() > 1 {
+              out += value[1:value.length()]
+            }
+          }
+        }
+      } else {
+        out.append(c)
+        pos += 1
+      }
+    }
+    return out
+  }
+}

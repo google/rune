@@ -151,6 +151,11 @@ if isnull(moduleResult) {
 }
 module = moduleResult!
 tc = types.TypeChecker()
+// Desugar transformers/relations into ordinary generated members before
+// typecheck (see types/desugar.rn).  Diagnostics raised here land in tc's
+// error sink and are reported by countTypeErrors() below.
+desugar = types.Desugar(tc)
+desugar.desugarModule(module)
 tc.function(module)
 numTypeErrors = tc.countTypeErrors()
 if numTypeErrors > 0 {
