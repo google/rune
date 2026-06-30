@@ -769,7 +769,7 @@ class Expr(self, type: ExprType, location: Location) {
     // TODO: Comment in when we port datatype to Rune.
     // newExpr.datatype = expr.datatype
     newExpr.isType = self.isType
-    self.isConst = self.isConst
+    newExpr.isConst = self.isConst
     newExpr.width = self.width
     newExpr.autocast = self.autocast
     newExpr.val = self.val
