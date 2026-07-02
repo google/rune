@@ -859,6 +859,14 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
           builder.resolveInstantiation(instantiation)
           if builder.instantiationIsConcrete(instantiation) {
             builder.instantiate(fntype.poly!, instantiation)
+            // Pin unconstrained class-instance parameters (a relation
+            // _compare's children stay bare knots under the recorded
+            // bindings) so the body emits with concrete operand types --
+            // the same pinning emitMethodOnDemand applies.  Without it the
+            // sweep emits the body first with unresolved types (a pointer
+            // compare instead of the class's operator <) and the name is
+            // then already marked emitted.
+            builder.concretizeMethodParams(self)
             // A synthesized instantiation can carry no resolved type (its
             // result slot stayed an unbound variable); resolve the scope
             // under the active bindings instead, like genCPolyInstantiation.

@@ -1518,24 +1518,30 @@ class Expr(self, type: ExprType, location: Location) {
         }
       }
     }
+    if self.type == ExprType.Lt {
+    }
     if self.type != ExprType.Equals {
-      // Recover under-resolved operand types (a relation method's bare-knot
-      // parameters) so width computation and user-operator dispatch see the
-      // concrete class instance.
-      if !isnull(left.typedValue) {
-        if argTypeUnderResolved(builder, left.typedValue!) {
-          lRec = left.resolvedArgType(builder)
-          if !argTypeUnderResolved(builder, lRec) {
-            left.typedValue = lRec
-          }
+      // Recover under-resolved (or cleared) operand types -- a relation
+      // method's bare-knot parameters -- so width computation and
+      // user-operator dispatch see the concrete class instance.
+      lNeedsRec = isnull(left.typedValue)
+      if !lNeedsRec {
+        lNeedsRec = argTypeUnderResolved(builder, left.typedValue!)
+      }
+      if lNeedsRec {
+        lRec = left.resolvedArgType(builder)
+        if !argTypeUnderResolved(builder, lRec) {
+          left.typedValue = lRec
         }
       }
-      if !isnull(right.typedValue) {
-        if argTypeUnderResolved(builder, right.typedValue!) {
-          rRec = right.resolvedArgType(builder)
-          if !argTypeUnderResolved(builder, rRec) {
-            right.typedValue = rRec
-          }
+      rNeedsRec = isnull(right.typedValue)
+      if !rNeedsRec {
+        rNeedsRec = argTypeUnderResolved(builder, right.typedValue!)
+      }
+      if rNeedsRec {
+        rRec = right.resolvedArgType(builder)
+        if !argTypeUnderResolved(builder, rRec) {
+          right.typedValue = rRec
         }
       }
     }
