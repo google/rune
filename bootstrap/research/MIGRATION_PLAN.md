@@ -15,6 +15,104 @@ direction C, A1–A7), `IMPLEMENTATION_PLAN.md` (failure triage, Stage 0–1 his
 
 ---
 
+## ⚠ REASSESSMENT (2026-07-01) — supersedes Stage B; re-sequences B/C
+
+Full re-read of The Lyric Book (ch08 relations, ch10 Dict, ch14 pipeline/4-phase Check;
+`lyric-reassess` workflow, 6 book-mining agents) + empirical re-measurement on a clean rebuild.
+This block overrides the Stage-B plan below where they conflict.
+
+**Empirical corrections to the snapshot:**
+- Harness reads the clean baseline (`2663f55`) at **187/205**, not 188 (1-test drift is the
+  pool-resize dragon; use 187 as the floor for this harness). Failing 18: `allocfree
+  defaultMethods dictitr dicttest edwards edwards2 escapedCharTest funcptr gf2 heapqlisttest
+  heapqtest heapsort in integer printargv safe turingTypeConstraints uint2string`.
+- **Stage B as scoped (name-only Phase-0 stub + stub-reuse + demandClass in the arrayof arm)
+  is a PROVEN DEAD END.** Freshly rebuilt with no dict, it regressed **187→180**, breaking 7
+  HashedClass-cluster tests (`classheapsort classtype hashedClassTest hashedtest
+  printArrayOfClasses symtest twohash`) and greening ZERO. The earlier "188-neutral" reading
+  was an artifact of a stale (dict-loaded) binary. Changes preserved in `stash@{0}`, reverted.
+
+**Why it can't work (root cause, book-confirmed — ch14 §14.3):** Lyric's Check is 4-phase with
+a hard barrier — Phase 0 pre-registers NAMES, **Phase 1 fills full TypeInfo/FIELDS declaratively
+by reading syntactic + desugar-injected field nodes (executing NO body)**, Phase 1.5 binds
+methods, Phase 2 checks bodies. Lyric's Phase-0 is name-only *only because* Phase 1 later fills
+fields without running anything. **Rune discovers a class's fields by EXECUTING its constructor
+body** — field-discovery and body-checking are fused, so there is no declarative Phase-1
+analogue. A name-only stub carries no fields, and `demandClass` (which runs the body) fired
+mid-`arrayof` re-enters construction → the −7. *The prerequisite the plan skipped is splitting
+field-collection out of constructor execution.*
+
+**Two DISTINCT failure modes were being conflated (disambiguate before coding):**
+1. **Forward-ref / field-discovery** — `Entry` resolves null while `Dict` binds (needs Entry's
+   fields available). This is the Phase-1 gap above. Blocks the Dict cluster from *binding*.
+2. **Template-emission contamination** — merely *loading* `dict` (adding it to the loader,
+   which compiles it into every program incl. the self-build) regresses the SAME 7 HashedClass
+   users. That is a monomorphization / per-signature *isolation* problem (Stage C), not field
+   discovery. `dict.rn` and `heapq.rn` both exist as builtins but are unloaded; **5 of 8
+   in-scope failures (`dicttest dictitr in heapqtest heapsort`) are gated on loading one of
+   them**, and loading regresses −7.
+
+**Target calibration (ch10 §10.5):** Lyric ITSELF cannot compile `Dict<K,V>` as a *field on a
+class* — "TypeVar leak 'V'", identical to Rune's v54/v-111; it's on Lyric's roadmap. But
+multi-signature *top-level* Dict (our `dicttest`) works in Lyric via monomorphization. All our
+failing Dict/Heapq tests are top-level → within the Lyric frontier; don't chase Dict-as-field.
+
+**Out of book scope entirely:** D-binding (`gf2 integer safe funcptr`) — the book has NO HM
+let-generalization (inference is one-directional call-site arg→param unification only). Source
+these from `BINDING_RESEARCH.md §3`, not Lyric. Representation (`escapedCharTest uint2string
+allocfree defaultMethods`) — length-prefixed strings / object-pool, orthogonal.
+
+**RE-SEQUENCED PLAN (replaces A→B→C→D):**
+- **D1 — Diagnostic spike (DONE 2026-07-01).** Found the dict-load blocker has TWO layers, and
+  the first was NOT the dragon:
+  - **Layer 1 — `[]` lexer bug (FIXED, committed `d068837`).** Loading `dict` crashed the
+    compiler *while lexing* `dict.rn` — historically blamed on the "pool-resize dragon," but it
+    is **deterministic, not count-sensitive** (every byte-count variant of adjacent `[]` crashes;
+    `[ ]` with a space is fine). Root: the lexer adjusted `groupDepth` from the peeked first
+    char, so the two-char `[]` index-operator token counted its `[` as opening a group while its
+    `]` (inside the token) never closed it → `groupDepth` stuck → the newline-swallow loop ate
+    every newline to EOF → run off the buffer. Fixed by counting group depth from the whole
+    token. Suite-neutral 187. This unblocks *lexing* `dict.rn`/`operator []`.
+  - **Layer 2 — uninstantiated-template emission (STILL OPEN, = Stage C).** With `dict` loaded,
+    a program that never uses `Dict` still emits `Dict`'s class methods AND its Hashed-relation
+    methods that `hoistNestedFunctions` lifted to module level (`updateHashTableAfterResize_h1`,
+    …) carrying the class's free type vars → invalid C (`Dict_v135_v136_t`, `hashValue_v_u45125`).
+    Two guard attempts REJECTED: (a) a `hasFreeVars` guard on `genCMethod`/`genCPlainFunc` is too
+    coarse — it also skips legitimately-needed free-var `Function`-typed methods that resolve
+    under an active binding, regressing `genericFactorial polygroup recursiveDestructor twohash`
+    (183/205, no dict); (b) a class-level "skip methods of an uninstantiated generic class" guard
+    on `genCConstructor` is suite-neutral (187, no dict) but MISSES the hoisted relation
+    functions (they are module-level plain functions, not class children) → PASS=0 with dict.
+    **Conclusion:** Layer 2 needs true reachability/per-signature monomorphization — emit only
+    specializations reachable from a concrete use, skipping uninstantiated templates INCLUDING
+    their hoisted relation functions — plus a `validate_post_mono` gate. `hasFreeVars` alone is
+    not the discriminator; "reachable from a concrete instantiation/use" is. This is Stage C.
+  - **So:** the dict cluster's TWO gates are now (1) lex `[]` — DONE; (2) don't emit
+    uninstantiated templates — Stage C. There is no separate `demandClass`-reentrancy blocker for
+    dict loading; the earlier −7 was measured with the (now-abandoned) Stage-B changes.
+- **Stage C — Iterative monomorphization FIRST (book-specified, lower risk, post-Check pass):**
+  import the book's invariants verbatim — a **fixpoint worklist** over `(fn, concrete-sig)`
+  ("converges in 2–3 iterations"), and a **`validate_post_mono` gate** asserting no residual
+  type params. Per-signature field-type isolation is the likely fix for the template-emission
+  −7, so C may be what actually unblocks *loading* dict/heapq. Targets the non-loading-gated
+  `heapqlisttest turingTypeConstraints edwards2` immediately; then `heapqtest heapsort dicttest`
+  once loading is safe. Do C0→C1→C3, each suite-gated.
+- **Stage B′ — Declarative field pre-pass (GATED on D1; high risk):** only if D1 shows forward-ref
+  is still blocking after C. Split field-name/type collection out of constructor execution into
+  a Rune "Phase 1" that reads ctor self-assignments + relation-injected fields WITHOUT running
+  the body, so `Dict`↔`Entry` resolves without re-entrancy. Validate against the compiler's OWN
+  relations at every step. If infeasible without a broader inference refactor, document the Dict
+  cluster as a known limitation at the Rune/Lyric frontier.
+- **Stage D — unchanged, out of book scope.** Realistic migration ceiling ≈ **195/205**; the
+  remaining ~10 are D-binding + representation, tracked as known limitations.
+
+**Minor doc corrections:** (a) `ref`/`unref` are NOT absent from Lyric — it exposes raw
+`ref`/`unref` behind a `trusted` modifier; Lyric drops the *safety guarantee*, not the ops.
+(b) Lyric finalizes label-prefixed method names in a LATE `rewrite_impl_renames` pass (after
+mono), not at desugar — a possible source of name issues if Rune resolves them early.
+
+---
+
 ## Objective / definition of done
 
 1. **Architecture:** transformer/relation expansion happens in a dedicated **desugar pass
