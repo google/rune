@@ -22,15 +22,18 @@ Full re-read of The Lyric Book (ch08 relations, ch10 Dict, ch14 pipeline/4-phase
 This block overrides the Stage-B plan below where they conflict.
 
 **Empirical corrections to the snapshot:**
-- Harness reads the clean baseline (`2663f55`) at **187/205**, not 188 (1-test drift is the
-  pool-resize dragon; use 187 as the floor for this harness). Failing 18: `allocfree
-  defaultMethods dictitr dicttest edwards edwards2 escapedCharTest funcptr gf2 heapqlisttest
-  heapqtest heapsort in integer printargv safe turingTypeConstraints uint2string`.
+- Clean baseline (`2663f55`) is **188/205** (17 failing) — confirmed. An earlier reading of
+  "187" was a HARNESS BUG, not a regression or dragon drift: the harness ran binaries by bare
+  path (`tests/printargv`) so `printargv`'s golden `["./tests/printargv"]` mismatched on argv[0];
+  invoking via `./tests/<name>` (fixed in `67e24ca`) restores the true 188. Failing 17:
+  `allocfree defaultMethods dictitr dicttest edwards edwards2 escapedCharTest funcptr gf2
+  heapqlisttest heapqtest heapsort in integer safe turingTypeConstraints uint2string`.
 - **Stage B as scoped (name-only Phase-0 stub + stub-reuse + demandClass in the arrayof arm)
-  is a PROVEN DEAD END.** Freshly rebuilt with no dict, it regressed **187→180**, breaking 7
+  is a PROVEN DEAD END.** Freshly rebuilt with no dict, it regressed **188→181**, breaking 7
   HashedClass-cluster tests (`classheapsort classtype hashedClassTest hashedtest
   printArrayOfClasses symtest twohash`) and greening ZERO. The earlier "188-neutral" reading
   was an artifact of a stale (dict-loaded) binary. Changes preserved in `stash@{0}`, reverted.
+  (Absolute counts in this doc from before `67e24ca` were measured one low; deltas are correct.)
 
 **Why it can't work (root cause, book-confirmed — ch14 §14.3):** Lyric's Check is 4-phase with
 a hard barrier — Phase 0 pre-registers NAMES, **Phase 1 fills full TypeInfo/FIELDS declaratively
@@ -72,7 +75,7 @@ allocfree defaultMethods`) — length-prefixed strings / object-pool, orthogonal
     char, so the two-char `[]` index-operator token counted its `[` as opening a group while its
     `]` (inside the token) never closed it → `groupDepth` stuck → the newline-swallow loop ate
     every newline to EOF → run off the buffer. Fixed by counting group depth from the whole
-    token. Suite-neutral 187. This unblocks *lexing* `dict.rn`/`operator []`.
+    token. Suite-neutral 188. This unblocks *lexing* `dict.rn`/`operator []`.
   - **Layer 2 — uninstantiated-template emission (STILL OPEN, = Stage C).** With `dict` loaded,
     a program that never uses `Dict` still emits `Dict`'s class methods AND its Hashed-relation
     methods that `hoistNestedFunctions` lifted to module level (`updateHashTableAfterResize_h1`,
@@ -80,8 +83,8 @@ allocfree defaultMethods`) — length-prefixed strings / object-pool, orthogonal
     Two guard attempts REJECTED: (a) a `hasFreeVars` guard on `genCMethod`/`genCPlainFunc` is too
     coarse — it also skips legitimately-needed free-var `Function`-typed methods that resolve
     under an active binding, regressing `genericFactorial polygroup recursiveDestructor twohash`
-    (183/205, no dict); (b) a class-level "skip methods of an uninstantiated generic class" guard
-    on `genCConstructor` is suite-neutral (187, no dict) but MISSES the hoisted relation
+    (184/205, no dict); (b) a class-level "skip methods of an uninstantiated generic class" guard
+    on `genCConstructor` is suite-neutral (188, no dict) but MISSES the hoisted relation
     functions (they are module-level plain functions, not class children) → PASS=0 with dict.
     **Conclusion:** Layer 2 needs true reachability/per-signature monomorphization — emit only
     specializations reachable from a concrete use, skipping uninstantiated templates INCLUDING
@@ -109,7 +112,7 @@ allocfree defaultMethods`) — length-prefixed strings / object-pool, orthogonal
     scan the top module's tokens/source for the identifiers `Dict`/`Heapq` before loading (coarse
     but sufficient; refine to true reachability later). Expected to unblock single-signature
     `in`/`dictitr`/`heapqtest`; `dicttest` (two `Dict` signatures in one program) additionally
-    needs C1 per-signature mono. Gate at 187 zero-drops; verify the transformer-only builtins
+    needs C1 per-signature mono. Gate at 188 zero-drops; verify the transformer-only builtins
     still load and the compiler self-builds. If conditional loading proves leaky, fall back to the
     general uninstantiated-template emission skip (must also cover HOISTED relation functions —
     the gap that made the naive genCConstructor guard fail, see D1 Layer 2).
