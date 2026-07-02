@@ -722,6 +722,32 @@ class TypeChecker(self) {
     }
   }
 
+  // Resolve every expression type in |block| in place.  An inlined
+  // iterator's copy belongs to one call site, and its unification chains
+  // run through the iterator's opened method variables, which
+  // deInstantiate/generalization pops before emission; baking keeps the
+  // structure (nested variables still re-resolve under emission bindings)
+  // while dropping the fragile chain middles.
+  func bakeExprTypes(self, block: db.Block) {
+    for statement in block.statements() {
+      if !isnull(statement.expr) {
+        self.bakeExprTypesIn(statement.expr!)
+      }
+      if !isnull(statement.subBlock) {
+        self.bakeExprTypes(statement.subBlock!)
+      }
+    }
+  }
+
+  func bakeExprTypesIn(self, expr: db.Expr) {
+    if !isnull(expr.typedValue) {
+      expr.typedValue = self.resolve(expr.typedValue!)
+    }
+    for child in expr.childExprs() {
+      self.bakeExprTypesIn(child)
+    }
+  }
+
   func collectIdentNames(self, expr: db.Expr, var names: [string]) {
     if expr.type == db.ExprType.Ident {
       names.append(expr.val.symVal.name)
@@ -3106,6 +3132,9 @@ class TypeChecker(self) {
         loopVarExpr.typedValue = self.resolve(loopVarTy!)
       }
     }
+    // Bake all the copy's expression types while this call site's
+    // unification context is still live (see bakeExprTypes).
+    self.bakeExprTypes(newBlock)
   }
 
   // Statements -------------------------------------------------------------

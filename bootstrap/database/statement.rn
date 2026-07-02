@@ -208,6 +208,28 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     return newStatement
   }
 
+  // The outermost block enclosing this statement: the function body, or the
+  // module's top-level block for module statements.  Roots the local-
+  // declaration chase in resolvedArgType.
+  func lexicalRootBlock(self) -> Block? {
+    if isnull(self.block) {
+      return null(Block)
+    }
+    b = self.block!
+    walking = true
+    while walking {
+      owner = b.owningStatement
+      if isnull(owner) {
+        walking = false
+      } else if isnull(owner.block) {
+        walking = false
+      } else {
+        b = owner.block!
+      }
+    }
+    return b
+  }
+
   // C Generator .................................................
 
   func genC(self, builder: c.CBuilder) {
@@ -261,7 +283,31 @@ class Statement(self, block: Block, type: StateType, location: Location) {
 
   // Statements spliced in by iterator inlining; they emit directly into the
   // enclosing C block.
+  // Re-resolve under-resolved expression types in |block| through
+  // resolvedArgType's recovery (declaring-assignment chase, field types
+  // via the base class's concrete instantiation) and bake the results.
+  // An inlined iterator's chains run through popped method variables and
+  // bare class knots ([Entry] from the constructor's arrayof), and every
+  // downstream emitter (tuple, assign, print, call naming) reads
+  // typedValue.
+  func rebakeBlockTypes(self, builder: c.CBuilder, block: Block, root: Block?) {
+    for statement in block.statements() {
+      if !isnull(statement.expr) {
+        rebakeExprTypes(builder, statement.expr!, root)
+      }
+      if !isnull(statement.subBlock) {
+        self.rebakeBlockTypes(builder, statement.subBlock!, root)
+      }
+    }
+  }
+
   func genCInlinedBlock(self, builder: c.CBuilder) {
+    inlinedRoot = self.lexicalRootBlock()
+    self.rebakeBlockTypes(builder, self.subBlock!, inlinedRoot)
+    // The statement's own expr holds the foreach loop variable, whose type
+    // the pre-declaration below reads; recover it too (its declaring
+    // assignment is the yield-assign inside the inlined copy).
+    rebakeExprTypes(builder, self.expr!, inlinedRoot)
     // Pre-declare the foreach loop variable here: its first assignment is
     // inside the inlined iterator's loop, which would otherwise scope the C
     // declaration to that loop's body.
@@ -457,7 +503,17 @@ class Statement(self, block: Block, type: StateType, location: Location) {
         }
         if isnull(cexpr) {
           cexpr = expr.genC(builder)
-          ctype = builder.genCType(expr.typedValue)
+          printTy = expr.typedValue
+          if !isnull(printTy) {
+            if argTypeUnderResolved(builder, printTy!) {
+              // An inlined iterator's yield-bound local can keep a free
+              // type variable at emission; recover its type from its
+              // declaring assignment, searching this statement's lexical
+              // root (module-level code has no currentEmittingFn).
+              printTy = expr.resolvedArgType(builder, 0u32, self.lexicalRootBlock())
+            }
+          }
+          ctype = builder.genCType(printTy)
           assert !isnull(ctype)
           ctypename = ctype.toString()
 
