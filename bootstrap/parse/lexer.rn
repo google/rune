@@ -78,13 +78,11 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
     self.checkCharValid(char)
     filepath = self.filepath!
     c = filepath.text[char.pos]
-    if c == '(' || c == '[' {
-      self.groupDepth += 1u32
-    } else if c == ')' || c == ']' {
-      if self.groupDepth > 0u32 {
-        self.groupDepth -= 1u32
-      }
-    }
+    // Group depth (which drives newline-swallowing inside ()/[]) is adjusted
+    // in parseNonAlphaKeyword from the ACTUAL token, not this peeked first
+    // char: the index operator "[]" is a single two-char token, so counting
+    // its leading '[' here would leave the depth stuck (the ']' is inside the
+    // token and never decrements), swallowing every later newline to EOF.
     if c == '"' || self.useWeakStrings && c == '\'' {
       return self.parseString(c)
     } else if c == '\'' {
@@ -560,6 +558,19 @@ class Lexer(self, filepath: db.Filepath, keytab: Keytab, readFile: bool = true) 
         // Check to see if it is a newline.
         if i == 1 && keyword.sym.name[0] == '\n' {
           self.line += 1
+        }
+        // Adjust group depth from the whole token: only a lone '('/'[' opens a
+        // group and a lone ')'/']' closes one.  A multi-char token like the
+        // "[]" index operator is net-zero, so its ']' is not miscounted.
+        if i == 1 {
+          groupChar = keyword.sym.name[0]
+          if groupChar == '(' || groupChar == '[' {
+            self.groupDepth += 1u32
+          } else if groupChar == ')' || groupChar == ']' {
+            if self.groupDepth > 0u32 {
+              self.groupDepth -= 1u32
+            }
+          }
         }
         return Token.newValueToken(self, keyword!, self.location())
       }
