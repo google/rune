@@ -461,8 +461,13 @@ func argTypeHasBareKnot(builder: c.CBuilder, t: types.Type, depth: u32) -> bool 
   if rt.type == types.Type.TypeClass.Typename {
     if isnull(rt.tyname.params) {
       // Only class knots count: builtin named types (string, none) are
-      // Typenames with no parameter tuple and are fully resolved.
-      return !isnull(builder.typechecker.lookupClass(rt.tyname.name))
+      // Typenames with no parameter tuple and are fully resolved -- and a
+      // bare name of a PARAMETERLESS class is complete, too.
+      kinfo = builder.typechecker.lookupClass(rt.tyname.name)
+      if isnull(kinfo) {
+        return false
+      }
+      return kinfo.paramVars.length() > 0
     }
     for element in rt.tyname.params.elements {
       if argTypeHasBareKnot(builder, element, depth + 1u32) {
@@ -1932,7 +1937,8 @@ class Expr(self, type: ExprType, location: Location) {
       if !isnull(chaseRoot) {
         declRhs = findLocalDecl(chaseRoot, self.val.symVal.name)
         if !isnull(declRhs) {
-          declTy = declRhs.resolvedArgType(builder, depth + 1u32, scopeBlock)
+          declTy = adoptConcreteBaseTy(builder,
+              declRhs.resolvedArgType(builder, depth + 1u32, scopeBlock))
           if !argTypeUnderResolved(builder, declTy) {
             return declTy
           }
