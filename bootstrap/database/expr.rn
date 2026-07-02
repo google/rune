@@ -407,6 +407,42 @@ func rebakeExprTypes(builder: c.CBuilder, expr: Expr, root: Block?) {
   }
 }
 
+// The first return statement's expression in |block| (searched
+// recursively), or null.  Roots resolvedArgType's method-return recovery.
+func findReturnExpr(block: Block) -> Expr? {
+  for statement in block.statements() {
+    if statement.type == StateType.Return {
+      if !isnull(statement.expr) {
+        return statement.expr
+      }
+    }
+    if !isnull(statement.subBlock) {
+      rsub = findReturnExpr(statement.subBlock!)
+      if !isnull(rsub) {
+        return rsub
+      }
+    }
+  }
+  return null(Expr)
+}
+
+// If |t| is an under-resolved class Typename (bare knot or free params),
+// adopt the class's concrete instantiation the way the C type generator
+// does; otherwise return |t| unchanged.
+func adoptConcreteBaseTy(builder: c.CBuilder, t: types.Type) -> types.Type {
+  if t.type != types.Type.TypeClass.Typename {
+    return t
+  }
+  if !argTypeUnderResolved(builder, t) {
+    return t
+  }
+  concrete = types.Type(builder.typeGenerator.concreteClassTyname(t.tyname!))
+  if argTypeUnderResolved(builder, concrete) {
+    return t
+  }
+  return concrete
+}
+
 // True if |t| resolves to a type that cannot fully name a specialization:
 // it holds a free type variable, or a bare class-name knot (a Typename with
 // no parameter tuple) somewhere in its structure.
@@ -1103,6 +1139,45 @@ class Expr(self, type: ExprType, location: Location) {
               }
             }
           }
+          if callName == "" {
+            // No recorded instantiation is concrete for these operands (the
+            // operator was only ever applied to a relation method's generic
+            // children, which never retypecheck); synthesize one from the
+            // resolved operand types.
+            opOpened = tc.openPoly(opty.poly!)
+            if opOpened.type == types.Type.TypeClass.Function {
+              opArgs = arrayof(types.Type)
+              opArgs.append(ltype)
+              opArgs.append(rtype)
+              opTe = tc.unify(opOpened.function.params!,
+                  types.Type(types.TupleType(opArgs)))
+              if isnull(opTe) {
+                opNewInst = opty.poly.instantiations.lastTyvarInstantiation
+                if !isnull(opNewInst) {
+                  builder.resolveInstantiation(opNewInst!)
+                  builder.instantiate(opty.poly!, opNewInst!)
+                  optypes = arrayof(types.Type)
+                  for opVariable in opfn.variables() {
+                    optypes.append(tc.resolve(opVariable.typedValue!))
+                  }
+                  opIname = types.Type(types.TupleType(optypes)).genSpecializationName(opfn.sym.name)
+                  opFree = false
+                  for opt in optypes {
+                    if tc.hasFreeVars(opt) {
+                      opFree = true
+                    }
+                  }
+                  builder.deInstantiate(opty.poly!)
+                  if opFree == false && optypes.length() == 2 {
+                    if !builder.alreadyEmitted(opIname) {
+                      opfn.genCPolyInstantiation(builder, opNewInst!)
+                    }
+                    callName = opIname
+                  }
+                }
+              }
+            }
+          }
         } else if opty.type == types.Type.TypeClass.Function {
           // Monomorphic operator, emitted under its plain name; check the
           // parameter types match these operands.
@@ -1440,6 +1515,27 @@ class Expr(self, type: ExprType, location: Location) {
       if left.type == ExprType.Ident && isnull(left.typedValue) {
         if !isnull(right.typedValue) {
           left.typedValue = right.typedValue
+        }
+      }
+    }
+    if self.type != ExprType.Equals {
+      // Recover under-resolved operand types (a relation method's bare-knot
+      // parameters) so width computation and user-operator dispatch see the
+      // concrete class instance.
+      if !isnull(left.typedValue) {
+        if argTypeUnderResolved(builder, left.typedValue!) {
+          lRec = left.resolvedArgType(builder)
+          if !argTypeUnderResolved(builder, lRec) {
+            left.typedValue = lRec
+          }
+        }
+      }
+      if !isnull(right.typedValue) {
+        if argTypeUnderResolved(builder, right.typedValue!) {
+          rRec = right.resolvedArgType(builder)
+          if !argTypeUnderResolved(builder, rRec) {
+            right.typedValue = rRec
+          }
         }
       }
     }
@@ -1783,9 +1879,17 @@ class Expr(self, type: ExprType, location: Location) {
     if self.type == ExprType.Ident && !isnull(builder.currentEmittingFn) {
       for v in builder.currentEmittingFn.variables() {
         if v.isParam && v.sym.name == self.val.symVal.name && !isnull(v.typedValue) {
-          return builder.typechecker.resolve(v.typedValue!)
+          // A relation method's unconstrained parameter (a _compare's
+          // children) resolves to a bare class knot; adopt the class's
+          // concrete instantiation like the C type generator does.
+          return adoptConcreteBaseTy(builder,
+              builder.typechecker.resolve(v.typedValue!))
         }
       }
+    } else if self.type == ExprType.Notnull {
+      // x! carries its operand's type.
+      return self.firstChildExpr.resolvedArgType(builder, depth + 1u32,
+          scopeBlock)
     } else if self.type == ExprType.Index {
       idxIndexee = self.firstChildExpr!
       idxNode = idxIndexee.nextExprChildExpr!
@@ -1829,6 +1933,97 @@ class Expr(self, type: ExprType, location: Location) {
         }
       }
     }
+    if self.type == ExprType.Call {
+      // A method call whose return type variable escaped the bindings
+      // (heapq.pop() chained to the class's template variable): recover
+      // the return type from the method's definition, with the class's
+      // template variables substituted by the receiver's concrete
+      // parameters.
+      callee = self.firstChildExpr!
+      if callee.type == ExprType.Dot {
+        cBase = callee.firstChildExpr!
+        cMember = cBase.nextExprChildExpr!
+        if cMember.type == ExprType.Ident {
+          cBaseTy = adoptConcreteBaseTy(builder,
+              cBase.resolvedArgType(builder, depth + 1u32, scopeBlock))
+              cBaseTy.toString()
+          if cBaseTy.type == types.Type.TypeClass.Typename {
+            cinfo = builder.typechecker.lookupClass(cBaseTy.tyname.name)
+            if !isnull(cinfo) {
+              if !isnull(cinfo.fn) {
+                for cChild in cinfo.fn.childFunctions() {
+                  if cChild.sym.name == cMember.val.symVal.name {
+                    cmty = cChild.typedValue
+                    if !isnull(cmty) {
+                      cScope = cmty!
+                      if cScope.type == types.Type.TypeClass.Polymorphic {
+                        cScope = cScope.poly.scope
+                      }
+                      if cScope.type == types.Type.TypeClass.Function {
+                        cResTy = builder.typechecker.substituteClassVars(
+                            cinfo!, cBaseTy, cScope.function.result!)
+                        if !argTypeUnderResolved(builder, cResTy) {
+                          return cResTy
+                        }
+                      }
+                      // The definition sweep bakes recorded instantiations;
+                      // adopt the result of the one whose self parameter is
+                      // this receiver.
+                      if cmty.type == types.Type.TypeClass.Polymorphic {
+                        cpi = cmty.poly.instantiations
+                        if !isnull(cpi) {
+                          for cInst in cpi {
+                            cIt = cInst.type
+                            if !isnull(cIt) {
+                              if cIt.type == types.Type.TypeClass.Function {
+                                cParams = builder.typechecker.resolve(cIt.function.params!)
+                                cSelfMatch = false
+                                if cParams.type == types.Type.TypeClass.Tuple {
+                                  if cParams.tuple.elements.length() > 0 {
+                                    cSelfTy = builder.typechecker.resolve(
+                                        cParams.tuple.elements[0])
+                                    if cSelfTy.type == types.Type.TypeClass.Typename {
+                                      if builder.classCName(cSelfTy) ==
+                                          builder.classCName(cBaseTy) {
+                                        cSelfMatch = true
+                                      }
+                                    }
+                                  }
+                                }
+                                if cSelfMatch {
+                                  cInstRes = builder.typechecker.resolve(
+                                      cIt.function.result!)
+                                  if !argTypeUnderResolved(builder, cInstRes) {
+                                    return cInstRes
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                      // Chase the method's own return expression, rooted in
+                      // its body (pop returns element.value, whose type
+                      // recovers through element's declaring assignment).
+                      if !isnull(cChild.subBlock) {
+                        cRetExpr = findReturnExpr(cChild.subBlock!)
+                        if !isnull(cRetExpr) {
+                          cRetTy = cRetExpr.resolvedArgType(builder,
+                              depth + 1u32, cChild.subBlock)
+                          if !argTypeUnderResolved(builder, cRetTy) {
+                            return cRetTy
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
     if self.type == ExprType.Tuple || self.type == ExprType.List {
       // A tuple literal's snapshot can hold popped variables even when
       // every element recovers; rebuild it from the children.
@@ -1855,18 +2050,9 @@ class Expr(self, type: ExprType, location: Location) {
       dotBase = self.firstChildExpr!
       dotMember = dotBase.nextExprChildExpr!
       if dotMember.type == ExprType.Ident {
-        baseTy = dotBase.resolvedArgType(builder, depth + 1u32, scopeBlock)
+        baseTy = adoptConcreteBaseTy(builder,
+            dotBase.resolvedArgType(builder, depth + 1u32, scopeBlock))
         if baseTy.type == types.Type.TypeClass.Typename {
-          if argTypeUnderResolved(builder, baseTy) {
-            // A bare-knot or free base still names its class; adopt the
-            // class's concrete instantiation the way the C type generator
-            // does (a relation body emitted for the only instantiation).
-            concreteBase = types.Type(
-                builder.typeGenerator.concreteClassTyname(baseTy.tyname!))
-            if !argTypeUnderResolved(builder, concreteBase) {
-              baseTy = concreteBase
-            }
-          }
           dinfo = builder.typechecker.lookupClass(baseTy.tyname.name)
           if !isnull(dinfo) {
             if !isnull(dinfo.strct) {

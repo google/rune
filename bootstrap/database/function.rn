@@ -859,7 +859,24 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
           builder.resolveInstantiation(instantiation)
           if builder.instantiationIsConcrete(instantiation) {
             builder.instantiate(fntype.poly!, instantiation)
-            self.genCMethodInstance(builder, instantiation.type)
+            // A synthesized instantiation can carry no resolved type (its
+            // result slot stayed an unbound variable); resolve the scope
+            // under the active bindings instead, like genCPolyInstantiation.
+            mInstTy = instantiation.type
+            if isnull(mInstTy) {
+              mInstTy = builder.typechecker.resolve(fntype.poly.scope)
+            }
+            if !isnull(mInstTy) {
+              mRepaired = self.repairMethodResult(builder, mInstTy!)
+              // Emitting with residual free variables would compose invalid
+              // C names/types; a call site that needs the specialization
+              // synthesizes it under bindings that do resolve it
+              // (emitMethodOnDemand applies the same gate).
+              if (mRepaired.type == types.Type.TypeClass.Function &&
+                  !builder.typechecker.hasFreeVars(mRepaired)) {
+                self.genCMethodInstance(builder, mRepaired)
+              }
+            }
             builder.deInstantiate(fntype.poly!)
           }
         }
@@ -867,6 +884,37 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     } else if fntype.type == types.Type.TypeClass.Function {
       self.genCMethodInstance(builder, fntype!)
     }
+  }
+
+  // If |mfn|'s only unresolved piece is its result (a method like pop
+  // returning a field of a bare-knot local: the result variable never
+  // generalizes and its binding chain pops before emission), recover the
+  // result through the method's own return expression and return a
+  // repaired copy; otherwise return |mfn| unchanged.
+  func repairMethodResult(self: Function, builder: c.CBuilder,
+      mfn: types.Type) -> types.Type {
+    if mfn.type != types.Type.TypeClass.Function {
+      return mfn
+    }
+    if !builder.typechecker.hasFreeVars(mfn!) {
+      return mfn
+    }
+    if builder.typechecker.hasFreeVars(mfn.function.params!) {
+      return mfn
+    }
+    if isnull(self.subBlock) {
+      return mfn
+    }
+    retExpr = findReturnExpr(self.subBlock!)
+    if isnull(retExpr) {
+      return mfn
+    }
+    retTy = retExpr.resolvedArgType(builder, 0u32, self.subBlock)
+    if argTypeUnderResolved(builder, retTy) {
+      return mfn
+    }
+    return types.Type(types.FunctionType(
+        builder.typechecker.resolve(mfn.function.params!), retTy))
   }
 
   // Generate one specialization of a class method.  fnInstType is the
