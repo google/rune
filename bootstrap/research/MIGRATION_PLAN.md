@@ -97,6 +97,22 @@ allocfree defaultMethods`) — length-prefixed strings / object-pool, orthogonal
   −7, so C may be what actually unblocks *loading* dict/heapq. Targets the non-loading-gated
   `heapqlisttest turingTypeConstraints edwards2` immediately; then `heapqtest heapsort dicttest`
   once loading is safe. Do C0→C1→C3, each suite-gated.
+  - **C-ENTRY — RECOMMENDED FIRST MOVE (do this before the mono worklist):** adopt Lyric's
+    `merge_stdlib` reachability idea (book ch13 §13.4) — load `dict`/`heapq` **only when the top
+    program references `Dict`/`Heapq`**, instead of force-loading every builtin into every program
+    (`parse/loader.rn:118-128 loadBuiltinModules`). Rationale: the uninstantiated-template
+    emission crash (D1 Layer 2) only happens because `dict` is loaded into programs that never use
+    it; if `dict` is present *only when used*, it is always instantiated → no free-var emission,
+    and no need to solve general uninstantiated-template skipping first. Keep the relation
+    TRANSFORMERS (`doublylinked hashed hashedclass` …) always-loaded (the compiler's own relations
+    need them); make only the container CLASSES (`dict`, `heapq`) conditional. Cheap reachability:
+    scan the top module's tokens/source for the identifiers `Dict`/`Heapq` before loading (coarse
+    but sufficient; refine to true reachability later). Expected to unblock single-signature
+    `in`/`dictitr`/`heapqtest`; `dicttest` (two `Dict` signatures in one program) additionally
+    needs C1 per-signature mono. Gate at 187 zero-drops; verify the transformer-only builtins
+    still load and the compiler self-builds. If conditional loading proves leaky, fall back to the
+    general uninstantiated-template emission skip (must also cover HOISTED relation functions —
+    the gap that made the naive genCConstructor guard fail, see D1 Layer 2).
 - **Stage B′ — Declarative field pre-pass (GATED on D1; high risk):** only if D1 shows forward-ref
   is still blocking after C. Split field-name/type collection out of constructor execution into
   a Rune "Phase 1" that reads ctor self-assignments + relation-injected fields WITHOUT running
