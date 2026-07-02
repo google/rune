@@ -962,6 +962,38 @@ class TypeChecker(self) {
     self.unifier.dump()
   }
 
+  // Bind |tyvar| (which must be unbound) so resolution reaches |binding|.
+  // A recorded binding can itself be an unresolved type variable; a raw
+  // bindVar would then create self-loops or backward var->var links that
+  // violate resolveVar's chain-orientation invariant (chains point from
+  // higher to lower variable ids).  Follow the binding to its chain
+  // representative and link the two chains oriented high -> low instead.
+  // Returns the variable actually bound: |tyvar| itself, the binding's
+  // representative when orientation demanded the reverse link, or null
+  // when both sides are already the same chain (nothing to bind).
+  func bindTowards(self, tyvar: TypeVar, binding: Type) -> TypeVar? {
+    if binding.type != Type.TypeClass.Var {
+      self.unifier.bindVar(tyvar, binding)
+      return tyvar
+    }
+    bRep = self.unifier.representative(binding.tyvar!)
+    if bRep.id == tyvar.id {
+      return null(TypeVar)
+    }
+    bVal = self.unifier.lookupVar(bRep.id)
+    if !isnull(bVal) {
+      // The binding's chain ends in a concrete type: bind to that.
+      self.unifier.bindVar(tyvar, bVal!)
+      return tyvar
+    }
+    if tyvar.id > bRep.id {
+      self.unifier.bindVar(tyvar, Type(bRep))
+      return tyvar
+    }
+    self.unifier.bindVar(bRep, Type(tyvar))
+    return bRep
+  }
+
   func instantiate(self, poly: PolymorphicType, inst: TyvarInstantiation) {
     // for a limited time, pretend that the bound variables in poly are bound
     // to the bindings in the instantiation.
@@ -974,15 +1006,26 @@ class TypeChecker(self) {
        binding = inst.varBindings[index]
        val = self.unifier.lookupVar(btv.id)
        if isnull(val) {
-         self.unifier.bindVar(btv, binding)
+         boundVar = self.bindTowards(btv, binding)
+         if isnull(boundVar) {
+           // The binding is btv's own chain; nothing to bind.
+           poly.skippedBindIds.append(btv.id)
+         } else if boundVar.id != btv.id {
+           // Orientation bound the binding's representative instead; make
+           // sure deInstantiate unbinds it and leaves btv alone.
+           poly.skippedBindIds.append(btv.id)
+           poly.chainBoundVars.append(boundVar!)
+         }
        } else if val.type == Type.TypeClass.Var {
          // Bound to another variable: bind the representative at the end of
          // the chain instead, so resolution reaches this instantiation.
          poly.skippedBindIds.append(btv.id)
          rep = self.unifier.representative(btv)
          if rep.id != btv.id && isnull(self.unifier.lookupVar(rep.id)) {
-           self.unifier.bindVar(rep, binding)
-           poly.chainBoundVars.append(rep)
+           boundVar = self.bindTowards(rep, binding)
+           if !isnull(boundVar) {
+             poly.chainBoundVars.append(boundVar!)
+           }
          }
        } else {
          // Concretely bound at a use site (e.g. a builtin operator
@@ -3301,8 +3344,19 @@ class TypeChecker(self) {
                     }
                     t = self.typeswitchPatternType(firstPattern!)
                     if !isnull(t) {
-                      self.unifier.bindVar(rty.tyvar!, t!)
-                      bound = true
+                      // A pattern that resolves to the scrutinee's own
+                      // variable carries no information; binding it would
+                      // create a self-loop in the unifier chain.
+                      selfBind = false
+                      if t.type == Type.TypeClass.Var {
+                        if self.unifier.representative(t.tyvar!).id == rty.tyvar.id {
+                          selfBind = true
+                        }
+                      }
+                      if !selfBind {
+                        self.unifier.bindVar(rty.tyvar!, t!)
+                        bound = true
+                      }
                     }
                   }
                 }
