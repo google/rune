@@ -278,7 +278,12 @@ class CBuilder(self, tc: types.TypeChecker) {
                 for dvi in range(dnb) {
                   if dvi + 1 < dnb {
                     dvb = self.typechecker.resolve(dinst.varBindings[dvi])
-                    if dvb.type == types.Type.TypeClass.Var {
+                    // Free variables nested inside a composite binding
+                    // (Dict(v135, v136)) under-bind the body just like a
+                    // bare variable: the retypecheck would bake stale
+                    // types AND consume the one-shot flag, starving the
+                    // emission-time retypecheck under real bindings.
+                    if self.typechecker.hasFreeVars(dvb) {
                       dConc = false
                     }
                   }

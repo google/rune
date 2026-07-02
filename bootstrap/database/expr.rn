@@ -18,6 +18,7 @@ use filepath
 use location
 use value
 use bigint
+use block
 use datatype
 use ident
 use statement
@@ -362,6 +363,75 @@ export func getCompoundAssignBaseOp(type: ExprType) -> ExprType {
 // unsuffixed-literal type (AnyInt) against any integer type.  Compared by
 // specialization name: Type.equals does not see structurally equal
 // parameter tuples as equal.
+// The right-hand side of the first `name = <expr>` assignment in |block|
+// (searched recursively), or null.  A function local declares through its
+// first assignment, so that expression carries the local's type when the
+// identifier's own type snapshot is stale (see resolvedArgType).
+func findLocalDecl(block: Block?, name: string) -> Expr? {
+  if isnull(block) {
+    return null(Expr)
+  }
+  for statement in block.statements() {
+    if !isnull(statement.expr) {
+      if statement.expr.type == ExprType.Equals {
+        dlhs = statement.expr.firstChildExpr!
+        if dlhs.type == ExprType.Ident {
+          if dlhs.val.symVal.name == name {
+            return dlhs.nextExprChildExpr
+          }
+        }
+      }
+    }
+    dsub = findLocalDecl(statement.subBlock, name)
+    if !isnull(dsub) {
+      return dsub
+    }
+  }
+  return null(Expr)
+}
+
+// True if |t| resolves to a type that cannot fully name a specialization:
+// it holds a free type variable, or a bare class-name knot (a Typename with
+// no parameter tuple) somewhere in its structure.
+func argTypeUnderResolved(builder: c.CBuilder, t: types.Type) -> bool {
+  if builder.typechecker.hasFreeVars(t) {
+    return true
+  }
+  return argTypeHasBareKnot(builder, t, 0u32)
+}
+
+func argTypeHasBareKnot(builder: c.CBuilder, t: types.Type, depth: u32) -> bool {
+  if depth > 8u32 {
+    return false
+  }
+  rt = builder.typechecker.resolve(t)
+  if rt.type == types.Type.TypeClass.Typename {
+    if isnull(rt.tyname.params) {
+      // Only class knots count: builtin named types (string, none) are
+      // Typenames with no parameter tuple and are fully resolved.
+      return !isnull(builder.typechecker.lookupClass(rt.tyname.name))
+    }
+    for element in rt.tyname.params.elements {
+      if argTypeHasBareKnot(builder, element, depth + 1u32) {
+        return true
+      }
+    }
+    return false
+  }
+  if rt.type == types.Type.TypeClass.Array {
+    return argTypeHasBareKnot(builder, rt.array.elementType!, depth + 1u32)
+  }
+  if rt.type == types.Type.TypeClass.Tuple {
+    for element in rt.tuple.elements {
+      if argTypeHasBareKnot(builder, element, depth + 1u32) {
+        return true
+      }
+    }
+    return false
+  }
+  return false
+}
+
 func typeArgCompatible(argType: types.Type, paramType: types.Type) -> bool {
   // An unresolved type variable on either side is a "don't know" slot that
   // matches anything: a deferred operator's operand (e.g. a recursive call's
@@ -1688,7 +1758,7 @@ class Expr(self, type: ExprType, location: Location) {
   // parameter reference through the emitting function's live variable, and
   // an index through its re-derived indexee, yields the correct
   // per-instantiation argument type (e.g. depth(x[0]) shrinking ((),) to ()).
-  func resolvedArgType(self, builder: c.CBuilder) -> types.Type {
+  func resolvedArgType(self, builder: c.CBuilder, depth: u32 = 0u32) -> types.Type {
     if self.type == ExprType.Ident && !isnull(builder.currentEmittingFn) {
       for v in builder.currentEmittingFn.variables() {
         if v.isParam && v.sym.name == self.val.symVal.name && !isnull(v.typedValue) {
@@ -1698,7 +1768,7 @@ class Expr(self, type: ExprType, location: Location) {
     } else if self.type == ExprType.Index {
       idxIndexee = self.firstChildExpr!
       idxNode = idxIndexee.nextExprChildExpr!
-      rIndexee = idxIndexee.resolvedArgType(builder)
+      rIndexee = idxIndexee.resolvedArgType(builder, depth + 1u32)
       if rIndexee.type == types.Type.TypeClass.Tuple {
         if idxNode.type == ExprType.Constant && idxNode.val.type == DatatypeType.Uint {
           slot = idxNode.val.intVal.uint64()
@@ -1713,7 +1783,66 @@ class Expr(self, type: ExprType, location: Location) {
     if isnull(self.typedValue) {
       return types.NONETY()
     }
-    return builder.typechecker.resolve(self.typedValue!)
+    rty = builder.typechecker.resolve(self.typedValue!)
+    if depth > 8u32 {
+      return rty
+    }
+    if !argTypeUnderResolved(builder, rty) {
+      return rty
+    }
+    if self.type == ExprType.Ident && !isnull(builder.currentEmittingFn) {
+      // A local whose own type snapshot stayed a free variable (or a bare
+      // knot) declares through its first assignment; the right-hand side
+      // carries its type.
+      declRhs = findLocalDecl(builder.currentEmittingFn.subBlock,
+          self.val.symVal.name)
+      if !isnull(declRhs) {
+        declTy = declRhs.resolvedArgType(builder, depth + 1u32)
+        if !argTypeUnderResolved(builder, declTy) {
+          return declTy
+        }
+      }
+    }
+    if self.type == ExprType.Dot {
+      // A field select whose type variable escaped the active
+      // instantiation's bindings (e.g. a hoisted relation body emitted
+      // under a different instantiation than the one that typechecked it):
+      // recover the type from the base class's field declaration, with the
+      // class's template variables substituted by the base's concrete
+      // parameters.
+      dotBase = self.firstChildExpr!
+      dotMember = dotBase.nextExprChildExpr!
+      if dotMember.type == ExprType.Ident {
+        baseTy = dotBase.resolvedArgType(builder, depth + 1u32)
+        if baseTy.type == types.Type.TypeClass.Typename {
+          if argTypeUnderResolved(builder, baseTy) {
+            // A bare-knot or free base still names its class; adopt the
+            // class's concrete instantiation the way the C type generator
+            // does (a relation body emitted for the only instantiation).
+            concreteBase = types.Type(
+                builder.typeGenerator.concreteClassTyname(baseTy.tyname!))
+            if !argTypeUnderResolved(builder, concreteBase) {
+              baseTy = concreteBase
+            }
+          }
+          dinfo = builder.typechecker.lookupClass(baseTy.tyname.name)
+          if !isnull(dinfo) {
+            if !isnull(dinfo.strct) {
+              for fi in range(dinfo.strct.fieldnames.length()) {
+                if dinfo.strct.fieldnames[fi].name == dotMember.val.symVal.name {
+                  fty = builder.typechecker.substituteClassVars(dinfo!, baseTy,
+                      dinfo.strct.fieldtypes[fi])
+                  if !argTypeUnderResolved(builder, fty) {
+                    return fty
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    return rty
   }
 
   func genCIndex(self, builder: c.CBuilder) -> c.CExpr {

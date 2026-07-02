@@ -534,7 +534,22 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
           // every class that is actually constructed.
           if builder.instantiationIsConcrete(instantiation) {
             builder.instantiate(fntype.poly!, instantiation)
-            self.genCConstructorInstance(builder, info!)
+            // The bindings may leave the instance type itself unresolved:
+            // a nested class records instantiations whose bindings cover
+            // its own template slots but not the enclosing class's vars
+            // inside a class-typed parameter (Entry's dict slot).  Emitting
+            // would name the struct with free variables; a call site that
+            // needs the specialization synthesizes it under bindings that
+            // do resolve it.
+            selfConcrete = true
+            if !isnull(info.selfType) {
+              if builder.typechecker.hasFreeVars(info.selfType!) {
+                selfConcrete = false
+              }
+            }
+            if selfConcrete {
+              self.genCConstructorInstance(builder, info!)
+            }
             builder.deInstantiate(fntype.poly!)
           }
         }
