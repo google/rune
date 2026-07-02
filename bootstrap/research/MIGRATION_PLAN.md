@@ -100,7 +100,24 @@ allocfree defaultMethods`) — length-prefixed strings / object-pool, orthogonal
   −7, so C may be what actually unblocks *loading* dict/heapq. Targets the non-loading-gated
   `heapqlisttest turingTypeConstraints edwards2` immediately; then `heapqtest heapsort dicttest`
   once loading is safe. Do C0→C1→C3, each suite-gated.
-  - **C-ENTRY — RECOMMENDED FIRST MOVE (do this before the mono worklist):** adopt Lyric's
+  - **C-ENTRY — ✅ LANDED (`41dd129`, 2026-07-02), but delivered ZERO greens (188/205 held,
+    zero drops, self-build clean).** Mechanism: `Sym.exists()` probe (lookup-only, added to
+    `std/sym.rn`) checked in `loadBuiltinModules` before any builtin loads — the lexer interns
+    every identifier, so after the user's modules parse, sym `Dict`/`Heapq` exists iff a user
+    file names it (exact match: `HeapqList` is a different sym; comments/strings never intern).
+    **The "expected greens" prediction below was WRONG:** loading-when-used does avoid the
+    free-var emission of *unused* templates, but the *used* templates still fail downstream:
+    - **Dict cluster (`in dictitr dicttest`):** `typeunifier.rn:647 assert v > ty.tyvar.id`
+      in `resolveVar` — unification creates a var→var binding pointing to a HIGHER (newer)
+      tyvar id, violating the union-find chain-orientation invariant (older-id representative).
+      One signature suffices to trigger it (`in.rn` is a 3-line Dict use).
+    - **Heapq cluster (`heapqtest heapsort`):** "TypeGenerator: type variable v-32 is
+      unresolved" + null-indirection panic at emission — same family as `heapqlisttest`'s
+      v-111. Heapq IS concretely instantiated (`Heapq(string)`), so some reachable
+      specialization still emits with a free tyvar.
+    Both signatures are C1 territory (per-signature materialization / tyvar id-space), which
+    is now the critical path for all six container tests. Original C-ENTRY rationale kept
+    below for the record:
     `merge_stdlib` reachability idea (book ch13 §13.4) — load `dict`/`heapq` **only when the top
     program references `Dict`/`Heapq`**, instead of force-loading every builtin into every program
     (`parse/loader.rn:118-128 loadBuiltinModules`). Rationale: the uninstantiated-template
