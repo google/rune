@@ -114,11 +114,23 @@ func loadTopModule(parser: Peg, fileName: string, parent: db.Function,
   return module
 }
 
-// The relation transformers in builtin/ load into every program.
+// The relation transformers in builtin/ load into every program.  The Dict
+// and Heapq container classes load only when the program names them: the
+// lexer interns every identifier, so once the user's modules are loaded a
+// sym exists for "Dict" iff some user file uses that identifier.  Loading
+// them unconditionally would emit their uninstantiated templates as invalid
+// C in every program that never uses them.  This check must precede loading
+// any builtin, whose own identifiers would otherwise count as uses.
 func loadBuiltinModules(parser: Peg, module: db.Function) {
   builtinNames = ["doublylinked", "onetoone",
       "taillinked", "linkedlist", "arraylist", "heapqlist",
       "hashed", "hashedclass", "misc"]
+  if Sym.exists("Dict") {
+    builtinNames.append("dict")
+  }
+  if Sym.exists("Heapq") {
+    builtinNames.append("heapq")
+  }
   for name in builtinNames {
     fileName = findModuleFile("builtin/" + name, "")
     if fileName != "" {

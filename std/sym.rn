@@ -35,6 +35,14 @@ class Sym(self, name: string) {
     return newSym
   }
 
+  // True if |name| is already interned, without interning it.
+  func exists(name: string) -> bool {
+    // TODO: When array references are implemented, delete this.
+    nameCopy = name
+    probe = Sym(nameCopy)
+    return !isnull(theSymbolTable.findSym(probe))
+  }
+
   func hash(self) -> u64 {
     return self.hashVal
   }
