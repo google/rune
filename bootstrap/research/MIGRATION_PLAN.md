@@ -93,6 +93,34 @@ allocfree defaultMethods`) — length-prefixed strings / object-pool, orthogonal
   - **So:** the dict cluster's TWO gates are now (1) lex `[]` — DONE; (2) don't emit
     uninstantiated templates — Stage C. There is no separate `demandClass`-reentrancy blocker for
     dict loading; the earlier −7 was measured with the (now-abandoned) Stage-B changes.
+- **⚠ C-RECOVERY UPDATE (2026-07-02, commits `b5ec999..bbd39ee`): suite now 191/205 —
+  `in`, `dictitr`, `heapqtest` GREEN.** What landed after C-ENTRY (all suite-gated, zero drops):
+  - **Chain-orientation fix (`b5ec999`)**: `bindTowards()` in `instantiate()` — recorded
+    bindings that are themselves vars no longer create self-loops/backward links; typeswitch
+    arms skip self-binding the scrutinee. Killed the `typeunifier.rn:647` assert.
+  - **Emission-type recovery machinery (`9a08b3e..bbd39ee`)**: `resolvedArgType` grew a
+    recovery layer for under-resolved types (free vars AND bare class knots of GENERIC
+    classes): local-declaration chase (rooted at `Statement.lexicalRootBlock()` for
+    module-level code), field types via `substituteClassVars` through the receiver,
+    method returns via def-sweep-baked instantiations or the method's own return expr,
+    tuple rebuild from children, `adoptConcreteBaseTy` (the C type generator's
+    concrete-instantiation preference, applied to typedValues). Wired into: ctor-sweep
+    selfType gate, pre-emission deferred pass (nested `hasFreeVars`), `genCInlinedBlock`
+    pre-walk rebake, `genCPrint`, `genCBinaryOp` operand rebake + user-operator synthesis,
+    `genCMethod` sweep (param pinning via `concretizeMethodParams`, result repair,
+    free-var gate).
+  - **RECLASSIFICATIONS (important — three tests LEFT the C1 bucket):**
+    - `heapsort` → **D-binding (greedy-apply)**: Element's `operator <` body binds `value`
+      to the BUILTIN `<` constraint choice `Int|Uint|f32|f64|string` at class typecheck, so
+      a Heapq of a class value can never satisfy it. Same root cause as `gf2`/
+      `genericFactorial` per-call polymorphism. Not an emission bug.
+    - `heapqlisttest` → **D-representation (pool identity)**: it now COMPILES AND RUNS;
+      the golden encodes the legacy's pool-slot `<u32>self` (freed slots reused, second
+      batch of Bs prints ids 1–8 again) + exit-time finalization order. Same bucket as
+      `allocfree`.
+    - `dicttest` → the one TRUE C1 remainder: two Dict signatures in one program;
+      `adoptConcreteBaseTy` (unique-concrete-instantiation) is inherently ambiguous there.
+      Needs real per-signature materialization (C1 below).
 - **Stage C — Iterative monomorphization FIRST (book-specified, lower risk, post-Check pass):**
   import the book's invariants verbatim — a **fixpoint worklist** over `(fn, concrete-sig)`
   ("converges in 2–3 iterations"), and a **`validate_post_mono` gate** asserting no residual
