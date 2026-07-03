@@ -3435,6 +3435,29 @@ class TypeChecker(self) {
         // typechecking nests further calls, hence a stack.
         self.calleeStack.append(CalleeRecord())
         fn = self.expr(fnchild)
+        // Normalize named arguments of a METHOD call `recv.method(x, k=v)`:
+        // only Ident-callee function calls are normalized above (the callee
+        // Function is known there), so a method call's named args otherwise
+        // survive as Namedparam exprs and hit expr()'s default.  The
+        // receiver is now typed (fn = self.expr(fnchild) above), so resolve
+        // the method from its class and reorder the args into positional.
+        if fnchild.type == db.ExprType.Dot && !expr.argsNormalized {
+          nmRecv = fnchild.firstChildExpr!
+          nmName = nmRecv.nextExprChildExpr!
+          if !isnull(nmRecv.typedValue) {
+            nmR = self.resolve(nmRecv.typedValue!)
+            if nmR.type == Type.TypeClass.Typename {
+              nmInfo = self.lookupClass(nmR.tyname.name)
+              if !isnull(nmInfo) {
+                nmMethod = self.findMethod(nmInfo!, nmName.toString())
+                if !isnull(nmMethod) {
+                  self.normalizeCallArgs(expr, nmMethod!)
+                  argchild = expr.firstChildExpr.nextExprChildExpr
+                }
+              }
+            }
+          }
+        }
         args = self.expr(argchild!)
         callRec = self.calleeStack[self.calleeStack.length() - 1]
         self.calleeStack.resize(self.calleeStack.length() - 1)
