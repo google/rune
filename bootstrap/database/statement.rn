@@ -505,7 +505,17 @@ class Statement(self, block: Block, type: StateType, location: Location) {
           cexpr = expr.genC(builder)
           printTy = expr.typedValue
           if !isnull(printTy) {
-            if argTypeUnderResolved(builder, printTy!) {
+            printRecover = argTypeUnderResolved(builder, printTy!)
+            if !printRecover && !isnull(builder.currentEmittingFn) {
+              // Expression slots bind once (the FIRST round); inside a
+              // specialized emission the live variable slots are current.
+              if builder.currentEmittingName != "" {
+                printRecover = true
+              }
+            }
+            if !isnull(builder.currentEmittingFn) {
+            }
+            if printRecover {
               // An inlined iterator's yield-bound local can keep a free
               // type variable at emission; recover its type from its
               // declaring assignment, searching this statement's lexical
@@ -1007,7 +1017,23 @@ class Statement(self, block: Block, type: StateType, location: Location) {
   func genCTypeswitch(self, builder: c.CBuilder) {
     assert !isnull(self.subBlock)
     index = self.selectedCaseIndex
-    if index == 0xffffffffu32 {
+    // Inside a specialized emission the typecheck-time selection is one
+    // round's snapshot; re-select from the live recovered scrutinee.
+    tsReselect = false
+    if !isnull(builder.currentEmittingFn) && !isnull(builder.currentEmittingParamFn) {
+      if builder.currentEmittingParamFn! == builder.currentEmittingFn! {
+        tsReselect = true
+      }
+    }
+    if tsReselect {
+      tsScrTy = self.expr.resolvedArgType(builder, 0u32, self.lexicalRootBlock())
+      if !builder.typechecker.hasFreeVars(tsScrTy) {
+        index = builder.typechecker.selectTypeswitchCaseFor(self, tsScrTy)
+      } else {
+        tsReselect = false
+      }
+    }
+    if index == 0xffffffffu32 && !tsReselect {
       index = builder.typechecker.selectTypeswitchCase(self, false)
     }
     i = 0u32

@@ -193,7 +193,35 @@ class CBuilder(self, tc: types.TypeChecker) {
   // True while emitting a function whose C return type is void: a
   // none-typed `return <value>` emits as a bare return only then.
   self.currentEmittingResultIsNone = false
+  // Call-site handoff for on-demand synthesis: the call composed this
+  // spec name from GROUND arg types, but the definition's variable
+  // slots may still resolve through an outer active round and compose
+  // a different (stale) name.  genCPolyInstantiation consumes these.
+  self.wantSpecName = ""
+  self.wantSpecParams = null(types.Type)
+  self.wantSpecResult = null(types.Type)
+  // The GROUND parameter tuple of the spec being emitted (and its
+  // function): param-variable slots hold ONE spec's concrete snapshot,
+  // so per-spec bodies must read their param types from here instead.
+  self.currentEmittingParamTuple = null(types.Type)
+  self.currentEmittingParamFn = null(db.Function)
   self.insertDependencyStack(DependencyStack())
+
+  // Re-run the round for the spec currently being emitted.  Nested
+  // on-demand emissions (and the call-name recovery's materializeSpec
+  // fallback) re-point the shared definition's variable slots to THEIR
+  // spec's types; the outer body's remaining expressions must resolve
+  // under its own round again.
+  func restoreEmittingRound(self) {
+    if !isnull(self.currentEmittingFn) {
+      cerFn = self.currentEmittingFn!
+      if cerFn.lastMaterializedSpec != "" && self.currentEmittingName != "" {
+        if cerFn.lastMaterializedSpec != self.currentEmittingName {
+          self.typechecker.materializeSpec(cerFn, self.currentEmittingName)
+        }
+      }
+    }
+  }
 
   func registerModuleVariable(self, name: string) {
     for n in self.moduleVarNames {

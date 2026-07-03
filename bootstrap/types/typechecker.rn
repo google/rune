@@ -2377,8 +2377,10 @@ class TypeChecker(self) {
   // Select the typeswitch case matching the resolved scrutinee type,
   // optionally typechecking the selected case's body.  Records and returns
   // the selected index; raises if no case matches.
-  func selectTypeswitchCase(self, statement: db.Statement, typecheckBody: bool) -> u32 {
-    rty = self.resolve(statement.expr.typedValue!)
+  // Match the case arms against an EXPLICIT scrutinee type: codegen of
+  // specialized bodies recovers the live per-spec type (the statement's
+  // own expression slot holds one round's snapshot).
+  func selectTypeswitchCaseFor(self, statement: db.Statement, rty: Type) -> u32 {
     selected = 0xffffffffu32
     index = 0u32
     for caseStatement in statement.subBlock.statements() {
@@ -2408,6 +2410,12 @@ class TypeChecker(self) {
       statement.location.error("No typeswitch case matches type " + rty.toString())
       raise Status.InvalidArgument, "No typeswitch case matches type ", rty.toString()
     }
+    return selected
+  }
+
+  func selectTypeswitchCase(self, statement: db.Statement, typecheckBody: bool) -> u32 {
+    rty = self.resolve(statement.expr.typedValue!)
+    selected = self.selectTypeswitchCaseFor(statement, rty)
     if typecheckBody {
       i = 0u32
       for caseStatement in statement.subBlock.statements() {

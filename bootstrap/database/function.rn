@@ -431,6 +431,14 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   func genCPolyInstantiation(self: Function, builder: c.CBuilder,
                              instantiation: types.TyvarInstantiation) {
     fntype = self.typedValue!
+    // Consume the call-site handoff immediately so nested emissions
+    // never inherit a stale want.
+    giWantName = builder.wantSpecName
+    giWantParams = builder.wantSpecParams
+    giWantResult = builder.wantSpecResult
+    builder.wantSpecName = ""
+    builder.wantSpecParams = null(types.Type)
+    builder.wantSpecResult = null(types.Type)
     // Resolve each parameter's own type under the instantiation.
     // The generalized variables in varBindings do not align
     // positionally with the parameters (operator type variables can
@@ -465,6 +473,42 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
         return
       }
     }
+    // The call-site handoff is authoritative: the variables-derived
+    // name above can resolve through an outer ACTIVE round of this
+    // same function (stale slots) and compose the wrong spec.  The
+    // call site composed giWantName from GROUND arg types.
+    if giWantName != "" && giWantName != specializedName {
+      if !builder.alreadyEmitted(giWantName) && !isnull(giWantParams) {
+        giWP = giWantParams!
+        giList = arrayof(types.Type)
+        if giWP.type == types.Type.TypeClass.Tuple {
+          for giEl in giWP.tuple.elements {
+            giList.append(giEl)
+          }
+        } else {
+          giList.append(giWP)
+        }
+        giFree = false
+        for giP in giList {
+          if builder.typechecker.hasFreeVars(giP) {
+            giFree = true
+          }
+        }
+        if !giFree && giList.length() == paramTypes.length() {
+          giTuple = types.Type(types.TupleType(giList))
+          giName = giTuple.genSpecializationName(self.sym.name)
+          if giName == giWantName {
+            specializedName = giName
+            paramTypes = giList
+            for giP2 in paramTypes {
+              if giP2.type == types.Type.TypeClass.Tuple {
+                builder.ensureTupleDeclared(self.location, giP2)
+              }
+            }
+          }
+        }
+      }
+    }
     if builder.alreadyEmitted(specializedName) {
       builder.deInstantiate(fntype.poly!)
       return
@@ -489,6 +533,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     prevEmittingResultWide = builder.currentEmittingResultWide
     builder.currentEmittingFn = self
     builder.currentEmittingName = specializedName
+    prevEmittingParamTuple = builder.currentEmittingParamTuple
+    prevEmittingParamFn = builder.currentEmittingParamFn
+    builder.currentEmittingParamTuple = types.Type(types.TupleType(paramTypes))
+    builder.currentEmittingParamFn = self
     builder.currentEmittingResultWide = builder.wideWidth(fntype.poly.scope.function.result)
     prevEmittingResultIsNone = builder.currentEmittingResultIsNone
     // Derive from the SAME source as the emitted signature (the baked
@@ -527,15 +575,36 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     } else {
       body = self.subBlock.genC(builder)
     }
+    if self.sym.name == "decParens" {
+      dbgA = "null"
+      if !isnull(instantiation.type) {
+        dbgATy = builder.typechecker.resolve(instantiation.type!)
+        if dbgATy.type == types.Type.TypeClass.Function {
+          dbgA = builder.typechecker.resolve(dbgATy.function.result!).toString()
+        }
+      }
+      dbgB = builder.typechecker.resolve(fntype.poly.scope.function.result!).toString()
+    }
     builder.currentEmittingFn = prevEmittingFn
     builder.currentEmittingName = prevEmittingName
     builder.currentEmittingResultWide = prevEmittingResultWide
     builder.currentEmittingResultIsNone = prevEmittingResultIsNone
+    builder.currentEmittingParamTuple = prevEmittingParamTuple
+    builder.currentEmittingParamFn = prevEmittingParamFn
     builder.closeFunctionTryContext(savedTryBase)
     builder.deInstantiate(fntype.poly!)
     builder.closeScope()
+    // This emission's round re-pointed the definition's variable slots;
+    // put the enclosing emission's round back before returning to it.
+    builder.restoreEmittingRound()
     newsym = Sym.new(specializedName)
     newsym.typedValue = instantiation.type
+    if !isnull(giWantResult) && !specFailed && giWantName == specializedName {
+      // A synthesized instantiation's recorded result re-resolves under
+      // outer frames later; the call site's recovered result is ground.
+      newsym.typedValue = types.Type(types.FunctionType(
+          types.Type(types.TupleType(paramTypes)), giWantResult!))
+    }
     if isnull(newsym.typedValue) {
       // A synthesized instantiation may carry no type; the resolved scope
       // serves for the return type.
@@ -675,7 +744,6 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   // variables instantiated in the typechecker.
   func genCConstructorInstance(self: Function, builder: c.CBuilder, info: types.ClassInfo) {
     if isnull(info.selfType) {
-      println "DBGNST class=", self.sym.name
       return
     }
     instType = builder.typechecker.resolve(info.selfType!)

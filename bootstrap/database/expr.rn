@@ -1888,14 +1888,29 @@ class Expr(self, type: ExprType, location: Location) {
   func resolvedArgType(self, builder: c.CBuilder, depth: u32 = 0u32,
       scopeBlock: Block? = null(Block)) -> types.Type {
     if self.type == ExprType.Ident && !isnull(builder.currentEmittingFn) {
+      raIdx = 0u64
       for v in builder.currentEmittingFn.variables() {
         if v.isParam && v.sym.name == self.val.symVal.name && !isnull(v.typedValue) {
+          // The spec being emitted publishes its GROUND param tuple; the
+          // variable's own slot holds one spec's snapshot and lies for
+          // every other specialization of the same body.
+          if !isnull(builder.currentEmittingParamFn) && !isnull(builder.currentEmittingParamTuple) {
+            if builder.currentEmittingParamFn! == builder.currentEmittingFn! {
+              rapTuple = builder.currentEmittingParamTuple!
+              if rapTuple.type == types.Type.TypeClass.Tuple {
+                if raIdx < rapTuple.tuple.elements.length() {
+                  return builder.typechecker.resolve(rapTuple.tuple.elements[raIdx])
+                }
+              }
+            }
+          }
           // A relation method's unconstrained parameter (a _compare's
           // children) resolves to a bare class knot; adopt the class's
           // concrete instantiation like the C type generator does.
           return adoptConcreteBaseTy(builder,
               builder.typechecker.resolve(v.typedValue!))
         }
+        raIdx += 1u64
       }
     } else if self.type == ExprType.Notnull {
       // x! carries its operand's type.
@@ -1979,7 +1994,15 @@ class Expr(self, type: ExprType, location: Location) {
                   pcWant.append(pcAT)
                 }
                 if pcOk {
+                  pcFound = null(types.Type)
                   pcWantStr = types.Type(types.TupleType(pcWant)).toString()
+                  // A single-parameter function's type carries the BARE
+                  // parameter type, not a one-element tuple.
+                  pcWantStr1 = ""
+                  if pcWant.length() == 1u64 {
+                    pcWantStr1 = pcWant[0u64].toString()
+                  }
+                  pcConflict = false
                   pcPi = pcTy.poly.instantiations
                   if !isnull(pcPi) {
                     for pcInst in pcPi {
@@ -1988,15 +2011,61 @@ class Expr(self, type: ExprType, location: Location) {
                         pcRIt = builder.typechecker.resolve(pcIt!)
                         if pcRIt.type == types.Type.TypeClass.Function {
                           pcParams = builder.typechecker.resolve(pcRIt.function.params!)
-                          if pcParams.toString() == pcWantStr {
+                          pcParamsStr = pcParams.toString()
+                          if pcParamsStr == pcWantStr {
                             pcRes = builder.typechecker.resolve(pcRIt.function.result!)
                             if !argTypeUnderResolved(builder, pcRes) {
-                              return pcRes
+                              if isnull(pcFound) {
+                                pcFound = pcRes
+                              } else {
+                                // Two matching instantiations disagreeing on
+                                // the result = at least one resolved through
+                                // a stale frame; trust neither.
+                                if pcFound.toString() != pcRes.toString() {
+                                  pcConflict = true
+                                }
+                              }
                             }
                           }
                         }
                       }
                     }
+                  }
+                  if pcConflict {
+                    pcFound = null(types.Type)
+                  }
+                  if isnull(pcFound) && depth < 6u32 {
+                    // No recorded instantiation matches: synthesize one by
+                    // opening the poly and materializing under it (safe
+                    // under an active emission frame since the
+                    // frame-stack instantiate conversion).
+                    pcOpened = pcTy.poly!.open(builder.typechecker.unifier,
+                        &builder.typechecker.unifier.newVar())
+                    if pcOpened.type == types.Type.TypeClass.Function {
+                      pcWTy = types.Type(types.TupleType(pcWant))
+                      if pcWant.length() == 1u64 {
+                        pcWTy = pcWant[0u64]
+                      }
+                      pcTe = builder.typechecker.unify(pcOpened.function.params!, pcWTy)
+                      if isnull(pcTe) {
+                        pcSyn = pcTy.poly.instantiations.lastTyvarInstantiation
+                        if !isnull(pcSyn) {
+                          builder.resolveInstantiation(pcSyn!)
+                          builder.instantiate(pcTy.poly!, pcSyn!)
+                          pcKey = pcWTy.genSpecializationName(pcFn.sym.name)
+                          builder.typechecker.materializeSpec(pcFn!, pcKey)
+                          pcSRes = builder.typechecker.resolve(pcOpened.function.result!)
+                          builder.resolveInstantiation(pcSyn!)
+                          builder.deInstantiate(pcTy.poly!)
+                          if !argTypeUnderResolved(builder, pcSRes) {
+                            pcFound = pcSRes
+                          }
+                        }
+                      }
+                    }
+                  }
+                  if !isnull(pcFound) {
+                    return pcFound!
                   }
                 }
               }
@@ -2475,7 +2544,6 @@ class Expr(self, type: ExprType, location: Location) {
       }
     }
     if badCall {
-      println "DBGBADCALL"
       raise Status.Internal, "malformed call expression"
     }
     left = left0!
@@ -3069,6 +3137,13 @@ class Expr(self, type: ExprType, location: Location) {
         // while that binding is active.
         callee = builder.findFunction(left.val.symVal.name)
         if !isnull(callee) {
+          // Hand the composed name, its GROUND arg types, and the call's
+          // recovered result to the definition side: recorded
+          // instantiations' own slots re-resolve under outer frames and
+          // can bake another spec's types into the signature.  Only a
+          // reliable composition may be handed off (adaptable-int specs
+          // name by VALUE; their recovered types cannot rebuild names).
+          wsReliable = false
           pi = polyType.poly.instantiations
           emitted = false
           for inst in pi {
@@ -3102,10 +3177,13 @@ class Expr(self, type: ExprType, location: Location) {
               builder.deInstantiate(polyType.poly!)
               adoptName = iname == specializedName && pConcrete
               if !adoptName {
-                if callee.deferredTypecheck && pConcrete {
-                  // A deferred function's argument snapshots compose an
-                  // unreliable name; adopt the definition's name for its
-                  // (re-typechecked) instantiation.
+                // A deferred function's argument snapshots used to compose
+                // an unreliable name.  The live recovery composes GROUND
+                // names now, so only adopt the definition's name when the
+                // composed one still holds free or adaptable pieces.
+                cnUnreliable = (builder.typechecker.hasFreeVars(argTypes) ||
+                    builder.typechecker.containsAdaptableType(argTypes))
+                if callee.deferredTypecheck && pConcrete && cnUnreliable {
                   adoptName = true
                   specializedName = iname
                 }
@@ -3140,7 +3218,18 @@ class Expr(self, type: ExprType, location: Location) {
                 newInst = polyType.poly.instantiations.lastTyvarInstantiation
                 if !isnull(newInst) {
                   builder.resolveInstantiation(newInst!)
-                  if builder.instantiationIsConcrete(newInst!) {
+                  synthOk = builder.instantiationIsConcrete(newInst!)
+                  if !synthOk {
+                    // The unify above grounded the params; only the result
+                    // var stays free until a round typechecks the deferred
+                    // body under them.  Run that round now.
+                    builder.instantiate(polyType.poly!, newInst!)
+                    builder.typechecker.materializeSpec(callee!, specializedName)
+                    builder.deInstantiate(polyType.poly!)
+                    builder.resolveInstantiation(newInst!)
+                    synthOk = builder.instantiationIsConcrete(newInst!)
+                  }
+                  if synthOk {
                     if callee.type == FuncType.Struct {
                       callee.genCStructInstance(builder, newInst!)
                     } else if callee.type == FuncType.Constructor {
@@ -3151,6 +3240,14 @@ class Expr(self, type: ExprType, location: Location) {
                         builder.deInstantiate(polyType.poly!)
                       }
                     } else {
+                      // The pre-loop want handoff is consumed by the FIRST
+                      // genCPolyInstantiation; restore it for the synthesis
+                      // (an adopt attempt may already have cleared it).
+                      if wsReliable {
+                        builder.wantSpecName = specializedName
+                        builder.wantSpecParams = argTypes
+                        builder.wantSpecResult = null(types.Type)
+                      }
                       callee.genCPolyInstantiation(builder, newInst!)
                     }
                   }
@@ -3160,6 +3257,10 @@ class Expr(self, type: ExprType, location: Location) {
           }
         }
       }
+
+      // Name composition may have run other specs' rounds (recovery
+      // fallback / nested emission); resolve the args under OUR round.
+      builder.restoreEmittingRound()
       specialization = Sym.new(specializedName)
       cfn = builder.cIdentifier(specialization, false)
     } else if (left.type == ExprType.Ident && !isnull(self.typedValue) &&
