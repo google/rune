@@ -2115,9 +2115,12 @@ relation OneToOne CClassDeclaration CParamList cascade
 // Class instances are heap allocated and passed by pointer; the constructor
 // function itself is emitted separately as a CFunctionDeclaration.
 class CClassDeclaration(self, location: db.Location, name: string, fields: CParamList,
-                        toStringMethod: string, refWidth: u32) {
+                        toStringMethod: string, refWidth: u32, runeName: string = "") {
   self.location = location
   self.name = name
+  // The Rune class name (unspecialized, e.g. "Foo" not "Foo_u64"), used
+  // by show().  Falls back to the C name when not supplied.
+  self.runeName = runeName == "" ? name : runeName
   // The C name of the user-defined toString method, or "" if there is none.
   self.toStringMethod = toStringMethod
   // Nonzero when the class declared an explicit reference width; instances
@@ -2217,6 +2220,41 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
     }
     e.writecloseln("}")
     e.newline()
+
+    // The auto-generated show(): prints `Class(id) = {nextFree = <ref
+    // count>, <fields>}` and a newline.  `nextFree` is the reference
+    // count (the legacy stores the count in the slot's free-list field,
+    // which is what its show prints).  Skipped for the wide-ref-id
+    // pseudo-classes (refWidth > 0), which have no fields.
+    if self.refWidth == 0u32 {
+      e.write("void %s_show(%s_t *self)" % (self.name, self.name))
+      e.writeopenln(" {")
+      e.writeln("if (self == 0) { tostring_string_t(\"null\"); return; }")
+      e.writeln("GlobalStringWriter_reset();")
+      e.writeln("tostring_string_t(\"%s(\");" % self.runeName)
+      e.writeln("tostring_string_t(\"%u\", self->rn_id);")
+      e.writeln("tostring_string_t(\") = {nextFree = \");")
+      e.writeln("tostring_string_t(\"%u\", self->refCount);")
+      for field in self.cParamList.cParameters() {
+        if !field.noPrint {
+          e.writeln("tostring_string_t(\", %s = \");" % field.name)
+          if field.type.type == CTypeExpr.Type.Pointer {
+            e.write("tostring_%s_t(" % field.type.toString())
+          } else {
+            e.write("tostring_")
+            field.type.emit(e)
+            e.write("(")
+          }
+          e.writeln("self->%s);" % field.name)
+        }
+      }
+      e.writeln("tostring_string_t(\"}\");")
+      e.writeln("GlobalStringWriter_write(\"\\n\");")
+      e.writeln("GlobalStringWriter_flush();")
+      e.writeln("GlobalStringWriter_reset();")
+      e.writecloseln("}")
+      e.newline()
+    }
   }
 }
 

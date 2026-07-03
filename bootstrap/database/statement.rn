@@ -334,12 +334,11 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     }
     // A module-level object reference is reference-counted: overwriting
     // it UNREFS the previous object (destroyed only if no relation list
-    // or other reference still holds it), and the new value is ref'd
-    // after the assignment (below).  So an UNSHARED object dies on
-    // reassignment (final_call's Point; graph's `g = null`), while a
-    // SHARED one survives (safe's Child, still in a Mom/Dad list).
-    // Locals inside functions are plain references, untouched.
-    refAfterSym = null(Sym)
+    // or other reference still holds it).  The NEW value keeps its
+    // creation reference (refCount = 1 from the constructor), so there is
+    // no re-ref here.  An UNSHARED object dies on reassignment
+    // (final_call's Point; graph's `g = null`), a SHARED one survives
+    // (safe's Child, still in a Mom/Dad list).  Locals are untouched.
     if self.expr.type == ExprType.Equals && isnull(builder.currentBlock) {
       assignLhs = self.expr.firstChildExpr!
       if assignLhs.type == ExprType.Ident {
@@ -360,9 +359,8 @@ class Statement(self, block: Block, type: StateType, location: Location) {
           }
           // Unref the OLD value (lhs still holds it; the assignment is
           // emitted at the end of this function; no-op on first assign
-          // via the null guard), then ref the new (below).
+          // via the null guard).
           builder.emitUnref(self.location, lhsSym, finalName)
-          refAfterSym = lhsSym
           if reassigned {
             builder.registerMainFinal(lhsSym, finalName)
           }
@@ -397,11 +395,9 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     }
     cexpr = self.expr.genC(builder)
     builder.addStatement(self.location, c.CStatement(self.location, c.CStatementType.Assignment, cexpr))
-    // Take a reference to the newly-assigned module-level object (guarded
-    // against null inside emitRefInc).
-    if !isnull(refAfterSym) {
-      builder.emitRefInc(self.location, refAfterSym!)
-    }
+    // No ref of the new value here: the object already carries its
+    // creation reference (refCount = 1 set in the constructor).  The old
+    // value was unref'd above (on reassignment).
   }
 
   func genCCall(self, builder: c.CBuilder, fn: c.CExpr | c.CRuntimeFunction, args: c.CExpr?) {

@@ -5112,6 +5112,12 @@ class TypeChecker(self) {
       noToStringArgs = arrayof(Type)
       return FN(TUPLE(noToStringArgs), STRING())
     }
+    if name == "show" {
+      // Every class gets an auto-generated show(): prints
+      // `Class(id) = {refCount, fields}` and returns none.
+      noShowArgs = arrayof(Type)
+      return FN(TUPLE(noShowArgs), NONETY())
+    }
     // instance.B(...): a (hoisted) nested class constructed through an
     // instance of its outer class; the member is the constructor.
     nestedClassFn = self.findClassFunction(name)

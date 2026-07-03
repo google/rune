@@ -1138,7 +1138,7 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       }
     }
     classDec = builder.cClassDeclaration(self.location, className, fields,
-        toStringMethod, refWidth)
+        toStringMethod, refWidth, self.sym.name)
     for depName in fieldDeps {
       classDec.addDependencyName(depName)
     }
@@ -1193,6 +1193,18 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
         null(c.CTypeExpr),
         c.CExpr(c.CDotExpr(self.location, selfRef2, "rn_id", true)), counterRef3))
     builder.addStatement(self.location, idAssign)
+
+    // A new instance starts with reference count 1 (its creation
+    // reference), matching the legacy pool (allocate sets the slot's
+    // count to 1; that count is what show() prints as `nextFree`).  So a
+    // module var assignment does NOT re-ref the value (genCAssign), only
+    // relation `ref`/reassignment/exit `unref` change the count.
+    selfRef3 = c.CExpr(c.CIdentifier(selfSym, null(c.CTypeExpr), false, false, false))
+    refCountInit = c.CExpr(c.CBinaryOperator(self.location,
+        c.CBinaryOperator.Type.Assign, null(c.CTypeExpr),
+        c.CExpr(c.CDotExpr(self.location, selfRef3, "refCount", true)),
+        builder.cIntLiteral(Bigint(1u32))))
+    builder.addStatement(self.location, refCountInit)
 
     for statement in self.subBlock.statements() {
       statement.genC(builder)

@@ -3250,6 +3250,16 @@ class Expr(self, type: ExprType, location: Location) {
           }
           return builder.cCall(self.location, ncName, c.CExpr(ncArgs))
         }
+        if method.toString() == "show" {
+          // The auto-generated show(): Class_show(self) prints the
+          // object and returns none.
+          shTy = builder.typechecker.resolve(base.typedValue!)
+          shName = builder.classCName(shTy) + "_show"
+          builder.noteDependency(shName)
+          shArgs = c.CExprList()
+          shArgs.appendCExpr(base.genC(builder))
+          return builder.cCall(self.location, shName, c.CExpr(shArgs))
+        }
         if method.toString() == "toString" {
           // The auto-generated toString captures the print helper's
           // output, unless the class defines its own.
