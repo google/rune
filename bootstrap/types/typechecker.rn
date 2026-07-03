@@ -2368,6 +2368,18 @@ class TypeChecker(self) {
       db.ExprType.BoolType => return BOOL
       db.ExprType.NoneType => return NONETY()
       db.ExprType.Ident => return self.namedType(typeExpr.val.symVal!)
+      db.ExprType.Dot => {
+        // A qualified type name in a type position: a module-qualified name
+        // (`c.CExpr`) or a nested-class name (`Heapq.Element`).  Bootstrap
+        // modules share one global namespace and nested classes are hoisted
+        // to it, so the LAST component names the type (e.g. `c.CExpr?` in
+        // `arrayof(c.CExpr?)` — a nullable module-qualified element type).
+        dotMember = typeExpr.firstChildExpr.nextExprChildExpr
+        if !isnull(dotMember) && dotMember.type == db.ExprType.Ident {
+          return self.namedType(dotMember.val.symVal!)
+        }
+        return null(Type)
+      }
       db.ExprType.Tuple, db.ExprType.List => {
         elements = arrayof(Type)
         for child in typeExpr.childExprs() {
