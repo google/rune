@@ -1,52 +1,30 @@
 # Bootstrap compiler — known limitations
 
-Status as of suite 200/205 (HEAD `d5f85cc` era).  This documents the
+Status as of suite 201/205 (HEAD `b895d38` era).  This documents the
 remaining red tests whose fixes require REPRESENTATION-MODEL work
-(binary-safe strings, object pools/refcounts) rather than
-typechecking/binding/emission fixes, per the migration plan's
-fix-or-document done-condition.  Every red test is now either here or
-green.  Each entry states the exact gap, the evidence, and what
-implementing it would take.
+(object pools/refcounts) rather than typechecking/binding/emission
+fixes, per the migration plan's fix-or-document done-condition.  Every
+red test is now either here or green.  Each entry states the exact gap,
+the evidence, and what implementing it would take.
 
-## 1. Binary-safe (length-carrying) strings — Stages A & C landed
+## 1. Binary-safe (length-carrying) strings — RESOLVED (all three GREEN)
 
-**Affected test: `uint2string`.  (`integer` and `escapedCharTest` were
-here; now GREEN.)**
-
-STAGE A (`5db6801`) gave string PRODUCERS a length header: an array_t-
-style `rn_strhdr` (magic + byte length) before the char data, allocated
-by `rn_stralloc`.  `string_length` reads the header when the magic
-matches, else falls back to `strlen`.  Every
-`cruntime/string_methods.inc` producer now allocates headed and sizes
-its source via `string_length`, so embedded NUL bytes propagate.  Fixed
-`integer` (toStringLE -> reverse -> toHex preserve the byte length; the
-hex-text output has no NULs).
-
-STAGE C (`d5f85cc`) gave string VALUE LITERALS a header: each is
-materialized through `rn_strlit(lit, len)` (byte length known at emit
-time, embedded NULs copied) instead of a bare C literal; only
-CLiteral.Type.String is wrapped (PrintfString format strings stay
-bare).  Fixed `escapedCharTest` (the `"...\0"` literal now reports
-length 10, not strlen's 9).
-
-Both landed with ZERO regressions (the whole suite exercises strings).
-
-Remaining: `uint2string` needs STAGE B (length-aware PRINTING) plus its
-unimplemented `toUintLE`/`toStringLE` methods.  It currently
-COMPILE-FAILs (the methods are unimplemented: string method table + the
-`toUint` type-arg special case in typechecker.rn ~3275 + two small
-`wide_ints.inc` helpers).  Even with those, the golden prints embedded
-0x00 bytes to stdout (`block.toStringLE()` of a u128 yields all 16
-bytes), and the print path (GlobalStringWriter + `%s`) stops at NUL.
-
-**Remaining implementation shape (Stage B)**: make the
-writer/tostring_string_t path length-aware -- write `string_length(s)`
-bytes via a length-carrying write instead of `%s` (now possible: headed
-strings carry the length; the writer already has a buffer+length
-model).  Then implement uint2string's toStringLE/toUintLE methods.
-String equality/compare/hash should also move to
-`string_length`+`memcmp` for full binary-safety (not required by the
-current reds).  Nothing in the typechecker needs to move for Stage B.
+`integer`, `escapedCharTest`, and `uint2string` were here; all now
+GREEN.  Strings carry an `array_t`-style length header (`rn_strhdr` =
+magic + byte length before the char data; `string_t` stays `char*`),
+landed in three stages, all ZERO-regression:
+ - Stage A (`5db6801`): PRODUCERS allocate headed via `rn_stralloc` and
+   size sources via `string_length` (reads header, else `strlen`).
+ - Stage C (`d5f85cc`): VALUE LITERALS materialize via `rn_strlit(lit,
+   len)` (only CLiteral.Type.String; PrintfString stays bare).
+ - Stage B (`b895d38`): length-aware PRINTING — the writer gained
+   `write_bytes`/`write_string` (write a value by `string_length`) and
+   `flush` (fwrite the accumulated bytes by length, not `printf %s`);
+   plus uint2string's `toUintLE`/wide `toStringLE` (wide_ints.inc
+   `wide_from_le_bytes`/`wide_tostring_le`).
+Not required by any current red but still strlen-based for full
+binary-safety: string equality/compare/hash (move to
+`string_length`+`memcmp` if a future test needs it).
 
 ## 2. Object pools, reference counts, and slot identity
 
