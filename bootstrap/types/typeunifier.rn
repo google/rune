@@ -56,11 +56,24 @@ class TypeUnifier(self) {
    * within the body of the bound type.
    */
   self.nextFreshVar = -1i32
+  // Instantiations opened while a materialization round is active (see
+  // TypeChecker.materializeSpec): the round bakes them in place before
+  // its bindings pop, so their self/class slots do not re-resolve under a
+  // LATER round's bindings (a half-baked recording was dicttest's
+  // Frankenstein Entry candidate).
+  self.openLogging = false
+  self.openLog = arrayof(TyvarInstantiation)
 
   func newVar(self) -> i32 {
     result = self.nextFreshVar
     self.nextFreshVar -= 1
     return result
+  }
+
+  func logOpenedInstantiation(self, inst: TyvarInstantiation) {
+    if self.openLogging {
+      self.openLog.append(inst)
+    }
   }
 
   // Record (or replace) the phantom-parameter mask for a class.  |mask[i]| is

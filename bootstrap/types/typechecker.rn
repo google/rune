@@ -706,6 +706,25 @@ class TypeChecker(self) {
       }
     }
     self.closeScope()
+    // closeScope leaves sym.typedValue at its last-bound value; for the
+    // parameters that means the TEMPLATE variables this round just
+    // re-bound.  A later same-named module variable (dicttest's `value`
+    // vs insert's `value` parameter) would pick that variable up through
+    // symbol()'s forward-reference path and unify it with its own type —
+    // a bind outside any poly's bookkeeping that permanently
+    // monomorphizes the template slot.  Clear them like functionType's
+    // generalization epilogue does.
+    // Check the RAW type object, not its resolution: this runs while the
+    // caller's instantiation bindings are still active, so the template
+    // variable resolves concrete here and a resolve-based check would
+    // skip exactly the vars that need clearing.
+    for retcClearParam in fn.variables() {
+      if retcClearParam.isParam && !isnull(retcClearParam.sym.typedValue) {
+        if retcClearParam.sym.typedValue.type == Type.TypeClass.Var {
+          retcClearParam.sym.typedValue = null(Type)
+        }
+      }
+    }
     self.currentClassInfo = prevClassInfo
     self.currentSelfType = prevSelfType
     self.classBoundVars = prevClassBoundVars
@@ -729,8 +748,27 @@ class TypeChecker(self) {
       self.connectResultType(fn)
     } else {
       fn.lastMaterializedSpec = specKey
+      // Log the polys this round opens and bake those instantiations
+      // while the round's bindings are still active: a recording left
+      // half-raw (its self/class slots still chaining through the class's
+      // template variables) would re-resolve under a LATER round's
+      // bindings into a cross-signature Frankenstein.
+      matzPrevLogging = self.unifier.openLogging
+      matzLogBase = self.unifier.openLog.length()
+      self.unifier.openLogging = true
       self.retypecheckDeferred(fn)
       fn.deferredRetypechecked = true
+      matzI = matzLogBase
+      while matzI < self.unifier.openLog.length() {
+        matzInst = self.unifier.openLog[matzI]
+        for matzJ in range(matzInst.varBindings.length()) {
+          matzInst.varBindings[matzJ] = self.resolve(matzInst.varBindings[matzJ])
+        }
+        matzInst.type = self.resolve(matzInst.type)
+        matzI += 1
+      }
+      self.unifier.openLog.resize(matzLogBase)
+      self.unifier.openLogging = matzPrevLogging
     }
     while self.countTypeErrors() > matzPreErrs {
       self.popTypeError()
@@ -820,9 +858,17 @@ class TypeChecker(self) {
     }
     if !isnull(fn.subBlock.returnType) {
       // Resolve first: the body's type binds through instantiation
-      // variables that deInstantiate will pop.
-      self.unify(drfty.poly.scope.function.result!,
-          self.resolve(fn.subBlock.returnType!))
+      // variables that deInstantiate will pop.  Bind only when the
+      // resolution is CONCRETE: if it still ends in a variable belonging
+      // to another function's template (insert's <value> chained through
+      // a shared field slot), unifying would link that variable toward
+      // this round's result var — a bind outside this poly's bookkeeping
+      // that survives deInstantiate and permanently corrupts the other
+      // template (dicttest's second signature saw value=u32 forever).
+      crtRes = self.resolve(fn.subBlock.returnType!)
+      if !self.hasFreeVars(crtRes) {
+        self.unify(drfty.poly.scope.function.result!, crtRes)
+      }
     } else {
       // No return statement: the function returns none.  Without this
       // the instantiation's result slot stays an open variable and
@@ -2099,6 +2145,8 @@ class TypeChecker(self) {
         right = self.expr(expr.firstChildExpr!.nextExprChildExpr!)
         if isnull(left) || isnull(right) {
           return left
+        }
+        if expr.type == db.ExprType.Equals && self.retypecheckNesting == 0u32 {
         }
         bopty = self.operatorChoices(expr.type, builtinType(expr.type))!
         // In a plain top-level function (no enclosing class context), a user
@@ -4134,6 +4182,21 @@ class TypeChecker(self) {
     }
     self.newSymbolGlobal(fn.sym, fnType)
     fn.typedValue = fnType
+    // The parameters' interned symbols still point at the variables that
+    // were just generalized into boundVars (same hazard as functionType's
+    // epilogue): a later same-named module-level variable (dicttest's
+    // `value` vs Entry's <value> parameter) would reuse the generalized
+    // variable through symbol()'s forward-reference path and bind it,
+    // permanently monomorphizing this constructor's template slot.
+    if boundVars.length() > 0 {
+      for ctorClearParam in fn.variables() {
+        if !isnull(ctorClearParam.sym.typedValue) {
+          if self.resolve(ctorClearParam.sym.typedValue!).type == Type.TypeClass.Var {
+            ctorClearParam.sym.typedValue = null(Type)
+          }
+        }
+      }
+    }
 
     // Record which constructor parameters are "phantom": a plain parameter
     // whose type stays a bare type variable appearing in no field type (so it
@@ -4436,6 +4499,44 @@ class TypeChecker(self) {
       return null(Type)
     }
     return Type(FunctionType(restType, result))
+  }
+
+  // True if t structurally contains a type VARIABLE — without resolving.
+  // Distinguishes a baked instantiation snapshot (fully concrete
+  // structure) from a template-era one whose variables merely happen to
+  // resolve under the current bindings (and would resolve DIFFERENTLY
+  // under another round's leftovers).
+  func hasRawVars(self, t: Type) -> bool {
+    switch t.type {
+      Type.TypeClass.Var => return true
+      Type.TypeClass.Array => return self.hasRawVars(t.array.elementType!)
+      Type.TypeClass.Tuple => {
+        for rvEl in t.tuple.elements {
+          if self.hasRawVars(rvEl) {
+            return true
+          }
+        }
+        return false
+      }
+      Type.TypeClass.Function => {
+        if self.hasRawVars(t.function.params!) {
+          return true
+        }
+        return self.hasRawVars(t.function.result!)
+      }
+      Type.TypeClass.Typename => {
+        if isnull(t.tyname.params) {
+          return false
+        }
+        for rvEl2 in t.tyname.params.elements {
+          if self.hasRawVars(rvEl2) {
+            return true
+          }
+        }
+        return false
+      }
+      default => return false
+    }
   }
 
   // During a materialization round, map a bare generic-class knot to the

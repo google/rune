@@ -786,7 +786,12 @@ class PolymorphicType(self, vars: Type | [Type], scope: Type,
       bindings.append(Type(newFreeVar))
       type = type.replaceVar(tyvar, newFreeVar)
     }
-    self.instantiations.append(TyvarInstantiation(bindings, type))
+    openedInst = TyvarInstantiation(bindings, type)
+    self.instantiations.append(openedInst)
+    // Materialization rounds log their opens so the round can bake them
+    // (resolve in place) while its bindings are still active; |object| is
+    // always the unifier.
+    object.logOpenedInstantiation(openedInst)
     return type
   }
 
