@@ -5185,8 +5185,30 @@ class TypeChecker(self) {
       noParams = arrayof(Type)
       restType = Type(TupleType(noParams))
     }
+    self.unifier.beginBindTrail()
     te = self.unify(selfParam, instanceType)
-    if !isnull(te) {
+    if isnull(te) {
+      self.unifier.commitBindTrail()
+    } else {
+      self.unifier.rollbackBindTrail()
+      // A MULTI-SIGNATURE class: the method's shared type froze under
+      // an earlier signature (Integer(u32,u32) baked into toHex's self
+      // param rejects Integer(u64,u32)).  When the method's RESULT is
+      // signature-independent (fully concrete), accept the call: the
+      // only failed check is the frozen self shape, and the
+      // emission-side rounds re-derive the body per signature.
+      if self.classSigCount(info) >= 2u64 {
+        mrRes0 = self.resolve(result)
+        if !self.hasFreeVars(mrRes0) {
+          return Type(FunctionType(restType, mrRes0))
+        }
+        if mrRes0.type == Type.TypeClass.Var {
+          // A free SHARED result var: hand this call its own fresh
+          // one — the demand rounds bind it per signature (the same
+          // per-call treatment C3 gives recursive results).
+          return Type(FunctionType(restType, Type(self.newTyvar())))
+        }
+      }
       self.typeError("Cannot call method %s on %s: %s"
                      % (method.sym.name, instanceType.toString(), te.msg), location)
       return null(Type)
