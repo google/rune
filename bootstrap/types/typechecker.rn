@@ -380,6 +380,10 @@ class TypeChecker(self) {
   // Demand-driven materialization state (see demandCallResult).
   self.calleeStack = arrayof(CalleeRecord)
   self.materializeDepth = 0u32
+  // C3 worklist: demands skipped because their callee frame was ACTIVE
+  // (recursion with differing signatures) are parked here and drained
+  // when the outermost demand completes.
+  self.pendingDemands = arrayof(CalleeRecord)
   // Var ids currently bound by an ACTIVE instantiate() frame: a
   // pre-existing binding on one of these belongs to an enclosing frame
   // and must be kept; a pre-existing binding on a NON-active var is a
@@ -867,6 +871,15 @@ class TypeChecker(self) {
     }
     callee = rec.fn!
     if callee.materializeActive {
+      // Recursion into an active frame: park the demand; the outermost
+      // demand drains it once the frame closes (the C3 fixpoint
+      // worklist — a recursive call with DIFFERING resolved arg types is
+      // a genuinely new instantiation that must materialize on its own).
+      parked = CalleeRecord()
+      parked.fn = rec.fn
+      parked.inst = rec.inst
+      parked.viaExpr = rec.viaExpr
+      self.pendingDemands.append(parked)
       return
     }
     if isnull(callee.subBlock) {
@@ -913,6 +926,26 @@ class TypeChecker(self) {
     self.deInstantiate(cty.poly!)
     callee.materializeActive = false
     self.materializeDepth -= 1u32
+    if self.materializeDepth == 0u32 {
+      // Drain parked recursive demands to a fixpoint (bounded: each
+      // drained demand either materializes a new specialization — the
+      // per-spec cache prevents repeats — or bails immediately).
+      drainGuard = 0u32
+      while self.pendingDemands.length() > 0u64 && drainGuard < 64u32 {
+        drainGuard += 1u32
+        drainRec = self.pendingDemands[self.pendingDemands.length() - 1u64]
+        self.pendingDemands.resize(self.pendingDemands.length() - 1u64)
+        if !isnull(drainRec.inst) {
+          if !isnull(drainRec.inst.type) {
+            drainTy = self.resolve(drainRec.inst.type!)
+            if drainTy.type == Type.TypeClass.Function {
+              self.demandCallResult(drainRec, drainRec.inst.type!,
+                  drainTy.function.result!)
+            }
+          }
+        }
+      }
+    }
   }
 
   // A snapshot slot still carrying free variables (a relation back-pointer
