@@ -71,6 +71,15 @@ class TypeUnifier(self) {
   // rejection (not a structural mismatch); apply() reads and clears it
   // to decide whether a constraint-relaxed retry is worthwhile.
   self.constraintFail = false
+  // Bind-trail for CHOICE-attempt rollback: a failed overload/arm
+  // attempt must not leave partial bindings behind (the D-binding
+  // pollution root).  Entries record binds AND unbinds; nested
+  // attempts stack bases (C1's instUnbindBase pattern).
+  self.trailVars = arrayof(Type)
+  self.trailKinds = arrayof(bool)
+  self.trailVals = arrayof(Type)
+  self.trailBases = arrayof(u64)
+  self.trailReplaying = false
   self.openLog = arrayof(TyvarInstantiation)
 
   func newVar(self) -> i32 {
@@ -133,6 +142,11 @@ class TypeUnifier(self) {
    * @brief associate a type variable to a type.
    */
   func bindVar(self, tyvar: TypeVar, ty: Type) {
+    if self.trailBases.length() > 0u64 && !self.trailReplaying {
+      self.trailVars.append(Type(tyvar))
+      self.trailKinds.append(true)
+      self.trailVals.append(ty)
+    }
     self.insertMapping(Mapping(tyvar, ty))
     e = Mapping(tyvar, null(Type))
     found = self.findMapping(e)
@@ -146,9 +160,52 @@ class TypeUnifier(self) {
     e = Mapping(tyvar, null(Type))
     found = self.findMapping(e)
     if !isnull(found) {
+      if self.trailBases.length() > 0u64 && !self.trailReplaying {
+        if !isnull(found.value) {
+          self.trailVars.append(Type(tyvar))
+          self.trailKinds.append(false)
+          self.trailVals.append(found.value!)
+        }
+      }
       self.removeMapping(found!)
       assert isnull(self.findMapping(found!))
     }
+  }
+
+  func beginBindTrail(self) {
+    self.trailBases.append(self.trailVars.length())
+  }
+
+  // Keep the attempt's bindings; entries stay visible to an OUTER
+  // active trail (so its rollback undoes them too).  With no outer
+  // trail the log is dead weight — clear it.
+  func commitBindTrail(self) {
+    self.trailBases.resize(self.trailBases.length() - 1u64)
+    if self.trailBases.length() == 0u64 {
+      self.trailVars.resize(0u64)
+      self.trailKinds.resize(0u64)
+      self.trailVals.resize(0u64)
+    }
+  }
+
+  // Undo the attempt's binds and unbinds, newest first.
+  func rollbackBindTrail(self) {
+    trailBase = self.trailBases[self.trailBases.length() - 1u64]
+    self.trailBases.resize(self.trailBases.length() - 1u64)
+    self.trailReplaying = true
+    trailI = self.trailVars.length()
+    while trailI > trailBase {
+      trailI -= 1u64
+      if self.trailKinds[trailI] {
+        self.unbindVar(self.trailVars[trailI].tyvar!)
+      } else {
+        self.bindVar(self.trailVars[trailI].tyvar!, self.trailVals[trailI])
+      }
+    }
+    self.trailReplaying = false
+    self.trailVars.resize(trailBase)
+    self.trailKinds.resize(trailBase)
+    self.trailVals.resize(trailBase)
   }
 
   /**

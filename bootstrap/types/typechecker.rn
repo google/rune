@@ -2190,8 +2190,13 @@ class TypeChecker(self) {
            if !self.choiceEligible(choice, args) {
              countErrors += 0
            } else {
+           // A failed arm must leave NO bindings behind: partial
+           // unification from rejected overload attempts froze template
+           // vars across the whole D-binding cluster.
+           self.unifier.beginBindTrail()
            ty2 = self.apply(choice, args, location)
            if !isnull(ty2) {
+             self.unifier.commitBindTrail()
              // make sure that there are no type errors -- we can ignore
              // any errors from previous branch attempts.
              while countErrors > 0 {
@@ -2200,6 +2205,7 @@ class TypeChecker(self) {
              }
              return ty2
            }
+           self.unifier.rollbackBindTrail()
            countErrors += 1
            }
         }
