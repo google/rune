@@ -1946,6 +1946,64 @@ class Expr(self, type: ExprType, location: Location) {
       }
     }
     if self.type == ExprType.Call {
+      // A PLAIN-FUNCTION call whose result variable stayed free (a
+      // recursive call inside a materialized body: the round parks the
+      // demand and the drain binds the RECORDED slot, but this expression
+      // holds a fresh per-round variable): recover the result from the
+      // callee's recorded instantiation whose parameters match this
+      // call's recovered argument types.
+      pcCallee = self.firstChildExpr!
+      if pcCallee.type == ExprType.Ident {
+        pcFn = builder.findFunction(pcCallee.val.symVal.name)
+        if !isnull(pcFn) {
+          pcTy = pcFn.typedValue
+          if !isnull(pcTy) {
+            if pcTy.type == types.Type.TypeClass.Polymorphic {
+              pcArgsNode = pcCallee.nextExprChildExpr
+              if !isnull(pcArgsNode) {
+                pcWant = arrayof(types.Type)
+                pcOk = true
+                if pcArgsNode.type == ExprType.Tuple || pcArgsNode.type == ExprType.List {
+                  for pcArg in pcArgsNode.childExprs() {
+                    pcAT = pcArg.resolvedArgType(builder, depth + 1u32, scopeBlock)
+                    if argTypeUnderResolved(builder, pcAT) {
+                      pcOk = false
+                    }
+                    pcWant.append(pcAT)
+                  }
+                } else {
+                  pcAT = pcArgsNode.resolvedArgType(builder, depth + 1u32, scopeBlock)
+                  if argTypeUnderResolved(builder, pcAT) {
+                    pcOk = false
+                  }
+                  pcWant.append(pcAT)
+                }
+                if pcOk {
+                  pcWantStr = types.Type(types.TupleType(pcWant)).toString()
+                  pcPi = pcTy.poly.instantiations
+                  if !isnull(pcPi) {
+                    for pcInst in pcPi {
+                      pcIt = pcInst.type
+                      if !isnull(pcIt) {
+                        pcRIt = builder.typechecker.resolve(pcIt!)
+                        if pcRIt.type == types.Type.TypeClass.Function {
+                          pcParams = builder.typechecker.resolve(pcRIt.function.params!)
+                          if pcParams.toString() == pcWantStr {
+                            pcRes = builder.typechecker.resolve(pcRIt.function.result!)
+                            if !argTypeUnderResolved(builder, pcRes) {
+                              return pcRes
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
       // A method call whose return type variable escaped the bindings
       // (heapq.pop() chained to the class's template variable): recover
       // the return type from the method's definition, with the class's
