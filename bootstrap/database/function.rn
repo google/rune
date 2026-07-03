@@ -523,6 +523,12 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       // serves for the return type.
       newsym.typedValue = builder.typechecker.resolve(fntype.poly.scope)
     }
+    if specFailed {
+      // A failed (unreachable) specialization keeps a free result; give
+      // the empty-bodied declaration a well-formed none signature.
+      newsym.typedValue = types.Type(types.FunctionType(paramTuple,
+          types.NONETY()))
+    }
     fundec = builder.cFunDef(self.location, newsym, paramList, body)
     // Class-typed parameters need the class struct typedef emitted first.
     for pt in paramTypes {
