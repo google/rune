@@ -93,6 +93,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   // The specialization key whose bindings this body's shared expression
   // types were last re-typechecked under (per-signature materialization).
   self.lastMaterializedSpec = ""
+  // Specialization keys whose materialization round ERRORED (an
+  // unreachable typeswitch arm's recorded instantiation, e.g. the turing
+  // test's decParens(())): emission must skip them.
+  self.failedSpecs = arrayof(string)
   // True while this body is being materialized: a recursive call must not
   // re-enter (its poly is already instantiated; the spec cache handles
   // same-signature recursion, this flag blocks differing-signature
@@ -489,7 +493,23 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     // Retypecheck the deferred body under THIS specialization's bindings
     // (the pre-emission pass only covers the first recorded instantiation).
     builder.materializeFor(self, specializedName)
-    body = self.subBlock.genC(builder)
+    specFailed = false
+    for failedSpec in self.failedSpecs {
+      if failedSpec == specializedName {
+        // The round for this specialization errored (an unreachable
+        // typeswitch arm's recording, e.g. the turing test's
+        // decParens(())); emitting its body would index or dereference
+        // types that never checked.  Emit an EMPTY body: the declaration
+        // satisfies any (equally unreachable) call-site reference.
+        specFailed = true
+      }
+    }
+    if specFailed {
+      builder.openBlock(self.location)
+      body = builder.closeBlock()
+    } else {
+      body = self.subBlock.genC(builder)
+    }
     builder.currentEmittingFn = prevEmittingFn
     builder.currentEmittingName = prevEmittingName
     builder.currentEmittingResultWide = prevEmittingResultWide

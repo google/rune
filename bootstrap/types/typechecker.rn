@@ -832,6 +832,22 @@ class TypeChecker(self) {
       self.unifier.openLog.resize(matzLogBase)
       self.unifier.openLogging = matzPrevLogging
     }
+    if self.countTypeErrors() > matzPreErrs {
+      // The round failed (typically an unreachable typeswitch arm's
+      // recorded instantiation).  Remember the key so emission skips this
+      // specialization, and clear the cache so a LATER, valid signature
+      // re-materializes from scratch.
+      matzFailedSeen = false
+      for matzFs in fn.failedSpecs {
+        if matzFs == specKey {
+          matzFailedSeen = true
+        }
+      }
+      if !matzFailedSeen {
+        fn.failedSpecs.append(specKey)
+      }
+      fn.lastMaterializedSpec = ""
+    }
     while self.countTypeErrors() > matzPreErrs {
       self.popTypeError()
     }
