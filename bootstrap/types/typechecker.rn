@@ -665,27 +665,7 @@ class TypeChecker(self) {
       for s in bodySnapshot {
         self.statement(s, fn.subBlock!)
       }
-      // Connect the body's return type to the function's result variable
-      // so the call site's type resolves under this instantiation.
-      drfty = fn.typedValue
-      if !isnull(drfty) {
-        if drfty.type == Type.TypeClass.Polymorphic {
-          if !isnull(fn.subBlock.returnType) {
-            // Resolve first: the body's type binds through instantiation
-            // variables that deInstantiate will pop.
-            self.unify(drfty.poly.scope.function.result!,
-                self.resolve(fn.subBlock.returnType!))
-          } else {
-            // No return statement: the function returns none.  Without
-            // this the instantiation's result slot stays an open variable
-            // and emission cannot type the C function.
-            drres = self.resolve(drfty.poly.scope.function.result!)
-            if drres.type == Type.TypeClass.Var {
-              self.unify(drres, Type(TypeName(Sym.new("none"))))
-            }
-          }
-        }
-      }
+      self.connectResultType(fn)
     }
     if fn.type == db.FuncType.Constructor {
       // Bake the re-discovered field types while the instantiation's
@@ -702,6 +682,39 @@ class TypeChecker(self) {
     self.currentClassInfo = prevClassInfo
     self.currentSelfType = prevSelfType
     self.classBoundVars = prevClassBoundVars
+  }
+
+  // Connect the body's return type to the function's result variable so
+  // the call site's type resolves under the active instantiation.  Also
+  // used on its own when a signature is already materialized: each
+  // recorded instantiation of that signature carries its own result
+  // variable (opened at a different call site), and only unification can
+  // bind it.
+  func connectResultType(self, fn: db.Function) {
+    drfty = fn.typedValue
+    if isnull(drfty) {
+      return
+    }
+    if drfty.type != Type.TypeClass.Polymorphic {
+      return
+    }
+    if isnull(fn.subBlock) {
+      return
+    }
+    if !isnull(fn.subBlock.returnType) {
+      // Resolve first: the body's type binds through instantiation
+      // variables that deInstantiate will pop.
+      self.unify(drfty.poly.scope.function.result!,
+          self.resolve(fn.subBlock.returnType!))
+    } else {
+      // No return statement: the function returns none.  Without this
+      // the instantiation's result slot stays an open variable and
+      // emission cannot type the C function.
+      drres = self.resolve(drfty.poly.scope.function.result!)
+      if drres.type == Type.TypeClass.Var {
+        self.unify(drres, Type(TypeName(Sym.new("none"))))
+      }
+    }
   }
 
   func clearExprTypes(self, block: db.Block) {
@@ -3177,12 +3190,31 @@ class TypeChecker(self) {
           self.expr(statement.expr)
         }
       }
-      db.StateType.Call => self.expr(statement.expr)
-      db.StateType.Print => self.expr(statement.expr)
-      db.StateType.Println => self.expr(statement.expr)
+      // Generated bodies (relation cascade code) can carry expression-less
+      // statements by the time emission-driven materialization re-walks
+      // them; there is nothing to type in that case.
+      db.StateType.Call => {
+        if !isnull(statement.expr) {
+          self.expr(statement.expr)
+        }
+      }
+      db.StateType.Print => {
+        if !isnull(statement.expr) {
+          self.expr(statement.expr)
+        }
+      }
+      db.StateType.Println => {
+        if !isnull(statement.expr) {
+          self.expr(statement.expr)
+        }
+      }
       // panic prints its arguments and aborts; arguments typecheck like
       // println's.
-      db.StateType.Panic => self.expr(statement.expr)
+      db.StateType.Panic => {
+        if !isnull(statement.expr) {
+          self.expr(statement.expr)
+        }
+      }
       db.StateType.Raise => {
         // The first expression is the error code path (e.g. Status.Foo),
         // not a value; the rest are message values.
