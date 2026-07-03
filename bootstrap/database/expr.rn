@@ -1541,13 +1541,14 @@ class Expr(self, type: ExprType, location: Location) {
       }
       if left.type == ExprType.Ident && !isnull(left.typedValue) {
         // A local holding a FUNCTION VALUE types as the callee's whole
-        // poly, which has no C type; the RHS's recovery yields the
-        // concrete fn type (funcptr's distancefunc local).
-        if builder.typechecker.resolve(left.typedValue!).type ==
-            types.Type.TypeClass.Polymorphic {
+        // poly (no C type); an under-resolved local (funcptr's total,
+        // typed <t>0 through a typeof chain) declares nothing.  The
+        // RHS's recovery yields the concrete type.
+        eqL = builder.typechecker.resolve(left.typedValue!)
+        if (eqL.type == types.Type.TypeClass.Polymorphic) {
           eqRec = right.resolvedArgType(builder)
-          if !builder.typechecker.hasFreeVars(eqRec) &&
-              eqRec.type == types.Type.TypeClass.Function {
+          if (!builder.typechecker.hasFreeVars(eqRec) &&
+              eqRec.type != types.Type.TypeClass.Polymorphic) {
             left.typedValue = eqRec
           }
         }
@@ -1964,6 +1965,27 @@ class Expr(self, type: ExprType, location: Location) {
       } else if rIndexee.type == types.Type.TypeClass.Array {
         return builder.typechecker.resolve(rIndexee.array.elementType!)
       }
+    } else if self.type == ExprType.Cast || self.type == ExprType.CastTrunc {
+      // <T>value: the TYPE child carries the result type.  Its SLOT is
+      // right for ordinary casts (<u32>x); only chase the declaration
+      // (a typeof-typed local) when the slot is under-resolved —
+      // recovering a type IDENT like u32 as a variable poisons
+      // everything.
+      castTC = self.firstChildExpr!
+      if !isnull(castTC.typedValue) {
+        castTy = builder.typechecker.resolve(castTC.typedValue!)
+        if (!argTypeUnderResolved(builder, castTy) &&
+            castTy.type != types.Type.TypeClass.Polymorphic) {
+          return castTy
+        }
+      }
+      if castTC.type == ExprType.Ident && !isnull(castTC.typedValue) {
+        castRec = castTC.resolvedArgType(builder, depth + 1u32, scopeBlock)
+        if (!builder.typechecker.hasFreeVars(castRec) &&
+            castRec.type != types.Type.TypeClass.Polymorphic) {
+          return castRec
+        }
+      }
     } else if self.type == ExprType.Typeof {
       // typeof(expr): the value IS the operand's type.
       return self.firstChildExpr.resolvedArgType(builder, depth + 1u32,
@@ -2083,17 +2105,20 @@ class Expr(self, type: ExprType, location: Location) {
       // call's recovered argument types.
       pcCallee = self.firstChildExpr!
       if pcCallee.type == ExprType.Ident {
-        // A call through a LOCAL holding a function VALUE: the local's
-        // recovered type is the concrete fn type (funcaddr/decl chase);
-        // the call's result is ITS result.
-        pcLocalTy = pcCallee.resolvedArgType(builder, depth + 1u32, scopeBlock)
-        if pcLocalTy.type == types.Type.TypeClass.Function {
-          pcLRes = builder.typechecker.resolve(pcLocalTy.function.result!)
-          if !builder.typechecker.hasFreeVars(pcLRes) {
-            return pcLRes
+        pcFn = builder.findFunction(pcCallee.val.symVal.name)
+        if isnull(pcFn) {
+          // A call through a LOCAL holding a function VALUE (no such
+          // named function): the local's recovered type is the
+          // concrete fn type; the call's result is ITS result.  Only
+          // for TRUE locals — interned syms share names with methods.
+          pcLocalTy = pcCallee.resolvedArgType(builder, depth + 1u32, scopeBlock)
+          if pcLocalTy.type == types.Type.TypeClass.Function {
+            pcLRes = builder.typechecker.resolve(pcLocalTy.function.result!)
+            if !builder.typechecker.hasFreeVars(pcLRes) {
+              return pcLRes
+            }
           }
         }
-        pcFn = builder.findFunction(pcCallee.val.symVal.name)
         if !isnull(pcFn) {
           pcTy = pcFn.typedValue
           if !isnull(pcTy) {
@@ -2694,6 +2719,42 @@ class Expr(self, type: ExprType, location: Location) {
         if gfOk {
           gfName = types.Type(types.TupleType(gfTypes)).genSpecializationName(
               faCallee.val.symVal.name)
+          if !builder.alreadyEmitted(gfName) {
+            // The referenced specialization may never be CALLED by
+            // name (only through the pointer): synthesize + emit it,
+            // with the speculative unify TRAILED so a failure leaves
+            // no bindings (an untrailed version froze dicttest and
+            // genericFactorial).
+            gfTy = gfFn.typedValue
+            if !isnull(gfTy) {
+              if gfTy.type == types.Type.TypeClass.Polymorphic {
+                builder.typechecker.unifier.beginBindTrail()
+                gfOpened = builder.typechecker.openPoly(gfTy.poly!)
+                gfEmitted = false
+                if gfOpened.type == types.Type.TypeClass.Function {
+                  if gfTypes.length() == 1u64 {
+                    gfWTy = gfTypes[0u64]
+                  } else {
+                    gfWTy = types.Type(types.TupleType(gfTypes))
+                  }
+                  gfTe = builder.typechecker.unify(gfOpened.function.params!, gfWTy)
+                  if isnull(gfTe) {
+                    gfInst = gfTy.poly.instantiations.lastTyvarInstantiation
+                    if !isnull(gfInst) {
+                      builder.typechecker.unifier.commitBindTrail()
+                      gfEmitted = true
+                      builder.resolveInstantiation(gfInst!)
+                      gfFn.genCPolyInstantiation(builder, gfInst!)
+                    }
+                  }
+                }
+                if !gfEmitted {
+                  builder.typechecker.unifier.rollbackBindTrail()
+                }
+              }
+            }
+          }
+          builder.noteDependency(gfName)
           return c.CExpr(c.CIdentifier(Sym.new(gfName), null(c.CTypeExpr),
               false, false, false))
         }
@@ -3221,6 +3282,20 @@ class Expr(self, type: ExprType, location: Location) {
       // expression is an identifier.
       if left.type != ExprType.Ident {
         raise Status.Unimplemented, "Can't generate code for polymorphic function expression ", left.toString()
+      }
+      if isnull(builder.findFunction(left.val.symVal.name)) {
+        // A LOCAL holding a function VALUE (fnptr): call through the
+        // identifier directly — there is no specialization to name.
+        lfArgs = c.CExprList()
+        if right.type == ExprType.List || right.type == ExprType.Tuple {
+          for lfA in right.childExprs() {
+            lfArgs.appendCExpr(lfA.genC(builder))
+          }
+        } else {
+          lfArgs.appendCExpr(right.genC(builder))
+        }
+        return builder.cCall(self.location, left.val.symVal.name,
+            c.CExpr(lfArgs))
       }
       // Append the instantiated types to the name (its specialization).
       // Resolve the argument types first: inside the body of another
