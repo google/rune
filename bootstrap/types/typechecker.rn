@@ -689,6 +689,14 @@ class TypeChecker(self) {
     for ruoVar in opfn.variables() {
       ruoTe = ruoVar.typeExpr
       if !isnull(ruoTe) {
+        // A nested-class annotation is a Dot (Heapq.Element); its class
+        // is the last component.
+        if ruoTe.type == db.ExprType.Dot {
+          ruoLast = ruoTe.firstChildExpr.nextExprChildExpr
+          if !isnull(ruoLast) {
+            ruoTe = ruoLast
+          }
+        }
         if ruoTe.type == db.ExprType.Ident {
           ruoName = ruoTe.val.symVal.name
           if !isnull(self.lookupClass(ruoTe.val.symVal!)) {
@@ -2052,6 +2060,65 @@ class TypeChecker(self) {
     }
   }
 
+  // Is a function-choice worth ATTEMPTING for these args?  A user
+  // operator with all-class params is eligible only when an argument
+  // resolves to one of those classes; anything else (builtins, mixed
+  // signatures) is always eligible.
+  func choiceEligible(self, choice: Type, args: Type) -> bool {
+    ceTy = self.resolve(choice)
+    ceParams = null(Type)
+    if ceTy.type == Type.TypeClass.Polymorphic {
+      ceScope = self.resolve(ceTy.poly.scope)
+      if ceScope.type == Type.TypeClass.Function {
+        ceParams = self.resolve(ceScope.function.params!)
+      }
+    } else if ceTy.type == Type.TypeClass.Function {
+      ceParams = self.resolve(ceTy.function.params!)
+    }
+    if isnull(ceParams) {
+      return true
+    }
+    ceElems = arrayof(Type)
+    if ceParams.type == Type.TypeClass.Tuple {
+      for ceE in ceParams.tuple.elements {
+        ceElems.append(self.resolve(ceE))
+      }
+    } else {
+      ceElems.append(ceParams!)
+    }
+    ceClassNames = arrayof(string)
+    for ceP in ceElems {
+      if ceP.type == Type.TypeClass.Typename {
+        if !isnull(self.lookupClass(ceP.tyname.name)) {
+          ceClassNames.append(ceP.tyname.name.name)
+        }
+      }
+    }
+    if ceClassNames.length() != ceElems.length() || ceClassNames.length() == 0u64 {
+      // Not an all-class-param signature; always try it.
+      return true
+    }
+    ceArgs = self.resolve(args)
+    ceArgList = arrayof(Type)
+    if ceArgs.type == Type.TypeClass.Tuple {
+      for ceA in ceArgs.tuple.elements {
+        ceArgList.append(self.resolve(ceA))
+      }
+    } else {
+      ceArgList.append(ceArgs)
+    }
+    for ceA2 in ceArgList {
+      if ceA2.type == Type.TypeClass.Typename {
+        for ceN in ceClassNames {
+          if ceA2.tyname.name.name == ceN {
+            return true
+          }
+        }
+      }
+    }
+    return false
+  }
+
   func apply(self, function: Type, args: Type,
              location: db.Location? = null(db.Location)) -> Type? {
     ty = function
@@ -2090,6 +2157,15 @@ class TypeChecker(self) {
       Type.TypeClass.Choice => {
         countErrors = 0
         for choice in ty.choice!.choices {
+           // A user operator whose params are ALL class-typed may only
+           // apply when some argument actually resolves to one of those
+           // classes.  A FREE operand var would otherwise greedily bind
+           // to the first overload's class (Foo.age froze as
+           // Element(...) at Foo's own class walk), and failed attempts
+           // leave partial bindings behind (no rollback).
+           if !self.choiceEligible(choice, args) {
+             countErrors += 0
+           } else {
            ty2 = self.apply(choice, args, location)
            if !isnull(ty2) {
              // make sure that there are no type errors -- we can ignore
@@ -2101,6 +2177,7 @@ class TypeChecker(self) {
              return ty2
            }
            countErrors += 1
+           }
         }
         self.typeError("Failed to apply any choice of function type %s to %s."
                        % (ty.toString(), args.toString()),
@@ -4590,6 +4667,23 @@ class TypeChecker(self) {
     info.strct = StructType(emptyFieldnames, emptyFieldtypes)
     self.insertClassInfo(info)
     info.constructing = true
+    // A class declaring ANY operator child dispatches builtin-operator
+    // expressions to it; exempt the class from builtin adaptable
+    // constraints BEFORE any body (relation templates included)
+    // typechecks against its instances.
+    for cfOp in fn.childFunctions() {
+      if cfOp.type == db.FuncType.Operator {
+        cfSeen = false
+        for cfC in self.unifier.userOpClasses {
+          if cfC == fn.sym.name {
+            cfSeen = true
+          }
+        }
+        if !cfSeen {
+          self.unifier.userOpClasses.append(fn.sym.name)
+        }
+      }
+    }
 
     // Record the final non-self parameter count BEFORE filling paramVars, so a
     // re-entrant null(ThisClass) (a cascade peer's constructor referencing this
