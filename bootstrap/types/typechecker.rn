@@ -3004,6 +3004,27 @@ class TypeChecker(self) {
           if callRec.viaExpr == fnchild {
             self.demandCallResult(callRec, fn!, result!)
           }
+        } else if !isnull(result) && fnchild.type == db.ExprType.Ident {
+          // A PLAIN-FUNCTION call: the open happened inside apply's
+          // Polymorphic branch, so fill the record from the callee's poly
+          // now (C3: recursion through plain functions needs per-call
+          // materialized frames just like methods do).
+          icFn = self.lookupFunctionDef(fnchild.val.symVal!)
+          if !isnull(icFn) {
+            icTy = icFn.typedValue
+            if !isnull(icTy) {
+              if icTy.type == Type.TypeClass.Polymorphic {
+                callRec.fn = icFn
+                callRec.viaExpr = fnchild
+                callRec.inst = icTy.poly.instantiations.lastTyvarInstantiation
+                if !isnull(callRec.inst) {
+                  if !isnull(callRec.inst.type) {
+                    self.demandCallResult(callRec, callRec.inst.type!, result!)
+                  }
+                }
+              }
+            }
+          }
         }
       }
 
