@@ -741,6 +741,32 @@ class CBuilder(self, tc: types.TypeChecker) {
                 if !isnull(synInst) {
                   self.resolveInstantiation(synInst!)
                   self.instantiate(mty.poly!, synInst!)
+                  // Free class-instance params (the relation-generated
+                  // appendChild's `child: Child(v..)` when the method was
+                  // never demanded at typecheck) pin to the class's unique
+                  // concrete instantiation.  Pin through the RESOLVED
+                  // scope: the frees live in the call-site arg slots the
+                  // opened params were unified with, not the canonical
+                  // variable chains concretizeMethodParams walks.
+                  odPin = self.typechecker.resolve(mty.poly.scope)
+                  if odPin.type == types.Type.TypeClass.Function {
+                    odPinP = self.typechecker.resolve(odPin.function.params!)
+                    if odPinP.type == types.Type.TypeClass.Tuple {
+                      for odPinEl in odPinP.tuple.elements {
+                        odPinR = self.typechecker.resolve(odPinEl)
+                        if odPinR.type == types.Type.TypeClass.Typename {
+                          if !isnull(self.typechecker.lookupClass(odPinR.tyname.name)) {
+                            if self.typechecker.hasFreeVars(odPinR) {
+                              odPinC = types.Type(self.typeGenerator.concreteClassTyname(odPinR.tyname!))
+                              if !self.typechecker.hasFreeVars(odPinC) {
+                                self.typechecker.unify(odPinEl, odPinC)
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
                   odPreFn3 = self.typechecker.resolve(mty.poly.scope)
                   if odPreFn3.type == types.Type.TypeClass.Function {
                     if !self.typechecker.hasFreeVars(odPreFn3.function.params!) {
@@ -750,8 +776,12 @@ class CBuilder(self, tc: types.TypeChecker) {
                   }
                   mfn3 = self.typechecker.resolve(mty.poly.scope)
                   if (mfn3.type == types.Type.TypeClass.Function &&
-                      !self.typechecker.hasFreeVars(mfn3!) &&
                       self.methodDefCName(mfn3!, methodName) == wantName) {
+                    // Residual frees in a class-typed param (Child(v..)
+                    // when the arg slot's own walk never resolved) pin at
+                    // emission: genCParameter/genCType adopt the class's
+                    // unique concrete instance, exactly as the already-
+                    // emitted sibling (Dad's variant) did.
                     childfunc.genCMethodInstance(self, mfn3!)
                     self.resolveInstantiation(synInst!)
                   }
