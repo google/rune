@@ -1211,6 +1211,23 @@ class Expr(self, type: ExprType, location: Location) {
                       opfn.genCPolyInstantiation(builder, opNewInst!)
                     }
                     callName = opIname
+                  } else if opFree && !tc.hasFreeVars(ltype) &&
+                      !tc.hasFreeVars(rtype) {
+                    // The synthesized instantiation's slots keep free
+                    // pieces (Integer's width var) although the OPERANDS
+                    // are ground: force the spec through the want
+                    // machinery — the free-params adoption grounds it.
+                    ofTuple = types.Type(types.TupleType([ltype, rtype]))
+                    ofName = ofTuple.genSpecializationName(opfn.sym.name)
+                    builder.wantSpecName = ofName
+                    builder.wantSpecParams = ofTuple
+                    builder.wantSpecResult = null(types.Type)
+                    if !builder.alreadyEmitted(ofName) {
+                      opfn.genCPolyInstantiation(builder, opNewInst!)
+                    }
+                    if builder.alreadyEmitted(ofName) {
+                      callName = ofName
+                    }
                   }
                 }
               }
@@ -2017,6 +2034,36 @@ class Expr(self, type: ExprType, location: Location) {
         }
       } else if rIndexee.type == types.Type.TypeClass.Array {
         return builder.typechecker.resolve(rIndexee.array.elementType!)
+      }
+    } else if self.type == ExprType.Add || self.type == ExprType.Sub ||
+        self.type == ExprType.Mul || self.type == ExprType.Div {
+      // A USER-OVERLOADED binary op on class operands: the expression
+      // slot holds the typecheck-time guess; the EMITTED spec's
+      // recorded result is authoritative (Integer's op + returns an
+      // Integer(u8,..) instance regardless of operand widths).
+      boL = self.firstChildExpr!
+      boR = boL.nextExprChildExpr!
+      boLT = boL.resolvedArgType(builder, depth + 1u32, scopeBlock)
+      boRT = boR.resolvedArgType(builder, depth + 1u32, scopeBlock)
+      if (!builder.typechecker.hasFreeVars(boLT) &&
+          !builder.typechecker.hasFreeVars(boRT) &&
+          (builder.isClassType(boLT) || builder.isClassType(boRT))) {
+        boName = ""
+        if self.type == ExprType.Add {
+          boName = "op_add"
+        } else if self.type == ExprType.Sub {
+          boName = "op_sub"
+        } else if self.type == ExprType.Mul {
+          boName = "op_mul"
+        } else {
+          boName = "op_div"
+        }
+        boTuple = types.Type(types.TupleType([boLT, boRT]))
+        boSpec = boTuple.genSpecializationName(boName)
+        boRes = builder.lookupSpecResult(boSpec)
+        if !isnull(boRes) {
+          return boRes!
+        }
       }
     } else if self.type == ExprType.Cast || self.type == ExprType.CastTrunc {
       // <T>value: the TYPE child carries the result type.  Its SLOT is
@@ -2965,9 +3012,33 @@ class Expr(self, type: ExprType, location: Location) {
             return builder.cCall(self.location, "RN_TOSTRING_RET", c.CExpr(tsArgs))
           }
         }
-        name = builder.methodCallCName(base.typedValue!, method.toString(), right.typedValue)
+        // Inside a specialized emission the receiver's slot holds one
+        // signature's binding (a: Integer(u32,..) baked into the u64 op
+        // body's a.toHex()); recover the live per-spec type.
+        mcBaseTy = base.typedValue
+        mcTry = false
+        if !isnull(builder.currentEmittingParamFn) && !isnull(builder.currentEmittingFn) {
+          if builder.currentEmittingParamFn! == builder.currentEmittingFn! {
+            mcTry = true
+          }
+        }
+        if (base.type == ExprType.Add || base.type == ExprType.Sub ||
+            base.type == ExprType.Mul || base.type == ExprType.Div) {
+          // A method on a user-operator RESULT: the emitted op spec's
+          // recorded result is authoritative at ANY level (Integer's
+          // op + returns Integer(u8,..) whatever the operands).
+          mcTry = true
+        }
+        if mcTry {
+          mcRec = base.resolvedArgType(builder)
+          if (!builder.typechecker.hasFreeVars(mcRec) &&
+              builder.isClassType(mcRec)) {
+            mcBaseTy = mcRec
+          }
+        }
+        name = builder.methodCallCName(mcBaseTy!, method.toString(), right.typedValue)
         if !builder.alreadyEmitted(name) {
-          builder.emitMethodOnDemand(base.typedValue!, method.toString(), name,
+          builder.emitMethodOnDemand(mcBaseTy!, method.toString(), name,
               right.typedValue)
         }
         // The enclosing function depends on this method; the C emitter uses it

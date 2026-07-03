@@ -796,6 +796,38 @@ class CBuilder(self, tc: types.TypeChecker) {
             childfunc.genCMethodInstance(self, mfn2)
           }
         }
+        if !self.alreadyEmitted(wantName) {
+          // FINAL fallback: every recorded/synthesized route failed
+          // (a multi-signature class whose method type froze under
+          // another signature — Integer_u64_toHex when toHex's opened
+          // self stays Integer(u32,..)).  Rebuild the instance fn
+          // type positionally around THIS receiver and emit directly;
+          // genCMethodInstance's round re-derives the body.
+          npScope = mty
+          if mty.type == types.Type.TypeClass.Polymorphic {
+            npScope = self.typechecker.resolve(mty.poly.scope)
+          }
+          if npScope.type == types.Type.TypeClass.Function {
+            npParams = self.typechecker.resolve(npScope.function.params!)
+            npList = arrayof(types.Type)
+            npList.append(inst)
+            if npParams.type == types.Type.TypeClass.Tuple {
+              npI = 0u64
+              for npEl in npParams.tuple.elements {
+                if npI > 0u64 {
+                  npList.append(self.typechecker.resolve(npEl))
+                }
+                npI += 1u64
+              }
+            }
+            npRes = self.typechecker.resolve(npScope.function.result!)
+            npFn = types.Type(types.FunctionType(
+                types.Type(types.TupleType(npList)), npRes))
+            if self.methodDefCName(npFn, methodName) == wantName {
+              childfunc.genCMethodInstance(self, npFn)
+            }
+          }
+        }
       }
     }
   }
