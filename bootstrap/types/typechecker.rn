@@ -138,7 +138,7 @@ TypeLoggingPrefix = ": "
 // each demanding its callee's materialization (find -> findEntry -> ...).
 // Bounds pathological cycles that the per-function reentrancy flag does not
 // catch; must trip below resolveDepth's 64 chain bound.
-MaterializeRecursionLimit = 16u32
+MaterializeRecursionLimit = 48u32
 
 STR = STRING()
 BOOL = BOOLEAN()
@@ -817,36 +817,42 @@ class TypeChecker(self) {
       // bindings into a cross-signature Frankenstein.
       matzPrevLogging = self.unifier.openLogging
       matzLogBase = self.unifier.openLog.length()
+      matzPendBase = self.pendingDemands.length()
       self.unifier.openLogging = true
       self.retypecheckDeferred(fn)
       fn.deferredRetypechecked = true
-      matzI = matzLogBase
-      while matzI < self.unifier.openLog.length() {
-        matzInst = self.unifier.openLog[matzI]
-        for matzJ in range(matzInst.varBindings.length()) {
-          matzInst.varBindings[matzJ] = self.resolve(matzInst.varBindings[matzJ])
+      if self.countTypeErrors() > matzPreErrs {
+        // The round failed (an unreachable typeswitch arm's recorded
+        // instantiation).  Discard its artifacts: parked demands from
+        // inside the arm chase a growing recursion forever
+        // (addParens_none_<65-level tuple>), and its recordings stay
+        // UNBAKED so the sweeps skip them.  Remember the key so emission
+        // skips this specialization, and clear the cache so a LATER,
+        // valid signature re-materializes from scratch.
+        self.pendingDemands.resize(matzPendBase)
+        matzFailedSeen = false
+        for matzFs in fn.failedSpecs {
+          if matzFs == specKey {
+            matzFailedSeen = true
+          }
         }
-        matzInst.type = self.resolve(matzInst.type)
-        matzI += 1
+        if !matzFailedSeen {
+          fn.failedSpecs.append(specKey)
+        }
+        fn.lastMaterializedSpec = ""
+      } else {
+        matzI = matzLogBase
+        while matzI < self.unifier.openLog.length() {
+          matzInst = self.unifier.openLog[matzI]
+          for matzJ in range(matzInst.varBindings.length()) {
+            matzInst.varBindings[matzJ] = self.resolve(matzInst.varBindings[matzJ])
+          }
+          matzInst.type = self.resolve(matzInst.type)
+          matzI += 1
+        }
       }
       self.unifier.openLog.resize(matzLogBase)
       self.unifier.openLogging = matzPrevLogging
-    }
-    if self.countTypeErrors() > matzPreErrs {
-      // The round failed (typically an unreachable typeswitch arm's
-      // recorded instantiation).  Remember the key so emission skips this
-      // specialization, and clear the cache so a LATER, valid signature
-      // re-materializes from scratch.
-      matzFailedSeen = false
-      for matzFs in fn.failedSpecs {
-        if matzFs == specKey {
-          matzFailedSeen = true
-        }
-      }
-      if !matzFailedSeen {
-        fn.failedSpecs.append(specKey)
-      }
-      fn.lastMaterializedSpec = ""
     }
     while self.countTypeErrors() > matzPreErrs {
       self.popTypeError()
