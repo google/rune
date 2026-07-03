@@ -1909,6 +1909,35 @@ class TypeChecker(self) {
     return TypeName(tn.name, TupleType(kept))
   }
 
+  // Resolve a type DEEPLY: resolve() only chases the top-level var, so
+  // a slot bound to a structure keeps its inner variables hidden behind
+  // the binding — generalization then cannot quantify them and open()
+  // cannot refresh them per application.
+  func resolveDeep(self, ty: Type, depth: u32) -> Type {
+    rdT = self.resolve(ty)
+    if depth > 12u32 {
+      return rdT
+    }
+    switch rdT.type {
+      Type.TypeClass.Tuple => {
+        rdEls = arrayof(Type)
+        for rdE in rdT.tuple.elements {
+          rdEls.append(self.resolveDeep(rdE, depth + 1u32))
+        }
+        return Type(TupleType(rdEls))
+      }
+      Type.TypeClass.Function => {
+        return Type(FunctionType(
+            self.resolveDeep(rdT.function.params!, depth + 1u32),
+            self.resolveDeep(rdT.function.result!, depth + 1u32)))
+      }
+      Type.TypeClass.Array => {
+        return Type(ArrayType(self.resolveDeep(rdT.array.elementType!, depth + 1u32)))
+      }
+      default => return rdT
+    }
+  }
+
   func collectFreeTyvars(self, ty: Type, acc: [Type]) -> [Type] {
     out = acc
     t = ty
@@ -5667,8 +5696,55 @@ class TypeChecker(self) {
           monoResult = Type(freshRes)
           deferVars.append(Type(freshRes))
         }
+        // A FUNCTION-typed parameter slot (arraySum's distancefunc,
+        // bound to FN(vA -> vB) by the body's own application) is
+        // invisible to the collection above: bake the resolved
+        // structure into the scope and quantify its inner frees, so
+        // every application opens a FRESH copy instead of sharing one
+        // whose result accumulates the first caller's constraints.
+        // ONLY Function-typed slots: touching class-instance params
+        // here regressed integer.
+        dfpElems = arrayof(Type)
+        dfpChanged = false
+        if paramType.type == Type.TypeClass.Tuple {
+          for dfpEl in paramType.tuple.elements {
+            dfpR = self.resolve(dfpEl)
+            if dfpR.type == Type.TypeClass.Function {
+              dfpBaked = self.resolveDeep(dfpEl, 0u32)
+              dfpElems.append(dfpBaked)
+              dfpChanged = true
+              dfpFrees = arrayof(Type)
+              dfpFrees = self.collectFreeTyvars(dfpBaked, dfpFrees)
+              for dfpF in dfpFrees {
+                dfpSeen = false
+                for dfpV in deferVars {
+                  if dfpV.tyvar.id == dfpF.tyvar.id {
+                    dfpSeen = true
+                  }
+                }
+                if !dfpSeen {
+                  deferVars.append(dfpF)
+                }
+              }
+            } else if dfpR.type == Type.TypeClass.Var {
+              // The chain's REPRESENTATIVE: a raw head (v66 -> v-61) is
+              // invisible to open()'s SYNTACTIC substitution although
+              // the representative IS quantified — every application
+              // then shares the one chain (funcptr's arraySum).
+              dfpElems.append(dfpR)
+              dfpChanged = true
+            } else {
+              // Structures keep the RAW head: baking a partially
+              // resolved class instance froze integer's methods.
+              dfpElems.append(dfpEl)
+            }
+          }
+        }
+        if dfpChanged {
+          paramType = Type(TupleType(dfpElems))
+        }
         deferredType = Type(PolymorphicType(deferVars,
-            Type(FunctionType(paramType, monoResult))))
+            Type(FunctionType(paramType, self.resolve(monoResult)))))
         // Re-point each parameter Variable at its generalized signature
         // slot, exactly like the non-deferred epilogue: the deferral path
         // exits before it, leaving pre-generalization variables whose
