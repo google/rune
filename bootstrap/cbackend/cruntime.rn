@@ -575,7 +575,9 @@ class CRuntime(self) {
       e.writeln("  if ((a > 0) && (b > 0) && (a > (max / b))) raise(\"Overflow\");")
       e.writeln("  if ((a < 0) && (b < 0) && (a < (max / b))) raise(\"Overflow\");")
       e.writeln("  if ((a > 0) && (b < 0) && (b < (min / a))) raise(\"Underflow\");")
-      e.writeln("  if ((a < 0) && (b > 0) && (b > (min / a))) raise(\"Underflow\");")
+      // min / a traps when a == -1 (INT64_MIN / -1 overflows); divide by
+      // the POSITIVE operand instead (CERT INT32-C form).
+      e.writeln("  if ((a < 0) && (b > 0) && (a < (min / b))) raise(\"Underflow\");")
       e.writeln("  return a * b;")
       e.writeln("}")
     }

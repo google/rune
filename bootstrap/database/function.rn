@@ -607,8 +607,14 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
         ptFree = true
       }
     }
+    // An ADAPTABLE variables-derived name (AnyInt pieces — the def
+    // walk's unsuffixed-literal bindings) is never what a call site
+    // composes: call wants are gated ground+non-adaptable, so the
+    // derived name would emit a spec no call can reach (gf2ModVect's
+    // (Uint,u32,u32) vs the demanded (u32,u32,u32)).
+    ptAdapt = builder.typechecker.containsAdaptableType(paramTuple)
     if giWantName != "" && giWantName != specializedName &&
-        (builder.alreadyEmitted(specializedName) || ptFree) {
+        (builder.alreadyEmitted(specializedName) || ptFree || ptAdapt) {
       // Only a COLLIDING variables-derived name may adopt the call
       // site's want: a unique name (e.g. manySignatures' value-named
       // specs) is correct as-is, and adopting would emit a duplicate

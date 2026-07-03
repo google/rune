@@ -518,6 +518,14 @@ class Statement(self, block: Block, type: StateType, location: Location) {
               // even at module level; the recovery falls back to it.
               printRecover = true
             }
+            if !printRecover && builder.typechecker.containsAdaptableType(printTy!) {
+              // An ADAPTABLE slot is one walk round's AnyInt rendering;
+              // the live recovery concretizes it (a module local holding
+              // a spec's tuple result printed tuple3_t's tostring while
+              // the value was tuple1_t).  Recovery falls back to the
+              // slot when it finds nothing better.
+              printRecover = true
+            }
             if !isnull(builder.currentEmittingFn) {
             }
             if printRecover {
