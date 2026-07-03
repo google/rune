@@ -437,18 +437,66 @@ class Statement(self, block: Block, type: StateType, location: Location) {
         } else if expr.type == ExprType.Mod {
           left = expr.firstChildExpr!
           right = left.nextExprChildExpr!
+          // A format ending in an array directive, e.g. "%[u]", "%[[s]]",
+          // or with leading literal text ("exit = %[u]"): print the
+          // prefix (if any) then the array argument like a bare println
+          // would.  Only a SINGLE trailing directive with no other `%`
+          // before it is recognised here.
+          fmtIsArr = false
+          fmtPrefix = ""
           if (left.type == ExprType.Constant && left.val.type == DatatypeType.String &&
-              left.val.stringVal.length() >= 3 && left.val.stringVal[0] == '%' &&
-              left.val.stringVal[1] == '[' &&
+              left.val.stringVal.length() >= 3 &&
               left.val.stringVal[left.val.stringVal.length() - 1] == ']') {
-            // A format that is one whole array directive, e.g. "%[u]" or
-            // "%[[s]]": print the array argument like a bare println would.
+            fmtStr = left.val.stringVal
+            fmtOpen = -1i64
+            fmtBad = false
+            fmtI = 0u64
+            while fmtI + 1u64 < fmtStr.length() {
+              if fmtStr[fmtI] == '%' {
+                if fmtStr[fmtI + 1u64] == '[' && fmtOpen == -1i64 {
+                  fmtOpen = <i64>fmtI
+                } else {
+                  fmtBad = true
+                }
+              }
+              fmtI += 1u64
+            }
+            if fmtOpen >= 0i64 && !fmtBad {
+              fmtIsArr = true
+              fmtPrefix = fmtStr[0u64:<u64>fmtOpen]
+            }
+          }
+          if fmtIsArr {
+            if fmtPrefix.length() > 0u64 {
+              pfxArgs = c.CExprList()
+              pfxArgs.append(builder.cStringLiteral("%s"))
+              pfxArgs.append(builder.cStringLiteral(fmtPrefix))
+              builder.addStatement(self.location,
+                  builder.cCall(self.location, "tostring_string_t", c.CExpr(pfxArgs)))
+            }
             fmtArr = right
             if right.type == ExprType.Tuple && !isnull(right.firstChildExpr) {
               fmtArr = right.firstChildExpr!
             }
             arrCExpr = fmtArr.genC(builder)
-            arrCType = builder.genCType(fmtArr.typedValue)
+            // Recover the array's element type when its slot rendered an
+            // adaptable AnyInt default, so the tostring helper name
+            // matches genCArray's recovered init type (u17, not u64).
+            // genCArray recovers from the FIRST element; mirror that here
+            // (recovering the array node itself does not re-derive its
+            // elements) so the init and tostring types agree.
+            arrTy = fmtArr.typedValue
+            if (!isnull(arrTy) && fmtArr.type == ExprType.Array &&
+                !isnull(fmtArr.firstChildExpr) &&
+                builder.typechecker.containsAdaptableType(
+                    builder.typechecker.resolve(arrTy!))) {
+              arrElemRec = fmtArr.firstChildExpr.resolvedArgType(builder)
+              if (!builder.typechecker.hasFreeVars(arrElemRec) &&
+                  !builder.typechecker.containsAdaptableType(arrElemRec)) {
+                arrTy = types.ARRAY(arrElemRec)
+              }
+            }
+            arrCType = builder.genCType(arrTy)
             if !isnull(arrCType) {
               arrCall = builder.cCall(self.location,
                   "tostring_%s_t" % arrCType.toString(), arrCExpr)
@@ -460,30 +508,51 @@ class Statement(self, block: Block, type: StateType, location: Location) {
             // Tuple arguments spread into the vararg list; integers widen
             // to 64 bits to match the PRI*64 format directives; wide
             // arguments render as strings via a %s directive.
-            fmtWideFlags = arrayof(bool)
+            // A wide (>64-bit) argument whose slot resolved to an
+            // adaptable 64-bit default (the spec's round left it AnyInt)
+            // still emits a wide rn_wide value; detect that through
+            // emittedWide and print via wide_tostring, else a %u prints
+            // the rn_wide POINTER instead of the value.
+            fmtChildren = arrayof(Expr)
             if right.type == ExprType.Tuple {
               for fmtChild in right.childExprs() {
-                fmtWideFlags.append(builder.wideWidth(fmtChild.typedValue) > 0u32)
+                fmtChildren.append(fmtChild)
               }
             } else {
-              fmtWideFlags.append(builder.wideWidth(right.typedValue) > 0u32)
+              fmtChildren.append(right)
+            }
+            fmtWideFlags = arrayof(bool)
+            fmtWideTypes = arrayof(types.Type)
+            for fmtC in fmtChildren {
+              fmtCTy = fmtC.typedValue
+              fmtCWide = false
+              if !isnull(fmtCTy) {
+                fmtCWide = builder.wideWidth(fmtCTy!) > 0u32
+              }
+              if !fmtCWide && fmtC.emittedWide(builder) {
+                fmtCRec = fmtC.resolvedArgType(builder)
+                if builder.wideWidth(fmtCRec) > 0u32 {
+                  fmtCWide = true
+                  fmtCTy = fmtCRec
+                }
+              }
+              fmtWideFlags.append(fmtCWide)
+              if isnull(fmtCTy) {
+                fmtWideTypes.append(types.NONETY())
+              } else {
+                fmtWideTypes.append(fmtCTy!)
+              }
             }
             fmtDirs = builder.formatDirectives(left.val.stringVal)
             args.appendCExpr(builder.cStringLiteral(
                 builder.rewriteWideFormat(left.val.stringVal, fmtWideFlags),
                 printf=true))
             fmtArgIdx = 0
-            if right.type == ExprType.Tuple {
-              for fmtChild in right.childExprs() {
-                fmtDir = fmtArgIdx < fmtDirs.length() ? fmtDirs[fmtArgIdx] : 0u8
-                args.appendCExpr(builder.cFormatArg(self.location,
-                    fmtChild.genC(builder), fmtChild.typedValue, fmtDir))
-                fmtArgIdx += 1
-              }
-            } else {
-              fmtDir = fmtDirs.length() > 0 ? fmtDirs[0] : 0u8
+            for fmtC2 in fmtChildren {
+              fmtDir = fmtArgIdx < fmtDirs.length() ? fmtDirs[fmtArgIdx] : 0u8
               args.appendCExpr(builder.cFormatArg(self.location,
-                  right.genC(builder), right.typedValue, fmtDir))
+                  fmtC2.genC(builder), fmtWideTypes[fmtArgIdx], fmtDir))
+              fmtArgIdx += 1
             }
             cexpr = c.CExpr(args)
             self.genCCall(builder, c.CRuntimeFunction.GlobalStringWriterWrite, cexpr)

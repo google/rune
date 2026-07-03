@@ -2039,7 +2039,20 @@ class Expr(self, type: ExprType, location: Location) {
     for child in self.childExprs() {
       elements.append(child.genC(builder))
     }
-    return builder.cArray(self.location, left.typedValue!, elements)
+    // The element C type comes from the FIRST element's slot; an
+    // adaptable AnyInt rendering (a spec's round left it u64) would build
+    // a uint64 array holding narrower values.  Recover the concrete
+    // per-spec element type ([a0,a1,a2] of u17 in gf2ModVect's u17 spec).
+    elemTy = left.typedValue!
+    if builder.typechecker.containsAdaptableType(
+        builder.typechecker.resolve(elemTy)) {
+      elemRec = left.resolvedArgType(builder)
+      if (!builder.typechecker.hasFreeVars(elemRec) &&
+          !builder.typechecker.containsAdaptableType(elemRec)) {
+        elemTy = elemRec
+      }
+    }
+    return builder.cArray(self.location, elemTy, elements)
   }
 
   func genCTuple(self, builder: c.CBuilder) -> c.CExpr {
