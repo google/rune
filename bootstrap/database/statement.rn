@@ -762,11 +762,7 @@ class Statement(self, block: Block, type: StateType, location: Location) {
             retIsNone = true
           }
         }
-        if retR.type == types.Type.TypeClass.Tuple {
-          if retR.tuple.elements.length() == 0u64 {
-            retIsNone = true
-          }
-        }
+
       }
       if !retIsNone || !builder.currentEmittingResultIsNone {
         cexpr = self.expr.genC(builder)

@@ -506,11 +506,7 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
         builder.currentEmittingResultIsNone = true
       }
     }
-    if piResTy.type == types.Type.TypeClass.Tuple {
-      if piResTy.tuple.elements.length() == 0u64 {
-        builder.currentEmittingResultIsNone = true
-      }
-    }
+
     // Retypecheck the deferred body under THIS specialization's bindings
     // (the pre-emission pass only covers the first recorded instantiation).
     builder.materializeFor(self, specializedName)

@@ -380,6 +380,18 @@ class TypeChecker(self) {
   // Demand-driven materialization state (see demandCallResult).
   self.calleeStack = arrayof(CalleeRecord)
   self.materializeDepth = 0u32
+  // Nested-instantiate frame stack (replaces the flat per-poly
+  // bookkeeping, which an inner instantiate of the SAME poly overwrote):
+  // instantiate() pushes a frame recording exactly what to undo;
+  // deInstantiate() pops it.  Enables recursion-frame draining while an
+  // emission's instantiate is active.
+  self.instUnbindVars = arrayof(TypeVar)
+  self.instChainVars = arrayof(TypeVar)
+  self.instRebindVars = arrayof(TypeVar)
+  self.instRebindVals = arrayof(Type)
+  self.instUnbindBase = arrayof(u64)
+  self.instChainBase = arrayof(u64)
+  self.instRebindBase = arrayof(u64)
   // C3 worklist: demands skipped because their callee frame was ACTIVE
   // (recursion with differing signatures) are parked here and drained
   // when the outermost demand completes.
@@ -867,6 +879,12 @@ class TypeChecker(self) {
     while self.countTypeErrors() > matzPreErrs {
       self.popTypeError()
     }
+    if self.materializeDepth == 0u32 && self.retypecheckNesting == 0u32 {
+      // An EMISSION-side round (no demand frame active) can park its own
+      // recursive demands; drain them now so the recorded slots bind
+      // before the body's call names are composed.
+      self.drainPendingDemands()
+    }
   }
 
   // Demand-driven monomorphization: a call whose result type stays a free
@@ -960,21 +978,26 @@ class TypeChecker(self) {
     callee.materializeActive = false
     self.materializeDepth -= 1u32
     if self.materializeDepth == 0u32 {
-      // Drain parked recursive demands to a fixpoint (bounded: each
-      // drained demand either materializes a new specialization — the
-      // per-spec cache prevents repeats — or bails immediately).
-      drainGuard = 0u32
-      while self.pendingDemands.length() > 0u64 && drainGuard < 64u32 {
-        drainGuard += 1u32
-        drainRec = self.pendingDemands[self.pendingDemands.length() - 1u64]
-        self.pendingDemands.resize(self.pendingDemands.length() - 1u64)
-        if !isnull(drainRec.inst) {
-          if !isnull(drainRec.inst.type) {
-            drainTy = self.resolve(drainRec.inst.type!)
-            if drainTy.type == Type.TypeClass.Function {
-              self.demandCallResult(drainRec, drainRec.inst.type!,
-                  drainTy.function.result!)
-            }
+      self.drainPendingDemands()
+    }
+  }
+
+  // Drain parked recursive demands to a fixpoint (bounded: each drained
+  // demand either materializes a new specialization — the per-spec cache
+  // prevents repeats — or bails immediately).  Safe under an active
+  // emission instantiate since the frame-stack conversion.
+  func drainPendingDemands(self) {
+    drainGuard = 0u32
+    while self.pendingDemands.length() > 0u64 && drainGuard < 64u32 {
+      drainGuard += 1u32
+      drainRec = self.pendingDemands[self.pendingDemands.length() - 1u64]
+      self.pendingDemands.resize(self.pendingDemands.length() - 1u64)
+      if !isnull(drainRec.inst) {
+        if !isnull(drainRec.inst.type) {
+          drainTy = self.resolve(drainRec.inst.type!)
+          if drainTy.type == Type.TypeClass.Function {
+            self.demandCallResult(drainRec, drainRec.inst.type!,
+                drainTy.function.result!)
           }
         }
       }
@@ -1587,10 +1610,14 @@ class TypeChecker(self) {
 
   func instantiate(self, poly: PolymorphicType, inst: TyvarInstantiation) {
     // for a limited time, pretend that the bound variables in poly are bound
-    // to the bindings in the instantiation.
+    // to the bindings in the instantiation.  Bookkeeping lives on a FRAME
+    // STACK (typechecker fields), not on the poly: an inner instantiate of
+    // the SAME poly (recursion-frame draining) must not clobber the outer
+    // frame's undo information.
     assert poly.boundVars.length() == inst.varBindings.length()
-    emptyIds = arrayof(i32)
-    poly.skippedBindIds = emptyIds
+    self.instUnbindBase.append(self.instUnbindVars.length())
+    self.instChainBase.append(self.instChainVars.length())
+    self.instRebindBase.append(self.instRebindVars.length())
     for index in range(poly.boundVars.length()) {
        assert poly.boundVars[index].type == Type.TypeClass.Var
        btv = poly.boundVars[index].tyvar!
@@ -1600,25 +1627,23 @@ class TypeChecker(self) {
          boundVar = self.bindTowards(btv, binding)
          if isnull(boundVar) {
            // The binding is btv's own chain; nothing to bind.
-           poly.skippedBindIds.append(btv.id)
          } else if boundVar.id != btv.id {
-           // Orientation bound the binding's representative instead; make
-           // sure deInstantiate unbinds it and leaves btv alone.
-           poly.skippedBindIds.append(btv.id)
-           poly.chainBoundVars.append(boundVar!)
+           // Orientation bound the binding's representative instead;
+           // deInstantiate unbinds it and leaves btv alone.
+           self.instChainVars.append(boundVar!)
            self.trailAdd(boundVar.id)
          } else {
+           self.instUnbindVars.append(btv)
            self.trailAdd(btv.id)
          }
        } else if val.type == Type.TypeClass.Var {
          // Bound to another variable: bind the representative at the end of
          // the chain instead, so resolution reaches this instantiation.
-         poly.skippedBindIds.append(btv.id)
          rep = self.unifier.representative(btv)
          if rep.id != btv.id && isnull(self.unifier.lookupVar(rep.id)) {
            boundVar = self.bindTowards(rep, binding)
            if !isnull(boundVar) {
-             poly.chainBoundVars.append(boundVar!)
+             self.instChainVars.append(boundVar!)
              self.trailAdd(boundVar.id)
            }
          }
@@ -1644,59 +1669,54 @@ class TypeChecker(self) {
          if rebDiffer {
            self.unifier.unbindVar(btv)
            rebBound = self.bindTowards(btv, binding)
-           poly.rebindOldVars.append(btv)
-           poly.rebindOldVals.append(val!)
-           poly.skippedBindIds.append(btv.id)
+           self.instRebindVars.append(btv)
+           self.instRebindVals.append(val!)
            if !isnull(rebBound) {
              if rebBound.id != btv.id {
-               poly.chainBoundVars.append(rebBound!)
+               self.instChainVars.append(rebBound!)
                self.trailAdd(rebBound.id)
              } else {
                self.trailAdd(btv.id)
              }
            }
-         } else {
-           poly.skippedBindIds.append(btv.id)
          }
        }
     }
   }
 
   func deInstantiate(self, poly: PolymorphicType) {
-    // for a limited time, pretend that the bound variables in poly are bound
-    // to the bindings in the instantiation.
-    for ty in poly.boundVars {
-      assert ty.type == Type.TypeClass.Var
-      skipped = false
-      for id in poly.skippedBindIds {
-        if id == ty.tyvar.id {
-          skipped = true
-        }
-      }
-      if !skipped {
-        self.unifier.unbindVar(ty.tyvar!)
-        self.trailRemove(ty.tyvar.id)
-        assert isnull(self.unifier.lookupVar(ty.tyvar.id))
-      }
+    // Pop the innermost instantiate frame: unbind exactly what it bound,
+    // restore what it overrode.
+    unbindBase = self.instUnbindBase[self.instUnbindBase.length() - 1u64]
+    chainBase = self.instChainBase[self.instChainBase.length() - 1u64]
+    rebindBase = self.instRebindBase[self.instRebindBase.length() - 1u64]
+    diI = self.instUnbindVars.length()
+    while diI > unbindBase {
+      diI -= 1u64
+      self.unifier.unbindVar(self.instUnbindVars[diI])
+      self.trailRemove(self.instUnbindVars[diI].id)
     }
-    for rep in poly.chainBoundVars {
-      self.unifier.unbindVar(rep)
-      self.trailRemove(rep.id)
+    diI = self.instChainVars.length()
+    while diI > chainBase {
+      diI -= 1u64
+      self.unifier.unbindVar(self.instChainVars[diI])
+      self.trailRemove(self.instChainVars[diI].id)
     }
     // Restore bindings instantiate() overrode (stale bakes it rebound).
-    for rebI in range(poly.rebindOldVars.length()) {
-      self.unifier.unbindVar(poly.rebindOldVars[rebI])
-      self.trailRemove(poly.rebindOldVars[rebI].id)
-      self.unifier.bindVar(poly.rebindOldVars[rebI], poly.rebindOldVals[rebI])
+    diI = self.instRebindVars.length()
+    while diI > rebindBase {
+      diI -= 1u64
+      self.unifier.unbindVar(self.instRebindVars[diI])
+      self.trailRemove(self.instRebindVars[diI].id)
+      self.unifier.bindVar(self.instRebindVars[diI], self.instRebindVals[diI])
     }
-    emptyIds = arrayof(i32)
-    poly.skippedBindIds = emptyIds
-    emptyVars = arrayof(TypeVar)
-    poly.chainBoundVars = emptyVars
-    emptyRebVars = arrayof(TypeVar)
-    poly.rebindOldVars = emptyRebVars
-    emptyRebVals = arrayof(Type)
-    poly.rebindOldVals = emptyRebVals
+    self.instUnbindVars.resize(unbindBase)
+    self.instChainVars.resize(chainBase)
+    self.instRebindVars.resize(rebindBase)
+    self.instRebindVals.resize(rebindBase)
+    self.instUnbindBase.resize(self.instUnbindBase.length() - 1u64)
+    self.instChainBase.resize(self.instChainBase.length() - 1u64)
+    self.instRebindBase.resize(self.instRebindBase.length() - 1u64)
   }
 
 
@@ -5480,6 +5500,25 @@ class TypeChecker(self) {
         }
         deferredType = Type(PolymorphicType(deferVars,
             Type(FunctionType(paramType, monoResult))))
+        // Re-point each parameter Variable at its generalized signature
+        // slot, exactly like the non-deferred epilogue: the deferral path
+        // exits before it, leaving pre-generalization variables whose
+        // chains later rounds permanently bake — emission then composes
+        // one signature's names/types for another's call sites.
+        dfParams = self.resolve(paramType)
+        dfIdx = 0u64
+        for dfVar in fn.variables() {
+          if dfVar.isParam {
+            if dfParams.type == Type.TypeClass.Tuple {
+              if dfIdx < dfParams.tuple.elements.length() {
+                dfVar.typedValue = dfParams.tuple.elements[dfIdx]
+              }
+            } else if dfIdx == 0u64 {
+              dfVar.typedValue = dfParams
+            }
+            dfIdx += 1u64
+          }
+        }
         self.closeScope()  // The body's locals.
         self.closeScope()  // The parameters.
         deferIsMethod = (!isnull(fn.parentFunction) &&
