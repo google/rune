@@ -750,7 +750,27 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     }
     cexpr = null(c.CExpr)
     if !isnull(self.expr) {
-      cexpr = self.expr.genC(builder)
+      // A none-typed return value has no C representation: the function's
+      // C return type is void, so emit a bare return (the turing test's
+      // mulParens base case returns its none-typed parameter).
+      retIsNone = false
+      retTv = self.expr.typedValue
+      if !isnull(retTv) {
+        retR = builder.typechecker.resolve(retTv!)
+        if retR.type == types.Type.TypeClass.Typename {
+          if retR.tyname.name.name == "none" {
+            retIsNone = true
+          }
+        }
+        if retR.type == types.Type.TypeClass.Tuple {
+          if retR.tuple.elements.length() == 0u64 {
+            retIsNone = true
+          }
+        }
+      }
+      if !retIsNone {
+        cexpr = self.expr.genC(builder)
+      }
     }
     returnStmt = builder.cReturnStatement(self.location, cexpr)
     builder.addStatement(self.location, returnStmt)

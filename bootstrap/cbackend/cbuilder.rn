@@ -828,6 +828,15 @@ class CBuilder(self, tc: types.TypeChecker) {
   // knot-free arguments.
   func materializeFor(self, fn: db.Function, specKey: string) {
     if !fn.deferredTypecheck {
+      // A body the demand machinery has ALREADY materialized is
+      // round-managed: its shared expression types hold one signature's
+      // bakes, so every emitted specialization needs its own round (the
+      // turing test's addParens fifth spec emitted with a stale body
+      // otherwise).  Never-materialized bodies keep their template bakes.
+      if fn.lastMaterializedSpec != "" {
+        self.typechecker.materializeSpec(fn, specKey)
+        return
+      }
       // Non-deferred bodies keep their template bakes (a fresh emission
       // walk re-derives WORSE types for inlined iterators) — EXCEPT the
       // methods of a class with SEVERAL concrete signatures: their shared
