@@ -4438,11 +4438,131 @@ class TypeChecker(self) {
     return Type(FunctionType(restType, result))
   }
 
+  // During a materialization round, map a bare generic-class knot to the
+  // unique recorded constructor instantiation CONSISTENT with the round's
+  // enclosing class instance: any type argument of the candidate that
+  // names the enclosing class must equal the round's resolved self type
+  // (an Entry knot read inside Dict(u32,string)'s methods means "the
+  // Entry OF THIS Dict").  Ambiguity or no candidate leaves the knot
+  // unchanged.
+  func concretizeKnots(self, ty: Type, depth: u32) -> Type {
+    if depth > 6u32 {
+      return self.resolve(ty)
+    }
+    t = self.resolve(ty)
+    switch t.type {
+      Type.TypeClass.Typename => {
+        if isnull(t.tyname.params) {
+          kinfo = self.lookupClass(t.tyname.name)
+          if isnull(kinfo) {
+            return t
+          }
+          if kinfo.paramVars.length() == 0 {
+            return t
+          }
+          if isnull(kinfo.fn) {
+            return t
+          }
+          kty = kinfo.fn.typedValue
+          if isnull(kty) {
+            return t
+          }
+          if kty.type != Type.TypeClass.Polymorphic {
+            return t
+          }
+          // The consistency anchor: the round's own class instance.
+          kSelfName = ""
+          kSelfSpec = ""
+          if !isnull(self.currentClassInfo) && !isnull(self.currentSelfType) {
+            kcrs = self.resolve(self.currentSelfType!)
+            if kcrs.type == Type.TypeClass.Typename && !self.hasFreeVars(kcrs) {
+              kSelfName = kcrs.tyname.name.name
+              kSelfSpec = kcrs.toString()
+            }
+          }
+          kFound = null(Type)
+          kDistinct = arrayof(string)
+          kpi = kty.poly.instantiations
+          if !isnull(kpi) {
+            for kinst in kpi {
+              kit = kinst.type
+              if !isnull(kit) {
+                rkit = self.resolve(kit!)
+                if rkit.type == Type.TypeClass.Function {
+                  rres = self.resolve(rkit.function.result!)
+                  if (rres.type == Type.TypeClass.Typename &&
+                      !isnull(rres.tyname.params) && !self.hasFreeVars(rres)) {
+                    kConsistent = true
+                    if kSelfName != "" {
+                      for kel in rres.tyname.params.elements {
+                        rkel = self.resolve(kel)
+                        if rkel.type == Type.TypeClass.Typename {
+                          if rkel.tyname.name.name == kSelfName {
+                            if rkel.toString() != kSelfSpec {
+                              kConsistent = false
+                            }
+                          }
+                        }
+                      }
+                    }
+                    if kConsistent {
+                      kSeen = false
+                      kStr = rres.toString()
+                      for kd in kDistinct {
+                        if kd == kStr {
+                          kSeen = true
+                        }
+                      }
+                      if !kSeen {
+                        kDistinct.append(kStr)
+                        kFound = rres
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          if kDistinct.length() == 1 {
+            return kFound!
+          }
+          return t
+        }
+        kEls = arrayof(Type)
+        for kel2 in t.tyname.params.elements {
+          kEls.append(self.concretizeKnots(kel2, depth + 1u32))
+        }
+        kName = TypeName(t.tyname.name, TupleType(kEls))
+        kName.isNullable = t.tyname.isNullable
+        return Type(kName)
+      }
+      Type.TypeClass.Array => {
+        return ARRAY(self.concretizeKnots(t.array.elementType!, depth + 1u32))
+      }
+      Type.TypeClass.Tuple => {
+        kTEls = arrayof(Type)
+        for ktel in t.tuple.elements {
+          kTEls.append(self.concretizeKnots(ktel, depth + 1u32))
+        }
+        return Type(TupleType(kTEls))
+      }
+      default => return t
+    }
+  }
+
   // Substitute the class's type parameters with the instance's type
   // arguments inside a member type, without binding the class's type
   // variables globally.
   func substituteClassVars(self, info: ClassInfo, instanceType: Type, memberType: Type) -> Type {
     rSubInst = self.resolve(instanceType)
+    if self.retypecheckNesting > 0u32 {
+      if rSubInst.type == Type.TypeClass.Typename && isnull(rSubInst.tyname.params) {
+        // A knot instance during a materialization round: try to pin it
+        // to the signature consistent with the round's self type, so the
+        // normal projection below applies.
+        rSubInst = self.concretizeKnots(rSubInst, 0u32)
+      }
+    }
     if rSubInst.type != Type.TypeClass.Typename || isnull(rSubInst.tyname.params) {
       // A bare class knot (or an unresolved/non-instance base).  DURING A
       // MATERIALIZATION round the canonical slot may only be handed out
@@ -4476,6 +4596,11 @@ class TypeChecker(self) {
       }
     }
     rSubResult = self.resolve(result)
+    if self.retypecheckNesting > 0u32 {
+      // A projected member can still carry bare knots (a [Entry] table
+      // slot); pin them to the signature consistent with this round.
+      rSubResult = self.concretizeKnots(rSubResult, 0u32)
+    }
     if rSubResult.type == Type.TypeClass.Var && self.retypecheckNesting > 0u32 {
       // The slot never linked to the class's parameter variables (its
       // linkage was lost to deferral rollback, or the paramVars are
