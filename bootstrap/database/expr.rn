@@ -1160,8 +1160,35 @@ class Expr(self, type: ExprType, location: Location) {
               opArgs = arrayof(types.Type)
               opArgs.append(ltype)
               opArgs.append(rtype)
+              tc.unifier.beginBindTrail()
               opTe = tc.unify(opOpened.function.params!,
                   types.Type(types.TupleType(opArgs)))
+              if isnull(opTe) {
+                tc.unifier.commitBindTrail()
+              } else {
+                tc.unifier.rollbackBindTrail()
+                // The operator's generalized params FROZE under an
+                // earlier signature of a multi-signature class
+                // (Integer's op + baked (u32,u32); the (u64,u32) pair
+                // fails structurally).  Force the spec through the
+                // want machinery: the def-side name collision triggers
+                // adoption of these GROUND operand types.
+                opWInst = opty.poly.instantiations.lastTyvarInstantiation
+                if !isnull(opWInst) &&
+                    !tc.hasFreeVars(ltype) && !tc.hasFreeVars(rtype) {
+                  opWTuple = types.Type(types.TupleType([ltype, rtype]))
+                  opWName = opWTuple.genSpecializationName(opfn.sym.name)
+                  builder.wantSpecName = opWName
+                  builder.wantSpecParams = opWTuple
+                  builder.wantSpecResult = null(types.Type)
+                  if !builder.alreadyEmitted(opWName) {
+                    opfn.genCPolyInstantiation(builder, opWInst!)
+                  }
+                  if builder.alreadyEmitted(opWName) {
+                    callName = opWName
+                  }
+                }
+              }
               if isnull(opTe) {
                 opNewInst = opty.poly.instantiations.lastTyvarInstantiation
                 if !isnull(opNewInst) {

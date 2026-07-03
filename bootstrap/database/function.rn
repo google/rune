@@ -595,22 +595,20 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     // types, matching genSpecializationName at call sites.
     paramTuple = types.Type(types.TupleType(paramTypes))
     specializedName = paramTuple.genSpecializationName(self.sym.name)
-    // A parameter that does not resolve under these bindings (a variable
-    // outside the poly's generalized set, e.g. an operator constraint
-    // variable) cannot emit; the call site emits this specialization on
-    // demand under its outer bindings.
-    for pt in paramTypes {
-      if builder.typechecker.hasFreeVars(pt) {
-        builder.deInstantiate(fntype.poly!)
-        return
-      }
-    }
     // The call-site handoff is authoritative: the variables-derived
     // name above can resolve through an outer ACTIVE round of this
-    // same function (stale slots) and compose the wrong spec.  The
-    // call site composed giWantName from GROUND arg types.
+    // same function (stale slots) and compose the wrong spec, or
+    // carry FREE pieces (an operator's unresolved width param).  The
+    // call site composed giWantName from GROUND arg types — let the
+    // adoption fire BEFORE the free-params bailout.
+    ptFree = false
+    for pt0 in paramTypes {
+      if builder.typechecker.hasFreeVars(pt0) {
+        ptFree = true
+      }
+    }
     if giWantName != "" && giWantName != specializedName &&
-        builder.alreadyEmitted(specializedName) {
+        (builder.alreadyEmitted(specializedName) || ptFree) {
       // Only a COLLIDING variables-derived name may adopt the call
       // site's want: a unique name (e.g. manySignatures' value-named
       // specs) is correct as-is, and adopting would emit a duplicate
@@ -631,12 +629,36 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
             giFree = true
           }
         }
-        if !giFree && giList.length() == paramTypes.length() {
+        giShapeOk = giList.length() == paramTypes.length()
+        if giShapeOk {
+          giI2 = 0u64
+          for giP3 in paramTypes {
+            // The want must be THIS function's shape — CLASS NAMES
+            // only: a pending want from another call adopting through
+            // the free-params path emitted Element's operator with
+            // Foo's types (heapsort), but slotwise comparison would
+            // reject the very signature splits the adoption exists
+            // for (Integer(u64,..) want vs frozen Integer(u32,..)).
+            giW3 = builder.typechecker.resolve(giList[giI2])
+            giR3 = builder.typechecker.resolve(giP3)
+            if (giW3.type == types.Type.TypeClass.Typename &&
+                giR3.type == types.Type.TypeClass.Typename) {
+              if giW3.tyname.name.name != giR3.tyname.name.name {
+                giShapeOk = false
+              }
+            }
+            // Non-class shapes (tuples, vars, ints) are not
+            // class-identified — the name+arity checks suffice.
+            giI2 += 1u64
+          }
+        }
+        if !giFree && giShapeOk {
           giTuple = types.Type(types.TupleType(giList))
           giName = giTuple.genSpecializationName(self.sym.name)
           if giName == giWantName {
             specializedName = giName
             paramTypes = giList
+            ptFree = false
             for giP2 in paramTypes {
               if giP2.type == types.Type.TypeClass.Tuple {
                 builder.ensureTupleDeclared(self.location, giP2)
@@ -645,6 +667,13 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
           }
         }
       }
+    }
+    // A parameter that does not resolve under these bindings (a variable
+    // outside the poly's generalized set) cannot emit; the call site
+    // emits this specialization on demand under its outer bindings.
+    if ptFree {
+      builder.deInstantiate(fntype.poly!)
+      return
     }
     if builder.alreadyEmitted(specializedName) {
       builder.deInstantiate(fntype.poly!)
