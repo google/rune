@@ -1502,6 +1502,18 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       builder.openBlock(self.location)
       builder.openBlock(self.location)
       builder.openBlock(self.location)
+      // Prevent a RE-ENTRANT destroy: the cleanup body runs removeChild,
+      // whose `unref child` decrements refCount and would destroy this
+      // object again (recursively, before rn_id is cleared below) if it
+      // reached 0.  Bump refCount out of reach for the duration — the
+      // object is being destroyed anyway.
+      bumpSelfRef = c.CExpr(c.CIdentifier(destroySelfSym, null(c.CTypeExpr),
+          false, false, false))
+      bumpAssign = c.CExpr(c.CBinaryOperator(self.location,
+          c.CBinaryOperator.Type.Assign, null(c.CTypeExpr),
+          c.CExpr(c.CDotExpr(self.location, bumpSelfRef, "refCount", true)),
+          builder.cIntLiteral(Bigint(0x40000000u32))))
+      builder.addStatement(self.location, bumpAssign)
       for destroyStatement in self.subBlock.statements() {
         destroyStatement.genC(builder)
       }

@@ -2151,6 +2151,13 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
     // to an integer and printed by destructors.
     e.newline()
     e.write("uint32_t rn_id;")
+    // Reference count.  calloc zeroes it; a module-level reference refs
+    // it (so an UNSHARED object sits at 1 and is destroyed on overwrite/
+    // exit), while a relation list also refs it (appendChild's `ref
+    // child`), keeping a SHARED object alive.  destroy() does NOT free
+    // (only clears rn_id), so reading refCount after destroy is safe.
+    e.newline()
+    e.write("uint32_t refCount;")
     for field in self.cParamList.cParameters() {
       e.newline()
       field.emit(e)

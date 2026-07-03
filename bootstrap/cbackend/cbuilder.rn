@@ -181,6 +181,13 @@ class CBuilder(self, tc: types.TypeChecker) {
   // when main exits.
   self.mainFinalSyms = arrayof(Sym)
   self.mainFinalNames = arrayof(string)
+  // Module-level class variables already assigned once (in emission
+  // order).  A REASSIGNMENT (sym already seen) registers the variable
+  // for an exit unref; a first assignment does not (the object leaks
+  // unless a relation/reassignment reclaims it), matching legacy —
+  // final_call's reassigned P is exit-destroyed, safe's once-assigned
+  // mom1 is not.
+  self.moduleAssignSeen = arrayof(Sym)
   // Names of module-level variables: emitted as file-scope C statics so
   // functions can reference them (a main-local would be out of scope).
   self.moduleVarNames = arrayof(string)
@@ -385,20 +392,13 @@ class CBuilder(self, tc: types.TypeChecker) {
       }
     }
     module.genC(self)
-    // Destroy module-level objects with destructors when main exits.
+    // Release the module-level reference to each reassigned object at
+    // main() exit: unref (destroy only if no relation list still holds
+    // it).  final_call's last Point is unshared -> destroyed; safe's Eve
+    // stays in Mom/Dad lists -> survives.
     for index in range(self.mainFinalSyms.length()) {
-      finalRef = CExpr(CIdentifier(self.mainFinalSyms[index], null(CTypeExpr),
-          false, false, false))
-      finalRef2 = CExpr(CIdentifier(self.mainFinalSyms[index], null(CTypeExpr),
-          false, false, false))
-      finalArgs = CExprList()
-      finalArgs.appendCExpr(finalRef)
-      self.openBlock(module.location)
-      self.addStatement(module.location,
-          self.cCall(module.location, self.mainFinalNames[index], CExpr(finalArgs)))
-      finalBody = self.closeBlock()
-      self.program.addStatementToMain(
-          CStatement(module.location, CStatementType.If, finalRef2, finalBody))
+      self.program.addStatementToMain(self.buildUnref(module.location,
+          self.mainFinalSyms[index], self.mainFinalNames[index]))
     }
     return self.program
   }
@@ -448,6 +448,76 @@ class CBuilder(self, tc: types.TypeChecker) {
       }
     }
     return ""
+  }
+
+  // Emit `if (sym) { sym->refCount = sym->refCount + 1; }` — take a
+  // reference.  The null guard matters: `g = null(g)` refs the new
+  // (null) value, which must be a no-op, not a null deref.
+  func emitRefInc(self, location: db.Location, sym: Sym) {
+    dotL = CExpr(CDotExpr(location,
+        CExpr(CIdentifier(sym, null(CTypeExpr), false, false, false)),
+        "refCount", true))
+    dotR = CExpr(CDotExpr(location,
+        CExpr(CIdentifier(sym, null(CTypeExpr), false, false, false)),
+        "refCount", true))
+    rhs = self.cBinaryOperator(location, CBinaryOperator.Type.Plus,
+        null(types.Type), dotR, self.cIntLiteral(db.Bigint(1u64)))
+    assign = self.cBinaryOperator(location, CBinaryOperator.Type.Assign,
+        null(types.Type), dotL, rhs)
+    self.openBlock(location)
+    self.addStatement(location, assign)
+    guardBody = self.closeBlock()
+    guardCond = CExpr(CIdentifier(sym, null(CTypeExpr), false, false, false))
+    self.addStatement(location,
+        CStatement(location, CStatementType.If, guardCond, guardBody))
+  }
+
+  // Build (but do not place) the statement
+  //   if (sym) { sym->refCount = sym->refCount - 1;
+  //              if (sym->refCount == 0) { <destroyName>(sym); } }
+  // — release a reference, destroying the object when the last one goes.
+  // Returned so callers can place it in the current block or in main().
+  func buildUnref(self, location: db.Location, sym: Sym,
+                  destroyName: string) -> CStatement {
+    refCountTy = types.Type(types.IntType(false, 32u32))
+    zeroCond = self.cBinaryOperator(location, CBinaryOperator.Type.Equals,
+        refCountTy,
+        CExpr(CDotExpr(location,
+            CExpr(CIdentifier(sym, null(CTypeExpr), false, false, false)),
+            "refCount", true)),
+        self.cIntLiteral(db.Bigint(0u64)))
+    destroyArgs = CExprList()
+    destroyArgs.appendCExpr(
+        CExpr(CIdentifier(sym, null(CTypeExpr), false, false, false)))
+    // The enclosing function must forward-declare the destructor it calls.
+    self.noteDependency(destroyName)
+    self.openBlock(location)
+    self.addStatement(location, self.cCall(location, destroyName, CExpr(destroyArgs)))
+    destroyBody = self.closeBlock()
+    destroyIf = CStatement(location, CStatementType.If, zeroCond, destroyBody)
+    decRhs = self.cBinaryOperator(location, CBinaryOperator.Type.Minus,
+        null(types.Type),
+        CExpr(CDotExpr(location,
+            CExpr(CIdentifier(sym, null(CTypeExpr), false, false, false)),
+            "refCount", true)),
+        self.cIntLiteral(db.Bigint(1u64)))
+    decAssign = self.cBinaryOperator(location, CBinaryOperator.Type.Assign,
+        null(types.Type),
+        CExpr(CDotExpr(location,
+            CExpr(CIdentifier(sym, null(CTypeExpr), false, false, false)),
+            "refCount", true)),
+        decRhs)
+    self.openBlock(location)
+    self.addStatement(location, decAssign)
+    self.addStatement(location, destroyIf)
+    guardBody = self.closeBlock()
+    guardCond = CExpr(CIdentifier(sym, null(CTypeExpr), false, false, false))
+    return CStatement(location, CStatementType.If, guardCond, guardBody)
+  }
+
+  // Emit an unref into the current block.
+  func emitUnref(self, location: db.Location, sym: Sym, destroyName: string) {
+    self.addStatement(location, self.buildUnref(location, sym, destroyName))
   }
 
   // Record a module-level variable holding an object that needs its

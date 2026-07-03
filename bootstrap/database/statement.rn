@@ -275,8 +275,8 @@ class Statement(self, block: Block, type: StateType, location: Location) {
       StateType.Relation => return
       StateType.Appendcode => return
       StateType.Prependcode => return
-      StateType.Ref => return
-      StateType.Unref => return
+      StateType.Ref => self.genCRefCount(builder, true)
+      StateType.Unref => self.genCRefCount(builder, false)
       default => raise Status.Unimplemented, "Statement type not yet supported by C backend builder ", self.type
     }
   }
@@ -332,28 +332,38 @@ class Statement(self, block: Block, type: StateType, location: Location) {
       // Type-valued assignments like t = u32 exist only at compile time.
       return
     }
-    // Overwriting a main-level object reference destroys the previous
-    // object: if (lhs) { Class_destroy(lhs); }.  Locals inside functions
-    // are plain references and never destroy on reassignment.
+    // A module-level object reference is reference-counted: overwriting
+    // it UNREFS the previous object (destroyed only if no relation list
+    // or other reference still holds it), and the new value is ref'd
+    // after the assignment (below).  So an UNSHARED object dies on
+    // reassignment (final_call's Point; graph's `g = null`), while a
+    // SHARED one survives (safe's Child, still in a Mom/Dad list).
+    // Locals inside functions are plain references, untouched.
+    refAfterSym = null(Sym)
     if self.expr.type == ExprType.Equals && isnull(builder.currentBlock) {
       assignLhs = self.expr.firstChildExpr!
       if assignLhs.type == ExprType.Ident {
         finalName = builder.classDestroyName(assignLhs.typedValue)
         if finalName != "" {
           lhsSym = assignLhs.val.symVal!
-          condRef = c.CExpr(c.CIdentifier(lhsSym, null(c.CTypeExpr),
-              false, false, false))
-          callRef = c.CExpr(c.CIdentifier(lhsSym, null(c.CTypeExpr),
-              false, false, false))
-          finalArgs = c.CExprList()
-          finalArgs.appendCExpr(callRef)
-          builder.openBlock(self.location)
-          builder.addStatement(self.location,
-              builder.cCall(self.location, finalName, c.CExpr(finalArgs)))
-          finalBody = builder.closeBlock()
-          builder.addStatement(self.location,
-              c.CStatement(self.location, c.CStatementType.If, condRef, finalBody))
-          if isnull(builder.currentBlock) {
+          // Reassignment vs first assignment: only a REASSIGNMENT
+          // registers the variable for an exit unref (a first-only
+          // assignment leaks, matching legacy — see moduleAssignSeen).
+          reassigned = false
+          for seen in builder.moduleAssignSeen {
+            if seen == lhsSym {
+              reassigned = true
+            }
+          }
+          if !reassigned {
+            builder.moduleAssignSeen.append(lhsSym)
+          }
+          // Unref the OLD value (lhs still holds it; the assignment is
+          // emitted at the end of this function; no-op on first assign
+          // via the null guard), then ref the new (below).
+          builder.emitUnref(self.location, lhsSym, finalName)
+          refAfterSym = lhsSym
+          if reassigned {
             builder.registerMainFinal(lhsSym, finalName)
           }
         }
@@ -387,10 +397,50 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     }
     cexpr = self.expr.genC(builder)
     builder.addStatement(self.location, c.CStatement(self.location, c.CStatementType.Assignment, cexpr))
+    // Take a reference to the newly-assigned module-level object (guarded
+    // against null inside emitRefInc).
+    if !isnull(refAfterSym) {
+      builder.emitRefInc(self.location, refAfterSym!)
+    }
   }
 
   func genCCall(self, builder: c.CBuilder, fn: c.CExpr | c.CRuntimeFunction, args: c.CExpr?) {
     builder.addStatement(self.location, builder.cCall(self.location, fn, args))
+  }
+
+  // Emit a `ref x` / `unref x` statement (spliced in by relation
+  // transformers — appendChild's `ref child`, removeChild's `unref
+  // child`).  ref increments refCount; unref decrements and destroys at
+  // zero.  The ref'd expr is a simple variable; its class type (for the
+  // destroy name) comes from currentEmittingFn's parameter of that name
+  // when the node's own typedValue is missing (transformer-spliced ref
+  // statements are not fully re-typechecked).
+  func genCRefCount(self, builder: c.CBuilder, isRef: bool) {
+    if isnull(self.expr) {
+      return
+    }
+    refExpr = self.expr!
+    if refExpr.type != ExprType.Ident {
+      return
+    }
+    refSym = refExpr.val.symVal!
+    refTy = refExpr.typedValue
+    if isnull(refTy) && !isnull(builder.currentEmittingFn) {
+      for v in builder.currentEmittingFn.variables() {
+        if v.isParam && v.sym.name == refSym.name && !isnull(v.typedValue) {
+          refTy = v.typedValue
+        }
+      }
+    }
+    destroyName = builder.classDestroyName(refTy)
+    if destroyName == "" {
+      return
+    }
+    if isRef {
+      builder.emitRefInc(self.location, refSym)
+    } else {
+      builder.emitUnref(self.location, refSym, destroyName)
+    }
   }
 
   func genCPrint(self, builder: c.CBuilder, newline: bool) {
