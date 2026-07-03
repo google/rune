@@ -5693,7 +5693,32 @@ class TypeChecker(self) {
             deferHasValueReturn = true
           }
         }
+        rsCoupled = false
         if rres.type == Type.TypeClass.Var {
+          // A result var COUPLED to a param slot is the errored walk's
+          // artifact (typeof(distancefunc(array[0])) unified arraySum's
+          // result into its fn-param chain): the coupled slot later
+          // binds to the ARGUMENT (a whole fn type) and every caller
+          // reads the wrong result.  Mint an independent fresh var.
+          if paramType.type == Type.TypeClass.Tuple {
+            for rsEl in paramType.tuple.elements {
+              rsR = self.resolve(rsEl)
+              if rsR.type == Type.TypeClass.Var {
+                if rsR.tyvar.id == rres.tyvar.id {
+                  rsCoupled = true
+                }
+              }
+            }
+          } else {
+            rsP = self.resolve(paramType)
+            if rsP.type == Type.TypeClass.Var {
+              if rsP.tyvar.id == rres.tyvar.id {
+                rsCoupled = true
+              }
+            }
+          }
+        }
+        if rres.type == Type.TypeClass.Var && !rsCoupled {
           deferVars.append(Type(rres.tyvar!))
         } else if deferHasValueReturn {
           // monoResult was bound during the ERRORED template walk (the

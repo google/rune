@@ -1528,6 +1528,19 @@ class Expr(self, type: ExprType, location: Location) {
           left.typedValue = right.typedValue
         }
       }
+      if left.type == ExprType.Ident && !isnull(left.typedValue) {
+        // A local holding a FUNCTION VALUE types as the callee's whole
+        // poly, which has no C type; the RHS's recovery yields the
+        // concrete fn type (funcptr's distancefunc local).
+        if builder.typechecker.resolve(left.typedValue!).type ==
+            types.Type.TypeClass.Polymorphic {
+          eqRec = right.resolvedArgType(builder)
+          if !builder.typechecker.hasFreeVars(eqRec) &&
+              eqRec.type == types.Type.TypeClass.Function {
+            left.typedValue = eqRec
+          }
+        }
+      }
     }
     if self.type == ExprType.Lt {
     }
@@ -1939,6 +1952,40 @@ class Expr(self, type: ExprType, location: Location) {
         }
       } else if rIndexee.type == types.Type.TypeClass.Array {
         return builder.typechecker.resolve(rIndexee.array.elementType!)
+      }
+    } else if self.type == ExprType.Funcaddr {
+      // &fn(args): the value's type is the CONCRETE fn type of the
+      // specialization the args select — the expression slot holds the
+      // callee's whole generalized poly, which has no C representation.
+      faC = self.firstChildExpr!
+      if faC.type == ExprType.Call {
+        faCallee = faC.firstChildExpr!
+        faArgsN = faCallee.nextExprChildExpr
+        if !isnull(faArgsN) {
+          faTypes = arrayof(types.Type)
+          if faArgsN.type == ExprType.List || faArgsN.type == ExprType.Tuple {
+            for faA in faArgsN.childExprs() {
+              faTypes.append(faA.resolvedArgType(builder, depth + 1u32, scopeBlock))
+            }
+          } else {
+            faTypes.append(faArgsN.resolvedArgType(builder, depth + 1u32, scopeBlock))
+          }
+          faOk = true
+          for faT in faTypes {
+            if builder.typechecker.hasFreeVars(faT) {
+              faOk = false
+            }
+          }
+          faRes = faC.resolvedArgType(builder, depth + 1u32, scopeBlock)
+          if faOk && !builder.typechecker.hasFreeVars(faRes) {
+            if faTypes.length() == 1u64 {
+              faParams = faTypes[0u64]
+            } else {
+              faParams = types.Type(types.TupleType(faTypes))
+            }
+            return types.Type(types.FunctionType(faParams, faRes))
+          }
+        }
       }
     } else if self.type == ExprType.Tuple {
       // Rebuild from the children: the tuple's own slot bound once and
@@ -2598,6 +2645,35 @@ class Expr(self, type: ExprType, location: Location) {
   func genCFuncaddr(self, builder: c.CBuilder) -> c.CExpr {
     faCall = self.firstChildExpr!
     faCallee = faCall.firstChildExpr!
+    // The address of a generic function is the address of ONE
+    // specialization: compose the specialized name from the call's
+    // recovered argument types (the args exist exactly to select it).
+    if faCallee.type == ExprType.Ident {
+      gfArgsN = faCallee.nextExprChildExpr
+      gfFn = builder.findFunction(faCallee.val.symVal.name)
+      if !isnull(gfArgsN) && !isnull(gfFn) {
+        gfTypes = arrayof(types.Type)
+        if gfArgsN.type == ExprType.List || gfArgsN.type == ExprType.Tuple {
+          for gfA in gfArgsN.childExprs() {
+            gfTypes.append(gfA.resolvedArgType(builder))
+          }
+        } else {
+          gfTypes.append(gfArgsN.resolvedArgType(builder))
+        }
+        gfOk = true
+        for gfT in gfTypes {
+          if builder.typechecker.hasFreeVars(gfT) {
+            gfOk = false
+          }
+        }
+        if gfOk {
+          gfName = types.Type(types.TupleType(gfTypes)).genSpecializationName(
+              faCallee.val.symVal.name)
+          return c.CExpr(c.CIdentifier(Sym.new(gfName), null(c.CTypeExpr),
+              false, false, false))
+        }
+      }
+    }
     return faCallee.genC(builder)
   }
 

@@ -683,6 +683,43 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
           ppStill = true
         }
       }
+      if ppStill && !isnull(giWantParams) {
+        // The call site RECOVERED the concrete fn type for this slot
+        // (the recorded instantiation captured the callee's whole
+        // poly); adopt it positionally.
+        wpEls = arrayof(types.Type)
+        giWP2 = giWantParams!
+        if giWP2.type == types.Type.TypeClass.Tuple {
+          for wpE in giWP2.tuple.elements {
+            wpEls.append(wpE)
+          }
+        } else {
+          wpEls.append(giWP2)
+        }
+        if wpEls.length() == paramTypes.length() {
+          wpNew = arrayof(types.Type)
+          wpI = 0u64
+          for wpT in paramTypes {
+            wpR = builder.typechecker.resolve(wpT)
+            wpW = builder.typechecker.resolve(wpEls[wpI])
+            if (wpR.type == types.Type.TypeClass.Polymorphic &&
+                wpW.type == types.Type.TypeClass.Function &&
+                !builder.typechecker.hasFreeVars(wpW)) {
+              wpNew.append(wpW)
+            } else {
+              wpNew.append(wpT)
+            }
+            wpI += 1u64
+          }
+          paramTypes = wpNew
+          ppStill = false
+          for ppT3 in paramTypes {
+            if builder.typechecker.resolve(ppT3).type == types.Type.TypeClass.Polymorphic {
+              ppStill = true
+            }
+          }
+        }
+      }
       if ppStill {
         builder.deInstantiate(fntype.poly!)
         return
