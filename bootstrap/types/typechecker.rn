@@ -389,6 +389,13 @@ class TypeChecker(self) {
   // and must be kept; a pre-existing binding on a NON-active var is a
   // stale bake that instantiate() overrides (with restore).
   self.activeTrailIds = arrayof(i32)
+  // The unifier's fresh-var counter at the innermost round's entry: a
+  // variable with id <= this watermark was minted DURING the round (ids
+  // are negative, decreasing) — e.g. the round's own recursive-call
+  // result slots — and is safe to embed in a result binding.  Older
+  // (id > watermark) frees belong to other templates and must not be
+  // linked (the dicttest corruption).
+  self.roundVarWatermark = 0i32
   // True while the innermost retypecheckDeferred round is a CONSTRUCTOR's
   // (methods' rounds must read per-spec field snapshots, not the shared
   // canonical slots).
@@ -684,6 +691,8 @@ class TypeChecker(self) {
     self.retypecheckNesting += 1u32
     prevRoundIsCtor = self.roundIsCtor
     self.roundIsCtor = fn.type == db.FuncType.Constructor
+    prevWatermark = self.roundVarWatermark
+    self.roundVarWatermark = self.unifier.nextFreshVar
     prevClassInfo = self.currentClassInfo
     prevSelfType = self.currentSelfType
     prevClassBoundVars = self.classBoundVars
@@ -790,6 +799,7 @@ class TypeChecker(self) {
     self.currentSelfType = prevSelfType
     self.classBoundVars = prevClassBoundVars
     self.roundIsCtor = prevRoundIsCtor
+    self.roundVarWatermark = prevWatermark
     self.retypecheckNesting -= 1u32
   }
 
@@ -925,6 +935,11 @@ class TypeChecker(self) {
       // A bare class knot in the arguments would materialize the callee
       // under an under-resolved (and possibly cross-signature) frame and
       // record garbage instantiations; leave those to emission recovery.
+      return
+    }
+    if self.hasNoneType(oft.function.params!) {
+      // none-typed arguments come from unreachable typeswitch arms; their
+      // growing recursions typecheck vacuously and spiral the worklist.
       return
     }
     if self.materializeDepth >= MaterializeRecursionLimit {
@@ -1097,16 +1112,59 @@ class TypeChecker(self) {
       // that survives deInstantiate and permanently corrupts the other
       // template (dicttest's second signature saw value=u32 forever).
       crtRes = self.resolve(fn.subBlock.returnType!)
-      if !self.hasFreeVars(crtRes) {
+      crtBind = !self.hasFreeVars(crtRes)
+      if !crtBind && crtRes.type == Type.TypeClass.Var {
+        // A BARE round-minted variable is the round's own recursive
+        // call's opened result (return addParens(...)); linking the
+        // result slot to it lets the worklist bind bottom-up.  An OLDER
+        // bare var chains into another template — never link those.
+        crtBind = crtRes.tyvar.id <= self.roundVarWatermark
+      }
+      if !crtBind && crtRes.type != Type.TypeClass.Var {
+        // A STRUCTURE with embedded frees (a growing recursion's tuple
+        // around its recursive result, e.g. the turing test's addParens)
+        // binds safely IF every free was minted during THIS round: those
+        // are the round's own recursion slots, resolved bottom-up by the
+        // worklist.  Any older free chains into another template and
+        // binding would corrupt it.
+        crtFrees = arrayof(Type)
+        crtFrees = self.collectFreeTyvars(crtRes, crtFrees)
+        crtAllRound = true
+        for crtF in crtFrees {
+          if crtF.tyvar.id > self.roundVarWatermark {
+            crtAllRound = false
+          }
+        }
+        crtBind = crtAllRound
+      }
+      if crtBind {
         self.unify(drfty.poly.scope.function.result!, crtRes)
       }
     } else {
-      // No return statement: the function returns none.  Without this
-      // the instantiation's result slot stays an open variable and
-      // emission cannot type the C function.
-      drres = self.resolve(drfty.poly.scope.function.result!)
-      if drres.type == Type.TypeClass.Var {
-        self.unify(drres, Type(TypeName(Sym.new("none"))))
+      // No TRACKED return type.  A body with return statements can still
+      // land here (typeswitch arm tracking loses the type when a later
+      // arm errors); binding none then poisons every caller — the turing
+      // test's decParens((())) bound none and spawned an unreachable
+      // addParens(none, ...) family.  Recover through the first return
+      // expression; bind none only for a genuinely return-less body.
+      crtRetE = db.findReturnExpr(fn.subBlock!)
+      if isnull(crtRetE) {
+        drres = self.resolve(drfty.poly.scope.function.result!)
+        if drres.type == Type.TypeClass.Var {
+          self.unify(drres, Type(TypeName(Sym.new("none"))))
+        }
+      } else {
+        crtRTv = crtRetE.typedValue
+        if !isnull(crtRTv) {
+          crtR2 = self.resolve(crtRTv!)
+          crtBind2 = !self.hasFreeVars(crtR2)
+          if !crtBind2 && crtR2.type == Type.TypeClass.Var {
+            crtBind2 = crtR2.tyvar.id <= self.roundVarWatermark
+          }
+          if crtBind2 {
+            self.unify(drfty.poly.scope.function.result!, crtR2)
+          }
+        }
       }
     }
   }
@@ -1221,6 +1279,41 @@ class TypeChecker(self) {
       return false
     }
     return !isnull(self.lookupClass(t.tyname.name))
+  }
+
+  // True if t structurally contains the `none` type: a call recorded with
+  // a none-typed argument comes from an unreachable typeswitch arm (the
+  // turing test's addParens(none, ...) family) and must not drive
+  // demand-materialization — a vacuously-typechecking growing recursion
+  // otherwise spirals through the worklist.
+  func hasNoneType(self, ty: Type) -> bool {
+    t = self.resolve(ty)
+    switch t.type {
+      Type.TypeClass.Typename => {
+        if t.tyname.name.name == "none" {
+          return true
+        }
+        if isnull(t.tyname.params) {
+          return false
+        }
+        for nEl in t.tyname.params.elements {
+          if self.hasNoneType(nEl) {
+            return true
+          }
+        }
+        return false
+      }
+      Type.TypeClass.Array => return self.hasNoneType(t.array.elementType!)
+      Type.TypeClass.Tuple => {
+        for nEl2 in t.tuple.elements {
+          if self.hasNoneType(nEl2) {
+            return true
+          }
+        }
+        return false
+      }
+      default => return false
+    }
   }
 
   // True if t contains a bare (parameterless) Typename of a GENERIC class:
