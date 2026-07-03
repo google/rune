@@ -1,9 +1,16 @@
 /*
  * Rune C backend string method builtins.
  *
- * Strings are NUL-terminated heap or static char buffers with value
- * semantics: mutating methods (append, concat, resize, reverse) return a
- * fresh buffer and the call site assigns it back to the receiver.
+ * Strings are length-headed heap buffers with value semantics: a hidden
+ * rn_strhdr (magic + byte length) sits immediately before the char data,
+ * exactly like the array_t "struct hack".  string_t stays `char *`
+ * pointing at the data, so C library calls and %s still work for
+ * NUL-free content (the buffer is also NUL-terminated).  string_length
+ * reads the header so embedded NUL bytes are counted (binary-safe);
+ * static string literals have no header, so string_length falls back to
+ * strlen for them (see the magic check).  Mutating methods (append,
+ * concat, resize, reverse) return a fresh buffer and the call site
+ * assigns it back to the receiver.
  *
  * find/rfind are ported from the original compiler's runtime
  * (runtime/io.c) so offsets and the not-found result (the string length)
@@ -16,18 +23,45 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Length header placed immediately before a string's char data.  The
+// magic distinguishes a headed heap string from a bare static literal
+// (whose "header" is unrelated preceding .rodata and will not match).
+#define RN_STR_MAGIC (0x726E537472486472ull)  /* "rnStrHdr" */
+
+typedef struct {
+  size_t magic;
+  size_t len;
+} rn_strhdr;
+
+// Allocate a headed, NUL-terminated string buffer of |len| bytes and
+// return a pointer to its data.  Callers fill data[0..len) themselves.
+static inline char *rn_stralloc(size_t len) {
+  rn_strhdr *h = (rn_strhdr *)malloc(sizeof(rn_strhdr) + len + 1);
+  h->magic = RN_STR_MAGIC;
+  h->len = len;
+  char *data = (char *)(h + 1);
+  data[len] = '\0';
+  return data;
+}
+
 static inline uint64_t string_length(const char *s) {
-  return s == NULL ? 0 : (uint64_t)strlen(s);
+  if (s == NULL) {
+    return 0;
+  }
+  const rn_strhdr *h = ((const rn_strhdr *)s) - 1;
+  if (h->magic == RN_STR_MAGIC) {
+    return h->len;
+  }
+  return (uint64_t)strlen(s);
 }
 
 static inline char *string_append_char(const char *s, uint8_t c) {
-  size_t len = s == NULL ? 0 : strlen(s);
-  char *r = (char *)malloc(len + 2);
+  size_t len = string_length(s);
+  char *r = rn_stralloc(len + 1);
   if (len > 0) {
     memcpy(r, s, len);
   }
   r[len] = (char)c;
-  r[len + 1] = '\0';
   return r;
 }
 
@@ -35,54 +69,54 @@ static inline char *string_append_char(const char *s, uint8_t c) {
 // string literals use this so that later writes (s[0] = c, append) do not
 // mutate the static literal.
 static inline char *string_dup(const char *s) {
-  size_t len = s == NULL ? 0 : strlen(s);
-  char *r = (char *)malloc(len + 1);
+  size_t len = string_length(s);
+  char *r = rn_stralloc(len);
   if (len > 0) {
     memcpy(r, s, len);
   }
-  r[len] = '\0';
   return r;
 }
 
 static inline char *string_concat(const char *a, const char *b) {
-  size_t la = a == NULL ? 0 : strlen(a);
-  size_t lb = b == NULL ? 0 : strlen(b);
-  char *r = (char *)malloc(la + lb + 1);
+  size_t la = string_length(a);
+  size_t lb = string_length(b);
+  char *r = rn_stralloc(la + lb);
   if (la > 0) {
     memcpy(r, a, la);
   }
   if (lb > 0) {
     memcpy(r + la, b, lb);
   }
-  r[la + lb] = '\0';
   return r;
 }
 
 static inline char *string_resize(const char *s, uint64_t n) {
-  size_t len = s == NULL ? 0 : strlen(s);
-  char *r = (char *)calloc((size_t)n + 1, 1);
-  memcpy(r, s, len < n ? len : (size_t)n);
-  // Strings are NUL-terminated buffers, so growth must pad with a non-NUL
-  // byte to actually extend the string (rn_freadInternal relies on strlen
-  // reporting the resized capacity).
-  if (len < n) {
-    memset(r + len, ' ', (size_t)n - len);
+  size_t len = string_length(s);
+  char *r = rn_stralloc((size_t)n);
+  size_t keep = len < (size_t)n ? len : (size_t)n;
+  if (keep > 0) {
+    memcpy(r, s, keep);
+  }
+  // Strings are NUL-terminated buffers, so growth pads with a non-NUL
+  // byte (the header carries the true length, but rn_freadInternal and
+  // other strlen-based readers rely on the resized capacity being
+  // reachable by strlen too).
+  if (keep < (size_t)n) {
+    memset(r + keep, ' ', (size_t)n - keep);
   }
   return r;
 }
 
-// A one-character string holding the given byte.
 static inline char *string_chr(uint8_t c) {
-  char *r = (char *)malloc(2);
+  char *r = rn_stralloc(1);
   r[0] = (char)c;
-  r[1] = '\0';
   return r;
 }
 
 // A [lo:hi) slice of a string.  Out-of-range bounds clamp to the string
 // length.
 static inline char *string_slice(const char *s, uint64_t lo, uint64_t hi) {
-  size_t len = s == NULL ? 0 : strlen(s);
+  size_t len = string_length(s);
   if (lo > len) {
     lo = len;
   }
@@ -92,31 +126,28 @@ static inline char *string_slice(const char *s, uint64_t lo, uint64_t hi) {
   if (hi < lo) {
     hi = lo;
   }
-  char *r = (char *)malloc(hi - lo + 1);
+  char *r = rn_stralloc(hi - lo);
   memcpy(r, s + lo, hi - lo);
-  r[hi - lo] = '\0';
   return r;
 }
 
 static inline char *string_reverse(const char *s) {
-  size_t len = s == NULL ? 0 : strlen(s);
-  char *r = (char *)malloc(len + 1);
+  size_t len = string_length(s);
+  char *r = rn_stralloc(len);
   for (size_t i = 0; i < len; i++) {
     r[i] = s[len - 1 - i];
   }
-  r[len] = '\0';
   return r;
 }
 
 static inline char *string_tohex(const char *s) {
   static const char kHexDigits[] = "0123456789abcdef";
-  size_t len = s == NULL ? 0 : strlen(s);
-  char *r = (char *)malloc(2 * len + 1);
+  size_t len = string_length(s);
+  char *r = rn_stralloc(2 * len);
   for (size_t i = 0; i < len; i++) {
     r[2 * i] = kHexDigits[((uint8_t)s[i] >> 4) & 0xf];
     r[2 * i + 1] = kHexDigits[(uint8_t)s[i] & 0xf];
   }
-  r[2 * len] = '\0';
   return r;
 }
 
@@ -128,27 +159,25 @@ static inline int string_hexdigit(char c) {
 }
 
 static inline char *string_fromhex(const char *s) {
-  size_t len = s == NULL ? 0 : strlen(s);
-  char *r = (char *)malloc(len / 2 + 1);
+  size_t len = string_length(s);
+  char *r = rn_stralloc(len / 2);
   size_t n = 0;
   for (size_t i = 0; i + 1 < len; i += 2) {
     int hi = string_hexdigit(s[i]);
     int lo = string_hexdigit(s[i + 1]);
     r[n++] = (char)((hi << 4) | lo);
   }
-  r[n] = '\0';
   return r;
 }
 
 static inline char *string_xor(const char *a, const char *b) {
-  size_t la = a == NULL ? 0 : strlen(a);
-  size_t lb = b == NULL ? 0 : strlen(b);
+  size_t la = string_length(a);
+  size_t lb = string_length(b);
   size_t n = la < lb ? la : lb;
-  char *r = (char *)malloc(n + 1);
+  char *r = rn_stralloc(n);
   for (size_t i = 0; i < n; i++) {
     r[i] = a[i] ^ b[i];
   }
-  r[n] = '\0';
   return r;
 }
 
@@ -167,11 +196,10 @@ static inline char *uint_tostring(uint64_t v, uint64_t base) {
     buf[n++] = kDigits[v % base];
     v /= base;
   } while (v != 0);
-  char *r = (char *)malloc(n + 1);
+  char *r = rn_stralloc(n);
   for (size_t i = 0; i < n; i++) {
     r[i] = buf[n - 1 - i];
   }
-  r[n] = '\0';
   return r;
 }
 
@@ -179,10 +207,11 @@ static inline char *int_tostring(int64_t v, uint64_t base) {
   if (v >= 0) {
     return uint_tostring((uint64_t)v, base);
   }
+  // digits is a headed string; concat reads its header length.  It is not
+  // freed (the string model leaks; freeing the data pointer would be the
+  // wrong address for a headed buffer).
   char *digits = uint_tostring(-(uint64_t)v, base);
-  char *r = string_concat("-", digits);
-  free(digits);
-  return r;
+  return string_concat("-", digits);
 }
 
 // sprintf into a freshly allocated string.
@@ -194,7 +223,7 @@ static inline char *string_sprintf(const char *fmt, ...) {
   if (n < 0) {
     n = 0;
   }
-  char *r = (char *)malloc((size_t)n + 1);
+  char *r = rn_stralloc((size_t)n);
   va_start(ap, fmt);
   vsnprintf(r, (size_t)n + 1, fmt, ap);
   va_end(ap);
@@ -203,21 +232,19 @@ static inline char *string_sprintf(const char *fmt, ...) {
 
 // The bytes of |v| in little-endian order as a string of |nbytes| chars.
 static inline char *int_tostring_le(uint64_t v, uint64_t nbytes) {
-  char *r = (char *)malloc((size_t)nbytes + 1);
+  char *r = rn_stralloc((size_t)nbytes);
   for (uint64_t i = 0; i < nbytes; i++) {
     r[i] = (char)((v >> (8 * i)) & 0xff);
   }
-  r[nbytes] = '\0';
   return r;
 }
 
 // The bytes of |v| in big-endian order as a string of |nbytes| chars.
 static inline char *int_tostring_be(uint64_t v, uint64_t nbytes) {
-  char *r = (char *)malloc((size_t)nbytes + 1);
+  char *r = rn_stralloc((size_t)nbytes);
   for (uint64_t i = 0; i < nbytes; i++) {
     r[i] = (char)((v >> (8 * (nbytes - 1 - i))) & 0xff);
   }
-  r[nbytes] = '\0';
   return r;
 }
 
@@ -273,12 +300,11 @@ static inline uint64_t string_rfind(const char *haystack, const char *needle,
 
 // Random printable string of n bytes (nonce generation).
 static inline char *rn_rand_string(uint64_t n) {
-  char *s = (char *)malloc(n + 1);
+  char *s = rn_stralloc((size_t)n);
   uint64_t i;
   for (i = 0; i < n; i++) {
     s[i] = (char)(33 + (rand() % 94));
   }
-  s[n] = '\0';
   return s;
 }
 
