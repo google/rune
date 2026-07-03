@@ -1175,23 +1175,14 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
                                        null(c.CTypeExpr), selfRef, callocCall))
     builder.addStatement(self.location, assign)
 
-    // Number the instance: self->rn_id = ++<class>_idcounter.
-    counterRef = c.CExpr(c.CIdentifier(Sym.new(className + "_idcounter"),
-                                       null(c.CTypeExpr), false, false, false))
-    counterRef2 = c.CExpr(c.CIdentifier(Sym.new(className + "_idcounter"),
-                                        null(c.CTypeExpr), false, false, false))
-    counterRef3 = c.CExpr(c.CIdentifier(Sym.new(className + "_idcounter"),
-                                        null(c.CTypeExpr), false, false, false))
-    one2 = Bigint(1u32)
-    bump = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
-        null(c.CTypeExpr), counterRef,
-        c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Plus,
-            null(c.CTypeExpr), counterRef2, builder.cIntLiteral(one2)))))
-    builder.addStatement(self.location, bump)
+    // Number the instance from the per-class id free-list:
+    // self->rn_id = <class>_alloc_id().  Slots are reused after destroy,
+    // so ids stay low and repeat (matching the legacy pool).
     selfRef2 = c.CExpr(c.CIdentifier(selfSym, null(c.CTypeExpr), false, false, false))
     idAssign = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
         null(c.CTypeExpr),
-        c.CExpr(c.CDotExpr(self.location, selfRef2, "rn_id", true)), counterRef3))
+        c.CExpr(c.CDotExpr(self.location, selfRef2, "rn_id", true)),
+        builder.cCall(self.location, className + "_alloc_id", null(c.CExpr))))
     builder.addStatement(self.location, idAssign)
 
     // A new instance starts with reference count 1 (its creation
@@ -1528,6 +1519,20 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       builder.addStatement(self.location, bumpAssign)
       for destroyStatement in self.subBlock.statements() {
         destroyStatement.genC(builder)
+      }
+      // Return this object's id slot to the per-class free-list so it is
+      // reused by a later allocation (the body ran first, so final()
+      // already read rn_id).  methodName is `<classCName>_destroy`.
+      freeClassName = methodName
+      if freeClassName.length() > 8u64 {
+        freeClassName = freeClassName[0u64:freeClassName.length() - 8u64]
+        freeIdSelf = c.CExpr(c.CIdentifier(destroySelfSym, null(c.CTypeExpr),
+            false, false, false))
+        freeArgs = c.CExprList()
+        freeArgs.appendCExpr(c.CExpr(c.CDotExpr(self.location, freeIdSelf,
+            "rn_id", true)))
+        builder.addStatement(self.location, builder.cCall(self.location,
+            freeClassName + "_free_id", c.CExpr(freeArgs)))
       }
       zeroSelfRef = c.CExpr(c.CIdentifier(destroySelfSym, null(c.CTypeExpr),
           false, false, false))

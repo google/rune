@@ -2171,7 +2171,41 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
     } else {
       e.writecloseln("} %s_t;" % self.name)
     }
-    e.writeln("static uint32_t %s_idcounter = 0;" % self.name)
+    // Per-class object-id FREE-LIST (pool slot ids).  rn_id is a slot
+    // taken from the free-list, reused after the object is destroyed —
+    // so ids stay low and repeat (matching the legacy pool), rather than
+    // a monotonic counter.  A class that never frees behaves identically
+    // to a counter (slots handed out 1,2,3,...).  nextFree[slot] links
+    // free slots; slot 0 is reserved as the null id.
+    e.include("<stdlib.h>")
+    e.writeln("static uint32_t %s_firstFree = 0;" % self.name)
+    e.writeln("static uint32_t %s_used = 1;" % self.name)
+    e.writeln("static uint32_t %s_allocated = 1;" % self.name)
+    e.writeln("static uint32_t *%s_nextFree = 0;" % self.name)
+    e.write("static uint32_t %s_alloc_id(void)" % self.name)
+    e.writeopenln(" {")
+    e.writeln("uint32_t object;")
+    e.writeopenln("if (%s_firstFree != 0) {" % self.name)
+    e.writeln("object = %s_firstFree;" % self.name)
+    e.writeln("%s_firstFree = %s_nextFree[object];" % (self.name, self.name))
+    e.writecloseln("} else {")
+    e.indent()
+    e.writeopenln("if (%s_used == %s_allocated) {" % (self.name, self.name))
+    e.writeln("%s_allocated <<= 1;" % self.name)
+    e.writeln("%s_nextFree = (uint32_t *)realloc(%s_nextFree, %s_allocated * sizeof(uint32_t));"
+        % (self.name, self.name, self.name))
+    e.writecloseln("}")
+    e.writeln("object = %s_used++;" % self.name)
+    e.writecloseln("}")
+    e.writeln("return object;")
+    e.writecloseln("}")
+    e.write("static void %s_free_id(uint32_t object)" % self.name)
+    e.writeopenln(" {")
+    e.writeopenln("if (object != 0) {")
+    e.writeln("%s_nextFree[object] = %s_firstFree;" % (self.name, self.name))
+    e.writeln("%s_firstFree = object;" % self.name)
+    e.writecloseln("}")
+    e.writecloseln("}")
     e.newline()
 
     // Emit the toString function --------------------------------------
