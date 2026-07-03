@@ -1,10 +1,12 @@
 # Bootstrap compiler — known limitations
 
-Status as of suite 197/205 (HEAD `f96ba07` era).  This documents the
+Status as of suite 197/205 (HEAD `eda206f` era).  This documents the
 remaining red tests whose fixes require REPRESENTATION-MODEL work
+(binary-safe strings, object pools/refcounts, array-width naming)
 rather than typechecking/binding/emission fixes, per the migration
-plan's fix-or-document done-condition.  Each entry states the exact
-gap, the evidence, and what implementing it would take.
+plan's fix-or-document done-condition.  Every red test is now either
+here or green.  Each entry states the exact gap, the evidence, and
+what implementing it would take.
 
 ## 1. Binary-safe (length-carrying) strings
 
@@ -81,8 +83,41 @@ walking fields.  This is the largest remaining chunk of legacy
 fidelity; it purely concerns the C backend + runtime (`cruntime/`),
 not the type system.
 
+## 3. Debug-trace print cosmetics (array width naming, nested-print writer)
+
+**Affected test: `gf2`.**
+
+`gf2` typechecks, compiles with zero C errors, runs to completion, and
+computes every value CORRECTLY (the final results — including the u65
+wide `gf2exteuc` — match the golden exactly).  Its only remaining
+stdout diff is two cosmetics in the test's own diagnostic `println`
+tracing, both print-representation, not computation:
+
+- Array element width naming: `println "... = %[u]" % [a0, a1, a2]`
+  prints `[1u32, 141u32, 1u32]` where the golden has `[1u17, ...]`.
+  The array's C type is named by the element's STORAGE width (u17 ->
+  `uint32`), so `tostring_uint32_array` prints `u32`.  Tuples print the
+  Rune width correctly (their per-element type is preserved in the
+  tuple def), so `rrow = (1u17, ...)` matches; arrays name themselves
+  by C storage width and lose the `u17`.  Fixing it means naming array
+  C types (and their `tostring` helpers) by the Rune element type
+  rather than the C storage type — an array-representation change.
+- Nested print in a print argument: `println "gf2ModVect(...) = ",
+  gf2ModVect(arow, brow)` drops the string prefix because the argument
+  is a CALL whose own body runs `println`s that reset the shared
+  GlobalStringWriter mid-statement, wiping the already-written prefix.
+  The golden evaluates argument values before composing the line;
+  fixing it means buffering each println argument's value before any
+  is written (or giving nested prints their own writer).
+
+Both are debug-only (the values are correct); neither is binding or
+computation.  Emission-side print fixes already landed reduced gf2's
+diff from 1312 to 348 lines (wide format args printed the rn_wide
+POINTER under `%u` — a real bug now fixed; embedded `%[u]` directives;
+type-consistent array literals).
+
 ## Not limitations (open fix work, tracked in HANDOFF.md)
 
-`funcptr`, `gf2`, `integer` — one constraint-generalization root
-(choice/constraint arms freezing onto free template vars; see
-HANDOFF.md for the constraint-by-copy direction and per-test state).
+All Stage-C/D binding tests are now green or documented above;
+`funcptr`, `integer`, and `gf2` compile and run.  See HANDOFF.md if any
+regression reopens.
