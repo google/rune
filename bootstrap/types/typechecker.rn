@@ -368,6 +368,12 @@ class TypeChecker(self) {
   // Demand-driven materialization state (see demandCallResult).
   self.calleeStack = arrayof(CalleeRecord)
   self.materializeDepth = 0u32
+  // Nesting depth of retypecheckDeferred: >0 while a body re-typechecks
+  // under concrete instantiation bindings.  substituteClassVars must not
+  // hand out FREE canonical field slots there (a concrete unify would
+  // poison the shared template); the template pass keeps them (the
+  // intentional template-class knot).
+  self.retypecheckNesting = 0u32
   self.renamePrefix = ""
   self.renameOld = arrayof(string)
   self.renameNew = arrayof(Sym)
@@ -650,6 +656,7 @@ class TypeChecker(self) {
   // instantiation's bindings.  Runs BEFORE emission so any statement
   // rewriting (iterator inlining) completes first.
   func retypecheckDeferred(self, fn: db.Function) {
+    self.retypecheckNesting += 1u32
     prevClassInfo = self.currentClassInfo
     prevSelfType = self.currentSelfType
     prevClassBoundVars = self.classBoundVars
@@ -702,6 +709,7 @@ class TypeChecker(self) {
     self.currentClassInfo = prevClassInfo
     self.currentSelfType = prevSelfType
     self.classBoundVars = prevClassBoundVars
+    self.retypecheckNesting -= 1u32
   }
 
   // Materialize a polymorphic body for one specialization: re-typecheck it
@@ -4434,10 +4442,28 @@ class TypeChecker(self) {
   // arguments inside a member type, without binding the class's type
   // variables globally.
   func substituteClassVars(self, info: ClassInfo, instanceType: Type, memberType: Type) -> Type {
-    if instanceType.type != Type.TypeClass.Typename || isnull(instanceType.tyname.params) {
+    rSubInst = self.resolve(instanceType)
+    if rSubInst.type != Type.TypeClass.Typename || isnull(rSubInst.tyname.params) {
+      // A bare class knot (or an unresolved/non-instance base).  DURING A
+      // MATERIALIZATION round the canonical slot may only be handed out
+      // when it is already concrete: a FREE canonical would be unified
+      // with the round's concrete types, permanently baking one
+      // signature into the shared template (Entry.value = u32 poisoned
+      // dicttest's second Dict signature) — hand out a fresh variable
+      // instead; the round's own bindings or emission recovery resolve
+      // it.  The TEMPLATE pass keeps the canonical: that chaining is the
+      // intentional template-class knot (mutual-constructor relation
+      // inference depends on it).
+      if self.retypecheckNesting > 0u32 {
+        rSubMember = self.resolve(memberType)
+        if !self.hasFreeVars(rSubMember) {
+          return rSubMember
+        }
+        return Type(self.newTyvar())
+      }
       return memberType
     }
-    instParams = instanceType.tyname.params!
+    instParams = rSubInst.tyname.params!
     // Resolve first so the member type and paramVars both use the chain
     // representatives; replaceVar matches on exact variable ids.
     result = self.resolve(memberType)
@@ -4449,7 +4475,28 @@ class TypeChecker(self) {
         te = self.unify(Type(fresh), instParams.elements[i])
       }
     }
-    return self.resolve(result)
+    rSubResult = self.resolve(result)
+    if rSubResult.type == Type.TypeClass.Var && self.retypecheckNesting > 0u32 {
+      // The slot never linked to the class's parameter variables (its
+      // linkage was lost to deferral rollback, or the paramVars are
+      // currently bound by a materialization round so replaceVar had
+      // nothing to match).  For a CONCRETE instance during a
+      // materialization round, returning the canonical variable would
+      // let this site poison the template — hand out a fresh variable
+      // instead.  When the instance's arguments are still variables (a
+      // method's own self), keep the chain: self.<field> writes are
+      // supposed to constrain the template.
+      subParamsFree = false
+      for spEl in instParams.elements {
+        if self.hasFreeVars(spEl) {
+          subParamsFree = true
+        }
+      }
+      if !subParamsFree {
+        return Type(self.newTyvar())
+      }
+    }
+    return rSubResult
   }
 
   // If ty is a Typename whose definition is a (possibly polymorphic)
