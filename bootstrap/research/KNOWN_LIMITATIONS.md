@@ -1,6 +1,6 @@
 # Bootstrap compiler — known limitations
 
-Status as of suite 202/205 (HEAD `bf6f458` era).  This documents the
+Status as of suite 203/205 (HEAD `399f69d` era).  This documents the
 remaining red tests whose fixes require REPRESENTATION-MODEL work (the
 object pool / slot representation) rather than typechecking/binding/
 emission fixes, per the migration plan's fix-or-document done-
@@ -26,42 +26,47 @@ Not required by any current red but still strlen-based for full
 binary-safety: string equality/compare/hash (move to
 `string_length`+`memcmp` if a future test needs it).
 
-## 2. Object pools and slot identity — refcounts RESOLVED
+## 2. Object pools and slot identity — refcounts + show() RESOLVED
 
-**Affected tests: `allocfree`, `heapqlisttest`, `defaultMethods`.
-(`safe` was here; now GREEN.)**
+**Affected tests: `allocfree`, `heapqlisttest`.  (`safe` and
+`defaultMethods` were here; now GREEN.)**
 
-REFERENCE COUNTING landed (`bf6f458`, `safe` GREEN): class structs
-carry a `refCount`; a module class-var assignment unrefs the old value
-and refs the new; the DoublyLinked transformer's `ref child`/`unref
-child` (previously no-ops) now inc/dec with destroy-on-zero; exit
-unref is registered only on reassignment; and destroy() bumps refCount
-out of reach to avoid re-entrant destroy.  So an UNSHARED object dies
-on overwrite/exit while a SHARED one (held by a relation list)
-survives.  destroy() still does NOT free (rn_id is the liveness flag),
-which is exactly why pointer-based refcounting works here.
+RESOLVED so far:
+- REFERENCE COUNTING (`bf6f458` / `399f69d`): class structs carry a
+  `refCount`, the constructor sets it to 1 (the creation reference,
+  matching the legacy pool where `allocate()` sets the slot count to 1);
+  reassignment unrefs the old value, exit unrefs reassigned vars, the
+  DoublyLinked transformer's `ref`/`unref child` inc/dec with
+  destroy-on-zero, and destroy() bumps refCount out of reach to avoid
+  re-entrant destroy.  destroy() does NOT free (rn_id is the liveness
+  flag) — which is why pointer refcounting works.  Fixed `safe`.
+- `show()` auto default method (`399f69d`): `Class_show()` prints
+  `<RuneName>(<rn_id>) = {nextFree = <refCount>, <fields>}`.  KEY
+  insight (from the legacy .ll): `nextFree` IS the refcount (the pool
+  stores the count in the slot's free-list field), and `Foo(1)` is just
+  `rn_id` — both of which the bootstrap already has.  Fixed
+  `defaultMethods` with NO pool rewrite.
 
-Remaining reds need the POOL / SLOT representation (independent of
-refcounts):
+Remaining reds need the POOL / SLOT ID behavior — specifically SLOT
+REUSE, which the bootstrap's monotonic `rn_id` counter cannot produce:
+- `heapqlisttest`: compiles and runs; the golden's destroy ORDER and
+  object ids reflect legacy pool-slot REUSE (`Destroying B 15/10/11/16`
+  divergence — ids repeat as slots are freed and reallocated).
 - `allocfree`: uses `appendcode <transformer>` (appendcode targeting a
   TRANSFORMER identifier) which the desugar pass rejects ("Transformer
   identifier not found / target is not a class") — a transformer
-  feature gap — and its golden then exercises pool alloc/free.
-- `heapqlisttest`: compiles and runs; the golden's destroy ORDER and
-  object ids reflect legacy pool-slot reuse (`Destroying B 15/10/11/16`
-  divergence).
-- `defaultMethods`: the auto-generated `show()` is unimplemented, and
-  its golden `Foo(1) = {nextFree = 1, value = 123}` prints the SLOT ID
-  and the pool header `nextFree` — the golden text is itself a
-  pool-representation artifact.
+  feature gap — then exercises pool alloc/free.
 
-**Implementation shape**: per-class pool allocation (slot arrays + free
-list + `nextFree` header + `<u32>self` = slot index) so instances are
-`u32` slot indices into per-class arrays rather than malloc'd pointers,
-plus the generated `show()` walking fields.  The single largest change
-in the migration — struct layout, the `self` param type (u32 vs
-pointer), field access, construction, destruction, and every method
-call.  Purely C backend + runtime; not the type system.
+**Implementation shape (much smaller than a full struct-of-arrays
+rewrite — see HANDOFF §2 "HYBRID")**: replace the monotonic `rn_id`
+counter (function.rn:1178) with a per-class FREE-LIST (`Class_firstFree`
++ `Class_nextFree[]` + `Class_used` + `Class_allocated` + a generated
+`Class_allocate() -> u32`), assign `rn_id = allocate()`, and free the
+slot in destroy() (`nextFree[rn_id] = firstFree; firstFree = rn_id`).
+Reused ids then match heapqlisttest.  Keep the pointer memory model —
+only ids appear in output, so the struct-of-arrays / u32-`self` rewrite
+is NOT needed.  Replicate the legacy allocate/free EXACTLY (see
+tests/defaultMethods.ll `_Foo_allocate`).  Purely C backend + runtime.
 
 ## (Resolved) Debug-trace print cosmetics — gf2 is now GREEN
 
