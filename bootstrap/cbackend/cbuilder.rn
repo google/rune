@@ -612,11 +612,15 @@ class CBuilder(self, tc: types.TypeChecker) {
                 }
                 if self.instantiationIsConcrete(minst) {
                   self.instantiate(mty.poly!, minst)
-                  if childfunc.deferredTypecheck && !childfunc.deferredRetypechecked {
-                    // A deferred body must retypecheck under these
-                    // bindings before its statements emit.
-                    self.typechecker.retypecheckDeferred(childfunc)
-                    childfunc.deferredRetypechecked = true
+                  // A deferred body must retypecheck under these bindings
+                  // before its statements emit.  The key is computed from
+                  // the pre-retypecheck resolution: methodDefCName only
+                  // reads the parameter types, which the retypecheck does
+                  // not change.
+                  odPreFn = self.typechecker.resolve(mty.poly.scope)
+                  if odPreFn.type == types.Type.TypeClass.Function {
+                    self.deferredRetypecheckFor(childfunc,
+                        self.methodDefCName(odPreFn, methodName))
                   }
                   mfn = self.typechecker.resolve(mty.poly.scope)
                   if (mfn.type == types.Type.TypeClass.Function &&
@@ -658,11 +662,12 @@ class CBuilder(self, tc: types.TypeChecker) {
                 te = self.typechecker.unify(params3, inst)
               }
               if isnull(te) {
-                if childfunc.deferredTypecheck && !childfunc.deferredRetypechecked {
-                  // openPoly's bindings stay active; retypecheck the
-                  // deferred body under them before emission.
-                  self.typechecker.retypecheckDeferred(childfunc)
-                  childfunc.deferredRetypechecked = true
+                // openPoly's bindings stay active; retypecheck the deferred
+                // body under them before emission, once per specialization.
+                odPreFn3 = self.typechecker.resolve(opened)
+                if odPreFn3.type == types.Type.TypeClass.Function {
+                  self.deferredRetypecheckFor(childfunc,
+                      self.methodDefCName(odPreFn3, methodName))
                 }
                 mfn3 = self.typechecker.resolve(opened)
                 if (mfn3.type == types.Type.TypeClass.Function &&
@@ -724,6 +729,31 @@ class CBuilder(self, tc: types.TypeChecker) {
 
   func markEmitted(self, name: string) {
     self.emittedClassDecls.append(name)
+  }
+
+  // Re-typecheck a deferred body once per emitted specialization, under the
+  // caller's active instantiation bindings.  The body's expression types are
+  // shared storage: each signature must re-derive them under its own
+  // bindings, or the second signature emits the first's baked types (the
+  // one-shot deferredRetypechecked flag did exactly that with two Dict
+  // signatures in one program).  A retypecheck that fails under the active
+  // bindings (e.g. an unreachable typeswitch arm) keeps the previous baking:
+  // the body already typechecked cleanly once, so the errors are popped.
+  func deferredRetypecheckFor(self, fn: db.Function, specKey: string) {
+    if !fn.deferredTypecheck {
+      return
+    }
+    retcKey = "retc$" + specKey
+    if self.alreadyEmitted(retcKey) {
+      return
+    }
+    self.markEmitted(retcKey)
+    retcPreErrs = self.typechecker.countTypeErrors()
+    self.typechecker.retypecheckDeferred(fn)
+    fn.deferredRetypechecked = true
+    while self.typechecker.countTypeErrors() > retcPreErrs {
+      self.typechecker.popTypeError()
+    }
   }
 
   func cClassDeclaration(self, location: db.Location, name: string,

@@ -465,12 +465,9 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     builder.currentEmittingFn = self
     builder.currentEmittingName = specializedName
     builder.currentEmittingResultWide = builder.wideWidth(fntype.poly.scope.function.result)
-    if self.deferredTypecheck && !self.deferredRetypechecked {
-      // Only instantiations synthesized at emission reach here (recorded
-      // ones retypecheck in the pre-emission pass); bindings are active.
-      builder.typechecker.retypecheckDeferred(self)
-      self.deferredRetypechecked = true
-    }
+    // Retypecheck the deferred body under THIS specialization's bindings
+    // (the pre-emission pass only covers the first recorded instantiation).
+    builder.deferredRetypecheckFor(self, specializedName)
     body = self.subBlock.genC(builder)
     builder.currentEmittingFn = prevEmittingFn
     builder.currentEmittingName = prevEmittingName
@@ -958,18 +955,17 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     methodPrevEmittingName = builder.currentEmittingName
     builder.currentEmittingFn = self
     builder.currentEmittingName = methodName
-    if self.deferredTypecheck && !self.deferredRetypechecked {
-      // A deferred method (e.g. a relation's remove/insert whose `child`/`key`
-      // parameter is unconstrained) re-typechecks its body under this concrete
-      // instantiation's bindings before emission, exactly as deferred plain
-      // functions do (see genCPolyInstantiation).  Otherwise the body emits
-      // with leaked type variables -- e.g. an ambiguous `child.hash` left as a
-      // fresh variable resolves to u64 only under the concrete instantiation,
-      // and without this re-typecheck the call stays hashValue_v<N>, an
-      // undeclared specialization.
-      builder.typechecker.retypecheckDeferred(self)
-      self.deferredRetypechecked = true
-    }
+    // A deferred method (e.g. a relation's remove/insert whose `child`/`key`
+    // parameter is unconstrained) re-typechecks its body under this concrete
+    // instantiation's bindings before emission, exactly as deferred plain
+    // functions do (see genCPolyInstantiation).  Otherwise the body emits
+    // with leaked type variables -- e.g. an ambiguous `child.hash` left as a
+    // fresh variable resolves to u64 only under the concrete instantiation,
+    // and without this re-typecheck the call stays hashValue_v<N>, an
+    // undeclared specialization.  Keyed per specialization: methodName is
+    // computed from the parameter types, so each signature re-derives the
+    // shared body expression types under its own bindings.
+    builder.deferredRetypecheckFor(self, methodName)
     if self.sym.name == "destroy" {
       // destroy() must be idempotent: cleanup paths (cascade deletion,
       // reference overwrite, program exit) can reach an object more than
