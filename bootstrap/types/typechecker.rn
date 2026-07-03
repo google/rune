@@ -5496,6 +5496,17 @@ class TypeChecker(self) {
                         }
                       }
                       if !kSeen {
+                        // Only "exactly one distinct concretization" matters
+                        // (below): a second distinct means the result is the
+                        // original `t`, regardless of any further values.  So
+                        // stop at the second — never growing kDistinct past
+                        // one entry, which avoids the legacy runtime's
+                        // array-regrowth landmine (replicateArrayData
+                        // corrupts on regrow; the large self-host compile
+                        // pushed kDistinct past the pre-sized capacity).
+                        if kDistinct.length() >= 1u64 {
+                          return t
+                        }
                         kDistinct.append(kStr)
                         kFound = rres
                       }
