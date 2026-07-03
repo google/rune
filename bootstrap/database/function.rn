@@ -1034,6 +1034,9 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     // directly, and a knot result survives every other filter.
     fnInstType = self.repairMethodResult(builder, fnInstType0)
     methodName = builder.methodDefCName(fnInstType, self.sym.name)
+    if methodName == "Dict_u32_string_findEntry_u32" {
+      println "DBGF2 emitting sig-2 findEntry"
+    }
     if builder.alreadyEmitted(methodName) {
       return
     }

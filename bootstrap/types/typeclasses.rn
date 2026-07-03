@@ -762,6 +762,12 @@ class PolymorphicType(self, vars: Type | [Type], scope: Type,
   // Variable ids whose bindings instantiate() left untouched because they
   // were already bound in the unifier; deInstantiate() must not unbind them.
   self.skippedBindIds = arrayof(i32)
+  // Bound variables instantiate() REBOUND because their existing concrete
+  // binding disagreed with the instantiation (a stale bake leaked onto a
+  // template variable by an earlier signature's round); deInstantiate()
+  // unbinds them and restores the remembered old binding.
+  self.rebindOldVars = arrayof(TypeVar)
+  self.rebindOldVals = arrayof(Type)
   // Chain representatives instantiate() bound in place of variables that
   // were var-to-var bound; deInstantiate() unbinds these instead.
   self.chainBoundVars = arrayof(TypeVar)

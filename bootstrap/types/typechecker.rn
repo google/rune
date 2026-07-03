@@ -380,6 +380,11 @@ class TypeChecker(self) {
   // Demand-driven materialization state (see demandCallResult).
   self.calleeStack = arrayof(CalleeRecord)
   self.materializeDepth = 0u32
+  // Var ids currently bound by an ACTIVE instantiate() frame: a
+  // pre-existing binding on one of these belongs to an enclosing frame
+  // and must be kept; a pre-existing binding on a NON-active var is a
+  // stale bake that instantiate() overrides (with restore).
+  self.activeTrailIds = arrayof(i32)
   // True while the innermost retypecheckDeferred round is a CONSTRUCTOR's
   // (methods' rounds must read per-spec field snapshots, not the shared
   // canonical slots).
@@ -1410,6 +1415,32 @@ class TypeChecker(self) {
     return bRep
   }
 
+  func trailAdd(self, id: i32) {
+    self.activeTrailIds.append(id)
+  }
+
+  func trailRemove(self, id: i32) {
+    trIdx = 0u64
+    trLen = self.activeTrailIds.length()
+    while trIdx < trLen {
+      if self.activeTrailIds[trIdx] == id {
+        self.activeTrailIds[trIdx] = self.activeTrailIds[trLen - 1u64]
+        self.activeTrailIds.resize(trLen - 1u64)
+        return
+      }
+      trIdx += 1u64
+    }
+  }
+
+  func trailActive(self, id: i32) -> bool {
+    for trId in self.activeTrailIds {
+      if trId == id {
+        return true
+      }
+    }
+    return false
+  }
+
   func instantiate(self, poly: PolymorphicType, inst: TyvarInstantiation) {
     // for a limited time, pretend that the bound variables in poly are bound
     // to the bindings in the instantiation.
@@ -1431,6 +1462,9 @@ class TypeChecker(self) {
            // sure deInstantiate unbinds it and leaves btv alone.
            poly.skippedBindIds.append(btv.id)
            poly.chainBoundVars.append(boundVar!)
+           self.trailAdd(boundVar.id)
+         } else {
+           self.trailAdd(btv.id)
          }
        } else if val.type == Type.TypeClass.Var {
          // Bound to another variable: bind the representative at the end of
@@ -1441,12 +1475,45 @@ class TypeChecker(self) {
            boundVar = self.bindTowards(rep, binding)
            if !isnull(boundVar) {
              poly.chainBoundVars.append(boundVar!)
+             self.trailAdd(boundVar.id)
            }
          }
        } else {
          // Concretely bound at a use site (e.g. a builtin operator
-         // constraint variable).  Keep the existing binding.
-         poly.skippedBindIds.append(btv.id)
+         // constraint variable).  Keep the existing binding — UNLESS the
+         // binding is (a) NOT owned by an enclosing ACTIVE instantiate
+         // frame and (b) a concrete that DISAGREES with the
+         // instantiation's concrete: then it is a stale bake leaked onto
+         // the template variable by an earlier signature's round, and
+         // this instantiation must win for its duration (deInstantiate
+         // restores the old binding).
+         rebDiffer = false
+         if !self.trailActive(btv.id) {
+           rebExisting = self.resolve(val!)
+           rebWanted = self.resolve(binding)
+           if !self.hasFreeVars(rebExisting) && !self.hasFreeVars(rebWanted) {
+             if rebExisting.toString() != rebWanted.toString() {
+               rebDiffer = true
+             }
+           }
+         }
+         if rebDiffer {
+           self.unifier.unbindVar(btv)
+           rebBound = self.bindTowards(btv, binding)
+           poly.rebindOldVars.append(btv)
+           poly.rebindOldVals.append(val!)
+           poly.skippedBindIds.append(btv.id)
+           if !isnull(rebBound) {
+             if rebBound.id != btv.id {
+               poly.chainBoundVars.append(rebBound!)
+               self.trailAdd(rebBound.id)
+             } else {
+               self.trailAdd(btv.id)
+             }
+           }
+         } else {
+           poly.skippedBindIds.append(btv.id)
+         }
        }
     }
   }
@@ -1464,16 +1531,28 @@ class TypeChecker(self) {
       }
       if !skipped {
         self.unifier.unbindVar(ty.tyvar!)
+        self.trailRemove(ty.tyvar.id)
         assert isnull(self.unifier.lookupVar(ty.tyvar.id))
       }
     }
     for rep in poly.chainBoundVars {
       self.unifier.unbindVar(rep)
+      self.trailRemove(rep.id)
+    }
+    // Restore bindings instantiate() overrode (stale bakes it rebound).
+    for rebI in range(poly.rebindOldVars.length()) {
+      self.unifier.unbindVar(poly.rebindOldVars[rebI])
+      self.trailRemove(poly.rebindOldVars[rebI].id)
+      self.unifier.bindVar(poly.rebindOldVars[rebI], poly.rebindOldVals[rebI])
     }
     emptyIds = arrayof(i32)
     poly.skippedBindIds = emptyIds
     emptyVars = arrayof(TypeVar)
     poly.chainBoundVars = emptyVars
+    emptyRebVars = arrayof(TypeVar)
+    poly.rebindOldVars = emptyRebVars
+    emptyRebVals = arrayof(Type)
+    poly.rebindOldVals = emptyRebVals
   }
 
 
@@ -5337,6 +5416,27 @@ class TypeChecker(self) {
     }
     if boundVars.length() > 0 {
       fnType = Type(PolymorphicType(boundVars, fnType))
+      // Re-point each parameter Variable at its generalized signature
+      // slot: the pre-generalization variable chains into whatever the
+      // template unified it with (another function's vars), and a later
+      // signature's round can permanently bake that chain — emission
+      // paths that read variable.typedValue then see the stale signature
+      // forever.  The resolved slots ARE the generalized boundVars, which
+      // instantiate() manages per signature.
+      rptParams = self.resolve(paramType)
+      fpIdx = 0u64
+      for fpVar in fn.variables() {
+        if fpVar.isParam {
+          if rptParams.type == Type.TypeClass.Tuple {
+            if fpIdx < rptParams.tuple.elements.length() {
+              fpVar.typedValue = rptParams.tuple.elements[fpIdx]
+            }
+          } else if fpIdx == 0u64 {
+            fpVar.typedValue = rptParams
+          }
+          fpIdx += 1u64
+        }
+      }
     }
 
     // Associate the function name symbol to this type — but not for class

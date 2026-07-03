@@ -98,7 +98,7 @@ class DependencyList(self) {
   // (replicateArrayData) corrupts under some heap states, crashing at
   // emission-time appends; reserving capacity up front sidesteps the
   // regrowth path for typical dependency counts.
-  for depPre in range(64) {
+  for depPre in range(1024) {
     self.names.append("")
   }
   self.names.resize(0u64)
@@ -670,18 +670,34 @@ class CBuilder(self, tc: types.TypeChecker) {
                 te = self.typechecker.unify(params3, inst)
               }
               if isnull(te) {
-                // openPoly's bindings stay active; retypecheck the deferred
-                // body under them before emission, once per specialization.
-                odPreFn3 = self.typechecker.resolve(opened)
-                if odPreFn3.type == types.Type.TypeClass.Function {
-                  self.materializeFor(childfunc,
-                      self.methodDefCName(odPreFn3, methodName))
-                }
-                mfn3 = self.typechecker.resolve(opened)
-                if (mfn3.type == types.Type.TypeClass.Function &&
-                    !self.typechecker.hasFreeVars(mfn3!) &&
-                    self.methodDefCName(mfn3!, methodName) == wantName) {
-                  childfunc.genCMethodInstance(self, mfn3!)
+                // The open+unify computed the wanted bindings on the
+                // OPENED copies; the BODY's expression types resolve
+                // through the poly's REAL boundVars, so drive the
+                // materialization and emission through instantiate() with
+                // the open's own recorded instantiation (baked first) —
+                // emitting under only the opened bindings leaves the body
+                // reading whatever an earlier signature permanently baked
+                // (findEntry's second signature emitted hashValue_string
+                // on a u32 key).
+                synInst = mty.poly.instantiations.lastTyvarInstantiation
+                if !isnull(synInst) {
+                  self.resolveInstantiation(synInst!)
+                  self.instantiate(mty.poly!, synInst!)
+                  odPreFn3 = self.typechecker.resolve(mty.poly.scope)
+                  if odPreFn3.type == types.Type.TypeClass.Function {
+                    if !self.typechecker.hasFreeVars(odPreFn3.function.params!) {
+                      self.materializeFor(childfunc,
+                          self.methodDefCName(odPreFn3, methodName))
+                    }
+                  }
+                  mfn3 = self.typechecker.resolve(mty.poly.scope)
+                  if (mfn3.type == types.Type.TypeClass.Function &&
+                      !self.typechecker.hasFreeVars(mfn3!) &&
+                      self.methodDefCName(mfn3!, methodName) == wantName) {
+                    childfunc.genCMethodInstance(self, mfn3!)
+                    self.resolveInstantiation(synInst!)
+                  }
+                  self.deInstantiate(mty.poly!)
                 }
               }
             }
