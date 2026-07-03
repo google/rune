@@ -837,7 +837,25 @@ class TypeChecker(self) {
     if isnull(rec.fn) || isnull(rec.inst) {
       return
     }
-    if !self.hasFreeVars(self.resolve(result)) {
+    // Materialize when the call's result stays free — or, for a method of
+    // a GENERIC class, even when it does not (a void insert's body is
+    // what records the nested class's concrete constructor instantiation,
+    // which knot-pinning and multi-signature emission need).  The
+    // per-spec cache bounds the work to one retypecheck per signature.
+    dmNeed = self.hasFreeVars(self.resolve(result))
+    if !dmNeed {
+      if !isnull(rec.fn.parentFunction) {
+        if rec.fn.parentFunction.type == db.FuncType.Constructor {
+          dmInfo = self.lookupClass(rec.fn.parentFunction.sym)
+          if !isnull(dmInfo) {
+            if dmInfo.paramVars.length() > 0 {
+              dmNeed = true
+            }
+          }
+        }
+      }
+    }
+    if !dmNeed {
       return
     }
     callee = rec.fn!
