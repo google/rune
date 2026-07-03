@@ -4830,6 +4830,23 @@ class TypeChecker(self) {
   // Entry OF THIS Dict").  Ambiguity or no candidate leaves the knot
   // unchanged.
   func concretizeKnots(self, ty: Type, depth: u32) -> Type {
+    // The consistency anchor: the round's own class instance.
+    kSelfName = ""
+    kSelfSpec = ""
+    if !isnull(self.currentClassInfo) && !isnull(self.currentSelfType) {
+      kcrs = self.resolve(self.currentSelfType!)
+      if kcrs.type == Type.TypeClass.Typename && !self.hasFreeVars(kcrs) {
+        kSelfName = kcrs.tyname.name.name
+        kSelfSpec = kcrs.toString()
+      }
+    }
+    return self.concretizeKnotsW(ty, depth, kSelfName, kSelfSpec)
+  }
+
+  // concretizeKnots with an EXPLICIT consistency anchor (emission-time
+  // callers anchor on the emitting method's resolved self instance).
+  func concretizeKnotsW(self, ty: Type, depth: u32, kSelfName: string,
+      kSelfSpec: string) -> Type {
     if depth > 6u32 {
       return self.resolve(ty)
     }
@@ -4853,16 +4870,6 @@ class TypeChecker(self) {
           }
           if kty.type != Type.TypeClass.Polymorphic {
             return t
-          }
-          // The consistency anchor: the round's own class instance.
-          kSelfName = ""
-          kSelfSpec = ""
-          if !isnull(self.currentClassInfo) && !isnull(self.currentSelfType) {
-            kcrs = self.resolve(self.currentSelfType!)
-            if kcrs.type == Type.TypeClass.Typename && !self.hasFreeVars(kcrs) {
-              kSelfName = kcrs.tyname.name.name
-              kSelfSpec = kcrs.toString()
-            }
           }
           kFound = null(Type)
           kDistinct = arrayof(string)
@@ -4914,19 +4921,19 @@ class TypeChecker(self) {
         }
         kEls = arrayof(Type)
         for kel2 in t.tyname.params.elements {
-          kEls.append(self.concretizeKnots(kel2, depth + 1u32))
+          kEls.append(self.concretizeKnotsW(kel2, depth + 1u32, kSelfName, kSelfSpec))
         }
         kName = TypeName(t.tyname.name, TupleType(kEls))
         kName.isNullable = t.tyname.isNullable
         return Type(kName)
       }
       Type.TypeClass.Array => {
-        return ARRAY(self.concretizeKnots(t.array.elementType!, depth + 1u32))
+        return ARRAY(self.concretizeKnotsW(t.array.elementType!, depth + 1u32, kSelfName, kSelfSpec))
       }
       Type.TypeClass.Tuple => {
         kTEls = arrayof(Type)
         for ktel in t.tuple.elements {
-          kTEls.append(self.concretizeKnots(ktel, depth + 1u32))
+          kTEls.append(self.concretizeKnotsW(ktel, depth + 1u32, kSelfName, kSelfSpec))
         }
         return Type(TupleType(kTEls))
       }

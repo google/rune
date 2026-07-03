@@ -533,7 +533,10 @@ class CBuilder(self, tc: types.TypeChecker) {
   // class parameters fall back to the concrete instantiation, keeping
   // definition-side and call-site names identical across contexts.
   func argTypePiece(self, ty: types.Type) -> string {
-    t = self.typechecker.resolve(ty)
+    // Pin bare class knots against the active emission frame first: a
+    // knot-typed argument (a call result whose callee's template result
+    // IS the knot) composes a bare, ambiguous name piece otherwise.
+    t = self.pinKnotsForEmission(self.typechecker.resolve(ty))
     if (t.type == types.Type.TypeClass.Typename &&
         !isnull(self.typechecker.lookupClass(t.tyname.name))) {
       return self.classCName(t)
@@ -778,6 +781,38 @@ class CBuilder(self, tc: types.TypeChecker) {
       }
     }
     return true
+  }
+
+  // Pin bare generic-class knots in |t| using the ACTIVE EMISSION frame's
+  // anchor (the emitting method's self instance, which resolves concrete
+  // under the active instantiation).  A knot-typed local (a call result
+  // whose callee's template result IS the knot, e.g. remove's entry from
+  // findEntry) otherwise declares as the bare C name, ambiguous once two
+  // signatures exist.
+  func pinKnotsForEmission(self, t: types.Type) -> types.Type {
+    if !self.typechecker.hasBareGenericKnot(t) {
+      return t
+    }
+    pkAnchorName = ""
+    pkAnchorSpec = ""
+    if !isnull(self.currentEmittingFn) {
+      // The first parameter that resolves to a CONCRETE class instance
+      // anchors the pin: a method's self, or a hoisted relation helper's
+      // renamed self_h<N>.
+      for pkVar in self.currentEmittingFn.variables() {
+        if pkVar.isParam && !isnull(pkVar.typedValue) && pkAnchorName == "" {
+          pkSelf = self.typechecker.resolve(pkVar.typedValue!)
+          if (pkSelf.type == types.Type.TypeClass.Typename &&
+              !self.typechecker.hasFreeVars(pkSelf)) {
+            if !isnull(self.typechecker.lookupClass(pkSelf.tyname.name)) {
+              pkAnchorName = pkSelf.tyname.name.name
+              pkAnchorSpec = pkSelf.toString()
+            }
+          }
+        }
+      }
+    }
+    return self.typechecker.concretizeKnotsW(t, 0u32, pkAnchorName, pkAnchorSpec)
   }
 
   // Materialize a deferred body for one emitted specialization, under the
@@ -1073,7 +1108,10 @@ class CBuilder(self, tc: types.TypeChecker) {
     if isnull(ty) {
       return null(CTypeExpr)
     }
-    return self.typeGenerator.genCType(ty!)
+    // Pin bare class knots against the active emission frame (see
+    // pinKnotsForEmission): null-casts and other C-type compositions
+    // otherwise print the bare, ambiguous class name.
+    return self.typeGenerator.genCType(self.pinKnotsForEmission(ty!))
   }
 
   // specializedType is used when generating specific instances of a
@@ -1115,7 +1153,7 @@ class CBuilder(self, tc: types.TypeChecker) {
     }
     ctype = null(CTypeExpr)
     if !isnull(type) {
-      ty = self.typechecker.resolve(type!)
+      ty = self.pinKnotsForEmission(self.typechecker.resolve(type!))
       // A bare function name (or a function-pointer value) is not a variable
       // to declare here; leave its C type null, exactly as when genCFunction
       // was a stub.  Function-pointer parameters get their fnptr type through
