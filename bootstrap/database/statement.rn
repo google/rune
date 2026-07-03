@@ -768,7 +768,7 @@ class Statement(self, block: Block, type: StateType, location: Location) {
           }
         }
       }
-      if !retIsNone {
+      if !retIsNone || !builder.currentEmittingResultIsNone {
         cexpr = self.expr.genC(builder)
       }
     }

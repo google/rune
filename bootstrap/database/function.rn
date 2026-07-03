@@ -490,6 +490,27 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     builder.currentEmittingFn = self
     builder.currentEmittingName = specializedName
     builder.currentEmittingResultWide = builder.wideWidth(fntype.poly.scope.function.result)
+    prevEmittingResultIsNone = builder.currentEmittingResultIsNone
+    // Derive from the SAME source as the emitted signature (the baked
+    // instantiation type when present; the scope otherwise).
+    piResTy = builder.typechecker.resolve(fntype.poly.scope.function.result!)
+    if !isnull(instantiation.type) {
+      piInstTy = builder.typechecker.resolve(instantiation.type!)
+      if piInstTy.type == types.Type.TypeClass.Function {
+        piResTy = builder.typechecker.resolve(piInstTy.function.result!)
+      }
+    }
+    builder.currentEmittingResultIsNone = false
+    if piResTy.type == types.Type.TypeClass.Typename {
+      if piResTy.tyname.name.name == "none" {
+        builder.currentEmittingResultIsNone = true
+      }
+    }
+    if piResTy.type == types.Type.TypeClass.Tuple {
+      if piResTy.tuple.elements.length() == 0u64 {
+        builder.currentEmittingResultIsNone = true
+      }
+    }
     // Retypecheck the deferred body under THIS specialization's bindings
     // (the pre-emission pass only covers the first recorded instantiation).
     builder.materializeFor(self, specializedName)
@@ -513,6 +534,7 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     builder.currentEmittingFn = prevEmittingFn
     builder.currentEmittingName = prevEmittingName
     builder.currentEmittingResultWide = prevEmittingResultWide
+    builder.currentEmittingResultIsNone = prevEmittingResultIsNone
     builder.closeFunctionTryContext(savedTryBase)
     builder.deInstantiate(fntype.poly!)
     builder.closeScope()

@@ -190,6 +190,9 @@ class CBuilder(self, tc: types.TypeChecker) {
   self.currentEmittingFn = null(db.Function)
   self.currentEmittingName = ""
   self.currentEmittingResultWide = 0u32
+  // True while emitting a function whose C return type is void: a
+  // none-typed `return <value>` emits as a bare return only then.
+  self.currentEmittingResultIsNone = false
   self.insertDependencyStack(DependencyStack())
 
   func registerModuleVariable(self, name: string) {

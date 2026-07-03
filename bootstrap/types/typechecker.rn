@@ -5459,8 +5459,24 @@ class TypeChecker(self) {
           self.unify(monoResult, returnType!)
         }
         rres = self.resolve(monoResult)
+        deferHasValueReturn = false
+        if !isnull(fn.subBlock) {
+          if !isnull(db.findReturnExpr(fn.subBlock!)) {
+            deferHasValueReturn = true
+          }
+        }
         if rres.type == Type.TypeClass.Var {
           deferVars.append(Type(rres.tyvar!))
+        } else if deferHasValueReturn {
+          // monoResult was bound during the ERRORED template walk (the
+          // void-method tie above is only trustworthy for bodies WITHOUT
+          // value returns).  A deferred body's result must stay
+          // per-instantiation — decParens' shared `none` result otherwise
+          // gives every specialization a void signature.  Mint a fresh
+          // generalized result variable.
+          freshRes = self.newTyvar()
+          monoResult = Type(freshRes)
+          deferVars.append(Type(freshRes))
         }
         deferredType = Type(PolymorphicType(deferVars,
             Type(FunctionType(paramType, monoResult))))
