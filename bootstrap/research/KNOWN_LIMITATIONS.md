@@ -1,6 +1,6 @@
 # Bootstrap compiler — known limitations
 
-Status as of suite 203/205 (HEAD `399f69d` era).  This documents the
+Status as of suite 204/205 (HEAD `d30237d` era).  This documents the
 remaining red tests whose fixes require REPRESENTATION-MODEL work (the
 object pool / slot representation) rather than typechecking/binding/
 emission fixes, per the migration plan's fix-or-document done-
@@ -47,26 +47,34 @@ RESOLVED so far:
   `rn_id` — both of which the bootstrap already has.  Fixed
   `defaultMethods` with NO pool rewrite.
 
-Remaining reds need the POOL / SLOT ID behavior — specifically SLOT
-REUSE, which the bootstrap's monotonic `rn_id` counter cannot produce:
-- `heapqlisttest`: compiles and runs; the golden's destroy ORDER and
-  object ids reflect legacy pool-slot REUSE (`Destroying B 15/10/11/16`
-  divergence — ids repeat as slots are freed and reallocated).
-- `allocfree`: uses `appendcode <transformer>` (appendcode targeting a
-  TRANSFORMER identifier) which the desugar pass rejects ("Transformer
-  identifier not found / target is not a class") — a transformer
-  feature gap — then exercises pool alloc/free.
+The id FREE-LIST (`d30237d`) landed: `rn_id` now comes from a per-class
+free-list (`Class_firstFree`/`Class_nextFree[]`/`Class_used`/
+`Class_allocated` + `Class_alloc_id()`), reused when destroy() calls
+`Class_free_id(rn_id)`.  Fixed `heapqlisttest` (ids now repeat like the
+pool).  Keeps pointer memory — only ids appear in output.
 
-**Implementation shape (much smaller than a full struct-of-arrays
-rewrite — see HANDOFF §2 "HYBRID")**: replace the monotonic `rn_id`
-counter (function.rn:1178) with a per-class FREE-LIST (`Class_firstFree`
-+ `Class_nextFree[]` + `Class_used` + `Class_allocated` + a generated
-`Class_allocate() -> u32`), assign `rn_id = allocate()`, and free the
-slot in destroy() (`nextFree[rn_id] = firstFree; firstFree = rn_id`).
-Reused ids then match heapqlisttest.  Keep the pointer memory model —
-only ids appear in output, so the struct-of-arrays / u32-`self` rewrite
-is NOT needed.  Replicate the legacy allocate/free EXACTLY (see
-tests/defaultMethods.ll `_Foo_allocate`).  Purely C backend + runtime.
+`allocfree` remains — it has TWO blockers (confirmed this session):
+1. `appendcode <function>`: `appendcode runAllocFreeTest { ... }` targets
+   a plain FUNCTION, not a class.  desugar.rn instantiateCodeBlock only
+   handles class targets + the builtin `Array`; a function target hits
+   the fall-through "Code block target is not a class".  A first attempt
+   (add an Ident-function branch calling `copyCodeBlockInto` after
+   `lookupFunctionDef`) TANGLED — copyCodeBlockInto is class-oriented
+   (its `isDestroy`/cascade logic re-triggers the fall-through
+   evalTransExpr on the target).  A function target likely needs a
+   DIRECT statement-append into `target.subBlock` (expandTransStatement
+   Tree on each copied statement), not copyCodeBlockInto.
+2. SLOT-AS-IDENTITY: the test does `a = Foo(); a.destroy(); b = Foo();
+   if a != b { "failed" } else { "passed" }` and expects "passed".  In
+   the legacy, instances ARE u32 slots, so a's freed slot is reused by b
+   and `a == b`.  Our id free-list reuses the slot ID but a and b are
+   distinct malloc'd POINTERS (and destroy clears a's rn_id to 0), so
+   `a != b`.  To match, the constructor must REUSE freed object MEMORY
+   (a per-class pointer pool: destroy returns the malloc'd object,
+   Foo() hands it back) so b == a — OR go to the full slot-as-value
+   model.  This is the one remaining test that needs object memory/slot
+   reuse, not just id reuse; assess the risk (memory reuse changes
+   object identity after destroy for every class) and suite-gate hard.
 
 ## (Resolved) Debug-trace print cosmetics — gf2 is now GREEN
 
