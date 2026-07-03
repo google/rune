@@ -1,11 +1,11 @@
 # Bootstrap compiler — known limitations
 
-Status as of suite 201/205 (HEAD `b895d38` era).  This documents the
-remaining red tests whose fixes require REPRESENTATION-MODEL work
-(object pools/refcounts) rather than typechecking/binding/emission
-fixes, per the migration plan's fix-or-document done-condition.  Every
-red test is now either here or green.  Each entry states the exact gap,
-the evidence, and what implementing it would take.
+Status as of suite 202/205 (HEAD `bf6f458` era).  This documents the
+remaining red tests whose fixes require REPRESENTATION-MODEL work (the
+object pool / slot representation) rather than typechecking/binding/
+emission fixes, per the migration plan's fix-or-document done-
+condition.  Every red test is now either here or green.  Each entry
+states the exact gap, the evidence, and what implementing it would take.
 
 ## 1. Binary-safe (length-carrying) strings — RESOLVED (all three GREEN)
 
@@ -26,46 +26,42 @@ Not required by any current red but still strlen-based for full
 binary-safety: string equality/compare/hash (move to
 `string_length`+`memcmp` if a future test needs it).
 
-## 2. Object pools, reference counts, and slot identity
+## 2. Object pools and slot identity — refcounts RESOLVED
 
-**Affected tests: `safe`, `allocfree`, `heapqlisttest`,
-`defaultMethods`.**
+**Affected tests: `allocfree`, `heapqlisttest`, `defaultMethods`.
+(`safe` was here; now GREEN.)**
 
-The legacy compiler allocates class instances from PER-CLASS POOLS
-(free-listed slots; `<u32>self` is the slot index; a `nextFree` field
-lives in the object header) and REFERENCE-COUNTS instances (`ref` /
-`unref` statements emitted by relation transformers).  The bootstrap
-mallocs individually, has no refcount field, and its statement
-emitter treats `StateType.Ref` as a deliberate no-op
-(statement.rn:278); the whole emitted .c contains zero refcount
-operations.
+REFERENCE COUNTING landed (`bf6f458`, `safe` GREEN): class structs
+carry a `refCount`; a module class-var assignment unrefs the old value
+and refs the new; the DoublyLinked transformer's `ref child`/`unref
+child` (previously no-ops) now inc/dec with destroy-on-zero; exit
+unref is registered only on reassignment; and destroy() bumps refCount
+out of reach to avoid re-entrant destroy.  So an UNSHARED object dies
+on overwrite/exit while a SHARED one (held by a relation list)
+survives.  destroy() still does NOT free (rn_id is the liveness flag),
+which is exactly why pointer-based refcounting works here.
 
-- `safe`: `child2 = Child(...)` reassignment destroys the old child
-  unconditionally although Mom's/Dad's child lists still reference it
-  (golden keeps it alive: `appendChild`'s `ref child` pins list
-  members).  All BINDING-side work for safe is done — the generated
-  methods emit with correct bodies (`2611bf5`); only the refcount
-  semantics is missing.
+Remaining reds need the POOL / SLOT representation (independent of
+refcounts):
 - `allocfree`: uses `appendcode <transformer>` (appendcode targeting a
   TRANSFORMER identifier) which the desugar pass rejects ("Transformer
   identifier not found / target is not a class") — a transformer
-  feature gap — and its golden then exercises pool alloc/free
-  behavior.
+  feature gap — and its golden then exercises pool alloc/free.
 - `heapqlisttest`: compiles and runs; the golden's destroy ORDER and
   object ids reflect legacy pool-slot reuse (`Destroying B 15/10/11/16`
   divergence).
-- `defaultMethods`: the auto-generated `show()` method is unimplemented,
-  and its golden output is `Foo(1) = {nextFree = 1, value = 123}` —
-  it prints the SLOT ID and the pool header field `nextFree`, i.e. the
-  golden text is itself a pool-representation artifact.
+- `defaultMethods`: the auto-generated `show()` is unimplemented, and
+  its golden `Foo(1) = {nextFree = 1, value = 123}` prints the SLOT ID
+  and the pool header `nextFree` — the golden text is itself a
+  pool-representation artifact.
 
-**Implementation shape**: per-class pool allocation (slot arrays +
-free list + `nextFree` header + `<u32>self` = slot index), a refcount
-header field with `ref`/`unref` statement emission and
-assignment-overwrite/destroy gating, and the generated `show()`
-walking fields.  This is the largest remaining chunk of legacy
-fidelity; it purely concerns the C backend + runtime (`cruntime/`),
-not the type system.
+**Implementation shape**: per-class pool allocation (slot arrays + free
+list + `nextFree` header + `<u32>self` = slot index) so instances are
+`u32` slot indices into per-class arrays rather than malloc'd pointers,
+plus the generated `show()` walking fields.  The single largest change
+in the migration — struct layout, the `self` param type (u32 vs
+pointer), field access, construction, destruction, and every method
+call.  Purely C backend + runtime; not the type system.
 
 ## (Resolved) Debug-trace print cosmetics — gf2 is now GREEN
 
