@@ -94,6 +94,14 @@ class CurrentScope(self) {
  */
 class DependencyList(self) {
   self.names = arrayof(string)
+  // Pre-size the array: the legacy runtime's array regrowth
+  // (replicateArrayData) corrupts under some heap states, crashing at
+  // emission-time appends; reserving capacity up front sidesteps the
+  // regrowth path for typical dependency counts.
+  for depPre in range(64) {
+    self.names.append("")
+  }
+  self.names.resize(0u64)
 
   func append(self, decname: string) {
     self.names.append(decname)
@@ -744,6 +752,13 @@ class CBuilder(self, tc: types.TypeChecker) {
         if self.typechecker.hasFreeVars(inst.varBindings[i]) {
           return false
         }
+        if self.typechecker.hasBareGenericKnot(inst.varBindings[i]) {
+          // A bare-knot binding (a template-era recording) would freeze
+          // under whatever bindings happen to be ambient at sweep time —
+          // a cross-signature Frankenstein.  Round-baked recordings cover
+          // the real signatures.
+          return false
+        }
       }
     }
     return true
@@ -762,9 +777,70 @@ class CBuilder(self, tc: types.TypeChecker) {
   // knot-free arguments.
   func materializeFor(self, fn: db.Function, specKey: string) {
     if !fn.deferredTypecheck {
-      return
+      // Non-deferred bodies keep their template bakes (a fresh emission
+      // walk re-derives WORSE types for inlined iterators) — EXCEPT the
+      // methods of a class with SEVERAL concrete signatures: their shared
+      // body expressions hold at most one signature's types and must
+      // re-derive per specialization.
+      if isnull(fn.parentFunction) {
+        return
+      }
+      if fn.parentFunction.type != db.FuncType.Constructor {
+        return
+      }
+      minfo = self.typechecker.lookupClass(fn.parentFunction.sym)
+      if isnull(minfo) {
+        return
+      }
+      if minfo.paramVars.length() == 0 {
+        return
+      }
+      if self.classConcreteSigCount(minfo!) < 2u64 {
+        return
+      }
     }
     self.typechecker.materializeSpec(fn, specKey)
+  }
+
+  // The number of DISTINCT concrete instance types among a class's
+  // recorded constructor instantiations.
+  func classConcreteSigCount(self, info: types.ClassInfo) -> u64 {
+    if isnull(info.fn) {
+      return 0u64
+    }
+    cscTy = info.fn.typedValue
+    if isnull(cscTy) {
+      return 0u64
+    }
+    if cscTy.type != types.Type.TypeClass.Polymorphic {
+      return 0u64
+    }
+    cscSigs = arrayof(string)
+    cscPi = cscTy.poly.instantiations
+    if !isnull(cscPi) {
+      for cscInst in cscPi {
+        if !isnull(cscInst.type) {
+          cscR = self.typechecker.resolve(cscInst.type!)
+          if cscR.type == types.Type.TypeClass.Function {
+            cscRes = self.typechecker.resolve(cscR.function.result!)
+            if (cscRes.type == types.Type.TypeClass.Typename &&
+                !self.typechecker.hasFreeVars(cscRes)) {
+              cscStr = cscRes.toString()
+              cscSeen = false
+              for cscS in cscSigs {
+                if cscS == cscStr {
+                  cscSeen = true
+                }
+              }
+              if !cscSeen {
+                cscSigs.append(cscStr)
+              }
+            }
+          }
+        }
+      }
+    }
+    return cscSigs.length()
   }
 
   func cClassDeclaration(self, location: db.Location, name: string,
