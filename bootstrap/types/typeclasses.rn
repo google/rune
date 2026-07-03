@@ -664,6 +664,12 @@ class FunctionType(self, params: Type, result: Type) {
  * polymorphic type was opened. These will be bound.
  */
 class TyvarInstantiation(self, varBindings: [Type], type: Type) {
+  // True once a materialization round (or demand) resolved this recording
+  // in place while its round's bindings were active.  An UNBAKED recording
+  // still chains through template variables: freezing it at sweep time
+  // under ambient leftover bindings makes cross-signature Frankensteins,
+  // so multi-signature sweeps only trust baked recordings.
+  self.baked = false
   self.varBindings = varBindings
   self.type = type
 }
