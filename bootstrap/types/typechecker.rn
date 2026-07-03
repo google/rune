@@ -4374,13 +4374,22 @@ class TypeChecker(self) {
         scrutTy = self.expr(statement.expr)
         assert !isnull(statement.subBlock)
         for caseStatement in statement.subBlock.statements() {
-          if caseStatement.type == db.StateType.Case {
+          if caseStatement.type == db.StateType.Case && !isnull(caseStatement.expr) {
             for valExpr in caseStatement.expr.childExprs() {
               vty = self.expr(valExpr)
-              te = self.unify(vty!, scrutTy!)
-              if !isnull(te) {
-                self.typeError("Case value must match the switch expression type",
-                               valExpr.location)
+              // A case value's type or the scrutinee's type can be null when
+              // the switch is walked on demand before the relevant symbols
+              // resolve (e.g. Type.replaceVar's `switch self.type` over the
+              // TypeClass enum, demanded mid-typecheck).  The unify is only a
+              // sanity check that the case value matches the scrutinee, so
+              // skip it when either side is unresolved rather than deref a
+              // null (`vty!`/`scrutTy!` panicked here during self-hosting).
+              if !isnull(vty) && !isnull(scrutTy) {
+                te = self.unify(vty!, scrutTy!)
+                if !isnull(te) {
+                  self.typeError("Case value must match the switch expression type",
+                                 valExpr.location)
+                }
               }
             }
           }
