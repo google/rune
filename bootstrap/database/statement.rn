@@ -454,11 +454,12 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     if (self.expr.countChildExprs() == 1
         && self.expr.indexChildExpr(0).type == ExprType.Constant
         && self.expr.indexChildExpr(0).val.type == DatatypeType.String) {
-      // println/print with a single string should just printf that string.
+      // println/print with a single string: write it by length (a
+      // headed literal may carry embedded NULs) rather than %s.
       args = c.CExprList()
       args.appendCExpr(self.expr.indexChildExpr(0).genC(builder))
       cexpr = c.CExpr(args)
-      call = builder.cCall(self.location, "tostring_string_t", cexpr)
+      call = builder.cCall(self.location, "GlobalStringWriter_write_string", cexpr)
       builder.addStatement(self.location, call)
     } else {
       ppIdx = 0u64
@@ -621,10 +622,9 @@ class Statement(self, block: Block, type: StateType, location: Location) {
           ppCtName = ppCt.toString()
           if ppCtName == "string" {
             ppSArgs = c.CExprList()
-            ppSArgs.append(builder.cStringLiteral("%s"))
-            ppSArgs.append(cexpr!)
+            ppSArgs.appendCExpr(cexpr!)
             builder.addStatement(self.location, builder.cCall(self.location,
-                "tostring_string_t", c.CExpr(ppSArgs)))
+                "GlobalStringWriter_write_string", c.CExpr(ppSArgs)))
           } else {
             builder.addStatement(self.location, builder.cCall(self.location,
                 "tostring_%s_t" % ppCtName, cexpr))
@@ -670,11 +670,12 @@ class Statement(self, block: Block, type: StateType, location: Location) {
           ctypename = ctype.toString()
 
           if ctypename == "string" {
-            // String values need to be emitted with quotes.
-            printfArgs = c.CExprList()
-            printfArgs.append(builder.cStringLiteral("%s"))
-            printfArgs.append(cexpr!)
-            call = builder.cCall(self.location, "tostring_string_t", c.CExpr(printfArgs))
+            // Write string VALUES by length (binary-safe) — a headed
+            // string may carry embedded NULs that %s would truncate.
+            sValArgs = c.CExprList()
+            sValArgs.appendCExpr(cexpr!)
+            call = builder.cCall(self.location, "GlobalStringWriter_write_string",
+                c.CExpr(sValArgs))
           } else {
             call = builder.cCall(self.location, "tostring_%s_t" % ctypename, cexpr)
           }
@@ -687,13 +688,10 @@ class Statement(self, block: Block, type: StateType, location: Location) {
       self.genCCall(builder, c.CRuntimeFunction.GlobalStringWriterWrite,
                     builder.cStringLiteral("\n"))
     }
-    // Finally generate the call to printf: printf("%s", GlobalStringWriterString())
-    printfArgs = c.CExprList()
-    printfArgs.append(builder.cStringLiteral("%s"))
-    printfArgs.append(
-        builder.cCall(self.location, c.CRuntimeFunction.GlobalStringWriterString,
-                      null(c.CExpr)))
-    self.genCCall(builder, c.CRuntimeFunction.Printf, c.CExpr(printfArgs))
+    // Flush the accumulated bytes to stdout BY LENGTH (embedded NULs
+    // included), not printf("%s", ...) which would stop at the first NUL.
+    builder.addStatement(self.location,
+        builder.cCall(self.location, "GlobalStringWriter_flush", null(c.CExpr)))
     // Flush-and-clear: a later print appends to a fresh buffer, so a nested
     // print evaluated inside this one's arguments (which left its own line in
     // the shared writer) does not get re-emitted when this print flushes.

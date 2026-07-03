@@ -3342,6 +3342,26 @@ class Expr(self, type: ExprType, location: Location) {
           return builder.cCall(self.location, "rn_string_touint",
               c.CExpr(tuArgs))
         }
+        if field.toString() == "toUintLE" {
+          // <T>: wide_from_le_bytes(s, string_length(s), width, signed)
+          tuleTy = builder.typechecker.resolve(self.typedValue!)
+          tuleWidth = 64u64
+          tuleSigned = false
+          if tuleTy.type == types.Type.TypeClass.Int {
+            tuleWidth = <u64>tuleTy.int.width
+            tuleSigned = tuleTy.int.isSigned
+          }
+          lenArgs = c.CExprList()
+          lenArgs.appendCExpr(strBase.genC(builder))
+          tuleArgs = c.CExprList()
+          tuleArgs.appendCExpr(strBase.genC(builder))
+          tuleArgs.appendCExpr(builder.cCall(self.location,
+              c.CRuntimeFunction.StringLength, c.CExpr(lenArgs)))
+          tuleArgs.appendCExpr(builder.cIntLiteral(Bigint(tuleWidth)))
+          tuleArgs.appendCExpr(builder.cIntLiteral(
+              Bigint(tuleSigned ? 1u64 : 0u64)))
+          return builder.cWideCall(self.location, "wide_from_le_bytes", tuleArgs)
+        }
         switch field.toString() {
           "length" => strfn = c.CRuntimeFunction.StringLength
           "append" => strfn = c.CRuntimeFunction.StringAppendChar
@@ -3413,6 +3433,15 @@ class Expr(self, type: ExprType, location: Location) {
                 wtArgs.appendCExpr(builder.cIntLiteral(Bigint(10u64)))
               }
               return builder.cWideCall(self.location, "wide_tostring_base", wtArgs)
+            }
+            if field.toString() == "toStringLE" {
+              // Wide toStringLE: the low width/8 bytes little-endian as a
+              // length-headed (binary-safe) string.
+              wleArgs = c.CExprList()
+              wleArgs.appendCExpr(scalarBase.genC(builder))
+              wleArgs.appendCExpr(builder.cIntLiteral(
+                  Bigint(<u64>(intWidth / 8u32))))
+              return builder.cWideCall(self.location, "wide_tostring_le", wleArgs)
             }
           }
           switch field.toString() {

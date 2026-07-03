@@ -3343,14 +3343,20 @@ class TypeChecker(self) {
           suBase = fnchild.firstChildExpr!
           suMember = suBase.nextExprChildExpr
           suIsToUint = false
+          suIsToUintLE = false
           if !isnull(suMember) {
             if suMember.type == db.ExprType.Ident {
               if suMember.val.symVal.name == "toUint" {
                 suIsToUint = true
+              } else if suMember.val.symVal.name == "toUintLE" {
+                // s.toUintLE(<type>): parse the string's bytes little-
+                // endian into the type-argument integer.  Like toUint but
+                // with no `ok` out-parameter.
+                suIsToUintLE = true
               }
             }
           }
-          if suIsToUint {
+          if suIsToUint || suIsToUintLE {
             suBaseTy = self.expr(suBase)
             suIsString = false
             if !isnull(suBaseTy) {
@@ -3358,11 +3364,16 @@ class TypeChecker(self) {
             }
             if suIsString {
               suArgs = fnchild.nextExprChildExpr!
-              suTypeArg = suArgs.firstChildExpr!
+              // Multiple args (toUint's type + ok) wrap in a List/Tuple;
+              // a single arg (toUintLE's type) is the arg node itself.
+              suTypeArg = suArgs
+              if suArgs.type == db.ExprType.List || suArgs.type == db.ExprType.Tuple {
+                suTypeArg = suArgs.firstChildExpr!
+              }
               suResult = self.explicitType(suTypeArg)
               suTypeArg.typedValue = suResult
               suOkArg = suTypeArg.nextExprChildExpr
-              if !isnull(suOkArg) {
+              if suIsToUint && !isnull(suOkArg) {
                 if suOkArg.type == db.ExprType.Ident {
                   suOkTy = self.symbol(suOkArg.val.symVal!)
                   if !isnull(suOkTy) {

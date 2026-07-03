@@ -193,6 +193,49 @@ const char *GlobalStringWriter_string(void) {
 }
 
 
+// Append |len| raw bytes (embedded NULs included) to the writer,
+// advancing the write pointer by the bytes actually stored.  Unlike the
+// printf-family writes this is binary-safe: a string VALUE carrying
+// NULs (a headed string) is written by length, not by %s.
+static inline void StringWriter_write_bytes(StringWriter sw, const char *s,
+                                            size_t len) {
+  if (len > sw->space) {
+    len = sw->space;
+  }
+  if (len > 0) {
+    memcpy(sw->wp, s, len);
+    sw->wp += len;
+    sw->space -= len;
+  }
+}
+
+void GlobalStringWriter_write_bytes(const char *s, size_t len) {
+  StringWriter_write_bytes(&globalStringWriter, s, len);
+}
+
+// Append a string VALUE by its true byte length (binary-safe), so a
+// headed string carrying embedded NULs is written whole rather than
+// truncated at the first NUL like %s would.  string_length reads the
+// header (string_methods.inc; the writer depends on it).
+void GlobalStringWriter_write_string(const char *s) {
+  if (s != NULL) {
+    StringWriter_write_bytes(&globalStringWriter, s, (size_t)string_length(s));
+  }
+}
+
+// The number of bytes accumulated so far (binary length, not strlen).
+size_t GlobalStringWriter_length(void) {
+  return (size_t)(globalStringWriter.wp - globalStringWriter.buffer);
+}
+
+// Write the accumulated bytes to stdout by LENGTH (embedded NULs
+// included), instead of printf("%s", ...) which stops at the first NUL.
+void GlobalStringWriter_flush(void) {
+  fwrite(globalStringWriter.buffer, 1,
+         (size_t)(globalStringWriter.wp - globalStringWriter.buffer), stdout);
+}
+
+
 #define tostring_string_t GlobalStringWriter_write
 
 

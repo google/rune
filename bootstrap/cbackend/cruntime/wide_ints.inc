@@ -47,6 +47,32 @@ static inline rn_wide wide_from_u64(uint64_t x, uint64_t width, int issigned) {
   return v;
 }
 
+// Parse |len| little-endian bytes of |data| into a wide integer of the
+// given width (String.toUintLE(<type>)).  Byte i contributes to bit i*8.
+static inline rn_wide wide_from_le_bytes(const char *data, uint64_t len,
+                                         uint64_t width, int issigned) {
+  rn_wide v = wide_alloc(width, issigned);
+  for (uint64_t i = 0; i < len; i++) {
+    uint64_t bit = i * 8;
+    if (bit < width) {
+      v[1 + bit / 64] |= (uint64_t)(uint8_t)data[i] << (bit % 64);
+    }
+  }
+  wide_mask(v);
+  return v;
+}
+
+// The low |nbytes| bytes of |v| little-endian as a length-headed string
+// (wide toStringLE()).  Embedded NUL bytes are preserved via the header.
+static inline char *wide_tostring_le(rn_wide v, uint64_t nbytes) {
+  char *r = rn_stralloc((size_t)nbytes);
+  for (uint64_t i = 0; i < nbytes; i++) {
+    uint64_t bit = i * 8;
+    r[i] = (char)((v[1 + bit / 64] >> (bit % 64)) & 0xff);
+  }
+  return r;
+}
+
 static inline uint64_t wide_to_u64(rn_wide v) {
   uint64_t w = WIDE_WIDTH(v);
   uint64_t x = v[1];
