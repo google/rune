@@ -682,6 +682,31 @@ class TypeChecker(self) {
   // Typecheck a class on demand: references can precede the class's own
   // typechecking (e.g. methods a relation added to an earlier class).  A
   // class already registered (done or in progress) is left alone.
+  // Record the class names a user operator's parameters are declared
+  // with, so the unifier accepts them where a builtin operator's
+  // adaptable constraint would reject them.
+  func registerUserOpClasses(self, opfn: db.Function) {
+    for ruoVar in opfn.variables() {
+      ruoTe = ruoVar.typeExpr
+      if !isnull(ruoTe) {
+        if ruoTe.type == db.ExprType.Ident {
+          ruoName = ruoTe.val.symVal.name
+          if !isnull(self.lookupClass(ruoTe.val.symVal!)) {
+            ruoSeen = false
+            for ruoC in self.unifier.userOpClasses {
+              if ruoC == ruoName {
+                ruoSeen = true
+              }
+            }
+            if !ruoSeen {
+              self.unifier.userOpClasses.append(ruoName)
+            }
+          }
+        }
+      }
+    }
+  }
+
   func demandClass(self, sym: Sym) {
     if !isnull(self.lookupClass(sym)) {
       return
@@ -4443,6 +4468,7 @@ class TypeChecker(self) {
                 }
                 self.operatorFns.append(opfn)
                 self.operatorTypes.append(FN(TUPLE(opParams), Type(self.newTyvar())))
+                self.registerUserOpClasses(opfn)
               }
             }
           }
@@ -4525,6 +4551,7 @@ class TypeChecker(self) {
           self.operatorFns.append(fn)
           self.operatorTypes.append(fn.typedValue!)
         }
+        self.registerUserOpClasses(fn)
       }
       db.FuncType.Struct => self.structFunction(fn)
       db.FuncType.Constructor => self.constructorFunction(fn)

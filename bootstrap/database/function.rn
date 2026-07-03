@@ -1349,6 +1349,24 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     methodPrevEmittingName = builder.currentEmittingName
     builder.currentEmittingFn = self
     builder.currentEmittingName = methodName
+    // Publish this method instance's GROUND param tuple, exactly as
+    // genCPolyInstantiation does: the body's variable slots hold the
+    // template's bare knots (a relation compareElement's children), and
+    // the recovery repairs operands positionally from here.
+    methodPrevEmittingParamTuple = builder.currentEmittingParamTuple
+    methodPrevEmittingParamFn = builder.currentEmittingParamFn
+    mptParams = builder.typechecker.resolve(fnInstType.function.params!)
+    mptElems = arrayof(types.Type)
+    if mptParams.type == types.Type.TypeClass.Tuple {
+      for mptE in mptParams.tuple.elements {
+        mptElems.append(adoptConcreteBaseTy(builder,
+            builder.typechecker.resolve(mptE)))
+      }
+    } else {
+      mptElems.append(adoptConcreteBaseTy(builder, mptParams))
+    }
+    builder.currentEmittingParamTuple = types.Type(types.TupleType(mptElems))
+    builder.currentEmittingParamFn = self
     // A deferred method (e.g. a relation's remove/insert whose `child`/`key`
     // parameter is unconstrained) re-typechecks its body under this concrete
     // instantiation's bindings before emission, exactly as deferred plain
@@ -1402,6 +1420,8 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     }
     builder.currentEmittingFn = methodPrevEmittingFn
     builder.currentEmittingName = methodPrevEmittingName
+    builder.currentEmittingParamTuple = methodPrevEmittingParamTuple
+    builder.currentEmittingParamFn = methodPrevEmittingParamFn
     builder.closeFunctionTryContext(savedTryBase)
     builder.closeScope()
 

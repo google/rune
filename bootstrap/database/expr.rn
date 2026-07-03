@@ -521,6 +521,12 @@ func typeArgCompatible(argType: types.Type, paramType: types.Type) -> bool {
     if isnull(argType.tyname.params) && isnull(paramType.tyname.params) {
       return true
     }
+    if isnull(argType.tyname.params) || isnull(paramType.tyname.params) {
+      // A bare class knot on ONE side is a same-class wildcard: a relation
+      // method's template operand (bare Element) against the concrete
+      // instance (heapsort's compareElement fell to a C pointer compare).
+      return true
+    }
     if !isnull(argType.tyname.params) && !isnull(paramType.tyname.params) {
       aels = argType.tyname.params.elements
       pels = paramType.tyname.params.elements

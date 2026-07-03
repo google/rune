@@ -62,6 +62,11 @@ class TypeUnifier(self) {
   // LATER round's bindings (a half-baked recording was dicttest's
   // Frankenstein Entry candidate).
   self.openLogging = false
+  // Classes with a user-defined binary operator: a builtin operator's
+  // adaptable constraint (Int|Uint|f32|f64|string) accepts them, since
+  // the expression dispatches to the user operator (heapsort's
+  // Element.value < Element.value with Foo values).
+  self.userOpClasses = arrayof(string)
   self.openLog = arrayof(TyvarInstantiation)
 
   func newVar(self) -> i32 {
@@ -290,9 +295,19 @@ class TypeUnifier(self) {
     if !isnull(tyvar.constraint) {
       te = self.unify(tyvar.constraint!, ty, location)
       if !isnull(te) {
-        return TypeError("Type %s failed to satisfy tyvar constraint %s."
-                         % (ty.toString(), tyvar.constraint.toString()),
-                         location)
+        uocExempt = false
+        if ty.type == Type.TypeClass.Typename {
+          for uoc in self.userOpClasses {
+            if uoc == ty.tyname.name.name {
+              uocExempt = true
+            }
+          }
+        }
+        if !uocExempt {
+          return TypeError("Type %s failed to satisfy tyvar constraint %s."
+                           % (ty.toString(), tyvar.constraint.toString()),
+                           location)
+        }
       }
     }
     exists = self.lookupVar(tyvar.id)
