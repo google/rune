@@ -619,7 +619,7 @@ class CBuilder(self, tc: types.TypeChecker) {
                   // not change.
                   odPreFn = self.typechecker.resolve(mty.poly.scope)
                   if odPreFn.type == types.Type.TypeClass.Function {
-                    self.deferredRetypecheckFor(childfunc,
+                    self.materializeFor(childfunc,
                         self.methodDefCName(odPreFn, methodName))
                   }
                   mfn = self.typechecker.resolve(mty.poly.scope)
@@ -666,7 +666,7 @@ class CBuilder(self, tc: types.TypeChecker) {
                 // body under them before emission, once per specialization.
                 odPreFn3 = self.typechecker.resolve(opened)
                 if odPreFn3.type == types.Type.TypeClass.Function {
-                  self.deferredRetypecheckFor(childfunc,
+                  self.materializeFor(childfunc,
                       self.methodDefCName(odPreFn3, methodName))
                 }
                 mfn3 = self.typechecker.resolve(opened)
@@ -749,29 +749,22 @@ class CBuilder(self, tc: types.TypeChecker) {
     return true
   }
 
-  // Re-typecheck a deferred body once per emitted specialization, under the
-  // caller's active instantiation bindings.  The body's expression types are
-  // shared storage: each signature must re-derive them under its own
+  // Materialize a deferred body for one emitted specialization, under the
+  // caller's active instantiation bindings.  The body's expression types
+  // are shared storage: each signature must re-derive them under its own
   // bindings, or the second signature emits the first's baked types (the
   // one-shot deferredRetypechecked flag did exactly that with two Dict
-  // signatures in one program).  A retypecheck that fails under the active
-  // bindings (e.g. an unreachable typeswitch arm) keeps the previous baking:
-  // the body already typechecked cleanly once, so the errors are popped.
-  func deferredRetypecheckFor(self, fn: db.Function, specKey: string) {
+  // signatures in one program).  Non-deferred bodies are NOT re-typechecked
+  // here: their inlined-iterator types were carefully baked at inlining and
+  // a fresh emission-time walk re-derives WORSE types (bare class knots);
+  // multi-signature resolution for them comes from the typechecker's
+  // demand-driven path (demandCallResult), which only fires under concrete,
+  // knot-free arguments.
+  func materializeFor(self, fn: db.Function, specKey: string) {
     if !fn.deferredTypecheck {
       return
     }
-    retcKey = "retc$" + specKey
-    if self.alreadyEmitted(retcKey) {
-      return
-    }
-    self.markEmitted(retcKey)
-    retcPreErrs = self.typechecker.countTypeErrors()
-    self.typechecker.retypecheckDeferred(fn)
-    fn.deferredRetypechecked = true
-    while self.typechecker.countTypeErrors() > retcPreErrs {
-      self.typechecker.popTypeError()
-    }
+    self.typechecker.materializeSpec(fn, specKey)
   }
 
   func cClassDeclaration(self, location: db.Location, name: string,

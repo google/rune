@@ -90,6 +90,14 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   // typechecks again under a concrete instantiation before emission.
   self.deferredTypecheck = false
   self.deferredRetypechecked = false
+  // The specialization key whose bindings this body's shared expression
+  // types were last re-typechecked under (per-signature materialization).
+  self.lastMaterializedSpec = ""
+  // True while this body is being materialized: a recursive call must not
+  // re-enter (its poly is already instantiated; the spec cache handles
+  // same-signature recursion, this flag blocks differing-signature
+  // descent into the same frame).
+  self.materializeActive = false
   if !isnull(parent) {
     parent.appendChildFunction(self)
     Ident(parent!, self, sym, location)
@@ -480,7 +488,7 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     builder.currentEmittingResultWide = builder.wideWidth(fntype.poly.scope.function.result)
     // Retypecheck the deferred body under THIS specialization's bindings
     // (the pre-emission pass only covers the first recorded instantiation).
-    builder.deferredRetypecheckFor(self, specializedName)
+    builder.materializeFor(self, specializedName)
     body = self.subBlock.genC(builder)
     builder.currentEmittingFn = prevEmittingFn
     builder.currentEmittingName = prevEmittingName
@@ -978,7 +986,7 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     // undeclared specialization.  Keyed per specialization: methodName is
     // computed from the parameter types, so each signature re-derives the
     // shared body expression types under its own bindings.
-    builder.deferredRetypecheckFor(self, methodName)
+    builder.materializeFor(self, methodName)
     if self.sym.name == "destroy" {
       // destroy() must be idempotent: cleanup paths (cascade deletion,
       // reference overwrite, program exit) can reach an object more than

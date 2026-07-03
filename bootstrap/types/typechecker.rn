@@ -134,6 +134,12 @@ use typeerror
 
 TypeLoggingPrefix = ": "
 
+// Demand-driven materialization budget: a call chain of polymorphic bodies
+// each demanding its callee's materialization (find -> findEntry -> ...).
+// Bounds pathological cycles that the per-function reentrancy flag does not
+// catch; must trip below resolveDepth's 64 chain bound.
+MaterializeRecursionLimit = 16u32
+
 STR = STRING()
 BOOL = BOOLEAN()
 INT = INTEGER()
@@ -220,6 +226,17 @@ class EnumInfo(self, sym: Sym) {
 // Records typechecking information about a class: its constructor function,
 // the struct type holding its data members, and the type variables of its
 // constructor parameters (in declaration order).
+// One enclosing call's callee bookkeeping for demand-driven
+// materialization: classMemberType records the method and the
+// instantiation its open just appended; the Call arm consumes the record
+// after apply (see demandCallResult).  A stack because argument
+// typechecking nests further calls.
+class CalleeRecord(self) {
+  self.fn = null(db.Function)
+  self.inst = null(TyvarInstantiation)
+  self.viaExpr = null(db.Expr)
+}
+
 class ClassInfo(self, sym: Sym) {
   self.sym = sym
   self.fn = null(db.Function)
@@ -348,6 +365,9 @@ class TypeChecker(self) {
   self.deferredWorklist = arrayof(Deferred)
   self.definedSignatures = arrayof(string)  // dedup keys (Stage 2 materializeInner)
   self.boundTyvarIds = arrayof(i32)         // tyvars known bound (Stage 3)
+  // Demand-driven materialization state (see demandCallResult).
+  self.calleeStack = arrayof(CalleeRecord)
+  self.materializeDepth = 0u32
   self.renamePrefix = ""
   self.renameOld = arrayof(string)
   self.renameNew = arrayof(Sym)
@@ -684,6 +704,95 @@ class TypeChecker(self) {
     self.classBoundVars = prevClassBoundVars
   }
 
+  // Materialize a polymorphic body for one specialization: re-typecheck it
+  // under the caller's active instantiation bindings, unless the body's
+  // shared expression types are already current for this key.  On a key
+  // hit, still connect the result: each recorded instantiation of a
+  // signature carries its own result variable.  A retypecheck that fails
+  // under the active bindings (an unreachable typeswitch arm) keeps the
+  // previous baking; its errors are popped because the body already
+  // typechecked cleanly once.
+  func materializeSpec(self, fn: db.Function, specKey: string) {
+    if isnull(fn.subBlock) {
+      return
+    }
+    matzPreErrs = self.countTypeErrors()
+    if fn.lastMaterializedSpec == specKey {
+      self.connectResultType(fn)
+    } else {
+      fn.lastMaterializedSpec = specKey
+      self.retypecheckDeferred(fn)
+      fn.deferredRetypechecked = true
+    }
+    while self.countTypeErrors() > matzPreErrs {
+      self.popTypeError()
+    }
+  }
+
+  // Demand-driven monomorphization: a call whose result type stays a free
+  // variable under concrete arguments (the callee's return only resolves
+  // through ITS callees or its class's field types) materializes the
+  // callee under this call's just-recorded instantiation, binding the
+  // call's own result variable through the instantiation chain.  The
+  // template pass never fires here (its arguments are not concrete), so
+  // single-signature behavior is unchanged.
+  func demandCallResult(self, rec: CalleeRecord, openedFnTy: Type, result: Type) {
+    if isnull(rec.fn) || isnull(rec.inst) {
+      return
+    }
+    if !self.hasFreeVars(self.resolve(result)) {
+      return
+    }
+    callee = rec.fn!
+    if callee.materializeActive {
+      return
+    }
+    if isnull(callee.subBlock) {
+      return
+    }
+    cty = callee.typedValue
+    if isnull(cty) {
+      return
+    }
+    if cty.type != Type.TypeClass.Polymorphic {
+      return
+    }
+    oft = self.resolve(openedFnTy)
+    if oft.type != Type.TypeClass.Function {
+      return
+    }
+    if self.hasFreeVars(oft.function.params!) {
+      return
+    }
+    if self.hasBareGenericKnot(oft.function.params!) {
+      // A bare class knot in the arguments would materialize the callee
+      // under an under-resolved (and possibly cross-signature) frame and
+      // record garbage instantiations; leave those to emission recovery.
+      return
+    }
+    if self.materializeDepth >= MaterializeRecursionLimit {
+      return
+    }
+    self.materializeDepth += 1u32
+    callee.materializeActive = true
+    self.instantiate(cty.poly!, rec.inst!)
+    dmScope = self.resolve(cty.poly.scope)
+    if dmScope.type == Type.TypeClass.Function {
+      dmParams = self.resolve(dmScope.function.params!)
+      dmKey = dmParams.genSpecializationName(callee.sym.name)
+      self.materializeSpec(callee, dmKey)
+    }
+    // Bake the materialized resolution into the instantiation while its
+    // bindings are active, so emission and recovery read concrete slots.
+    for dmi in range(rec.inst.varBindings.length()) {
+      rec.inst.varBindings[dmi] = self.resolve(rec.inst.varBindings[dmi])
+    }
+    rec.inst.type = self.resolve(rec.inst.type)
+    self.deInstantiate(cty.poly!)
+    callee.materializeActive = false
+    self.materializeDepth -= 1u32
+  }
+
   // Connect the body's return type to the function's result variable so
   // the call site's type resolves under the active instantiation.  Also
   // used on its own when a signature is already materialized: each
@@ -827,6 +936,49 @@ class TypeChecker(self) {
       return false
     }
     return !isnull(self.lookupClass(t.tyname.name))
+  }
+
+  // True if t contains a bare (parameterless) Typename of a GENERIC class:
+  // an under-resolved knot (from arrayof(ClassName) or occurs-check
+  // knot-tying) that only emission-side adoption can pin.  A parameterless
+  // class's bare name is complete, not a knot.
+  func hasBareGenericKnot(self, ty: Type) -> bool {
+    t = self.resolve(ty)
+    switch t.type {
+      Type.TypeClass.Typename => {
+        if isnull(t.tyname.params) {
+          kinfo = self.lookupClass(t.tyname.name)
+          if !isnull(kinfo) {
+            if kinfo.paramVars.length() > 0 {
+              return true
+            }
+          }
+          return false
+        }
+        for kel in t.tyname.params.elements {
+          if self.hasBareGenericKnot(kel) {
+            return true
+          }
+        }
+        return false
+      }
+      Type.TypeClass.Array => return self.hasBareGenericKnot(t.array.elementType!)
+      Type.TypeClass.Tuple => {
+        for kel2 in t.tuple.elements {
+          if self.hasBareGenericKnot(kel2) {
+            return true
+          }
+        }
+        return false
+      }
+      Type.TypeClass.Function => {
+        if self.hasBareGenericKnot(t.function.params!) {
+          return true
+        }
+        return self.hasBareGenericKnot(t.function.result!)
+      }
+      default => return false
+    }
   }
 
   // True if the type is the builtin string type.
@@ -2524,12 +2676,23 @@ class TypeChecker(self) {
         }
         fnchild = expr.firstChildExpr!
         argchild = fnchild.nextExprChildExpr
+        // Track this call's callee for demand materialization: the Dot
+        // typecheck (classMemberType) fills the top record; argument
+        // typechecking nests further calls, hence a stack.
+        self.calleeStack.append(CalleeRecord())
         fn = self.expr(fnchild)
         args = self.expr(argchild!)
+        callRec = self.calleeStack[self.calleeStack.length() - 1]
+        self.calleeStack.resize(self.calleeStack.length() - 1)
         if isnull(fn) || isnull(args) {
           return fn
         }
         result = self.apply(fn!, args!, expr.location)
+        if !isnull(result) && !isnull(callRec.viaExpr) {
+          if callRec.viaExpr == fnchild {
+            self.demandCallResult(callRec, fn!, result!)
+          }
+        }
       }
 
       // Type values: type-literal expressions used as values, e.g. t = u32
@@ -4085,7 +4248,27 @@ class TypeChecker(self) {
     name = field.toString()
     method = self.findMethod(info, name)
     if !isnull(method) {
-      return self.methodCallType(info, instanceType, method!, location)
+      mcRes = self.methodCallType(info, instanceType, method!, location)
+      // Record the callee and the instantiation its open just appended
+      // for the enclosing call's demand materialization (only when the
+      // method type is polymorphic: then methodCallType surely opened).
+      if self.calleeStack.length() > 0 {
+        fieldDot = field.parentExpr
+        if !isnull(fieldDot) {
+          if fieldDot.type == db.ExprType.Dot {
+            mcTy = method.typedValue
+            if !isnull(mcTy) {
+              if mcTy.type == Type.TypeClass.Polymorphic {
+                calleeRec = self.calleeStack[self.calleeStack.length() - 1]
+                calleeRec.fn = method
+                calleeRec.viaExpr = fieldDot
+                calleeRec.inst = mcTy.poly.instantiations.lastTyvarInstantiation
+              }
+            }
+          }
+        }
+      }
+      return mcRes
     }
     inOwnConstructor = !isnull(self.currentClassInfo) && self.currentClassInfo.sym == info.sym
     ty = info.strct.select(name)
