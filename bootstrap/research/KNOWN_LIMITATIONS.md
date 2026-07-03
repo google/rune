@@ -1,6 +1,6 @@
 # Bootstrap compiler — known limitations
 
-Status as of suite 199/205 (HEAD `5db6801` era).  This documents the
+Status as of suite 200/205 (HEAD `d5f85cc` era).  This documents the
 remaining red tests whose fixes require REPRESENTATION-MODEL work
 (binary-safe strings, object pools/refcounts) rather than
 typechecking/binding/emission fixes, per the migration plan's
@@ -8,49 +8,45 @@ fix-or-document done-condition.  Every red test is now either here or
 green.  Each entry states the exact gap, the evidence, and what
 implementing it would take.
 
-## 1. Binary-safe (length-carrying) strings — Stage A landed
+## 1. Binary-safe (length-carrying) strings — Stages A & C landed
 
-**Affected tests: `escapedCharTest`, `uint2string`.  (`integer` was
+**Affected test: `uint2string`.  (`integer` and `escapedCharTest` were
 here; now GREEN.)**
 
 STAGE A (`5db6801`) gave string PRODUCERS a length header: an array_t-
 style `rn_strhdr` (magic + byte length) before the char data, allocated
 by `rn_stralloc`.  `string_length` reads the header when the magic
-matches, else falls back to `strlen` (so static literals still work).
-Every `cruntime/string_methods.inc` producer now allocates headed and
-sizes its source via `string_length`, so embedded NUL bytes propagate.
-This fixed `integer` (toStringLE -> reverse -> toHex all preserve the
-byte length; the hex-text output has no NULs) with ZERO regressions.
+matches, else falls back to `strlen`.  Every
+`cruntime/string_methods.inc` producer now allocates headed and sizes
+its source via `string_length`, so embedded NUL bytes propagate.  Fixed
+`integer` (toStringLE -> reverse -> toHex preserve the byte length; the
+hex-text output has no NULs).
 
-Remaining, each needing a further stage:
+STAGE C (`d5f85cc`) gave string VALUE LITERALS a header: each is
+materialized through `rn_strlit(lit, len)` (byte length known at emit
+time, embedded NULs copied) instead of a bare C literal; only
+CLiteral.Type.String is wrapped (PrintfString format strings stay
+bare).  Fixed `escapedCharTest` (the `"...\0"` literal now reports
+length 10, not strlen's 9).
 
-- `escapedCharTest` — needs STAGE C (headed string LITERALS).  The test
-  string `"\a\b\e\f\n\r\t\v\"\0"` is a LITERAL ending in an embedded
-  `\0` and asserts `s.length() == 10`; a static C literal has no header,
-  so `string_length` falls back to `strlen` and sees 9 -> SIGABRT.
-  Fix: emit string literals as headed static buffers (a `struct {size_t
-  magic; size_t len; char data[N];}` per literal, referencing `.data`),
-  so `string_length` reads the header instead of strlen.  Touches
-  `cStringLiteral` emission; the literal's true byte length is known at
-  emit time (the escaper counts bytes).
-- `uint2string` — needs STAGE B (length-aware PRINTING) plus its
-  unimplemented `toUintLE`/`toStringLE` methods.  It currently
-  COMPILE-FAILs (the methods are unimplemented: string method table +
-  the `toUint` type-arg special case in typechecker.rn ~3275 + two
-  small `wide_ints.inc` helpers).  Even with those, the golden prints
-  embedded 0x00 bytes to stdout (`block.toStringLE()` of a u128 yields
-  all 16 bytes), and the print path (GlobalStringWriter + `%s`) stops
-  at NUL.  Fix: make the writer/tostring_string_t path length-aware
-  (write `string_length(s)` bytes via a length-carrying write, not
-  `%s`), which is now possible since headed strings carry the length.
+Both landed with ZERO regressions (the whole suite exercises strings).
 
-**Remaining implementation shape**: Stage B = length-aware writer
-(global_string_writer.inc `%s` paths -> `fwrite`/memcpy of
-`string_length` bytes; the writer already has a buffer+length model).
-Stage C = headed string-literal emission.  String equality/compare/hash
-should also move to `string_length`+`memcmp` for full binary-safety
-(not required by the current reds).  Nothing in the typechecker needs
-to move for B/C.
+Remaining: `uint2string` needs STAGE B (length-aware PRINTING) plus its
+unimplemented `toUintLE`/`toStringLE` methods.  It currently
+COMPILE-FAILs (the methods are unimplemented: string method table + the
+`toUint` type-arg special case in typechecker.rn ~3275 + two small
+`wide_ints.inc` helpers).  Even with those, the golden prints embedded
+0x00 bytes to stdout (`block.toStringLE()` of a u128 yields all 16
+bytes), and the print path (GlobalStringWriter + `%s`) stops at NUL.
+
+**Remaining implementation shape (Stage B)**: make the
+writer/tostring_string_t path length-aware -- write `string_length(s)`
+bytes via a length-carrying write instead of `%s` (now possible: headed
+strings carry the length; the writer already has a buffer+length
+model).  Then implement uint2string's toStringLE/toUintLE methods.
+String equality/compare/hash should also move to
+`string_length`+`memcmp` for full binary-safety (not required by the
+current reds).  Nothing in the typechecker needs to move for Stage B.
 
 ## 2. Object pools, reference counts, and slot identity
 
