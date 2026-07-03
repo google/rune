@@ -513,6 +513,11 @@ class Statement(self, block: Block, type: StateType, location: Location) {
                 printRecover = true
               }
             }
+            if !printRecover && expr.type == ExprType.Call {
+              // A call result's slot can hold another round's binding
+              // even at module level; the recovery falls back to it.
+              printRecover = true
+            }
             if !isnull(builder.currentEmittingFn) {
             }
             if printRecover {

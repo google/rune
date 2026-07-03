@@ -428,6 +428,138 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   // Emit a single specialization of a polymorphic function under the given
   // instantiation.  Also called on demand from poly call sites, while an
   // outer instantiation binding is active.
+  // The ground result type of an emitted call inside a spec body:
+  // compose the callee's spec name from recovered argument types and
+  // look it up among already-emitted specs (nested emissions complete
+  // bottom-up, so a recursive callee's def precedes the parent's
+  // signature assembly).
+  func emittedCallResult(self: Function, builder: c.CBuilder,
+                         callExpr: Expr) -> types.Type? {
+    if callExpr.type != ExprType.Call {
+      return null(types.Type)
+    }
+    ecrLeft = callExpr.firstChildExpr
+    if isnull(ecrLeft) {
+      return null(types.Type)
+    }
+    if ecrLeft.type != ExprType.Ident {
+      return null(types.Type)
+    }
+    ecrArgs = ecrLeft.nextExprChildExpr
+    if isnull(ecrArgs) {
+      return null(types.Type)
+    }
+    ecrTypes = arrayof(types.Type)
+    if ecrArgs.type == ExprType.List || ecrArgs.type == ExprType.Tuple {
+      for ecrA in ecrArgs.childExprs() {
+        ecrTypes.append(ecrA.resolvedArgType(builder, 0u32, null(Block)))
+      }
+    } else {
+      ecrTypes.append(ecrArgs.resolvedArgType(builder, 0u32, null(Block)))
+    }
+    for ecrT in ecrTypes {
+      if builder.typechecker.hasFreeVars(ecrT) {
+        return null(types.Type)
+      }
+    }
+    ecrName = types.Type(types.TupleType(ecrTypes)).genSpecializationName(
+        ecrLeft.val.symVal.name)
+    ecrHit = builder.lookupSpecResult(ecrName)
+    if !isnull(ecrHit) {
+      return ecrHit
+    }
+    // Not emitted yet (a recursion still unwinding): derive the callee
+    // spec's result by walking ITS body under ITS ground params — a
+    // read-only, syntax-directed fixpoint.  Record it so recursion
+    // converges.
+    ecrCallee = builder.findFunction(ecrLeft.val.symVal.name)
+    if isnull(ecrCallee) {
+      return null(types.Type)
+    }
+    if isnull(ecrCallee.subBlock) || builder.deriveDepth >= 24u32 {
+      return null(types.Type)
+    }
+    ecrPrevTuple = builder.currentEmittingParamTuple
+    ecrPrevPFn = builder.currentEmittingParamFn
+    ecrPrevFn = builder.currentEmittingFn
+    builder.currentEmittingParamTuple = types.Type(types.TupleType(ecrTypes))
+    builder.currentEmittingParamFn = ecrCallee
+    builder.currentEmittingFn = ecrCallee
+    builder.deriveDepth += 1u32
+    ecrDerived = ecrCallee.deriveSpecResult(builder, ecrCallee.subBlock!)
+    builder.deriveDepth -= 1u32
+    builder.currentEmittingParamTuple = ecrPrevTuple
+    builder.currentEmittingParamFn = ecrPrevPFn
+    builder.currentEmittingFn = ecrPrevFn
+    if !isnull(ecrDerived) {
+      if !builder.typechecker.hasFreeVars(ecrDerived!) {
+        builder.recordSpecResult(ecrName, ecrDerived!)
+        return ecrDerived
+      }
+    }
+    return null(types.Type)
+  }
+
+  // Derive a spec's result type from its emitted return path: follow the
+  // typeswitch arm the GROUND scrutinee selects, and read return
+  // expressions through the live recovery (emitted-spec results for
+  // recursive calls first — a recorded instantiation's result can carry
+  // another round's binding).  Null when nothing grounds.  READ-ONLY
+  // w.r.t. recorded instantiations.
+  func deriveSpecResult(self: Function, builder: c.CBuilder,
+                        block: Block) -> types.Type? {
+    for dsrStmt in block.statements() {
+      if dsrStmt.type == StateType.Return {
+        if !isnull(dsrStmt.expr) {
+          dsrMap = self.emittedCallResult(builder, dsrStmt.expr!)
+          if !isnull(dsrMap) {
+            return dsrMap
+          }
+          // Only shapes the live recovery derives SOUNDLY from ground
+          // params: an operator/cast expression's slot can be ground yet
+          // belong to another spec (genericFactorial's n * fact(n-1)).
+          dsrSafe = (dsrStmt.expr.type == ExprType.Ident ||
+              dsrStmt.expr.type == ExprType.Constant ||
+              dsrStmt.expr.type == ExprType.Index ||
+              dsrStmt.expr.type == ExprType.Tuple)
+          if dsrSafe {
+            dsrCand = dsrStmt.expr.resolvedArgType(builder, 0u32, null(Block))
+            if !builder.typechecker.hasFreeVars(dsrCand) {
+              return dsrCand
+            }
+          }
+        }
+      } else if dsrStmt.type == StateType.Typeswitch {
+        if !isnull(dsrStmt.expr) && !isnull(dsrStmt.subBlock) {
+          dsrScr = dsrStmt.expr.resolvedArgType(builder, 0u32, null(Block))
+          if !builder.typechecker.hasFreeVars(dsrScr) {
+            dsrIdx = builder.typechecker.selectTypeswitchCaseFor(dsrStmt, dsrScr)
+            dsrI = 0u32
+            for dsrCase in dsrStmt.subBlock.statements() {
+              if dsrI == dsrIdx {
+                if !isnull(dsrCase.subBlock) {
+                  dsrArm = self.deriveSpecResult(builder, dsrCase.subBlock!)
+                  if !isnull(dsrArm) {
+                    return dsrArm
+                  }
+                }
+              }
+              dsrI += 1u32
+            }
+          }
+        }
+      } else {
+        if !isnull(dsrStmt.subBlock) {
+          dsrSub = self.deriveSpecResult(builder, dsrStmt.subBlock!)
+          if !isnull(dsrSub) {
+            return dsrSub
+          }
+        }
+      }
+    }
+    return null(types.Type)
+  }
+
   func genCPolyInstantiation(self: Function, builder: c.CBuilder,
                              instantiation: types.TyvarInstantiation) {
     fntype = self.typedValue!
@@ -477,7 +609,12 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     // name above can resolve through an outer ACTIVE round of this
     // same function (stale slots) and compose the wrong spec.  The
     // call site composed giWantName from GROUND arg types.
-    if giWantName != "" && giWantName != specializedName {
+    if giWantName != "" && giWantName != specializedName &&
+        builder.alreadyEmitted(specializedName) {
+      // Only a COLLIDING variables-derived name may adopt the call
+      // site's want: a unique name (e.g. manySignatures' value-named
+      // specs) is correct as-is, and adopting would emit a duplicate
+      // body under a foreign name.
       if !builder.alreadyEmitted(giWantName) && !isnull(giWantParams) {
         giWP = giWantParams!
         giList = arrayof(types.Type)
@@ -585,6 +722,27 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       }
       dbgB = builder.typechecker.resolve(fntype.poly.scope.function.result!).toString()
     }
+    // Capture the signature's result and (when needed) derive it from
+    // the emitted return path NOW, inside this spec's frame with the
+    // ground param tuple still published: the recorded instantiation's
+    // result re-resolves under foreign frames after deInstantiate.
+    frameRes = null(types.Type)
+    derivedRes = null(types.Type)
+    if !specFailed {
+      if !isnull(instantiation.type) {
+        frTy = builder.typechecker.resolve(instantiation.type!)
+        if frTy.type == types.Type.TypeClass.Function {
+          frR = builder.typechecker.resolve(frTy.function.result!)
+          if !builder.typechecker.hasFreeVars(frR) {
+            frameRes = frR
+          }
+        }
+      }
+      // Derive unconditionally: an in-frame result can be ground yet
+      // carry another round's binding (mulParens' sweep emissions); the
+      // disagree-check below arbitrates.
+      derivedRes = self.deriveSpecResult(builder, self.subBlock!)
+    }
     builder.currentEmittingFn = prevEmittingFn
     builder.currentEmittingName = prevEmittingName
     builder.currentEmittingResultWide = prevEmittingResultWide
@@ -604,6 +762,25 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       // outer frames later; the call site's recovered result is ground.
       newsym.typedValue = types.Type(types.FunctionType(
           types.Type(types.TupleType(paramTypes)), giWantResult!))
+    }
+    specResFinal = frameRes
+    if !isnull(derivedRes) && !specFailed {
+      // The emitted return path is the authoritative result: apply when
+      // the in-frame result is free or disagrees.
+      drApply = true
+      if !isnull(frameRes) {
+        if frameRes.toString() == derivedRes.toString() {
+          drApply = false
+        }
+      }
+      if drApply {
+        newsym.typedValue = types.Type(types.FunctionType(
+            types.Type(types.TupleType(paramTypes)), derivedRes!))
+        specResFinal = derivedRes
+      }
+    }
+    if !isnull(specResFinal) && !specFailed {
+      builder.recordSpecResult(specializedName, specResFinal!)
     }
     if isnull(newsym.typedValue) {
       // A synthesized instantiation may carry no type; the resolved scope

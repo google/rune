@@ -1930,6 +1930,21 @@ class Expr(self, type: ExprType, location: Location) {
       } else if rIndexee.type == types.Type.TypeClass.Array {
         return builder.typechecker.resolve(rIndexee.array.elementType!)
       }
+    } else if self.type == ExprType.Tuple {
+      // Rebuild from the children: the tuple's own slot bound once and
+      // lies for other specs (equalsParens' (a, b) scrutinee).
+      ratElems = arrayof(types.Type)
+      ratAllGround = true
+      for ratChild in self.childExprs() {
+        ratEl = ratChild.resolvedArgType(builder, depth + 1u32, scopeBlock)
+        if builder.typechecker.hasFreeVars(ratEl) {
+          ratAllGround = false
+        }
+        ratElems.append(ratEl)
+      }
+      if ratAllGround {
+        return types.Type(types.TupleType(ratElems))
+      }
     }
     if isnull(self.typedValue) {
       return types.NONETY()
@@ -1938,7 +1953,34 @@ class Expr(self, type: ExprType, location: Location) {
     if depth > 8u32 {
       return rty
     }
-    if !argTypeUnderResolved(builder, rty) {
+    ratSlotTrust = true
+    if self.type == ExprType.Call && !isnull(builder.currentEmittingFn) {
+      if !isnull(builder.currentEmittingParamFn) {
+        if builder.currentEmittingParamFn! == builder.currentEmittingFn! {
+          // Inside a specialized emission a Call expression's slot holds
+          // ONE round's binding and lies for every other spec of the
+          // same body; recompute from the live callee specs (the arm
+          // below falls back to the slot when it finds nothing).
+          ratSlotTrust = false
+        }
+      }
+    }
+    if ratSlotTrust && self.type == ExprType.Call {
+      // A ROUND-MANAGED callee's call slots hold whichever round bound
+      // them (module-level printlns of recursive-family results).
+      ratCal = self.firstChildExpr
+      if !isnull(ratCal) {
+        if ratCal.type == ExprType.Ident {
+          ratFn = builder.findFunction(ratCal.val.symVal.name)
+          if !isnull(ratFn) {
+            if ratFn.lastMaterializedSpec != "" {
+              ratSlotTrust = false
+            }
+          }
+        }
+      }
+    }
+    if ratSlotTrust && !argTypeUnderResolved(builder, rty) {
       return rty
     }
     if self.type == ExprType.Ident {
@@ -2003,6 +2045,14 @@ class Expr(self, type: ExprType, location: Location) {
                     pcWantStr1 = pcWant[0u64].toString()
                   }
                   pcConflict = false
+                  // An already-EMITTED spec's result is authoritative:
+                  // recorded instantiations multiply as emission rounds
+                  // re-open the same polys, and a late round's recording
+                  // can carry an unshrunk result for the same params.
+                  pcMapRes = pcFn.emittedCallResult(builder, self)
+                  if !isnull(pcMapRes) {
+                    return pcMapRes!
+                  }
                   pcPi = pcTy.poly.instantiations
                   if !isnull(pcPi) {
                     for pcInst in pcPi {
@@ -2053,6 +2103,12 @@ class Expr(self, type: ExprType, location: Location) {
                           builder.resolveInstantiation(pcSyn!)
                           builder.instantiate(pcTy.poly!, pcSyn!)
                           pcKey = pcWTy.genSpecializationName(pcFn.sym.name)
+                          // A key-hit would skip the retypecheck and leave
+                          // the just-opened result var unbound; force a
+                          // real round for THIS opening.
+                          if pcFn.lastMaterializedSpec == pcKey {
+                            pcFn.lastMaterializedSpec = ""
+                          }
                           builder.typechecker.materializeSpec(pcFn!, pcKey)
                           pcSRes = builder.typechecker.resolve(pcOpened.function.result!)
                           builder.resolveInstantiation(pcSyn!)
@@ -3143,7 +3199,39 @@ class Expr(self, type: ExprType, location: Location) {
           // can bake another spec's types into the signature.  Only a
           // reliable composition may be handed off (adaptable-int specs
           // name by VALUE; their recovered types cannot rebuild names).
-          wsReliable = false
+          // Only a reliable composition may be handed off: ground,
+          // non-adaptable, and NOT a value-named spec family (a
+          // definition whose params are VALUE-typed ints names specs by
+          // VALUE; recovered arg types carry widths and would compose
+          // names in the wrong name space).
+          wsReliable = (!builder.typechecker.hasFreeVars(argTypes) &&
+              !builder.typechecker.containsAdaptableType(argTypes))
+          if wsReliable {
+            wsScope = builder.typechecker.resolve(callee.typedValue!)
+            if wsScope.type == types.Type.TypeClass.Polymorphic {
+              wsParams = builder.typechecker.resolve(
+                  wsScope.poly.scope.function.params!)
+              wsElems = arrayof(types.Type)
+              if wsParams.type == types.Type.TypeClass.Tuple {
+                for wsE in wsParams.tuple.elements {
+                  wsElems.append(builder.typechecker.resolve(wsE))
+                }
+              } else {
+                wsElems.append(wsParams)
+              }
+              for wsE2 in wsElems {
+                if wsE2.type == types.Type.TypeClass.Int ||
+                    wsE2.type == types.Type.TypeClass.Float {
+                  wsReliable = false
+                }
+              }
+            }
+          }
+          if wsReliable {
+            builder.wantSpecName = specializedName
+            builder.wantSpecParams = argTypes
+            builder.wantSpecResult = null(types.Type)
+          }
           pi = polyType.poly.instantiations
           emitted = false
           for inst in pi {
@@ -3228,6 +3316,12 @@ class Expr(self, type: ExprType, location: Location) {
                     builder.deInstantiate(polyType.poly!)
                     builder.resolveInstantiation(newInst!)
                     synthOk = builder.instantiationIsConcrete(newInst!)
+                  }
+                  if !synthOk {
+                    // Ground params suffice: only the RESULT slot stays
+                    // free through the recursive fixpoint, and the
+                    // definition derives it from its emitted return path.
+                    synthOk = builder.instantiationParamsConcrete(newInst!)
                   }
                   if synthOk {
                     if callee.type == FuncType.Struct {

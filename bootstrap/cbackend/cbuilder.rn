@@ -205,6 +205,12 @@ class CBuilder(self, tc: types.TypeChecker) {
   // so per-spec bodies must read their param types from here instead.
   self.currentEmittingParamTuple = null(types.Type)
   self.currentEmittingParamFn = null(db.Function)
+  // Ground result types of emitted specializations, by spec name.
+  // Nested on-demand emissions complete bottom-up, so a parent spec can
+  // derive its own result from its recursive call's emitted spec.
+  self.emittedSpecNames = arrayof(string)
+  self.emittedSpecResults = arrayof(types.Type)
+  self.deriveDepth = 0u32
   self.insertDependencyStack(DependencyStack())
 
   // Re-run the round for the spec currently being emitted.  Nested
@@ -221,6 +227,24 @@ class CBuilder(self, tc: types.TypeChecker) {
         }
       }
     }
+  }
+
+  func recordSpecResult(self, name: string, ty: types.Type) {
+    self.emittedSpecNames.append(name)
+    self.emittedSpecResults.append(ty)
+  }
+
+  func lookupSpecResult(self, name: string) -> types.Type? {
+    // Last-recorded wins: a speculative derivation can land before the
+    // definition's authoritative record.
+    lsrN = self.emittedSpecNames.length()
+    while lsrN > 0u64 {
+      lsrN -= 1u64
+      if self.emittedSpecNames[lsrN] == name {
+        return self.emittedSpecResults[lsrN]
+      }
+    }
+    return null(types.Type)
   }
 
   func registerModuleVariable(self, name: string) {
