@@ -2151,7 +2151,31 @@ class TypeChecker(self) {
 
       Type.TypeClass.Polymorphic => {
         f2 = ty.poly!.open(self.unifier, &self.unifier.newVar())
-        return self.apply(f2, args, location)
+        apPreErrs = self.countTypeErrors()
+        self.unifier.constraintFail = false
+        apRes = self.apply(f2, args, location)
+        if isnull(apRes) && self.unifier.constraintFail {
+          // The generalized type carries a constraint FROZEN at the
+          // definition walk (a choice arm bound a then-free template
+          // var: abs's param wears Negate's f32|f64|Int arm and
+          // rejects u32 although the UINT arm exists).  Retry with the
+          // opened copy's constraints STRIPPED; the demand round
+          // re-derives arm selection inside the body, where the
+          // concrete types pick the right arms — and reports errors
+          // there if none fits.
+          while self.countTypeErrors() > apPreErrs {
+            self.popTypeError()
+          }
+          f3 = ty.poly!.open(self.unifier, &self.unifier.newVar())
+          apFrees = arrayof(Type)
+          apFrees = self.collectFreeTyvars(f3, apFrees)
+          for apV in apFrees {
+            apV.tyvar.constraint = null(Type)
+          }
+          apRes = self.apply(f3, args, location)
+        }
+        self.unifier.constraintFail = false
+        return apRes
       }
 
       Type.TypeClass.Choice => {

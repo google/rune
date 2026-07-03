@@ -67,6 +67,10 @@ class TypeUnifier(self) {
   // the expression dispatches to the user operator (heapsort's
   // Element.value < Element.value with Foo values).
   self.userOpClasses = arrayof(string)
+  // Set when the most recent unify failure was a tyvar-CONSTRAINT
+  // rejection (not a structural mismatch); apply() reads and clears it
+  // to decide whether a constraint-relaxed retry is worthwhile.
+  self.constraintFail = false
   self.openLog = arrayof(TyvarInstantiation)
 
   func newVar(self) -> i32 {
@@ -304,6 +308,7 @@ class TypeUnifier(self) {
           }
         }
         if !uocExempt {
+          self.constraintFail = true
           return TypeError("Type %s failed to satisfy tyvar constraint %s."
                            % (ty.toString(), tyvar.constraint.toString()),
                            location)
