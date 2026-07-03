@@ -5283,6 +5283,16 @@ class TypeChecker(self) {
           }
           kFound = null(Type)
           kDistinct = arrayof(string)
+          // Pre-size against the legacy runtime's replicateArrayData
+          // regrowth corruption (heap-state-sensitive; same landmine as
+          // DependencyList): appends that REGROW this array segfault
+          // when allocator state aligns (the suite's heapqtest compile).
+          kdi = 0u32
+          while kdi < 16u32 {
+            kDistinct.append("")
+            kdi += 1u32
+          }
+          kDistinct.resize(0u64)
           kpi = kty.poly.instantiations
           if !isnull(kpi) {
             for kinst in kpi {

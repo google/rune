@@ -650,6 +650,44 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       builder.deInstantiate(fntype.poly!)
       return
     }
+    // A parameter that resolved to a POLYMORPHIC type (a generic
+    // function passed as a VALUE — funcptr's arraySum distancefunc)
+    // has no C type of its own; this spec's ROUND binds the body's
+    // application and resolves it to the concrete fn type.  Run the
+    // round EARLY and re-read the slots (the later materializeFor
+    // cache-hits).  Still-poly after the round => skip the spec: a
+    // call site emits it once bindings resolve, and a null C type
+    // panics cParameter.
+    ppPoly = false
+    for ppT in paramTypes {
+      if builder.typechecker.resolve(ppT).type == types.Type.TypeClass.Polymorphic {
+        ppPoly = true
+      }
+    }
+    if ppPoly {
+      builder.materializeFor(self, specializedName)
+      ppNew = arrayof(types.Type)
+      ppI = 0u64
+      for ppVar in self.variables() {
+        if isnull(ppVar.typedValue) {
+          ppNew.append(paramTypes[ppI])
+        } else {
+          ppNew.append(builder.typechecker.resolve(ppVar.typedValue!))
+        }
+        ppI += 1u64
+      }
+      paramTypes = ppNew
+      ppStill = false
+      for ppT2 in paramTypes {
+        if builder.typechecker.resolve(ppT2).type == types.Type.TypeClass.Polymorphic {
+          ppStill = true
+        }
+      }
+      if ppStill {
+        builder.deInstantiate(fntype.poly!)
+        return
+      }
+    }
     builder.markEmitted(specializedName)
     builder.openScope()
     builder.openParamList()
