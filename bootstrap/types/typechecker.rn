@@ -969,6 +969,47 @@ class TypeChecker(self) {
     return rSlot
   }
 
+  // The number of DISTINCT concrete instance types among a class's
+  // recorded constructor instantiations (typechecker-side mirror of the
+  // builder's classConcreteSigCount).
+  func classSigCount(self, info: ClassInfo) -> u64 {
+    if isnull(info.fn) {
+      return 0u64
+    }
+    cscTy = info.fn.typedValue
+    if isnull(cscTy) {
+      return 0u64
+    }
+    if cscTy.type != Type.TypeClass.Polymorphic {
+      return 0u64
+    }
+    cscSigs = arrayof(string)
+    cscPi = cscTy.poly.instantiations
+    if !isnull(cscPi) {
+      for cscInst in cscPi {
+        if !isnull(cscInst.type) {
+          cscR = self.resolve(cscInst.type!)
+          if cscR.type == Type.TypeClass.Function {
+            cscRes = self.resolve(cscR.function.result!)
+            if cscRes.type == Type.TypeClass.Typename && !self.hasFreeVars(cscRes) {
+              cscStr = cscRes.toString()
+              cscSeen = false
+              for cscS in cscSigs {
+                if cscS == cscStr {
+                  cscSeen = true
+                }
+              }
+              if !cscSeen {
+                cscSigs.append(cscStr)
+              }
+            }
+          }
+        }
+      }
+    }
+    return cscSigs.length()
+  }
+
   // Connect the body's return type to the function's result variable so
   // the call site's type resolves under the active instantiation.  Also
   // used on its own when a signature is already materialized: each

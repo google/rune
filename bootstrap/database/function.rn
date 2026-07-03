@@ -997,7 +997,12 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     if mfn.type != types.Type.TypeClass.Function {
       return mfn
     }
-    if !builder.typechecker.hasFreeVars(mfn!) {
+    // A bare-knot result needs the same repair as a free one: a recording
+    // baked while its class was still single-signature keeps the knot
+    // (findEntry's template result IS `Entry?`), and the knot is
+    // ambiguous once a second signature exists.
+    mrfResKnot = builder.typechecker.hasBareGenericKnot(mfn.function.result!)
+    if !builder.typechecker.hasFreeVars(mfn!) && !mrfResKnot {
       return mfn
     }
     if builder.typechecker.hasFreeVars(mfn.function.params!) {
@@ -1020,10 +1025,14 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
 
   // Generate one specialization of a class method.  fnInstType is the
   // method's resolved function type, including the self parameter.
-  func genCMethodInstance(self: Function, builder: c.CBuilder, fnInstType: types.Type) {
-    if fnInstType.type != types.Type.TypeClass.Function {
+  func genCMethodInstance(self: Function, builder: c.CBuilder, fnInstType0: types.Type) {
+    if fnInstType0.type != types.Type.TypeClass.Function {
       return
     }
+    // Repair a free or bare-knot RESULT here, the single choke point:
+    // several callers (the on-demand emitters) pass resolve(scope)
+    // directly, and a knot result survives every other filter.
+    fnInstType = self.repairMethodResult(builder, fnInstType0)
     methodName = builder.methodDefCName(fnInstType, self.sym.name)
     if builder.alreadyEmitted(methodName) {
       return
