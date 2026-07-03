@@ -409,6 +409,45 @@ class Statement(self, block: Block, type: StateType, location: Location) {
 
     assert self.expr.type == ExprType.List
 
+    // Pre-evaluate CALL arguments into temporaries BEFORE resetting the
+    // shared writer.  A call whose own body runs println resets and
+    // flushes GlobalStringWriter; evaluating it mid-line would clobber
+    // the pieces of THIS line already written (the prefix of
+    // `println "x = ", f()` vanished).  Legacy composes the value first,
+    // then the line.  Only NON-wide direct calls are hoisted (they take
+    // the plain print branch below); other args have no writer side
+    // effect, and a wide result takes a different branch.
+    prePrintHas = arrayof(bool)
+    prePrintTemps = arrayof(c.CExpr?)
+    prePrintTypes = arrayof(types.Type)
+    for ppExpr in self.expr.childExprs() {
+      ppHoisted = false
+      if ppExpr.type == ExprType.Call && !ppExpr.isType {
+        ppTy = ppExpr.resolvedArgType(builder, 0u32, self.lexicalRootBlock())
+        if builder.wideWidth(ppTy) == 0u32 {
+          ppCType = builder.genCType(ppTy)
+          if !isnull(ppCType) {
+            ppSym = Sym.new("_rnprint_%u" % builder.printTempCounter)
+            builder.printTempCounter += 1u64
+            ppTempId = builder.declareLocal(ppSym, ppCType)
+            ppVal = ppExpr.genC(builder)
+            builder.addStatement(self.location,
+                builder.cBinaryOperator(self.location,
+                    c.CBinaryOperator.Type.Assign, ppTy, ppTempId, ppVal))
+            prePrintTemps.append(ppTempId)
+            prePrintTypes.append(ppTy)
+            prePrintHas.append(true)
+            ppHoisted = true
+          }
+        }
+      }
+      if !ppHoisted {
+        prePrintTemps.append(null(c.CExpr))
+        prePrintTypes.append(types.NONETY())
+        prePrintHas.append(false)
+      }
+    }
+
     self.genCCall(builder, c.CRuntimeFunction.GlobalStringWriterReset, null(c.CExpr))
 
     // Special case -- when argument is a single string.
@@ -422,6 +461,7 @@ class Statement(self, block: Block, type: StateType, location: Location) {
       call = builder.cCall(self.location, "tostring_string_t", cexpr)
       builder.addStatement(self.location, call)
     } else {
+      ppIdx = 0u64
       for expr in self.expr.childExprs() {
         cexpr = null(c.CExpr)
         if expr.isType {
@@ -570,6 +610,26 @@ class Statement(self, block: Block, type: StateType, location: Location) {
               builder.cCall(self.location, "tostring_string_t", c.CExpr(widePrintArgs)))
           cexpr = wideStr
         }
+        if isnull(cexpr) && prePrintHas[ppIdx] {
+          // This CALL arg was hoisted into a temp before the reset;
+          // print the temp so its side effects (nested prints) already
+          // ran and did not clobber this line.
+          cexpr = prePrintTemps[ppIdx]
+          ppPrintTy = prePrintTypes[ppIdx]
+          ppCt = builder.genCType(ppPrintTy)
+          assert !isnull(ppCt)
+          ppCtName = ppCt.toString()
+          if ppCtName == "string" {
+            ppSArgs = c.CExprList()
+            ppSArgs.append(builder.cStringLiteral("%s"))
+            ppSArgs.append(cexpr!)
+            builder.addStatement(self.location, builder.cCall(self.location,
+                "tostring_string_t", c.CExpr(ppSArgs)))
+          } else {
+            builder.addStatement(self.location, builder.cCall(self.location,
+                "tostring_%s_t" % ppCtName, cexpr))
+          }
+        }
         if isnull(cexpr) {
           cexpr = expr.genC(builder)
           printTy = expr.typedValue
@@ -620,6 +680,7 @@ class Statement(self, block: Block, type: StateType, location: Location) {
           }
           builder.addStatement(self.location, call)
         }
+        ppIdx += 1u64
       }
     }
     if newline {

@@ -211,6 +211,9 @@ class CBuilder(self, tc: types.TypeChecker) {
   self.emittedSpecNames = arrayof(string)
   self.emittedSpecResults = arrayof(types.Type)
   self.deriveDepth = 0u32
+  // Monotonic counter for generated temporaries (e.g. print-argument
+  // pre-evaluation locals), unique across the whole emission.
+  self.printTempCounter = 0u64
   self.insertDependencyStack(DependencyStack())
 
   // Re-run the round for the spec currently being emitted.  Nested
