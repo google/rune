@@ -1545,7 +1545,10 @@ class Expr(self, type: ExprType, location: Location) {
         // typed <t>0 through a typeof chain) declares nothing.  The
         // RHS's recovery yields the concrete type.
         eqL = builder.typechecker.resolve(left.typedValue!)
-        if (eqL.type == types.Type.TypeClass.Polymorphic) {
+        if (eqL.type == types.Type.TypeClass.Polymorphic ||
+            (argTypeUnderResolved(builder, eqL) &&
+             (right.type == ExprType.Cast ||
+              right.type == ExprType.CastTrunc))) {
           eqRec = right.resolvedArgType(builder)
           if (!builder.typechecker.hasFreeVars(eqRec) &&
               eqRec.type != types.Type.TypeClass.Polymorphic) {
@@ -1581,9 +1584,32 @@ class Expr(self, type: ExprType, location: Location) {
         }
       }
     }
+    rPre = null(c.CExpr)
+    if self.type == ExprType.Equals && (right.type == ExprType.Funcaddr ||
+        right.type == ExprType.Cast || right.type == ExprType.CastTrunc) {
+      // Generate the RHS FIRST: a funcaddr emits (and records) the
+      // referenced specialization, and the LHS's declaration recovery
+      // reads that record (funcptr's distancefunc local).
+      rPre = right.genC(builder)
+      if left.type == ExprType.Ident && !isnull(left.typedValue) {
+        eqL2 = builder.typechecker.resolve(left.typedValue!)
+        if (eqL2.type == types.Type.TypeClass.Polymorphic ||
+            argTypeUnderResolved(builder, eqL2)) {
+          eqRec2 = right.resolvedArgType(builder)
+          if (!builder.typechecker.hasFreeVars(eqRec2) &&
+              eqRec2.type != types.Type.TypeClass.Polymorphic) {
+            left.typedValue = eqRec2
+          }
+        }
+      }
+    }
     l = left.genC(builder)
     self.bindingInstance = false
-    r = right.genC(builder)
+    if isnull(rPre) {
+      r = right.genC(builder)
+    } else {
+      r = rPre!
+    }
 
     // A class-typed operand dispatches to a user operator BEFORE wide
     // arithmetic: `scalar * Point` with a u255 scalar is Point's

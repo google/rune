@@ -1248,6 +1248,21 @@ class CBuilder(self, tc: types.TypeChecker) {
     ctype = null(CTypeExpr)
     if !isnull(type) {
       ty = self.pinKnotsForEmission(self.typechecker.resolve(type!))
+      if (bindingInstance && ty.type == types.Type.TypeClass.Function &&
+          !self.typechecker.hasFreeVars(ty)) {
+        // Declaring a LOCAL that holds a function VALUE: its fnptr
+        // typedef must exist, dependency-ordered exactly like a
+        // function-pointer PARAMETER (function.rn's fundec path).
+        // Ensure ONLY here on the declaration path: read-site ensures
+        // panic on free types and emit typedefs out of order.
+        if !isnull(self.currentEmittingFn) {
+          self.ensureFunctionPtrDeclared(self.currentEmittingFn.location, ty)
+          fnptrCType = self.typeGenerator.genCFunction(ty.function!)
+          if !isnull(fnptrCType) {
+            self.noteDependency(fnptrCType.cDefinedType.name)
+          }
+        }
+      }
       // A bare function name (or a function-pointer value) is not a variable
       // to declare here; leave its C type null, exactly as when genCFunction
       // was a stub.  Function-pointer parameters get their fnptr type through
@@ -1258,6 +1273,14 @@ class CBuilder(self, tc: types.TypeChecker) {
           // Anything referencing a class instance needs its struct typedef.
           self.dependencyStack.append(self.classCName(ty) + "_class")
         }
+      } else if (bindingInstance &&
+          isnull(self.findFunction(symbol.name)) &&
+          !self.typechecker.hasFreeVars(ty)) {
+        // NOT a function name: a LOCAL holding a function VALUE
+        // declares with its fnptr typedef on its FIRST ASSIGNMENT
+        // (reads keep the null ctype — a specialized C function
+        // name read through cIdentifier must not declare a local).
+        ctype = self.typeGenerator.genCType(ty)
       }
     }
     id = self.identifierScope.getIdentifier(symbol, ctype, bindingInstance, false)
