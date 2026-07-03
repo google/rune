@@ -2472,6 +2472,18 @@ class CProgram(self) {
       return
     }
     if depchain.contains(name) {
+      // A recursive dependency chain: emit only the prototype.  An
+      // array-of-class typedef's PROTO still names the element struct
+      // type, so emit its dependencies' prototypes (the class's forward
+      // typedef) first — prototypes are terminal and idempotent.
+      if dec.type == CDeclaration.Type.Array {
+        for arrDepName in dec.dependencies {
+          arrDepDec = self.findCDeclaration(arrDepName)
+          if !isnull(arrDepDec) {
+            arrDepDec.emitProto(e)
+          }
+        }
+      }
       dec.emitProto(e)
     } else {
       depchain.push(name)

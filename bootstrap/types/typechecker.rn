@@ -4833,6 +4833,20 @@ class TypeChecker(self) {
     // through), so quantify it unconditionally.
     resultFreeVars = arrayof(Type)
     resultFreeVars = self.collectFreeTyvars(returnType!, resultFreeVars)
+    // A MODULE-LEVEL function has no enclosing type context at all: any
+    // variable still free in its parameters (a class's template variable
+    // chained in through a hoisted relation helper's argument) is per-call
+    // too.  Methods keep the window gate: their enclosing class's
+    // variables are quantified via classBoundVars above.
+    isModuleFn = true
+    if !isnull(fn.parentFunction) {
+      if fn.parentFunction.type == db.FuncType.Constructor {
+        isModuleFn = false
+      }
+    }
+    if isModuleFn {
+      resultFreeVars = self.collectFreeTyvars(paramType, resultFreeVars)
+    }
     for rfv in resultFreeVars {
       exists = false
       for bv in boundVars {
