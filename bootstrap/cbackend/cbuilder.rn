@@ -731,6 +731,24 @@ class CBuilder(self, tc: types.TypeChecker) {
     self.emittedClassDecls.append(name)
   }
 
+  // True when every parameter binding of the instantiation is concrete.
+  // The result slot (generalized free result variables sit at the end of
+  // varBindings) may still be a free variable recorded at a call site;
+  // requiring it to be concrete would skip exactly the instantiations
+  // whose emission (with result repair) is wanted.  Call
+  // resolveInstantiation first.
+  func instantiationParamsConcrete(self, inst: types.TyvarInstantiation) -> bool {
+    nb = inst.varBindings.length()
+    for i in range(nb) {
+      if i + 1 < nb {
+        if self.typechecker.hasFreeVars(inst.varBindings[i]) {
+          return false
+        }
+      }
+    }
+    return true
+  }
+
   // Re-typecheck a deferred body once per emitted specialization, under the
   // caller's active instantiation bindings.  The body's expression types are
   // shared storage: each signature must re-derive them under its own

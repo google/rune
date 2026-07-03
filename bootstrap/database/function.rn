@@ -249,11 +249,14 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
        if !isnull(pi) {
          for instantiation in pi {
            builder.resolveInstantiation(instantiation)
-           // Instantiations whose bindings still contain type variables only
-           // resolve under an outer instantiation (e.g. a call from a
-           // polymorphic class constructor); they are emitted on demand from
-           // the call site while that outer binding is active.
-           if builder.instantiationIsConcrete(instantiation) {
+           // Instantiations whose parameter bindings still contain type
+           // variables only resolve under an outer instantiation (e.g. a
+           // call from a polymorphic class constructor); they are emitted
+           // on demand from the call site while that outer binding is
+           // active.  A free RESULT slot (a generalized result variable
+           // recorded at a call site) is emittable: the body's return
+           // resolves it.
+           if builder.instantiationParamsConcrete(instantiation) {
              self.genCPolyInstantiation(builder, instantiation)
            }
          }
@@ -440,6 +443,16 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     // types, matching genSpecializationName at call sites.
     paramTuple = types.Type(types.TupleType(paramTypes))
     specializedName = paramTuple.genSpecializationName(self.sym.name)
+    // A parameter that does not resolve under these bindings (a variable
+    // outside the poly's generalized set, e.g. an operator constraint
+    // variable) cannot emit; the call site emits this specialization on
+    // demand under its outer bindings.
+    for pt in paramTypes {
+      if builder.typechecker.hasFreeVars(pt) {
+        builder.deInstantiate(fntype.poly!)
+        return
+      }
+    }
     if builder.alreadyEmitted(specializedName) {
       builder.deInstantiate(fntype.poly!)
       return
@@ -854,7 +867,7 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       if !isnull(pi) {
         for instantiation in pi {
           builder.resolveInstantiation(instantiation)
-          if builder.instantiationIsConcrete(instantiation) {
+          if builder.instantiationParamsConcrete(instantiation) {
             builder.instantiate(fntype.poly!, instantiation)
             // Pin unconstrained class-instance parameters (a relation
             // _compare's children stay bare knots under the recorded

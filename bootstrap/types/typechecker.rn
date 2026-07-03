@@ -4640,6 +4640,27 @@ class TypeChecker(self) {
         }
       }
     }
+    // A variable still free in the RESULT type must be per-call: two call
+    // sites of the same function each record their own result slot, and
+    // one shared free result variable can never satisfy both (dicttest's
+    // value = dict.find(...) at two signatures).  The id-window gate above
+    // protects enclosing-context variables inside parameters; a residual
+    // free variable in the result is this function's own unresolved
+    // return (typically a callee's un-generalized result chained
+    // through), so quantify it unconditionally.
+    resultFreeVars = arrayof(Type)
+    resultFreeVars = self.collectFreeTyvars(returnType!, resultFreeVars)
+    for rfv in resultFreeVars {
+      exists = false
+      for bv in boundVars {
+        if bv.tyvar.id == rfv.tyvar.id {
+          exists = true
+        }
+      }
+      if !exists {
+        boundVars.append(rfv)
+      }
+    }
     if boundVars.length() > 0 {
       fnType = Type(PolymorphicType(boundVars, fnType))
     }
