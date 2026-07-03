@@ -121,6 +121,24 @@ allocfree defaultMethods`) — length-prefixed strings / object-pool, orthogonal
     - `dicttest` → the one TRUE C1 remainder: two Dict signatures in one program;
       `adoptConcreteBaseTy` (unique-concrete-instantiation) is inherently ambiguous there.
       Needs real per-signature materialization (C1 below).
+- **✅ C1 COMPLETE (2026-07-03, commits `b0f087d..2d3aa0c`): suite 192/205 — `dicttest`
+  GREEN (the C1 acceptance test: two Dict signatures in one program), floor raised to 192,
+  zero drops.** The landed design (per-signature materialization, superseding the
+  deferred-retypecheck-only sketch below): per-spec body rounds (`materializeSpec`,
+  1-entry `lastMaterializedSpec` cache) driven by demand (`demandCallResult` via a
+  CalleeRecord stack) and by the emission sweeps (multi-signature classes only);
+  constructor rounds with canonical field reset + per-spec `FieldBake` snapshots (a
+  RELATION off ClassInfo — array fields corrupt) + back-pointer pinning; round-baked
+  recordings (`TyvarInstantiation.baked`) are the only ones multi-sig sweeps trust;
+  `instantiate()` rebinds stale-baked boundVars with restore, gated by an
+  `activeTrailIds` registry; param `Variable.typedValue`s re-pointed at generalized
+  signature slots; `emitMethodOnDemand`'s synthesis drives through `instantiate()`;
+  free result vars generalize unconditionally; and bare class knots pin against the
+  ACTIVE EMISSION frame's anchor (`concretizeKnotsW` + `pinKnotsForEmission` at
+  cIdentifier/argTypePiece/genCType).  The four typecheck-gated container tests all
+  pass (`in dictitr heapqtest dicttest`).  NOTE for C3: the trail registry + rebind
+  machinery IS the fresh-instantiation routing infrastructure; the remaining C3 gap is
+  extending the demand hook to PLAIN-FUNCTION (Ident) calls.
 - **Stage C — Iterative monomorphization FIRST (book-specified, lower risk, post-Check pass):**
   import the book's invariants verbatim — a **fixpoint worklist** over `(fn, concrete-sig)`
   ("converges in 2–3 iterations"), and a **`validate_post_mono` gate** asserting no residual
