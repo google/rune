@@ -2701,11 +2701,21 @@ class TypeChecker(self) {
         if isnull(modTy) {
           return null(Type)
         }
-        te = self.unify(modTy!, UINTEGER())
-        if !isnull(te) {
-          self.typeError(
-            "Modulus must be an unsigned integer: %s" % te.msg, expr.location)
-          return null(Type)
+        // A still-FREE modulus (a template class's <m> during its
+        // definition walk) must not bind to the adaptable UINTEGER
+        // STRUCTURE: that freezes the class's type slots as AnyInt, and
+        // the later concrete construction (u255) can only check against
+        // the structure, never narrow it (edwards2's whole class family
+        // emitted u64-defaulted).  Leave it free; the constructor call
+        // binds it concrete, and the constraint checks then.
+        modFreeVar = self.resolve(modTy!).type == Type.TypeClass.Var
+        if !modFreeVar {
+          te = self.unify(modTy!, UINTEGER())
+          if !isnull(te) {
+            self.typeError(
+              "Modulus must be an unsigned integer: %s" % te.msg, expr.location)
+            return null(Type)
+          }
         }
         // A modular congruence `a == b mod m` (also !=, <, <=, >, >=) reduces
         // each operand into [0, m) and then compares, so the operands need

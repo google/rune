@@ -1554,20 +1554,24 @@ class Expr(self, type: ExprType, location: Location) {
     self.bindingInstance = false
     r = right.genC(builder)
 
-    wideW = builder.wideWidth(left.typedValue)
-    if wideW == 0u32 {
-      wideW = builder.wideWidth(right.typedValue)
-    }
-    if wideW > 0u32 && self.type != ExprType.Equals {
-      return self.genCWideBinaryOp(builder, l, r, left, right, wideW)
-    }
-
+    // A class-typed operand dispatches to a user operator BEFORE wide
+    // arithmetic: `scalar * Point` with a u255 scalar is Point's
+    // operator *, not wide_mul (the u64 edwards test masked this
+    // ordering; only the wide variant exposed it).
     if (self.type != ExprType.Equals &&
         (builder.isClassType(left.typedValue) || builder.isClassType(right.typedValue))) {
       uop = self.genCUserOperator(builder, l, r, left, right)
       if !isnull(uop) {
         return uop!
       }
+    }
+
+    wideW = builder.wideWidth(left.typedValue)
+    if wideW == 0u32 {
+      wideW = builder.wideWidth(right.typedValue)
+    }
+    if wideW > 0u32 && self.type != ExprType.Equals {
+      return self.genCWideBinaryOp(builder, l, r, left, right, wideW)
     }
 
     // String ordering comparisons are lexicographic, not the char* pointer
