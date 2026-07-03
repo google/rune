@@ -351,6 +351,16 @@ class TypeChecker(self) {
   self.numTypeErrorsReported = 0
   // Set while typechecking a class constructor or its methods.
   self.currentClassInfo = null(ClassInfo)
+  // True while apply() is attempting one arm of a Choice: a failed arm
+  // must fail CLEANLY so the next arm gets its turn — the Polymorphic
+  // arm's constraint-relaxed retry would accept anything and shadow the
+  // right arm (the %-format NUM arm froze operands to string in gf2).
+  self.applyingChoiceArm = false
+  // Names assigned at MODULE level (any module walked this run): the
+  // one class of symbol whose pre-typecheck placeholder var may be
+  // REUSED across scopes (forward references from functions to module
+  // globals typechecked later).
+  self.moduleGlobalNames = arrayof(string)
   self.currentSelfType = null(Type)
   self.classBoundVars = arrayof(Type)
   // Overloaded operator functions and their types, in definition order.
@@ -2183,7 +2193,7 @@ class TypeChecker(self) {
         apPreErrs = self.countTypeErrors()
         self.unifier.constraintFail = false
         apRes = self.apply(f2, args, location)
-        if isnull(apRes) && self.unifier.constraintFail {
+        if isnull(apRes) && self.unifier.constraintFail && !self.applyingChoiceArm {
           // The generalized type carries a constraint FROZEN at the
           // definition walk (a choice arm bound a then-free template
           // var: abs's param wears Negate's f32|f64|Int arm and
@@ -2223,7 +2233,10 @@ class TypeChecker(self) {
            // unification from rejected overload attempts froze template
            // vars across the whole D-binding cluster.
            self.unifier.beginBindTrail()
+           apPrevChoiceArm = self.applyingChoiceArm
+           self.applyingChoiceArm = true
            ty2 = self.apply(choice, args, location)
+           self.applyingChoiceArm = apPrevChoiceArm
            if !isnull(ty2) {
              self.unifier.commitBindTrail()
              // make sure that there are no type errors -- we can ignore
@@ -2618,7 +2631,25 @@ class TypeChecker(self) {
     if !isnull(prior) {
       rp = self.resolve(prior!)
       if rp.type == Type.TypeClass.Var {
-        return self.newSymbol(symbol, prior)
+        srReuse = rp.tyvar.id >= 0i32
+        if !srReuse {
+          // A NEGATIVE resolution is a closed generic scope's leftover
+          // chain (generalization re-points locals through opened/bound
+          // vars): reusing it welds unrelated functions together --
+          // gf2Mul's locala/localb chain (its a~b legitimately unified)
+          // merged gf2PowMod's a and b params through the interned
+          // syms.  Only a module GLOBAL may reuse through a negative
+          // chain (edwards2's m/d referenced from methods before the
+          // module statements typecheck).
+          for srMg in self.moduleGlobalNames {
+            if srMg == symbol.name {
+              srReuse = true
+            }
+          }
+        }
+        if srReuse {
+          return self.newSymbol(symbol, prior)
+        }
       }
     }
     return self.newSymbol(symbol, null(Type))
@@ -4548,6 +4579,9 @@ class TypeChecker(self) {
             if preAssign.type == db.ExprType.Equals {
               preLhs = preAssign.firstChildExpr!
               preRhs = preLhs.nextExprChildExpr!
+              if preLhs.type == db.ExprType.Ident {
+                self.moduleGlobalNames.append(preLhs.val.symVal.name)
+              }
               if (preLhs.type == db.ExprType.Ident &&
                   (preRhs.type == db.ExprType.Array ||
                    preRhs.type == db.ExprType.Constant)) {
