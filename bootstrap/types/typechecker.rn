@@ -937,11 +937,7 @@ class TypeChecker(self) {
       // record garbage instantiations; leave those to emission recovery.
       return
     }
-    if self.hasNoneType(oft.function.params!) {
-      // none-typed arguments come from unreachable typeswitch arms; their
-      // growing recursions typecheck vacuously and spiral the worklist.
-      return
-    }
+
     if self.materializeDepth >= MaterializeRecursionLimit {
       return
     }
@@ -2243,6 +2239,33 @@ class TypeChecker(self) {
 
   // True if a typeswitch case pattern matches the resolved scrutinee type.
   func typePatternMatches(self, pattern: Type, actual: Type) -> bool {
+    // The empty tuple and `none` are the same unit type: a `()` case
+    // pattern must match a none-typed scrutinee (the turing test's
+    // recursion base case reaches the typeswitch as none after
+    // decParens((())) resolves), and vice versa.
+    patIsUnit = false
+    if pattern.type == Type.TypeClass.Tuple {
+      if pattern.tuple.elements.length() == 0u64 {
+        patIsUnit = true
+      }
+    }
+    if pattern.type == Type.TypeClass.Typename {
+      if isnull(pattern.tyname.params) && pattern.tyname.name.name == "none" {
+        patIsUnit = true
+      }
+    }
+    if patIsUnit {
+      if actual.type == Type.TypeClass.Tuple {
+        if actual.tuple.elements.length() == 0u64 {
+          return true
+        }
+      }
+      if actual.type == Type.TypeClass.Typename {
+        if isnull(actual.tyname.params) && actual.tyname.name.name == "none" {
+          return true
+        }
+      }
+    }
     if pattern.type == Type.TypeClass.Typename && isnull(pattern.tyname.params) {
       pname = pattern.tyname.name.name
       if pname == "Class" {
