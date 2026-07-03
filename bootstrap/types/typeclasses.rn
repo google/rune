@@ -1097,6 +1097,13 @@ class Type(self, ty: TypeVar | IntType | AnyIntType | FloatType | TypeName | Cho
       // here, but that needs positive-var generalization to even typecheck.
       return ""
     }
+    if self.type == Type.TypeClass.Polymorphic {
+      // A still-generalized function VALUE argument (the recorded
+      // instantiation captured the callee's whole poly): like Function,
+      // it contributes nothing — the call site composes with the
+      // concrete fn type, which also contributes nothing.
+      return ""
+    }
     return self.toString()
   }
 

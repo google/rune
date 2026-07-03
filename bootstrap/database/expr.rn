@@ -1280,6 +1280,17 @@ class Expr(self, type: ExprType, location: Location) {
     valueChild = typeChild.nextExprChildExpr!
     v = valueChild.genC(builder)
     target = builder.typechecker.resolve(self.typedValue!)
+    if (argTypeUnderResolved(builder, target) ||
+        target.type == types.Type.TypeClass.Polymorphic) {
+      // The cast's slot holds one round's binding (or the callee's
+      // whole poly): <t>0 with t = typeof(distancefunc(array[0])) —
+      // recover the target from the TYPE child's declaration chain.
+      tgtRec = typeChild.resolvedArgType(builder)
+      if (!builder.typechecker.hasFreeVars(tgtRec) &&
+          tgtRec.type != types.Type.TypeClass.Polymorphic) {
+        target = tgtRec
+      }
+    }
     // Casting a string to string is the identity; strings are char buffers.
     if (builder.typechecker.isStringType(self.typedValue) &&
         builder.typechecker.isStringType(valueChild.typedValue)) {
@@ -1953,6 +1964,10 @@ class Expr(self, type: ExprType, location: Location) {
       } else if rIndexee.type == types.Type.TypeClass.Array {
         return builder.typechecker.resolve(rIndexee.array.elementType!)
       }
+    } else if self.type == ExprType.Typeof {
+      // typeof(expr): the value IS the operand's type.
+      return self.firstChildExpr.resolvedArgType(builder, depth + 1u32,
+          scopeBlock)
     } else if self.type == ExprType.Funcaddr {
       // &fn(args): the value's type is the CONCRETE fn type of the
       // specialization the args select — the expression slot holds the
@@ -2068,6 +2083,16 @@ class Expr(self, type: ExprType, location: Location) {
       // call's recovered argument types.
       pcCallee = self.firstChildExpr!
       if pcCallee.type == ExprType.Ident {
+        // A call through a LOCAL holding a function VALUE: the local's
+        // recovered type is the concrete fn type (funcaddr/decl chase);
+        // the call's result is ITS result.
+        pcLocalTy = pcCallee.resolvedArgType(builder, depth + 1u32, scopeBlock)
+        if pcLocalTy.type == types.Type.TypeClass.Function {
+          pcLRes = builder.typechecker.resolve(pcLocalTy.function.result!)
+          if !builder.typechecker.hasFreeVars(pcLRes) {
+            return pcLRes
+          }
+        }
         pcFn = builder.findFunction(pcCallee.val.symVal.name)
         if !isnull(pcFn) {
           pcTy = pcFn.typedValue
