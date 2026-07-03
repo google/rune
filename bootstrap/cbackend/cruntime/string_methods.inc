@@ -55,6 +55,20 @@ static inline uint64_t string_length(const char *s) {
   return (uint64_t)strlen(s);
 }
 
+// Materialize a string LITERAL into a headed heap buffer of exactly
+// |len| bytes (the literal's true byte length, known at emit time),
+// copying all |len| bytes including any embedded NULs.  A bare C string
+// literal has no header and strlen-truncates at an embedded NUL; this
+// gives value literals the same length-carrying header as other
+// producers so string_length is binary-safe for them too.
+static inline char *rn_strlit(const char *lit, size_t len) {
+  char *r = rn_stralloc(len);
+  if (len > 0) {
+    memcpy(r, lit, len);
+  }
+  return r;
+}
+
 static inline char *string_append_char(const char *s, uint8_t c) {
   size_t len = string_length(s);
   char *r = rn_stralloc(len + 1);

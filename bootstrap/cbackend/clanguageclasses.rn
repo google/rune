@@ -462,7 +462,15 @@ class CLiteral(self, value: string | bool | db.Bigint | f64, printf: bool) {
         e.write("\"" + escapeString(e, self.stringValue, true) + "\"")
       }
       CLiteral.Type.String => {
-        e.write("\"%s\"" % escapeString(e, self.stringValue, false))
+        // A string VALUE literal is materialized into a length-headed
+        // heap buffer so string_length is binary-safe for it (a bare C
+        // literal strlen-truncates at an embedded NUL).  The true byte
+        // length is known here; embedded NULs in the escaped literal are
+        // copied by rn_strlit up to that length.  (Printf FORMAT strings
+        // are CLiteral.Type.PrintfString above and stay bare.)
+        e.needStringMethods()
+        e.write("rn_strlit(\"%s\", %u)" % (escapeString(e, self.stringValue, false),
+            self.stringValue.length()))
       }
       CLiteral.Type.Bool => {
         if e.printfArg {
