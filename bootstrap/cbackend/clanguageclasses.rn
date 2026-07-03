@@ -251,7 +251,7 @@ class CPointerType(self, type: CTypeExpr) {
 
 class CArrayType(self, elementType: CTypeExpr) {
   self.elementType = elementType
-  self.name = "%s_array" % self.elementType.toString()
+  self.name = "%s_array" % self.elementType.arrayElemName()
 
   func toString(self) -> string {
     return self.name
@@ -375,6 +375,22 @@ class CTypeExpr(self, type: CPrimitiveType | CPointerType | CArrayType | CDefine
       CTypeExpr.Type.Array => return self.cArrayType.toString()
       CTypeExpr.Type.Pointer => return self.cPointerType.toString()
     }
+  }
+
+  // The name used to identify an ARRAY OF this element type in generated
+  // C (typedef, init/tostring/isequal/append helpers, and the CArrayType
+  // variable rendering).  Scalar element types name by their RUNE suffix
+  // (u17, i33, f32) so two Rune widths that share a C storage type (u17
+  // and u32 both store as uint32) stay DISTINCT array types with distinct
+  // tostring width suffixes; without this they collide onto one helper
+  // that prints the wrong width.  Non-scalar elements (no runeSuffix)
+  // keep their C-type name.  Every array-name site must route through
+  // this so the pieces agree.
+  func arrayElemName(self) -> string {
+    if self.runeSuffix != "" {
+      return self.runeSuffix
+    }
+    return self.toString()
   }
 
   func emit(self, e: CEmitter) {
@@ -1849,7 +1865,10 @@ class CArrayDeclaration(self, location: db.Location, typeName: string, elementTy
       elemCType = "%s_t *" % elementTypeString
     }
     // Emit typedef ---------------------------------------------
-    e.writeln("typedef %s *%s_array_t;" % (elemCType, elementTypeString))
+    // The array TYPE name follows the Rune element name (u17_array_t),
+    // not the C storage name (uint32_array_t); the stored element keeps
+    // its C storage type (elemCType).
+    e.writeln("typedef %s *%s_array_t;" % (elemCType, self.elementType.arrayElemName()))
     e.writeln("")
 
     // Emit the init function -----------------------------------

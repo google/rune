@@ -313,7 +313,7 @@ class CRuntime(self) {
     //    cf = self.cFragment("array_append", "cbackend/cruntime/arrays/append.inc")
     //    cf.addDependencies([self.needArrayType(), self.needArrayResize()])
     //return cf
-    return "append_%s_array_t" % type.toString()
+    return "append_%s_array_t" % type.arrayElemName()
   }
 
   func needArrayConcat(self) -> CFragment {
