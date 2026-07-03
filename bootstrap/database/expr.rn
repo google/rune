@@ -3538,6 +3538,21 @@ class Expr(self, type: ExprType, location: Location) {
               if callee.type == FuncType.Constructor && !isnull(self.typedValue) {
                 te = builder.typechecker.unify(openedFn.function.result!,
                     builder.typechecker.resolve(self.typedValue!))
+                if isnull(te) {
+                  // The call's slot can carry FREE pieces (a.width's
+                  // type under an on-demand op-body emission left
+                  // Integer(u8, v-175) — genCType then panics on the
+                  // free field).  Ground the residue through the
+                  // RECOVERED argument types, trailed so a mismatch
+                  // binds nothing.
+                  builder.typechecker.unifier.beginBindTrail()
+                  ctTe2 = builder.typechecker.unify(openedFn.function.params!, argTypes)
+                  if isnull(ctTe2) {
+                    builder.typechecker.unifier.commitBindTrail()
+                  } else {
+                    builder.typechecker.unifier.rollbackBindTrail()
+                  }
+                }
               } else {
                 te = builder.typechecker.unify(openedFn.function.params!, argTypes)
               }
