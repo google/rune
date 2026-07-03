@@ -519,7 +519,24 @@ void runtime_appendArrayElement(runtime_array *array, uint8_t *data, size_t elem
   } else {
     runtime_array *sourceArray = (runtime_array*)data;
     runtime_array *destArray = (runtime_array*)dest;
-    size_t numBytes = runtime_multCheckForOverflow(sourceArray->numElements, elementSize);
+    // The source is the sub-array element being appended (e.g. a string).
+    // Its byte size is NOT numElements times the OUTER array's element size
+    // (the sub-array DESCRIPTOR size) -- that over-reads the source (the
+    // descriptor size is larger than the source's real element size) and
+    // segfaults when the over-read runs off the source's mapped page (the
+    // heap-state-sensitive "replicateArrayData landmine").  When the source
+    // is a genuine heap array (its header's back-pointer points back to it),
+    // copy its real allocation from the header, matching replicateArrayData's
+    // own recursive sub-array copy.  For a header-less source -- a string
+    // LITERAL (.rodata) or a stack array -- keep the original over-estimate,
+    // which is safe there because the surrounding page is mapped.
+    size_t numBytes;
+    if (sourceArray->data != NULL &&
+        runtime_getArrayHeader(sourceArray)->backPointer == sourceArray) {
+      numBytes = runtime_getArrayHeader(sourceArray)->allocatedWords << RN_SIZET_SHIFT;
+    } else {
+      numBytes = runtime_multCheckForOverflow(sourceArray->numElements, elementSize);
+    }
     replicateArrayData(destArray, sourceArray, numBytes, hasSubArrays);
   }
 }
