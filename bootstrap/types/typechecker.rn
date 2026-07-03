@@ -2789,6 +2789,29 @@ class TypeChecker(self) {
               expr.location)
           return null(Type)
         }
+        // A plain assignment `x = ...` whose `x` currently resolves to a
+        // UNION variable (`A | B | ...`) is a same-name collision with a
+        // foreign class's union PARAMETER: syms are interned by name, so a
+        // suspended class's union param can leak through the lookup hash
+        // (self-host: a string accumulator local `value` finding CExpr's
+        // `value: CLiteral | ...`).  A union param is never reassigned by a
+        // bare `=` in an unrelated function, so treat this as a NEW local:
+        // give it a fresh binding in the current scope, shadowing the leak,
+        // so the assignment does not corrupt the union parameter.
+        if expr.type == db.ExprType.Equals {
+          asnLhs = expr.firstChildExpr!
+          if asnLhs.type == db.ExprType.Ident {
+            asnProbe = SymbolMapping(asnLhs.val.symVal!, null(Type))
+            asnFound = self.findSymbolMapping(asnProbe)
+            if !isnull(asnFound) && !isnull(asnFound.value) {
+              asnR = self.resolve(asnFound.value!)
+              if asnR.type == Type.TypeClass.Var &&
+                  self.unifier.isUnionVar(asnR.tyvar.id) {
+                self.newSymbol(asnLhs.val.symVal!, Type(self.newTyvar()))
+              }
+            }
+          }
+        }
         left = self.expr(expr.firstChildExpr!)
         right = self.expr(expr.firstChildExpr!.nextExprChildExpr!)
         if isnull(left) || isnull(right) {
