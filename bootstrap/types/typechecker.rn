@@ -2305,7 +2305,14 @@ class TypeChecker(self) {
   func constraintType(self, typeExpr: db.Expr) -> Type {
     t = self.tryExplicitType(typeExpr)
     if isnull(t) {
-      return Type(self.newTyvar())
+      cv = self.newTyvar()
+      if typeExpr.type == db.ExprType.Bitor {
+        // A union annotation `A | B | ...` (no first-class union type):
+        // the fresh variable monomorphizes per call site, so protect it
+        // from the occurs-knot collapsing it to its enclosing class.
+        self.unifier.markUnionVar(cv.id)
+      }
+      return Type(cv)
     }
     if t.type == Type.TypeClass.AnyInt {
       // "Int"/"Uint" constraints accept any width; use a constrained type

@@ -795,6 +795,12 @@ class PolymorphicType(self, vars: Type | [Type], scope: Type,
     for boundVar in self.boundVars {
       tyvar = boundVar.tyvar!
       newFreeVar = TypeVar(varMaker(object), tyvar.constraint)
+      // Carry a union-type mark onto the fresh instantiation variable, so a
+      // union parameter stays protected from the occurs-knot across
+      // instantiation (|object| is the unifier).
+      if object.isUnionVar(tyvar.id) {
+        object.markUnionVar(newFreeVar.id)
+      }
       bindings.append(Type(newFreeVar))
       type = type.replaceVar(tyvar, newFreeVar)
     }

@@ -81,6 +81,36 @@ class TypeUnifier(self) {
   self.trailBases = arrayof(u64)
   self.trailReplaying = false
   self.openLog = arrayof(TyvarInstantiation)
+  // Type-variable ids that stand for a UNION type (`A | B | ...`), which
+  // the bootstrap resolves to a fresh tyvar (there is no first-class union
+  // type; the variable monomorphizes to a concrete member per call site).
+  // The occurs-knot in instantiateVar must NOT collapse such a variable to
+  // its own enclosing class: that self-reference arises from an incidental
+  // circular unification (a call passing the class instance around), and
+  // collapsing destroys the polymorphism the parameter's `typeswitch`
+  // relies on (self-host: CDeclaration's `typeswitch declaration`).
+  self.unionVarIds = arrayof(i32)
+
+  // Mark |id| as a union-type variable (see unionVarIds).  Idempotent.
+  func markUnionVar(self, id: i32) {
+    for existing in self.unionVarIds {
+      if existing == id {
+        return
+      }
+    }
+    self.unionVarIds.append(id)
+  }
+
+  // True if |id| is a union-type variable (directly, or by propagation
+  // through unifyTwoVars, which marks the surviving representative).
+  func isUnionVar(self, id: i32) -> bool {
+    for existing in self.unionVarIds {
+      if existing == id {
+        return true
+      }
+    }
+    return false
+  }
 
   func newVar(self) -> i32 {
     result = self.nextFreshVar
@@ -375,6 +405,16 @@ class TypeUnifier(self) {
     exists = self.lookupVar(tyvar.id)
     if isnull(exists) {
       if self.occursIn(tyvar.id, ty) {
+        if self.isUnionVar(tyvar.id) {
+          // A UNION-typed variable (`A | B | ...`) circularly unified with
+          // a type containing it (its own enclosing class, reached via an
+          // incidental call passing the instance around).  Collapsing it to
+          // the bare class (below) would make the parameter concretely that
+          // class, breaking its `typeswitch` (whose cases are the union
+          // members, not the class).  Leave it uninstantiated so it stays
+          // polymorphic and monomorphizes at real call sites.
+          return null(TypeError)
+        }
         if ty.type == Type.TypeClass.Typename {
           // A self-referential class type (e.g. a constructor parameter
           // defaulted to null(self), or a linked-list member of the class
@@ -456,8 +496,16 @@ class TypeUnifier(self) {
 
     if v1.id > v2.id {
       self.bindVar(v1, Type(v2))
+      // v2 is now the representative; carry the union mark onto it so the
+      // occurs-knot still recognizes the union through the chain.
+      if self.isUnionVar(v1.id) {
+        self.markUnionVar(v2.id)
+      }
     } else {
       self.bindVar(v2, Type(v1))
+      if self.isUnionVar(v2.id) {
+        self.markUnionVar(v1.id)
+      }
     }
     return null(TypeError)
   }
