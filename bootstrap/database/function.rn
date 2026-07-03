@@ -1164,38 +1164,17 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     selfSym = Sym.new("self")
     ptrType = builder.genCType(instType)
     selfRef = builder.declareLocal(selfSym, ptrType)
-    callocArgs = c.CExprList()
-    one = Bigint(1u32)
-    callocArgs.appendCExpr(builder.cIntLiteral(one))
-    sizeofArg = c.CExpr(c.CIdentifier(Sym.new(className + "_t"), null(c.CTypeExpr),
-                                      false, false, false))
-    callocArgs.appendCExpr(builder.cCall(self.location, "sizeof", sizeofArg))
-    callocCall = builder.cCall(self.location, "calloc", c.CExpr(callocArgs))
+    // Allocate from the per-class OBJECT pool: self = <class>_alloc_obj(),
+    // which reuses a freed instance's memory when its id slot is handed back
+    // (so instances behave like legacy pool slots — `a == b` after
+    // `a.destroy(); b = Class()`), sets self->rn_id from the id free-list, and
+    // seeds refCount = 1 (the creation reference; that count is what show()
+    // prints as `nextFree`).  Reused memory is zeroed before the field
+    // initializers below run.
+    allocCall = builder.cCall(self.location, className + "_alloc_obj", null(c.CExpr))
     assign = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
-                                       null(c.CTypeExpr), selfRef, callocCall))
+                                       null(c.CTypeExpr), selfRef, allocCall))
     builder.addStatement(self.location, assign)
-
-    // Number the instance from the per-class id free-list:
-    // self->rn_id = <class>_alloc_id().  Slots are reused after destroy,
-    // so ids stay low and repeat (matching the legacy pool).
-    selfRef2 = c.CExpr(c.CIdentifier(selfSym, null(c.CTypeExpr), false, false, false))
-    idAssign = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
-        null(c.CTypeExpr),
-        c.CExpr(c.CDotExpr(self.location, selfRef2, "rn_id", true)),
-        builder.cCall(self.location, className + "_alloc_id", null(c.CExpr))))
-    builder.addStatement(self.location, idAssign)
-
-    // A new instance starts with reference count 1 (its creation
-    // reference), matching the legacy pool (allocate sets the slot's
-    // count to 1; that count is what show() prints as `nextFree`).  So a
-    // module var assignment does NOT re-ref the value (genCAssign), only
-    // relation `ref`/reassignment/exit `unref` change the count.
-    selfRef3 = c.CExpr(c.CIdentifier(selfSym, null(c.CTypeExpr), false, false, false))
-    refCountInit = c.CExpr(c.CBinaryOperator(self.location,
-        c.CBinaryOperator.Type.Assign, null(c.CTypeExpr),
-        c.CExpr(c.CDotExpr(self.location, selfRef3, "refCount", true)),
-        builder.cIntLiteral(Bigint(1u32))))
-    builder.addStatement(self.location, refCountInit)
 
     for statement in self.subBlock.statements() {
       statement.genC(builder)

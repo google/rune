@@ -518,6 +518,35 @@ class Desugar(self, tc: TypeChecker) {
         }
         return
       }
+      // A plain top-level FUNCTION target (not a class): directly append
+      // (or prepend) the code block's statements into that function's
+      // body (allocfree's `appendcode runAllocFreeTest`).  A direct
+      // append, not copyCodeBlockInto, whose cascade/destroy logic is
+      // class-oriented.
+      fnTarget = self.tc.findPlainFunction(statement.expr.val.symVal.name)
+      if !isnull(fnTarget) {
+        fnDest = fnTarget.subBlock!
+        for cbFn in container.childFunctions() {
+          cbNew = cbFn.copy(fnTarget!)
+          self.expandTransFunctionTree(cbNew, env)
+        }
+        if prepend {
+          cbSt = container.subBlock.lastStatement
+          while !isnull(cbSt) {
+            cbCp = cbSt.prependCopy(fnDest)
+            self.expandTransStatementTree(cbCp, env)
+            cbSt = cbSt.prevBlockStatement
+          }
+        } else {
+          cbSt2 = container.subBlock.firstStatement
+          while !isnull(cbSt2) {
+            cbCp2 = cbSt2.appendCopy(fnDest)
+            self.expandTransStatementTree(cbCp2, env)
+            cbSt2 = cbSt2.nextBlockStatement
+          }
+        }
+        return
+      }
     }
     targetVal = self.evalTransExpr(statement.expr!, env, statement.location)
     if targetVal.kind != 0u32 || isnull(targetVal.classFn) {

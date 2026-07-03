@@ -1,11 +1,10 @@
 # Bootstrap compiler — known limitations
 
-Status as of suite 204/205 (HEAD `d30237d` era).  This documents the
-remaining red tests whose fixes require REPRESENTATION-MODEL work (the
-object pool / slot representation) rather than typechecking/binding/
-emission fixes, per the migration plan's fix-or-document done-
-condition.  Every red test is now either here or green.  Each entry
-states the exact gap, the evidence, and what implementing it would take.
+Status: suite 205/205 — the relations->desugar migration is COMPLETE
+(every test green, no documented-red carve-outs remain).  This file is
+now a HISTORY of the representation-model gaps that were closed to get
+there; nothing below is an open limitation.  If a future change reopens
+one, this is the record of what it was and how it was fixed.
 
 ## 1. Binary-safe (length-carrying) strings — RESOLVED (all three GREEN)
 
@@ -26,12 +25,12 @@ Not required by any current red but still strlen-based for full
 binary-safety: string equality/compare/hash (move to
 `string_length`+`memcmp` if a future test needs it).
 
-## 2. Object pools and slot identity — refcounts + show() RESOLVED
+## 2. Object pools and slot identity — RESOLVED (all four GREEN)
 
-**Affected tests: `allocfree`, `heapqlisttest`.  (`safe` and
-`defaultMethods` were here; now GREEN.)**
+**Affected tests: `safe`, `defaultMethods`, `heapqlisttest`,
+`allocfree` — all now GREEN.**
 
-RESOLVED so far:
+RESOLVED:
 - REFERENCE COUNTING (`bf6f458` / `399f69d`): class structs carry a
   `refCount`, the constructor sets it to 1 (the creation reference,
   matching the legacy pool where `allocate()` sets the slot count to 1);
@@ -53,28 +52,35 @@ free-list (`Class_firstFree`/`Class_nextFree[]`/`Class_used`/
 `Class_free_id(rn_id)`.  Fixed `heapqlisttest` (ids now repeat like the
 pool).  Keeps pointer memory — only ids appear in output.
 
-`allocfree` remains — it has TWO blockers (confirmed this session):
+`allocfree` — the LAST red, now GREEN — had TWO blockers, both fixed:
 1. `appendcode <function>`: `appendcode runAllocFreeTest { ... }` targets
    a plain FUNCTION, not a class.  desugar.rn instantiateCodeBlock only
-   handles class targets + the builtin `Array`; a function target hits
-   the fall-through "Code block target is not a class".  A first attempt
-   (add an Ident-function branch calling `copyCodeBlockInto` after
-   `lookupFunctionDef`) TANGLED — copyCodeBlockInto is class-oriented
-   (its `isDestroy`/cascade logic re-triggers the fall-through
-   evalTransExpr on the target).  A function target likely needs a
-   DIRECT statement-append into `target.subBlock` (expandTransStatement
-   Tree on each copied statement), not copyCodeBlockInto.
+   handled class targets + the builtin `Array`; a function target hit
+   the fall-through "Code block target is not a class".  FIX: an
+   Ident-target branch in instantiateCodeBlock that, when the name
+   resolves to a top-level plain function, DIRECTLY appends/prepends the
+   code block's child functions and statements into the target's
+   subBlock (expandTransFunctionTree / expandTransStatementTree on each
+   copy) — NOT copyCodeBlockInto, whose cascade/destroy logic is
+   class-oriented.  The lookup uses a new typechecker helper
+   `findPlainFunction(name)` that walks the AST from `getMainFunc()`
+   (descending only into module/package containers so it finds top-level
+   functions, not class methods) — NOT `lookupFunctionDef`, because the
+   function-def registry is not yet populated during the desugar pass.
 2. SLOT-AS-IDENTITY: the test does `a = Foo(); a.destroy(); b = Foo();
    if a != b { "failed" } else { "passed" }` and expects "passed".  In
    the legacy, instances ARE u32 slots, so a's freed slot is reused by b
-   and `a == b`.  Our id free-list reuses the slot ID but a and b are
-   distinct malloc'd POINTERS (and destroy clears a's rn_id to 0), so
-   `a != b`.  To match, the constructor must REUSE freed object MEMORY
-   (a per-class pointer pool: destroy returns the malloc'd object,
-   Foo() hands it back) so b == a — OR go to the full slot-as-value
-   model.  This is the one remaining test that needs object memory/slot
-   reuse, not just id reuse; assess the risk (memory reuse changes
-   object identity after destroy for every class) and suite-gate hard.
+   and `a == b`.  FIX: a per-class OBJECT-memory pool in
+   clanguageclasses.rn — `<Class>_slots[]` (indexed by rn_id) retains the
+   malloc'd object even after destroy (which only frees the id), and a
+   new `<Class>_alloc_obj()` reuses that pointer (memset to zero) when
+   alloc_id hands the id back, else callocs and records it.  The
+   constructor now calls `alloc_obj()` (which also sets rn_id and
+   refCount = 1) instead of calloc + alloc_id + refCount.  So `b` reuses
+   `a`'s freed storage and `a == b`.  Memory reuse changes object
+   identity after destroy for every class — verified ZERO regressions
+   across the full 205-test suite (correct refcounting means destroy
+   only fires when no live reference remains, so aliasing is safe).
 
 ## (Resolved) Debug-trace print cosmetics — gf2 is now GREEN
 

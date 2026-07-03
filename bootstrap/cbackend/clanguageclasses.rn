@@ -2206,6 +2206,40 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
     e.writeln("%s_firstFree = object;" % self.name)
     e.writecloseln("}")
     e.writecloseln("}")
+    // Per-class OBJECT-memory pool, indexed by rn_id.  The legacy pool makes
+    // instances BE their slot, so a freed instance's storage is reused by the
+    // next allocation and `a == b` holds after `a.destroy(); b = Class()`.
+    // We mirror that: <name>_slots[id] retains the malloc'd object even after
+    // destroy (which only frees the id, not the memory), so when alloc_id
+    // hands the id back, alloc_obj returns the SAME pointer (reset to zero).
+    // Only fresh ids allocate; reused ids reuse.  destroy() needs no change.
+    e.include("<string.h>")
+    e.writeln("static %s_t **%s_slots = 0;" % (self.name, self.name))
+    e.writeln("static uint32_t %s_slotcount = 0;" % self.name)
+    e.write("static %s_t *%s_alloc_obj(void)" % (self.name, self.name))
+    e.writeopenln(" {")
+    e.writeln("uint32_t id = %s_alloc_id();" % self.name)
+    e.writeln("%s_t *self;" % self.name)
+    e.writeopenln("if (id < %s_slotcount && %s_slots[id]) {" % (self.name, self.name))
+    e.writeln("self = %s_slots[id];" % self.name)
+    e.writeln("memset(self, 0, sizeof(%s_t));" % self.name)
+    e.writecloseln("} else {")
+    e.indent()
+    e.writeln("self = (%s_t *)calloc(1, sizeof(%s_t));" % (self.name, self.name))
+    e.writeopenln("if (id >= %s_slotcount) {" % self.name)
+    e.writeln("uint32_t nc = %s_allocated;" % self.name)
+    e.writeln("%s_slots = (%s_t **)realloc(%s_slots, nc * sizeof(%s_t *));"
+        % (self.name, self.name, self.name, self.name))
+    e.writeopenln("while (%s_slotcount < nc) {" % self.name)
+    e.writeln("%s_slots[%s_slotcount++] = 0;" % (self.name, self.name))
+    e.writecloseln("}")
+    e.writecloseln("}")
+    e.writeln("%s_slots[id] = self;" % self.name)
+    e.writecloseln("}")
+    e.writeln("self->rn_id = id;")
+    e.writeln("self->refCount = 1u;")
+    e.writeln("return self;")
+    e.writecloseln("}")
     e.newline()
 
     // Emit the toString function --------------------------------------

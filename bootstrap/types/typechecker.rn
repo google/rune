@@ -4552,6 +4552,30 @@ class TypeChecker(self) {
     return null(db.Function)
   }
 
+  // Find a top-level plain function by name.  Used during desugaring (before
+  // the function-def registry is populated) to resolve an `appendcode
+  // <function>` target.  Descends only into module/package containers so it
+  // finds top-level functions, not class methods that share a name.
+  func findPlainFunction(self, name: string) -> db.Function? {
+    return self.findPlainFunctionIn(db.getMainFunc(), name)
+  }
+
+  func findPlainFunctionIn(self, fn: db.Function, name: string) -> db.Function? {
+    for childfunc in fn.childFunctions() {
+      if childfunc.type == db.FuncType.Plain && childfunc.sym.name == name {
+        return childfunc
+      }
+      if childfunc.type == db.FuncType.Module ||
+          childfunc.type == db.FuncType.Package {
+        found = self.findPlainFunctionIn(childfunc, name)
+        if !isnull(found) {
+          return found
+        }
+      }
+    }
+    return null(db.Function)
+  }
+
 
   // Typecheck Functions, including modules ---------------------------------
   func function(self, fn: db.Function) {
