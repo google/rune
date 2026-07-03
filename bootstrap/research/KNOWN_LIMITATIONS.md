@@ -1,6 +1,6 @@
 # Bootstrap compiler — known limitations
 
-Status as of suite 196/205 (HEAD `2611bf5` era).  This documents the
+Status as of suite 197/205 (HEAD `f96ba07` era).  This documents the
 remaining red tests whose fixes require REPRESENTATION-MODEL work
 rather than typechecking/binding/emission fixes, per the migration
 plan's fix-or-document done-condition.  Each entry states the exact
@@ -8,7 +8,7 @@ gap, the evidence, and what implementing it would take.
 
 ## 1. Binary-safe (length-carrying) strings
 
-**Affected tests: `escapedCharTest`, `uint2string`.**
+**Affected tests: `escapedCharTest`, `uint2string`, `integer`.**
 
 The bootstrap represents strings as NUL-terminated C `char *`
 throughout (`cruntime/string_methods.inc` is `strlen`-based; printing
@@ -24,6 +24,13 @@ carry an explicit length and are binary-safe.
   all mechanical), the golden REQUIRES printing two embedded 0x00
   bytes (`block.toStringLE()` of a u128 yields all 16 bytes); a
   NUL-terminated string cannot carry them to the writer.
+- `integer` (moved here from the binding cluster at `f96ba07`): the
+  test now typechecks, compiles with zero C errors, and runs; every
+  remaining output delta is this gap.  `Integer.data =
+  uintValue.toStringLE()` embeds NUL bytes (`1u32` -> `01 00 00 00`),
+  so the strlen-based `string_length`/`resize`/`reverse` helpers see
+  length 1 and `toHex` prints `0x03` where the golden wants
+  `0x00000003`.  No further binding work applies.
 
 **Implementation shape**: migrate the emitted string type to a
 (pointer, length) pair (or length-headed buffer like `rn_wide`), and
