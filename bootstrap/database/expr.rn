@@ -2061,6 +2061,37 @@ class Expr(self, type: ExprType, location: Location) {
         boTuple = types.Type(types.TupleType([boLT, boRT]))
         boSpec = boTuple.genSpecializationName(boName)
         boRes = builder.lookupSpecResult(boSpec)
+        if isnull(boRes) {
+          // Not emitted yet (ordering): derive the op's result by
+          // walking ITS body under these ground operand types — the
+          // same read-only fixpoint emittedCallResult uses for calls.
+          boTc = builder.typechecker
+          for boI in range(boTc.operatorFns.length()) {
+            if isnull(boRes) && boTc.operatorFns[boI].opType == self.type {
+              boFn = boTc.operatorFns[boI]
+              if !isnull(boFn.subBlock) && builder.deriveDepth < 24u32 {
+                boPrevTuple = builder.currentEmittingParamTuple
+                boPrevPFn = builder.currentEmittingParamFn
+                boPrevFn = builder.currentEmittingFn
+                builder.currentEmittingParamTuple = boTuple
+                builder.currentEmittingParamFn = boFn
+                builder.currentEmittingFn = boFn
+                builder.deriveDepth += 1u32
+                boDer = boFn.deriveSpecResult(builder, boFn.subBlock!)
+                builder.deriveDepth -= 1u32
+                builder.currentEmittingParamTuple = boPrevTuple
+                builder.currentEmittingParamFn = boPrevPFn
+                builder.currentEmittingFn = boPrevFn
+                if !isnull(boDer) {
+                  if !boTc.hasFreeVars(boDer!) {
+                    builder.recordSpecResult(boSpec, boDer!)
+                    boRes = boDer
+                  }
+                }
+              }
+            }
+          }
+        }
         if !isnull(boRes) {
           return boRes!
         }
@@ -2140,14 +2171,38 @@ class Expr(self, type: ExprType, location: Location) {
         return types.Type(types.TupleType(ratElems))
       }
     }
-    if isnull(self.typedValue) {
+    ratNoSlot = isnull(self.typedValue)
+    if ratNoSlot && self.type == ExprType.Constant {
+      // A never-stamped literal types from its VALUE — but only when
+      // exact (a width-suffixed number, bool, string, float); an
+      // adaptable literal would compose a wrong spec name.
+      if (self.val.type == DatatypeType.Bool ||
+          self.val.type == DatatypeType.String ||
+          self.val.type == DatatypeType.Float ||
+          ((self.val.type == DatatypeType.Int ||
+            self.val.type == DatatypeType.Uint) && !self.val.widthUnspecified)) {
+        ratCTy = builder.typechecker.value(self.val)
+        if !isnull(ratCTy) {
+          return ratCTy!
+        }
+      }
       return types.NONETY()
     }
-    rty = builder.typechecker.resolve(self.typedValue!)
+    if (ratNoSlot && self.type != ExprType.Ident &&
+        self.type != ExprType.Call && self.type != ExprType.Dot) {
+      return types.NONETY()
+    }
+    rty = types.NONETY()
+    if !ratNoSlot {
+      rty = builder.typechecker.resolve(self.typedValue!)
+    }
     if depth > 8u32 {
       return rty
     }
-    ratSlotTrust = true
+    // A never-stamped expression (an op body walked by the derivation
+    // before any emission) has no slot to trust; the recovery arms
+    // below reconstruct from children.
+    ratSlotTrust = !ratNoSlot
     if self.type == ExprType.Call && !isnull(builder.currentEmittingFn) {
       if !isnull(builder.currentEmittingParamFn) {
         if builder.currentEmittingParamFn! == builder.currentEmittingFn! {
@@ -2172,6 +2227,15 @@ class Expr(self, type: ExprType, location: Location) {
             }
           }
         }
+      }
+    }
+    if ratSlotTrust && self.type == ExprType.Ident &&
+        rty.type == types.Type.TypeClass.Typename {
+      if rty.tyname.name.name == "none" {
+        // A LOCAL can't hold a none value: the slot is a stale round's
+        // leftover (the op body's last typecheck round was generic).
+        // Distrust it and chase the declaration below.
+        ratSlotTrust = false
       }
     }
     if ratSlotTrust && !argTypeUnderResolved(builder, rty) {
@@ -2220,6 +2284,45 @@ class Expr(self, type: ExprType, location: Location) {
           }
         }
         if !isnull(pcFn) {
+          if pcFn.type == FuncType.Constructor {
+            // A constructor call's result is the class INSTANCE type.
+            // Prefer the slot when it resolves to a ground Typename;
+            // otherwise rebuild it positionally from the recovered
+            // argument types (Integer(0u8, a.width) -> Integer(u8,
+            // u32)) — guarded by class-param arity and groundness.
+            if !isnull(self.typedValue) {
+              pcCSlot = builder.typechecker.resolve(self.typedValue!)
+              if pcCSlot.type == types.Type.TypeClass.Typename {
+                if !builder.typechecker.hasFreeVars(pcCSlot) {
+                  return pcCSlot
+                }
+              }
+            }
+            pcCInfo = builder.typechecker.lookupClass(pcFn.sym)
+            pcCArgs = pcCallee.nextExprChildExpr
+            if !isnull(pcCInfo) && !isnull(pcCArgs) {
+              pcCTys = arrayof(types.Type)
+              if pcCArgs.type == ExprType.List || pcCArgs.type == ExprType.Tuple {
+                for pcCA in pcCArgs.childExprs() {
+                  pcCTys.append(pcCA.resolvedArgType(builder, depth + 1u32,
+                      scopeBlock))
+                }
+              } else {
+                pcCTys.append(pcCArgs.resolvedArgType(builder, depth + 1u32,
+                    scopeBlock))
+              }
+              pcCOk = pcCTys.length() == pcCInfo.paramVars.length()
+              for pcCT in pcCTys {
+                if builder.typechecker.hasFreeVars(pcCT) {
+                  pcCOk = false
+                }
+              }
+              if pcCOk {
+                return types.Type(types.TypeName(pcFn.sym,
+                    types.TupleType(pcCTys)))
+              }
+            }
+          }
           pcTy = pcFn.typedValue
           if !isnull(pcTy) {
             if pcTy.type == types.Type.TypeClass.Polymorphic {

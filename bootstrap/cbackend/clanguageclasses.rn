@@ -1173,7 +1173,7 @@ relevantType: CTypeExpr?) {
 
       CRuntimeFunction.StringConcat => {
         receiver = self.args.cExprList.index(0)
-        if receiver.type == CExpr.Type.Identifier {
+        if receiver.type == CExpr.Type.Identifier || receiver.type == CExpr.Type.Field {
           receiver.emit(e)
           e.write(" = ")
         }
@@ -1183,7 +1183,7 @@ relevantType: CTypeExpr?) {
 
       CRuntimeFunction.StringResize => {
         receiver = self.args.cExprList.index(0)
-        if receiver.type == CExpr.Type.Identifier {
+        if receiver.type == CExpr.Type.Identifier || receiver.type == CExpr.Type.Field {
           receiver.emit(e)
           e.write(" = ")
         }
@@ -1193,7 +1193,7 @@ relevantType: CTypeExpr?) {
 
       CRuntimeFunction.StringReverse => {
         receiver = self.args.cExprList.index(0)
-        if receiver.type == CExpr.Type.Identifier {
+        if receiver.type == CExpr.Type.Identifier || receiver.type == CExpr.Type.Field {
           receiver.emit(e)
           e.write(" = ")
         }
