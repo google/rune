@@ -226,16 +226,6 @@ class EnumInfo(self, sym: Sym) {
 // Records typechecking information about a class: its constructor function,
 // the struct type holding its data members, and the type variables of its
 // constructor parameters (in declaration order).
-// One specialization's resolved field types, captured while the
-// constructor's materialization bindings were active.  The canonical
-// strct.fieldtypes additionally get the legacy in-place bake (single-
-// signature emission paths read them); multi-signature struct emission
-// prefers the snapshot matching its instance type.
-class FieldBake(self, spec: string) {
-  self.spec = spec
-  self.types = arrayof(Type)
-}
-
 // One enclosing call's callee bookkeeping for demand-driven
 // materialization: classMemberType records the method and the
 // instantiation its open just appended; the Call arm consumes the record
@@ -268,8 +258,6 @@ class ClassInfo(self, sym: Sym) {
   // fields): kept in the struct but skipped by the print helper, which
   // would otherwise recurse through the relation cycle.
   self.generatedFieldNames = arrayof(string)
-  // Per-specialization resolved field types (see FieldBake).
-  self.fieldBakes = arrayof(FieldBake)
 
   func hash(self) -> u64 {
     return hashValue(self.sym.name)
@@ -679,14 +667,6 @@ class TypeChecker(self) {
         self.currentClassInfo = cinfo
         self.currentSelfType = cinfo.selfType
         self.classBoundVars = cinfo.paramVars
-        // Reset every canonical slot to a fresh variable: a previous
-        // round's in-place bake (or its minted null()-vars) cannot
-        // re-derive under THIS round's bindings — the unify against
-        // another signature's concrete just errors and leaves the round
-        // half-derived.  The body walk re-discovers every slot.
-        for rfti in range(cinfo.strct.fieldtypes.length()) {
-          cinfo.strct.fieldtypes[rfti] = Type(self.newTyvar())
-        }
       }
     } else if !isnull(fn.parentFunction) {
       if fn.parentFunction.type == db.FuncType.Constructor {
@@ -718,37 +698,10 @@ class TypeChecker(self) {
       // Bake the re-discovered field types while the instantiation's
       // bindings are still active: they bind through the instantiation
       // variables and would revert to unbound after deInstantiate.
-      // Additionally snapshot them per specialization (with this round's
-      // knot pinning applied): the in-place bake can only hold ONE
-      // signature, and multi-signature struct emission reads the
-      // snapshot for its own instance type.
       if !isnull(self.currentClassInfo) {
         bakeInfo = self.currentClassInfo!
         for bfi in range(bakeInfo.strct.fieldtypes.length()) {
           bakeInfo.strct.fieldtypes[bfi] = self.resolve(bakeInfo.strct.fieldtypes[bfi])
-        }
-        if !isnull(bakeInfo.selfType) {
-          bakeSelfR = self.resolve(bakeInfo.selfType!)
-          if !self.hasFreeVars(bakeSelfR) {
-            bakeSpec = bakeSelfR.toString()
-            bake = null(FieldBake)
-            for fb in bakeInfo.fieldBakes {
-              if fb.spec == bakeSpec {
-                bake = fb
-              }
-            }
-            if isnull(bake) {
-              bake = FieldBake(bakeSpec)
-              bakeInfo.fieldBakes.append(bake!)
-            }
-            emptyBakeTypes = arrayof(Type)
-            bake.types = emptyBakeTypes
-            for bfi2 in range(bakeInfo.strct.fieldtypes.length()) {
-              bake.types.append(self.pinSnapshotSlot(self.concretizeKnots(
-                  self.resolve(bakeInfo.strct.fieldtypes[bfi2]), 0u32), bakeSelfR))
-              println "DBGSNAP ", bakeSpec, " .", bakeInfo.strct.fieldnames[bfi2].name, " = ", bake.types[bfi2].toString()
-            }
-          }
         }
       }
     }
@@ -812,14 +765,10 @@ class TypeChecker(self) {
           matzInst.varBindings[matzJ] = self.resolve(matzInst.varBindings[matzJ])
         }
         matzInst.type = self.resolve(matzInst.type)
-        matzInst.baked = true
         matzI += 1
       }
       self.unifier.openLog.resize(matzLogBase)
       self.unifier.openLogging = matzPrevLogging
-    }
-    if self.countTypeErrors() > matzPreErrs {
-      println "DBGMERR ", fn.sym.name, " key=", specKey, " errs=", self.countTypeErrors() - matzPreErrs
     }
     while self.countTypeErrors() > matzPreErrs {
       self.popTypeError()
@@ -837,25 +786,7 @@ class TypeChecker(self) {
     if isnull(rec.fn) || isnull(rec.inst) {
       return
     }
-    // Materialize when the call's result stays free — or, for a method of
-    // a GENERIC class, even when it does not (a void insert's body is
-    // what records the nested class's concrete constructor instantiation,
-    // which knot-pinning and multi-signature emission need).  The
-    // per-spec cache bounds the work to one retypecheck per signature.
-    dmNeed = self.hasFreeVars(self.resolve(result))
-    if !dmNeed {
-      if !isnull(rec.fn.parentFunction) {
-        if rec.fn.parentFunction.type == db.FuncType.Constructor {
-          dmInfo = self.lookupClass(rec.fn.parentFunction.sym)
-          if !isnull(dmInfo) {
-            if dmInfo.paramVars.length() > 0 {
-              dmNeed = true
-            }
-          }
-        }
-      }
-    }
-    if !dmNeed {
+    if !self.hasFreeVars(self.resolve(result)) {
       return
     }
     callee = rec.fn!
@@ -903,69 +834,9 @@ class TypeChecker(self) {
       rec.inst.varBindings[dmi] = self.resolve(rec.inst.varBindings[dmi])
     }
     rec.inst.type = self.resolve(rec.inst.type)
-    rec.inst.baked = true
     self.deInstantiate(cty.poly!)
     callee.materializeActive = false
     self.materializeDepth -= 1u32
-  }
-
-  // A snapshot slot still carrying free variables (a relation back-pointer
-  // only ever assigned by METHODS, e.g. Entry.dict = null(Dict) in the
-  // appendcode) pins to the concrete instance of the same class found in
-  // the anchor (the specialization's own instance type or one of its type
-  // arguments): Entry(Dict(string,u32),...)'s dict slot can only be that
-  // Dict.  Ambiguity or no match leaves the slot unchanged.
-  func pinSnapshotSlot(self, slotTy: Type, anchor: Type) -> Type {
-    if !self.hasFreeVars(slotTy) {
-      return slotTy
-    }
-    rSlot = self.resolve(slotTy)
-    if rSlot.type != Type.TypeClass.Typename {
-      return rSlot
-    }
-    if isnull(rSlot.tyname.params) {
-      return rSlot
-    }
-    rAnchor = self.resolve(anchor)
-    if rAnchor.type != Type.TypeClass.Typename {
-      return rSlot
-    }
-    pinFound = null(Type)
-    pinDistinct = arrayof(string)
-    pinCands = arrayof(Type)
-    pinCands.append(rAnchor)
-    if !isnull(rAnchor.tyname.params) {
-      for pinArg in rAnchor.tyname.params.elements {
-        pinCands.append(pinArg)
-      }
-    }
-    for pinC in pinCands {
-      rPinC = self.resolve(pinC)
-      if rPinC.type == Type.TypeClass.Typename {
-        if rPinC.tyname.name.name == rSlot.tyname.name.name {
-          if !self.hasFreeVars(rPinC) {
-            pinStr = rPinC.toString()
-            pinSeen = false
-            for pd in pinDistinct {
-              if pd == pinStr {
-                pinSeen = true
-              }
-            }
-            if !pinSeen {
-              pinDistinct.append(pinStr)
-              pinFound = rPinC
-            }
-          }
-        }
-      }
-    }
-    if pinDistinct.length() == 1 {
-      pinTe = self.unify(rSlot, pinFound!)
-      if isnull(pinTe) {
-        return self.resolve(rSlot)
-      }
-    }
-    return rSlot
   }
 
   // Connect the body's return type to the function's result variable so
@@ -2762,14 +2633,6 @@ class TypeChecker(self) {
          if isnull(aofTy) {
            aofTy = self.explicitType(expr.firstChildExpr!)
          }
-         if self.retypecheckNesting > 0u32 {
-           // A materialization round pins arrayof(ClassName)'s bare knot
-           // to the signature consistent with the round's self type, so
-           // the round's body (and its emission) carries concrete element
-           // types.  The template pass keeps the knot.
-           aofPinned = self.concretizeKnots(self.resolve(aofTy!), 0u32)
-           aofTy = aofPinned
-         }
          expr.firstChildExpr.typedValue = aofTy
          result = ARRAY(self.resolve(aofTy!))
          // Stage 0: note an as-yet-unregistered class element so Stage 2's
@@ -4491,26 +4354,6 @@ class TypeChecker(self) {
       // to whatever the operands unify with (the template-class knot).
       if inOwnConstructor && selfAccess {
         return ty
-      }
-      // A concrete instance whose constructor has materialized prefers
-      // its specialization's field snapshot: the canonical slot holds at
-      // most ONE signature's bake.
-      rMemberInst = self.resolve(instanceType)
-      if rMemberInst.type == Type.TypeClass.Typename {
-        if !self.hasFreeVars(rMemberInst) && !isnull(rMemberInst.tyname.params) {
-          memberSpec = rMemberInst.toString()
-          for mfb in info.fieldBakes {
-            if mfb.spec == memberSpec {
-              mfi = 0
-              for mfname in info.strct.fieldnames {
-                if mfname.name == name && mfi < mfb.types.length() {
-                  return mfb.types[mfi]
-                }
-                mfi += 1
-              }
-            }
-          }
-        }
       }
       return self.substituteClassVars(info, instanceType, ty!)
     }

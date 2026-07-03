@@ -565,49 +565,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
                 selfConcrete = false
               }
             }
-            ctorPinned = arrayof(types.Type)
-            if !selfConcrete && !isnull(instantiation.type) {
-              // A NESTED class's instantiation covers its own template
-              // slots but not the enclosing class's vars inside a
-              // class-typed parameter (Entry's dict slot) — yet the
-              // round-baked instantiation RESULT is the fully concrete
-              // instance type.  Pin the selfType's residual free vars to
-              // it for the duration of this emission (a manual
-              // instantiate for the enclosing context), and unbind after.
-              ctorInstTy = builder.typechecker.resolve(instantiation.type!)
-              if ctorInstTy.type == types.Type.TypeClass.Function {
-                ctorInstRes = builder.typechecker.resolve(ctorInstTy.function.result!)
-                if (ctorInstRes.type == types.Type.TypeClass.Typename &&
-                    !builder.typechecker.hasFreeVars(ctorInstRes)) {
-                  ctorPinned = builder.typechecker.collectFreeTyvars(
-                      builder.typechecker.resolve(info.selfType!), ctorPinned)
-                  ctorPinTe = builder.typechecker.unify(info.selfType!, ctorInstRes)
-                  if isnull(ctorPinTe) {
-                    if !builder.typechecker.hasFreeVars(info.selfType!) {
-                      selfConcrete = true
-                    }
-                  }
-                }
-              }
-            }
             if selfConcrete {
-              // Materialize the constructor body under this
-              // instantiation's bindings (bypassing the deferred gate) —
-              // but ONLY for classes with several concrete signatures:
-              // the round re-derives field types per signature (reset +
-              // snapshot), while a single-signature class's body keeps
-              // its template bakes (the round would clobber the emitted
-              // self-access types).
-              if builder.classConcreteSigCount(info!) >= 2u64 {
-                builder.typechecker.materializeSpec(self,
-                    builder.classCtorCName(builder.typechecker.resolve(info.selfType!)))
-              }
               self.genCConstructorInstance(builder, info!)
             }
             builder.deInstantiate(fntype.poly!)
-            for ctorPin in ctorPinned {
-              builder.typechecker.unifier.unbindVar(ctorPin.tyvar!)
-            }
           }
         }
       }
@@ -657,26 +618,8 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     // must be emitted before this class.
     fieldDeps = arrayof(string)
     fields = c.CParamList()
-    // Prefer this specialization's field snapshot (captured while the
-    // constructor materialized under these bindings): the canonical slots
-    // hold at most ONE signature's in-place bake.
-    instBake = null(types.FieldBake)
-    instSpec = instType.toString()
-    for cfb in info.fieldBakes {
-      if cfb.spec == instSpec {
-        instBake = cfb
-      }
-    }
     for i in range(info.strct.fieldnames.length()) {
       fieldty = builder.typechecker.resolve(info.strct.fieldtypes[i])
-      if !isnull(instBake) {
-        if i < instBake.types.length() {
-          bakedFieldTy = builder.typechecker.resolve(instBake.types[i])
-          if bakedFieldTy.type != types.Type.TypeClass.Var {
-            fieldty = bakedFieldTy
-          }
-        }
-      }
       if fieldty.type == types.Type.TypeClass.Var {
         // A field whose baked type stayed an open variable (e.g. its
         // create-on-assign unification reverted with the deferral
@@ -929,26 +872,8 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     }
     if fntype.type == types.Type.TypeClass.Polymorphic {
       pi = fntype.poly.instantiations
-      // For a method of a class with several concrete signatures, only
-      // ROUND-BAKED recordings drive the sweep: an unbaked one still
-      // chains through template variables and would freeze under ambient
-      // leftover bindings into a cross-signature Frankenstein.
-      msMulti = false
-      if !isnull(self.parentFunction) {
-        if self.parentFunction.type == FuncType.Constructor {
-          msInfo = builder.typechecker.lookupClass(self.parentFunction.sym)
-          if !isnull(msInfo) {
-            if builder.classConcreteSigCount(msInfo!) >= 2u64 {
-              msMulti = true
-            }
-          }
-        }
-      }
       if !isnull(pi) {
         for instantiation in pi {
-          if msMulti && !instantiation.baked {
-            continue
-          }
           builder.resolveInstantiation(instantiation)
           if builder.instantiationParamsConcrete(instantiation) {
             builder.instantiate(fntype.poly!, instantiation)
