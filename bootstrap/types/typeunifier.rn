@@ -592,7 +592,13 @@ class TypeUnifier(self) {
   func unifyPolymorphic(self, t1: PolymorphicType, b: Type,
                         location: db.Location? = null(db.Location)) -> TypeError? {
     if b.type == Type.TypeClass.Polymorphic {
-      raise Status.Unimplemented, "Unification of two bound types, %s and %s" % (t1.toString(), b.toString())
+      // Two GENERALIZED types: a generic function passed as a value
+      // mentions its type in separately-generalized places (funcptr's
+      // apply-helper).  Open both and unify the opened forms:
+      // alpha-equivalent polys unify their fresh variables pairwise
+      // (constraints merge in unifyTwoVars).
+      return self.unify(t1.open(self, &self.newVar()),
+                        b.poly!.open(self, &self.newVar()), location)
     }
     return self.unify(t1.open(self, &self.newVar()), b, location)
   }
