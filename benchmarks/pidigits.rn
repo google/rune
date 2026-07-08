@@ -1,0 +1,71 @@
+// pidigits — The Computer Language Benchmarks Game
+// https://benchmarksgame-team.pages.debian.net/benchmarksgame/
+//
+// Gibbons unbounded spigot algorithm for pi digits.
+// Uses i8192 signed wide integers; empirically correct for N <= 265.
+// Overflow occurs at N=266: state variables (q,r,t) exceed 8192 bits.
+
+DEFAULT_N = 27u32
+
+N = DEFAULT_N
+if argv.length() > 1 {
+  passed = false
+  N = argv[1].toUint(u32, passed)
+}
+
+// Spigot state variables — all i8192 (signed 8192-bit)
+q = 1i8192
+r = 0i8192
+t = 1i8192
+k = 1i8192
+n = 3i8192
+l = 3i8192
+
+digitsProduced = 0u32
+col = 0u32
+
+while digitsProduced < N {
+  if 4i8192*q + r - t < n*t {
+    // Output digit n (value is 0-9)
+    writeByte(<u8>(<u32>n + 48u32))
+    col += 1
+    digitsProduced += 1
+    if col == 10u32 {
+      writeByte(9u8)
+      suf = ":"
+      suf += (<u32>digitsProduced).toString()
+      println suf
+      col = 0u32
+    }
+    // Update state for digit emission
+    newQ = 10i8192 * q
+    newR = 10i8192 * (r - n*t)
+    n = 10i8192 * (3i8192*q + r) / t - 10i8192*n
+    q = newQ
+    r = newR
+  } else {
+    // Step (refine the interval)
+    newQ = q * k
+    newR = (2i8192*q + r) * l
+    newT = t * l
+    n = (q*(7i8192*k + 2i8192) + r*l) / (t*l)
+    l = l + 2i8192
+    k = k + 1i8192
+    q = newQ
+    r = newR
+    t = newT
+  }
+}
+
+// Final partial row: pad right to 10 digit-columns, then \t:N\n
+if col > 0u32 {
+  padCol = col
+  while padCol < 10u32 {
+    writeByte(32u8)
+    padCol += 1
+  }
+  writeByte(9u8)
+  suf = ":"
+  suf += (<u32>N).toString()
+  println suf
+}

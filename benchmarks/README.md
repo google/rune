@@ -16,12 +16,18 @@ used to exercise and measure the **self-hosted (bootstrap) Rune compiler**
 | fasta               | `fasta.rn`              | `fasta_ref.c`              | — |
 | reverse-complement  | `reverse_complement.rn` | `reverse_complement_ref.c` | fasta output |
 | k-nucleotide        | `k_nucleotide.rn`       | `k_nucleotide_ref.c`       | fasta output |
+| pidigits            | `pidigits.rn`           | `pidigits_ref.c` (GMP)     | — |
 
 Each `NAME.stdout` is a golden for a fixed small argument. Every C reference is
 verified byte-identical to its Rune counterpart.
 
-Not yet ported: **pidigits** (needs unbounded bignum) and **regex-redux**
-(needs a regex engine Rune does not have).
+**pidigits** uses the Gibbons streaming spigot over Rune's fixed-width wide
+integers (`i8192`) rather than true bignum, so it is correct only up to N=265
+digits (state overflows the 8192-bit type beyond that). Wider types (`i10240`+)
+currently crash the bootstrap compiler (`free(): invalid size`) — a separate
+compiler limitation to fix before pidigits can scale.
+
+Not ported: **regex-redux** — needs a regex engine, which Rune does not have.
 
 ## Build & run one program
 
