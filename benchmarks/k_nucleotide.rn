@@ -1,0 +1,251 @@
+// k-nucleotide benchmark - The Computer Language Benchmarks Game
+// https://benchmarksgame-team.pages.debian.net/benchmarksgame/
+//
+// NOTE: uses readByte() instead of readln() because the legacy LLVM runtime
+// has a heap-corruption bug in readln() for lines longer than ~16 chars.
+
+// Format a f64 as a string with exactly 3 decimal places.
+func fmt3(v: f64) -> string {
+  a = v
+  scaled = a * 1000.0f64 + 0.5f64
+  n = <u64>scaled
+  ip = n / 1000u64
+  fp = n % 1000u64
+  s = ip.toString()
+  s += "."
+  fps = fp.toString()
+  pad = 3u64 - fps.length()
+  for kp = 0u64, kp < pad, kp += 1 {
+    s += "0"
+  }
+  s += fps
+  return s
+}
+
+// Lexicographic less-than for strings (char-by-char via u8 comparison).
+func strLt(a: string, b: string) -> bool {
+  alen = a.length()
+  blen = b.length()
+  idx = 0u64
+  cont = true
+  while idx < alen && idx < blen && cont {
+    ca = <u8>a[idx]
+    cb = <u8>b[idx]
+    if ca != cb {
+      cont = false
+    } else {
+      idx += 1u64
+    }
+  }
+  if cont {
+    return alen < blen
+  }
+  return <u8>a[idx] < <u8>b[idx]
+}
+
+// Insertion sort on two parallel arrays (descending count, ascending kmer for ties).
+func sortKmers(var kArr: [string], var cArr: [u64]) {
+  n = kArr.length()
+  si = 1u64
+  while si < n {
+    keyK = kArr[si]
+    keyC = cArr[si]
+    j = si
+    cont = true
+    while j > 0u64 && cont {
+      prevC = cArr[j - 1u64]
+      prevK = kArr[j - 1u64]
+      doSwap = false
+      if prevC < keyC {
+        doSwap = true
+      }
+      if prevC == keyC {
+        if strLt(keyK, prevK) {
+          doSwap = true
+        }
+      }
+      if doSwap {
+        cArr[j] = prevC
+        kArr[j] = prevK
+        j -= 1u64
+      } else {
+        cont = false
+      }
+    }
+    cArr[j] = keyC
+    kArr[j] = keyK
+    si += 1u64
+  }
+}
+
+// Map uppercase DNA base (u8) to 0..3: A=0 C=1 G=2 T=3.
+func charIdx(c: u8) -> u64 {
+  if c == 65u8 {
+    return 0u64
+  }
+  if c == 67u8 {
+    return 1u64
+  }
+  if c == 71u8 {
+    return 2u64
+  }
+  return 3u64
+}
+
+// Count and print all k-mers of the given length, sorted by count desc / kmer asc.
+func printKmers(var dnaB: [u8], k: u64) {
+  dnaLen = dnaB.length()
+  // Compute nKmers = 4^k
+  nKmers = 1u64
+  kc = 0u64
+  while kc < k {
+    nKmers *= 4u64
+    kc += 1u64
+  }
+  // Allocate count array (nKmers zeros)
+  cntArr = arrayof(u64)
+  kc = 0u64
+  while kc < nKmers {
+    cntArr.append(0u64)
+    kc += 1u64
+  }
+  // Count k-mers using base-4 index
+  ci = 0u64
+  while ci + k <= dnaLen {
+    idx = 0u64
+    jc = 0u64
+    while jc < k {
+      idx = idx * 4u64 + charIdx(dnaB[ci + jc])
+      jc += 1u64
+    }
+    cntArr[idx] += 1u64
+    ci += 1u64
+  }
+  // Precompute powers of 4: powers[j] = 4^j
+  powers = arrayof(u64)
+  powers.append(1u64)
+  pc = 1u64
+  while pc < k {
+    prev = powers[pc - 1u64]
+    powers.append(prev * 4u64)
+    pc += 1u64
+  }
+  // Build kmer string array in index order
+  baseBytes = [65u8, 67u8, 71u8, 84u8]
+  kmerArr = arrayof(string)
+  km = 0u64
+  while km < nKmers {
+    kmer = ""
+    jc = 0u64
+    while jc < k {
+      cIdxVal = (km / powers[k - 1u64 - jc]) % 4u64
+      kmer += <string>[baseBytes[cIdxVal]]
+      jc += 1u64
+    }
+    kmerArr.append(kmer)
+    km += 1u64
+  }
+  sortKmers(kmerArr, cntArr)
+  total = dnaLen - k + 1u64
+  pIdx = 0u64
+  while pIdx < nKmers {
+    pct = 100.0f64 * <f64>cntArr[pIdx] / <f64>total
+    println kmerArr[pIdx], " ", fmt3(pct)
+    pIdx += 1u64
+  }
+  println ""
+}
+
+// Count occurrences of seq (uppercase string) in dna byte array.
+func countSeq(var dnaB: [u8], seq: string) -> u64 {
+  sLen = seq.length()
+  dnaLen = dnaB.length()
+  cnt = 0u64
+  ci = 0u64
+  while ci + sLen <= dnaLen {
+    match = true
+    j = 0u64
+    while j < sLen && match {
+      if dnaB[ci + j] != <u8>seq[j] {
+        match = false
+      } else {
+        j += 1u64
+      }
+    }
+    if match {
+      cnt += 1u64
+    }
+    ci += 1u64
+  }
+  return cnt
+}
+
+func isEOF(bv: u8) -> bool {
+  if bv == 0u8 {
+    return true
+  }
+  if bv == 255u8 {
+    return true
+  }
+  return false
+}
+
+// Main: read FASTA from stdin byte-by-byte, find >THREE section,
+// collect uppercase DNA as u8 array.
+dnaBytes = arrayof(u8)
+inThree = false
+
+b = readByte()
+while !isEOF(b) {
+  if b == 62u8 {
+    // Header line: read first 5 bytes after '>' to check for "THREE"
+    b = readByte()
+    hc0 = b
+    b = readByte()
+    hc1 = b
+    b = readByte()
+    hc2 = b
+    b = readByte()
+    hc3 = b
+    b = readByte()
+    hc4 = b
+    // Skip remainder of header line
+    b = readByte()
+    while !isEOF(b) && b != 10u8 {
+      b = readByte()
+    }
+    // Check if first 5 chars are T H R E E
+    inThree = false
+    if hc0 == 84u8 && hc1 == 72u8 && hc2 == 82u8 && hc3 == 69u8 && hc4 == 69u8 {
+      inThree = true
+    }
+    if !isEOF(b) {
+      b = readByte()
+    }
+  } else if b == 10u8 {
+    b = readByte()
+  } else {
+    if inThree {
+      cb = b
+      if cb >= 97u8 && cb <= 122u8 {
+        cb -= 32u8
+      }
+      dnaBytes.append(cb)
+    }
+    b = readByte()
+  }
+}
+
+// Print k=1 and k=2 kmer frequencies.
+printKmers(dnaBytes, 1u64)
+printKmers(dnaBytes, 2u64)
+
+// Print counts for specific sequences.
+seqs = ["GGT", "GGTA", "GGTATT", "GGTATTTTAATT", "GGTATTTTAATTTATAGT"]
+ssi = 0u64
+while ssi < seqs.length() {
+  seq = seqs[ssi]
+  cnt = countSeq(dnaBytes, seq)
+  println cnt, "\t", seq
+  ssi += 1u64
+}

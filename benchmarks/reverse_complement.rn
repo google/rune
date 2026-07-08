@@ -1,0 +1,134 @@
+// reverse_complement.rn
+// The Computer Language Benchmarks Game
+// https://benchmarksgame-team.pages.debian.net/benchmarksgame/
+//
+// Reads FASTA from stdin (as produced by fasta), prints reverse-complement
+// of each record wrapped at 60 columns with uppercase output.
+//
+// Implementation notes:
+//   - We read with readByte() rather than readln() to avoid a heap-corruption
+//     bug in the legacy runtime's readln() for lines > 16 chars.
+//   - readByte() returns 0u8 at EOF in the bootstrap runtime and 255u8 in
+//     the legacy runtime (getchar() returns -1 = 0xFF as uint8_t).  Both
+//     are outside the valid FASTA alphabet, so we check for either.
+//   - The sequence buffer is a pre-allocated [u8] started from a 1-element
+//     literal (avoids the bootstrap empty-array-resize fragility).
+
+func isEOF(b: u8) -> bool {
+  if b == 0u8 {
+    return true
+  }
+  if b == 255u8 {
+    return true
+  }
+  return false
+}
+
+func complement(b: u8) -> u8 {
+  if b == 65u8 || b == 97u8 {
+    return 84u8
+  }
+  if b == 67u8 || b == 99u8 {
+    return 71u8
+  }
+  if b == 71u8 || b == 103u8 {
+    return 67u8
+  }
+  if b == 84u8 || b == 116u8 {
+    return 65u8
+  }
+  if b == 85u8 || b == 117u8 {
+    return 65u8
+  }
+  if b == 77u8 || b == 109u8 {
+    return 75u8
+  }
+  if b == 82u8 || b == 114u8 {
+    return 89u8
+  }
+  if b == 87u8 || b == 119u8 {
+    return 87u8
+  }
+  if b == 83u8 || b == 115u8 {
+    return 83u8
+  }
+  if b == 89u8 || b == 121u8 {
+    return 82u8
+  }
+  if b == 75u8 || b == 107u8 {
+    return 77u8
+  }
+  if b == 86u8 || b == 118u8 {
+    return 66u8
+  }
+  if b == 72u8 || b == 104u8 {
+    return 68u8
+  }
+  if b == 68u8 || b == 100u8 {
+    return 72u8
+  }
+  if b == 66u8 || b == 98u8 {
+    return 86u8
+  }
+  if b == 78u8 || b == 110u8 {
+    return 78u8
+  }
+  return b
+}
+
+func emitRevComp(seq: [u8], seqLen: u64) {
+  col = 0u32
+  i = seqLen
+  while i > 0u64 {
+    i -= 1u64
+    writeByte(complement(seq[i]))
+    col += 1u32
+    if col == 60u32 {
+      writeByte(10u8)
+      col = 0u32
+    }
+  }
+  if col > 0u32 {
+    writeByte(10u8)
+  }
+}
+
+// Pre-allocate sequence buffer: start with 1 element (avoids empty-resize
+// fragility in bootstrap) then grow to hold large sequences.
+// 10000 is enough for fasta n=1000 (max sequence = 5000 bases).
+seqCap = 10000u64
+seq = [0u8]
+seq.resize(seqCap)
+seqLen = 0u64
+inRecord = false
+
+b = readByte()
+while !isEOF(b) {
+  if b == 62u8 {
+    if inRecord {
+      emitRevComp(seq, seqLen)
+      seqLen = 0u64
+    }
+    writeByte(b)
+    b = readByte()
+    while !isEOF(b) && b != 10u8 {
+      writeByte(b)
+      b = readByte()
+    }
+    writeByte(10u8)
+    inRecord = true
+    if !isEOF(b) {
+      b = readByte()
+    }
+  } else if b == 10u8 {
+    b = readByte()
+  } else {
+    seq[seqLen] = b
+    seqLen += 1u64
+    b = readByte()
+  }
+}
+
+if inRecord {
+  emitRevComp(seq, seqLen)
+}
