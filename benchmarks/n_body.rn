@@ -10,8 +10,8 @@
 import math
 
 PI = 3.141592653589793f64
-SOLAR_MASS = 4.0f64 * PI * PI
-DAYS_PER_YEAR = 365.24f64
+solarMass = 4.0f64 * PI * PI
+daysPerYear = 365.24f64
 
 // Five bodies: index 0 = sun, 1..4 = Jupiter, Saturn, Uranus, Neptune.
 x = [0.0f64, 4.84143144246472090f64, 8.34336671824457987f64,
@@ -108,9 +108,9 @@ func offsetMomentum() {
     py += vy[i] * mass[i]
     pz += vz[i] * mass[i]
   }
-  vx[0] = -px / SOLAR_MASS
-  vy[0] = -py / SOLAR_MASS
-  vz[0] = -pz / SOLAR_MASS
+  vx[0] = -px / solarMass
+  vy[0] = -py / solarMass
+  vz[0] = -pz / solarMass
 }
 
 n = 1000u64
@@ -121,10 +121,10 @@ if argv.length() > 1 {
 
 // Scale velocities to units of days/year and masses to solar masses.
 for i = 0u64, i < NBODIES, i += 1 {
-  vx[i] = vx[i] * DAYS_PER_YEAR
-  vy[i] = vy[i] * DAYS_PER_YEAR
-  vz[i] = vz[i] * DAYS_PER_YEAR
-  mass[i] = mass[i] * SOLAR_MASS
+  vx[i] = vx[i] * daysPerYear
+  vy[i] = vy[i] * daysPerYear
+  vz[i] = vz[i] * daysPerYear
+  mass[i] = mass[i] * solarMass
 }
 
 offsetMomentum()

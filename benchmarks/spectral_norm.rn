@@ -42,26 +42,25 @@ func ATimesTransp(var v: [f64], var u: [f64]) {
   TimesTransp(v, x)
 }
 
-func main() {
-  // For testing purposes only
-  N = 10
-  u = arrayof(f64).resize(N)
-  for i = 0, i < N, i += 1 {
-    u[i] = 1.0f64
-  }
-  v = arrayof(f64).resize(N)
-  for i = 0, i < N, i += 1 {
-    ATimesTransp(v, u)
-    ATimesTransp(u, v)
-  }
-
-  vBv = 0.0f64
-  vv = 0.0f64
-  for i = 0, i < N, i += 1 {
-    vBv += u[i] * v[i]
-    vv += v[i] * v[i]
-  }
-  println math.sqrt(vBv/vv)
+N = 100u64
+if argv.length() > 1 {
+  passed = false
+  N = argv[1].toUint(u64, passed)
+}
+u = arrayof(f64).resize(N)
+for i = 0u64, i < N, i += 1 {
+  u[i] = 1.0f64
+}
+v = arrayof(f64).resize(N)
+for iter = 0u64, iter < 10u64, iter += 1 {
+  ATimesTransp(v, u)
+  ATimesTransp(u, v)
 }
 
-main()
+vBv = 0.0f64
+vv = 0.0f64
+for i = 0u64, i < N, i += 1 {
+  vBv += u[i] * v[i]
+  vv += v[i] * v[i]
+}
+println math.sqrt(vBv/vv)

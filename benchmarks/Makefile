@@ -1,16 +1,26 @@
-CPP=clang++
-CCFLAGS=-Wall -O3
+# Benchmark references + timing. The Rune programs are built by the bootstrap
+# compiler (see bench.sh / README.md); this Makefile builds the C/C++ oracles.
+CC      ?= clang
+CXX     ?= clang++
+CFLAGS  ?= -O3 -Wall
+LDLIBS  ?= -lm
 
-all: priority_queue fh binary_trees_cc
+REFS = n_body_ref fannkuch_redux_ref spectral_norm_ref mandelbrot_ref \
+       fasta_ref reverse_complement_ref k_nucleotide_ref binary_trees_cc
 
-priority_queue: priority_queue.cc
-	$(CPP) $(CCFLAGS) -o priority_queue priority_queue.cc
+all: $(REFS)
 
-fh: fh.rn
-	../rune -U -O fh.rn
+%_ref: %_ref.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDLIBS)
 
 binary_trees_cc: binary_trees.cc
-	clang++ -O3 binary_trees.cc -o binary_trees_cc
+	$(CXX) $(CFLAGS) -o $@ $<
+
+# Build every Rune program with the bootstrap compiler and time it vs its C ref.
+bench:
+	bash bench.sh
 
 clean:
-	rm priority_queue fh
+	rm -f $(REFS)
+
+.PHONY: all bench clean

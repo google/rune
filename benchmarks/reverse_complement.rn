@@ -93,10 +93,10 @@ func emitRevComp(seq: [u8], seqLen: u64) {
   }
 }
 
-// Pre-allocate sequence buffer: start with 1 element (avoids empty-resize
-// fragility in bootstrap) then grow to hold large sequences.
-// 10000 is enough for fasta n=1000 (max sequence = 5000 bases).
-seqCap = 10000u64
+// Sequence buffer: start with a 1-element literal (avoids the bootstrap
+// empty-array-resize fragility), size to an initial capacity, then grow by
+// doubling as needed so arbitrarily long sequences are handled correctly.
+seqCap = 65536u64
 seq = [0u8]
 seq.resize(seqCap)
 seqLen = 0u64
@@ -123,6 +123,10 @@ while !isEOF(b) {
   } else if b == 10u8 {
     b = readByte()
   } else {
+    if seqLen >= seqCap {
+      seqCap = seqCap * 2u64
+      seq.resize(seqCap)
+    }
     seq[seqLen] = b
     seqLen += 1u64
     b = readByte()
