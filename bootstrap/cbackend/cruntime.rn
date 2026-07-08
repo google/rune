@@ -342,6 +342,14 @@ class CRuntime(self) {
     return cf
   }
 
+  func needArrayDup(self) -> CFragment {
+    self.include("<assert.h>")
+    self.include("<string.h>")
+    cf = self.cFragment("array_dup", "cbackend/cruntime/arrays/dup.inc")
+    cf.addDependencies([self.needArrayType(), self.needArrayAlloc()])
+    return cf
+  }
+
   func needArraySetSize(self) -> CFragment {
     self.include("<assert.h>")
     self.include("<string.h>")

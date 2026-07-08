@@ -1048,28 +1048,35 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     self.genCForeachArray(builder, loopVarExpr, iterExpr, false)
   }
 
-  // Emit: for (i = start; i < end; i = i + 1) { ... }
+  // Emit: for (i = start; i < end; i = i + step) { ... }
   func genCForeachRange(self, builder: c.CBuilder, loopVarExpr: Expr, argExpr: Expr) {
     loopSym = loopVarExpr.val.symVal!
+    oneVal = Bigint(1u64)
     if argExpr.type == ExprType.Tuple {
       first = argExpr.firstChildExpr!
       second = first.nextExprChildExpr!
       cstart = first.genC(builder)
       cend = second.genC(builder)
+      third = second.nextExprChildExpr
+      if !isnull(third) {
+        cstep = third!.genC(builder)
+      } else {
+        cstep = builder.cIntLiteral(oneVal)
+      }
     } else {
       zero = Bigint(0u64)
       cstart = builder.cIntLiteral(zero)
       cend = argExpr.genC(builder)
+      cstep = builder.cIntLiteral(oneVal)
     }
     initRef = builder.cIdentifier(loopSym, true, loopVarExpr.typedValue)
     init = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
                                      null(c.CTypeExpr), initRef, cstart))
     cond = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.LessThan,
                                      null(c.CTypeExpr), builder.cIdentifier(loopSym, false), cend))
-    oneVal = Bigint(1u64)
     plus = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Plus,
                                      null(c.CTypeExpr), builder.cIdentifier(loopSym, false),
-                                     builder.cIntLiteral(oneVal)))
+                                     cstep))
     incr = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
                                      null(c.CTypeExpr), builder.cIdentifier(loopSym, false), plus))
     list = c.CExprList()

@@ -1761,6 +1761,19 @@ class Expr(self, type: ExprType, location: Location) {
       dupArgs.appendCExpr(r)
       r = builder.cCall(self.location, c.CRuntimeFunction.StringDup, c.CExpr(dupArgs))
     }
+    // Arrays have value semantics: assigning an array-typed variable, field or
+    // element (q = p) must copy the buffer so the two names do not alias.  A
+    // fresh temporary (call/slice/concat/literal) needs no copy, so restrict
+    // this to aliasing-prone lvalue reads (Ident / Dot / Index).
+    if (self.type == ExprType.Equals && !isnull(right.typedValue) &&
+        (right.type == ExprType.Ident || right.type == ExprType.Dot ||
+         right.type == ExprType.Index) &&
+        builder.typechecker.resolve(right.typedValue!).type ==
+            types.Type.TypeClass.Array) {
+      arrDupArgs = c.CExprList()
+      arrDupArgs.appendCExpr(r)
+      r = builder.cCall(self.location, c.CRuntimeFunction.ArrayDup, c.CExpr(arrDupArgs))
+    }
 
     // An unsuffixed integer literal keeps its adaptable AnyInt type even
     // after unifying with a concrete SIGNED operand (unifyAnyInt accepts

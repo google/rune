@@ -57,7 +57,8 @@ func mangleCName(name: string) -> string {
   if (name == "sqrt" || name == "exp" || name == "log" || name == "pow" ||
       name == "sin" || name == "cos" || name == "floor" || name == "ceil" ||
       name == "round" || name == "remove" || name == "div" ||
-      name == "time" || name == "random" || name == "index") {
+      name == "time" || name == "random" || name == "index" ||
+      name == "main") {
     return "rn_user_" + name
   }
   needsMangling = false
@@ -1019,6 +1020,7 @@ enum CRuntimeFunction {
    ArrayConcat
    ArraySlice
    ArrayResize
+   ArrayDup
 
    // Try/except support: RN_TRY() pushes+setjmps a frame; raise_with_code
    // records the code path and message, then longjmps or aborts.
@@ -1243,6 +1245,11 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.ArraySlice => {
         e.needArraySlice()
         e.write("array_slice")
+      }
+
+      CRuntimeFunction.ArrayDup => {
+        e.needArrayDup()
+        e.write("array_dup")
       }
 
       CRuntimeFunction.ModReduce => {
