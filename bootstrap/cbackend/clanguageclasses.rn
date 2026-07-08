@@ -755,6 +755,10 @@ class CBinaryOperator(self, location: db.Location, type: CBinaryOperator.Type,
       return
     }
 
+    // Smaller precedence() == binds tighter. The left child of a
+    // left-associative operator needs parens only when it binds strictly
+    // looser (a same-precedence left child associates correctly already:
+    // a - b - c == (a - b) - c).
     if self.precedence() < self.leftCExpr.precedence() {
       e.write("(")
       self.leftCExpr.emit(e)
@@ -767,7 +771,11 @@ class CBinaryOperator(self, location: db.Location, type: CBinaryOperator.Type,
     e.write(self.tostring())
     e.space()
 
-    if self.precedence() < self.rightCExpr.precedence() {
+    // The right child must also be parenthesized at EQUAL precedence: for
+    // left-associative operators a - (b - c) != a - b - c, and a / (b * c)
+    // != a / b * c. Extra parens at equal precedence never change meaning,
+    // so <= is always safe.
+    if self.precedence() <= self.rightCExpr.precedence() {
       e.write("(")
       self.rightCExpr.emit(e)
       e.write(")")
