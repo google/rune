@@ -1,0 +1,115 @@
+// fasta benchmark - The Computer Language Benchmarks Game
+// https://benchmarksgame-team.pages.debian.net/benchmarksgame/
+
+// LCG random number generator constants
+IM = 139968u32
+IA = 3877u32
+IC = 29573u32
+// Store seed in array so bootstrap does not shadow it as a local variable
+// (bootstrap compiler bug: bare assignment in a func creates a local shadow)
+rngSeed = [42u32]
+WIDTH = 60u32
+
+// Homo sapiens alu repeat string (287 chars)
+ALU = "GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGGGAGGCCGAGGCGGGCGGATCACCTGAGGTCAGGAGTTCGAGACCAGCCTGGCCAACATGGTGAAACCCCGTCTCTACTAAAAATACAAAAATTAGCCGGGCGTGGTGGCGCGCGCCTGTAATCCCAGCTACTCGGGAGGCTGAGGCAGGAGAATCGCTTGAACCCGGGAGGCGGAGGTTGCAGTGAGCCGAGATCGCGCCACTGCACTCCAGCCTGGGCGACAGAGCGAGACTCCGTCTCAAAAAA"
+
+func genRandom(max: f64) -> f64 {
+  rngSeed[0] = (rngSeed[0] * IA + IC) % IM
+  return max * <f64>rngSeed[0] / <f64>IM
+}
+
+func repeatFasta(s: string, count: u32) {
+  pos = 0u32
+  slen = <u32>s.length()
+  col = 0u32
+  for i = 0u32, i < count, i += 1 {
+    writeByte(<u8>s[pos])
+    col += 1
+    if col == WIDTH {
+      writeByte(10u8)
+      col = 0u32
+    }
+    pos += 1
+    if pos == slen {
+      pos = 0u32
+    }
+  }
+  if col > 0u32 {
+    writeByte(10u8)
+  }
+}
+
+func randomFastaIUB(count: u32) {
+  col = 0u32
+  tableLen = iubSyms.length()
+  for i = 0u32, i < count, i += 1 {
+    p = genRandom(1.0f64)
+    j = 0u64
+    while j + 1u64 < tableLen && iubProbs[j] < p {
+      j += 1
+    }
+    writeByte(iubSyms[j])
+    col += 1
+    if col == WIDTH {
+      writeByte(10u8)
+      col = 0u32
+    }
+  }
+  if col > 0u32 {
+    writeByte(10u8)
+  }
+}
+
+func randomFastaHS(count: u32) {
+  col = 0u32
+  tableLen = hsSyms.length()
+  for i = 0u32, i < count, i += 1 {
+    p = genRandom(1.0f64)
+    j = 0u64
+    while j + 1u64 < tableLen && hsProbs[j] < p {
+      j += 1
+    }
+    writeByte(hsSyms[j])
+    col += 1
+    if col == WIDTH {
+      writeByte(10u8)
+      col = 0u32
+    }
+  }
+  if col > 0u32 {
+    writeByte(10u8)
+  }
+}
+
+// Parse N from command line
+n = 1000u32
+if argv.length() > 1 {
+  passed = false
+  n = argv[1].toUint(u32, passed)
+}
+
+// IUB ambiguity codes table (15 symbols, individual probabilities)
+iubSyms = ['a', 'c', 'g', 't', 'B', 'D', 'H', 'K', 'M', 'N', 'R', 'S', 'V', 'W', 'Y']
+iubProbs = [0.27f64, 0.12f64, 0.12f64, 0.27f64,
+            0.02f64, 0.02f64, 0.02f64, 0.02f64, 0.02f64,
+            0.02f64, 0.02f64, 0.02f64, 0.02f64, 0.02f64, 0.02f64]
+// Compute cumulative probabilities for IUB
+for k = 1u64, k < iubProbs.length(), k += 1 {
+  iubProbs[k] += iubProbs[k - 1u64]
+}
+
+// Homo sapiens frequency table (4 symbols, individual probabilities)
+hsSyms = ['a', 'c', 'g', 't']
+hsProbs = [0.3029549426680f64, 0.1979883004921f64, 0.1975473066391f64, 0.3015094502008f64]
+// Compute cumulative probabilities for HomoSap
+for k = 1u64, k < hsProbs.length(), k += 1 {
+  hsProbs[k] += hsProbs[k - 1u64]
+}
+
+// Main sequence
+println ">ONE Homo sapiens alu"
+repeatFasta(ALU, n * 2u32)
+println ">TWO IUB ambiguity codes"
+randomFastaIUB(n * 3u32)
+println ">THREE Homo sapiens frequency"
+randomFastaHS(n * 5u32)

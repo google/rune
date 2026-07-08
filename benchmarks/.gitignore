@@ -1,0 +1,17 @@
+# Compiler-generated C (the .rn is the source; *_ref.c hand-written refs are kept).
+*.c
+!*_ref.c
+# Compiled benchmark executables (no extension).
+binary_trees
+binary_trees_cc
+fannkuch_redux
+mandelbrot
+spectral_norm
+fasta
+fh
+priority_queue
+n_body
+reverse_complement
+k_nucleotide
+pidigits
+regex_redux
