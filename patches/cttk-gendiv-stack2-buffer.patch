@@ -1,0 +1,13 @@
+--- a/src/int31.c
++++ b/src/int31.c
+@@ -2122,8 +2122,8 @@
+ gendiv_stack2(uint32_t *q, uint32_t *r,
+ 	const uint32_t *a, const uint32_t *b, int mod)
+ {
+-	uint32_t t1[CTTK_MAX_INT_BUF / (3 * sizeof(uint32_t))];
+-	uint32_t t2[CTTK_MAX_INT_BUF / (3 * sizeof(uint32_t))];
++	uint32_t t1[CTTK_MAX_INT_BUF / (2 * sizeof(uint32_t))];
++	uint32_t t2[CTTK_MAX_INT_BUF / (2 * sizeof(uint32_t))];
+ 
+ 	memset(t1, 0, sizeof t1);
+ 	memset(t2, 0, sizeof t2);

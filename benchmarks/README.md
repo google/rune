@@ -22,10 +22,13 @@ Each `NAME.stdout` is a golden for a fixed small argument. Every C reference is
 verified byte-identical to its Rune counterpart.
 
 **pidigits** uses the Gibbons streaming spigot over Rune's fixed-width wide
-integers (`i8192`) rather than true bignum, so it is correct only up to N=265
-digits (state overflows the 8192-bit type beyond that). Wider types (`i10240`+)
-currently crash the bootstrap compiler (`free(): invalid size`) — a separate
-compiler limitation to fix before pidigits can scale.
+integers (`i8192`) rather than true bignum, so at that width it is correct up to
+N=265 digits (the state overflows the 8192-bit type beyond that). Wider state
+types used to crash the compiler; that was a stack-buffer overflow in the CTTK
+dependency — see [`../patches/cttk-gendiv-stack2-buffer.patch`](../patches/README.md).
+With that patch applied, widening the state to e.g. `i15000` produces ~400
+correct digits. The committed `pidigits.rn` stays at `i8192` so it builds
+against an unpatched CTTK.
 
 Not ported: **regex-redux** — needs a regex engine, which Rune does not have.
 
