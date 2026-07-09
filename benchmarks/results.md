@@ -28,12 +28,19 @@ golden and matches the C reference byte-for-byte across the sizes tested.
 | mandelbrot (4000)    |       2333 ms  |  314 ms |  7.43× |
 | fasta (2.5M)         |       2411 ms  |  269 ms |  8.96× |
 | k_nucleotide (1M)    |        520 ms  |   56 ms |  9.29× |
-| spectral_norm (3000) |       4737 ms  |  250 ms | 18.95× |
-| n_body (5M)          |       4160 ms  |  180 ms | 23.11× |
-| reverse_complement (5M) |    4977 ms  |   89 ms | 55.92× |
+| spectral_norm (3000) |       4953 ms  |  276 ms | 17.95× |
+| n_body (5M)          |        694 ms  |  190 ms |  3.65× |
+| reverse_complement (5M) |    5260 ms  |   91 ms | 57.80× |
 
 (arg is the CLI argument / input scale; reverse_complement and k_nucleotide read
 `fasta` output from stdin.)
+
+Two of the gaps below were subsequently fixed (see "Fixes applied"):
+- **n_body was 23×**; exposing libm `sqrt` (a bare `sqrt(x)` now lowers to the
+  hardware instruction) dropped it to **3.65×**.
+- **spectral_norm is 17.95× in the default checked build**; compiling with the
+  new `-U` unsafe flag (which omits fixed-width integer overflow checks) drops it
+  to **~5×** (1389 ms), output identical.
 
 ## Analysis
 
@@ -81,22 +88,34 @@ Rune-vs-C codegen overhead: bounds/idiom differences, less aggressive
 vectorization, and Rune's value-semantics array copies. 4–9× is a reasonable
 starting point for an unoptimized C-emitting compiler.
 
-## Takeaways / optimization opportunities (in impact order)
+## Fixes applied
 
-1. **Inline small functions** in the C backend (or mark them `static inline`) —
-   would help spectral_norm (~19×) and n_body most.
-2. **Expose libm math** (`sqrt`, etc.) as intrinsics — turns n_body from 23× into
-   ~3.5×. (Attempted via `extern "C"`, but the bootstrap frontend crashes on the
-   fp extern and the generic extern path has no libm wiring — tracked as future
-   compiler work.)
-3. **Buffer byte I/O** or steer these benchmarks to bulk `readBytes`/`writeBytes`
-   — fixes reverse_complement's 56×.
-4. General inner-loop codegen (the 4–9× band): revisit value-semantics array
-   copies and give clang more to work with.
+Investigating the slow benchmarks turned up the real bottlenecks — a couple of
+which were not what they looked like — and two were fixed:
 
-None of these are runtime-model problems (binary_trees proves the allocator is
-fine) — they're all C-backend codegen maturity, which is expected for a
-compiler that only recently began compiling this many non-trivial programs.
+1. **Hardware `sqrt` (DONE).** A bare `sqrt(x)` call now lowers to libm's `sqrt`
+   instruction instead of the software Newton routine. **n_body: 23× → 3.65×.**
+   (The clean path types the bare call `f64->f64` on demand at the call site; a
+   global builtin symbol or a `misc.rn` function both trip a latent
+   tyvar-resolution fragility that corrupts unrelated programs.)
+2. **`-U` overflow-elision mode (DONE).** Fixed-width integer add/sub/mul emit
+   plain C arithmetic instead of overflow-checked helpers (whose guard costs an
+   integer divide per multiply). **spectral_norm: 17.95× → ~5× with `-U`.** Off
+   by default; correctness-relevant checks (division, bounds) are kept.
+3. **"Inline small functions" — a red herring.** Clang -O3 already inlines across
+   the single-`.c` output; adding `static`/`inline` measured 0×. spectral_norm's
+   real cost was the overflow checks (#2), not call overhead.
+4. **Wide-int compiler crash (DONE, in the dependency).** Rendering a wide-int
+   literal >~10571 bits crashed the compiler; root cause was a stack-buffer
+   overflow in CTTK (`lib/libcttk.a`), not Rune — see
+   [`../patches/`](../patches/README.md). With the patch, pidigits scales from
+   265 to ~400 digits.
+
+Still open: **per-byte I/O** (reverse_complement's 57× is `readByte`/`writeByte`
+call overhead — bulk `readBytes`/`writeBytes` would close it), and the general
+**4–9× codegen band** (value-semantics array copies, vectorization). None are
+runtime-model problems — binary_trees (1.05×) proves the allocator is fine; the
+rest is C-backend codegen maturity.
 
 ## Bugs found and fixed along the way
 
