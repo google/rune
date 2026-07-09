@@ -979,6 +979,7 @@ enum CRuntimeFunction {
    FloatModulus
    FloatAbs
    IntAbs
+   Sqrt
 
    // Process and byte-level IO builtins
    Exit
@@ -1146,6 +1147,11 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.IntAbs => {
         e.include("<stdlib.h>")
         e.write("llabs")
+      }
+
+      CRuntimeFunction.Sqrt => {
+        e.include("<math.h>")
+        e.write("sqrt")
       }
 
       CRuntimeFunction.Exit => {

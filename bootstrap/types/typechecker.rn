@@ -3439,6 +3439,16 @@ class TypeChecker(self) {
           if !isnull(callee) {
             self.normalizeCallArgs(expr, callee!)
           }
+          // A bare sqrt(x) with no user/module `func sqrt` and no local
+          // binding in scope types as f64 -> f64; codegen (Expr.genC) lowers
+          // it to libm's hardware sqrt.  Bound on demand only at the call
+          // site (not as a global builtin symbol) so programs that never call
+          // sqrt see no change to their type inference.
+          if (fnchild.val.symVal.name == "sqrt" && isnull(callee) &&
+              isnull(self.findSymbolMapping(SymbolMapping(fnchild.val.symVal!,
+                  fnchild.val.symVal.typedValue)))) {
+            self.newSymbol(fnchild.val.symVal!, FN(F(64), F(64)))
+          }
         }
         fnchild = expr.firstChildExpr!
         argchild = fnchild.nextExprChildExpr

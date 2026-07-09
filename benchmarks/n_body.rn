@@ -1,13 +1,10 @@
 // n-body benchmark - The Computer Language Benchmarks Game.
 // Jovian planets + sun, symplectic-Euler integration, dt = 0.01.
 //
-// NOTE ON SQRT: Rune's math.sqrt is a software Newton's-method routine (there
-// is no libm intrinsic exposed to Rune programs), so the pairwise-force sqrt
-// dominates runtime. The C reference (n_body_ref.c) uses the SAME iterative
-// sqrt so the two are an apples-to-apples language/codegen comparison; a libm
-// build of the C reference is faster and is reported separately.
-
-import math
+// NOTE ON SQRT: a bare sqrt(x) call (no `import math`) lowers to libm's
+// hardware sqrt (sqrtsd), so the pairwise-force sqrt is a single instruction.
+// math.sqrt (a software Newton's-method routine) is still available for code
+// that imports math; this benchmark uses the hardware path.
 
 PI = 3.141592653589793f64
 solarMass = 4.0f64 * PI * PI
@@ -65,7 +62,7 @@ func advance(dt: f64) {
       dy = y[i] - y[j]
       dz = z[i] - z[j]
       d2 = dx * dx + dy * dy + dz * dz
-      dist = math.sqrt(d2)
+      dist = sqrt(d2)
       mag = dt / (d2 * dist)
       mi = mass[i]
       mj = mass[j]
@@ -92,7 +89,7 @@ func energy() -> f64 {
       dx = x[i] - x[j]
       dy = y[i] - y[j]
       dz = z[i] - z[j]
-      dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+      dist = sqrt(dx * dx + dy * dy + dz * dz)
       e -= mass[i] * mass[j] / dist
     }
   }

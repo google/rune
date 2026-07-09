@@ -16,6 +16,7 @@ use sym
 
 use filepath
 use location
+use root
 use value
 use bigint
 use block
@@ -1900,6 +1901,29 @@ class Expr(self, type: ExprType, location: Location) {
             raise Status.Unimplemented, "Binary expression operator not yet supported by C backend: ", getExprTypeName(self.type)
           }
         }
+        // Unsafe mode: for fixed-width integer add/sub/mul, emit plain C
+        // arithmetic instead of the overflow-checked intadd/intsub/intmul (and
+        // unsigned) helpers whose guards cost an integer divide per multiply.
+        // Wide (>64-bit) operands already returned via genCWideBinaryOp above,
+        // and string/array Add, Div, Exp and the rotates keep their helpers, so
+        // this only affects the fixed-width checked arithmetic.
+        if getRoot().unsafeMode {
+          unsafeCOp = c.CBinaryOperator.Type.Plus
+          isCheckedArith = false
+          if fn == c.CRuntimeFunction.AddWithOverflowDetect {
+            unsafeCOp = c.CBinaryOperator.Type.Plus
+            isCheckedArith = true
+          } else if fn == c.CRuntimeFunction.SubWithOverflowDetect {
+            unsafeCOp = c.CBinaryOperator.Type.Minus
+            isCheckedArith = true
+          } else if fn == c.CRuntimeFunction.MulWithOverflowDetect {
+            unsafeCOp = c.CBinaryOperator.Type.Times
+            isCheckedArith = true
+          }
+          if isCheckedArith {
+            return builder.cBinaryOperator(self.location, unsafeCOp, self.typedValue, l, r)
+          }
+        }
         // Can Rune do arbitrary length calls?
         list = c.CExprList()
         list.appendCExpr(l)
@@ -3651,6 +3675,19 @@ class Expr(self, type: ExprType, location: Location) {
         absArgs = c.CExprList()
         absArgs.appendCExpr(absArg.genC(builder))
         return builder.cCall(self.location, absFn, c.CExpr(absArgs))
+      }
+      if builtinName == "sqrt" && isnull(builder.findFunction("sqrt")) {
+        // A bare sqrt(x) with no user/module sqrt in scope maps to libm's
+        // hardware sqrt.  The typechecker types the bare call f64 -> f64 on
+        // demand (see the sqrt case in TypeChecker.expr's Call handler); no
+        // function body is ever emitted, so this interception always fires.
+        sqArg = right
+        if right.type == ExprType.List && !isnull(right.firstChildExpr) {
+          sqArg = right.firstChildExpr!
+        }
+        sqArgs = c.CExprList()
+        sqArgs.appendCExpr(sqArg.genC(builder))
+        return builder.cCall(self.location, c.CRuntimeFunction.Sqrt, c.CExpr(sqArgs))
       }
       if (builtinName == "exit" || builtinName == "readByte" ||
           builtinName == "writeByte" || builtinName == "readBytes" ||

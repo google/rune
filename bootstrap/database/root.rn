@@ -23,6 +23,10 @@ class Root(self) {
   self.dumpFuncTree = false
   self.dumpHir = false
   self.traceTypes = false
+  // Unsafe mode: omit fixed-width integer overflow checks, emitting plain C
+  // arithmetic (a + b, a - b, a * b) instead of the checked intadd/uintadd/
+  // intsub/uintsub/intmul/uintmul helpers.  Off by default.
+  self.unsafeMode = false
   self.generateC = false
   self.outputCFilename = ""
   self.indentDepth = 0u32
