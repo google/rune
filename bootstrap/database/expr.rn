@@ -3709,6 +3709,25 @@ class Expr(self, type: ExprType, location: Location) {
         }
         return builder.cCall(self.location, iofn, c.CExpr(ioparms))
       }
+      if (builtinName == "regexCount" || builtinName == "regexReplace") &&
+          isnull(builder.findFunction(builtinName)) {
+        // regexCount(pattern, text) / regexReplace(pattern, repl, text) map to
+        // the PCRE2 shim (cbackend/cruntime/regex.inc).  The typechecker types
+        // these calls on demand at the call site (see TypeChecker.expr's Call
+        // handler); flag the root so the clang link line adds -lpcre2-8.
+        getRoot().usesRegex = true
+        rxfn = builtinName == "regexCount"?
+            c.CRuntimeFunction.RegexCount : c.CRuntimeFunction.RegexReplace
+        rxparms = c.CExprList()
+        if right.typedValue.type == types.Type.TypeClass.Tuple {
+          for child in right.childExprs() {
+            rxparms.appendCExpr(child.genC(builder))
+          }
+        } else {
+          rxparms.appendCExpr(right.genC(builder))
+        }
+        return builder.cCall(self.location, rxfn, c.CExpr(rxparms))
+      }
     }
 
     // Calls to extern "C" functions are emitted under an rn_ prefix and

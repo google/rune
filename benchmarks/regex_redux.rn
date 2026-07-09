@@ -1,0 +1,75 @@
+// regex-redux benchmark - The Computer Language Benchmarks Game
+// https://benchmarksgame-team.pages.debian.net/benchmarksgame/
+//
+// Reads all of stdin as a raw byte sequence, strips FASTA descriptor lines and
+// newlines, counts nine variant-pattern families, applies eleven IUB
+// substitutions, and prints match counts followed by input/cleaned/expanded
+// lengths.
+//
+// NOTE: uses readByte() instead of readln() because the legacy LLVM runtime
+// has a heap-corruption bug in readln() for lines longer than ~16 chars.
+// readByte() returns 0u8 at EOF in the bootstrap runtime and 255u8 in the
+// legacy runtime (getchar() returns -1 = 0xFF as uint8_t).
+//
+// DRAFT: depends on two builtins not yet implemented in the compiler:
+//   regexCount(pattern: string, text: string) -> u64
+//   regexReplace(pattern: string, repl: string, text: string) -> string
+// Do NOT compile this file until those builtins are wired in.
+
+func isEOF(b: u8) -> bool {
+  if b == 0u8 {
+    return true
+  }
+  if b == 255u8 {
+    return true
+  }
+  return false
+}
+
+// Read all of stdin byte-by-byte into a string.
+rawBytes = arrayof(u8)
+b = readByte()
+while !isEOF(b) {
+  rawBytes.append(b)
+  b = readByte()
+}
+// Convert to string for regex operations.
+input = <string>rawBytes
+ilen = rawBytes.length()
+
+// Strip FASTA descriptor lines and all newlines in one pass.
+seq = regexReplace(">[^\n]*\n|\n", "", input)
+clen = seq.length()
+
+// Count nine variant-pattern families (non-overlapping matches).
+println "agggtaaa|tttaccct", " ", regexCount("agggtaaa|tttaccct", seq)
+println "[cgt]gggtaaa|tttaccc[acg]", " ", regexCount("[cgt]gggtaaa|tttaccc[acg]", seq)
+println "a[act]ggtaaa|tttacc[agt]t", " ", regexCount("a[act]ggtaaa|tttacc[agt]t", seq)
+println "ag[act]gtaaa|tttac[agt]ct", " ", regexCount("ag[act]gtaaa|tttac[agt]ct", seq)
+println "agg[act]taaa|ttta[agt]cct", " ", regexCount("agg[act]taaa|ttta[agt]cct", seq)
+println "aggg[acg]aaa|ttt[cgt]ccct", " ", regexCount("aggg[acg]aaa|ttt[cgt]ccct", seq)
+println "agggt[cgt]aa|tt[acg]accct", " ", regexCount("agggt[cgt]aa|tt[acg]accct", seq)
+println "agggta[cgt]a|t[acg]taccct", " ", regexCount("agggta[cgt]a|t[acg]taccct", seq)
+println "agggtaa[cgt]|[acg]ttaccct", " ", regexCount("agggtaa[cgt]|[acg]ttaccct", seq)
+
+// Apply IUB ambiguity-code substitutions in order, chaining the result.
+// These expand uppercase single-letter IUB codes (emitted by fasta's >TWO
+// section) into regex alternations.  slen may exceed clen due to expansion.
+s = regexReplace("B", "(c|g|t)",     seq)
+s = regexReplace("D", "(a|g|t)",     s)
+s = regexReplace("H", "(a|c|t)",     s)
+s = regexReplace("K", "(g|t)",       s)
+s = regexReplace("M", "(a|c)",       s)
+s = regexReplace("N", "(a|c|g|t)",   s)
+s = regexReplace("R", "(a|g)",       s)
+s = regexReplace("S", "(c|g)",       s)
+s = regexReplace("V", "(a|c|g)",     s)
+s = regexReplace("W", "(a|t)",       s)
+s = regexReplace("Y", "(c|t)",       s)
+slen = s.length()
+
+// Print lengths: original input, cleaned (no headers/newlines), after IUB expansion.
+println ""
+println ilen
+println clen
+println slen

@@ -211,6 +211,14 @@ class CRuntime(self) {
     return self.cFragment("string_methods", "cbackend/cruntime/string_methods.inc")
   }
 
+  // The regex shim (regex.inc) calls rn_stralloc/string_length, so string
+  // methods must be emitted first; declare that dependency here.
+  func needRegex(self) -> CFragment {
+    cf = self.cFragment("regex", "cbackend/cruntime/regex.inc")
+    cf.addDependencies([self.needStringMethods()])
+    return cf
+  }
+
   func needIntAdd(self, width: u32) -> string {
     self.needRaiseError()
     self.needIntAddFn = true

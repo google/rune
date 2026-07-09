@@ -40,6 +40,7 @@ $CXX -O3 -o "$OUT/binary_trees_ref"      "$B/binary_trees.cc"             2>/dev
 $CC  -O3 -o "$OUT/fasta_ref"             "$B/fasta_ref.c"                 2>/dev/null
 $CC  -O3 -o "$OUT/revcomp_ref"           "$B/reverse_complement_ref.c"    2>/dev/null
 $CC  -O3 -o "$OUT/knuc_ref"              "$B/k_nucleotide_ref.c"          2>/dev/null
+$CC  -O3 -o "$OUT/regex_redux_ref"       "$B/regex_redux_ref.c"    -lpcre2-8 2>/dev/null
 
 buildbs binary_trees;   row "binary_trees(18)"   "$(timeit "$OUT/binary_trees.bs" 18)"    "$(timeit "$OUT/binary_trees_ref" 18)"
 buildbs fannkuch_redux; row "fannkuch(11)"       "$(timeit "$OUT/fannkuch_redux.bs" 11)"  "$(timeit "$OUT/fannkuch_ref" 11)"
@@ -52,3 +53,5 @@ buildbs fasta;          row "fasta(2.5M)"        "$(timeit "$OUT/fasta.bs" 25000
 buildbs reverse_complement; row "revcomp(5M)"    "$(timeit -i "$OUT/rc_in.txt" "$OUT/reverse_complement.bs")" "$(timeit -i "$OUT/rc_in.txt" "$OUT/revcomp_ref")"
 "$OUT/fasta.bs" 1000000 > "$OUT/kn_in.txt" 2>/dev/null
 buildbs k_nucleotide;   row "knucleotide(1M)"    "$(timeit -i "$OUT/kn_in.txt" "$OUT/k_nucleotide.bs")" "$(timeit -i "$OUT/kn_in.txt" "$OUT/knuc_ref")"
+# regex_redux reuses the 5M fasta input generated for reverse-complement.
+buildbs regex_redux;    row "regex_redux(5M)"    "$(timeit -i "$OUT/rc_in.txt" "$OUT/regex_redux.bs")" "$(timeit -i "$OUT/rc_in.txt" "$OUT/regex_redux_ref")"

@@ -45,8 +45,10 @@ func runClangCompiler(cFileName: string, debugMode: bool, optimized: bool) -> bo
     optFlag = "-g -O0";
   }
   clangPath = "clang"
-  command = "%s %s -Wno-main-return-type -fPIC -o %s %s -lm" %
-      (clangPath, optFlag, outFileName, cFileName)
+  // Programs using the regex builtins pull in the PCRE2 shim; link -lpcre2-8.
+  regexLib = db.getRoot().usesRegex? " -lpcre2-8" : ""
+  command = "%s %s -Wno-main-return-type -fPIC -o %s %s -lm%s" %
+      (clangPath, optFlag, outFileName, cFileName, regexLib)
   return  os.system(command) == 0
 }
 

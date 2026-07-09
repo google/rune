@@ -27,6 +27,10 @@ class Root(self) {
   // arithmetic (a + b, a - b, a * b) instead of the checked intadd/uintadd/
   // intsub/uintsub/intmul/uintmul helpers.  Off by default.
   self.unsafeMode = false
+  // Set when a program uses the regex builtins (regexCount/regexReplace); the
+  // clang link line then adds -lpcre2-8 for the regex.inc shim.  Off unless a
+  // program actually calls regex, so non-regex binaries gain no PCRE2 dep.
+  self.usesRegex = false
   self.generateC = false
   self.outputCFilename = ""
   self.indentDepth = 0u32

@@ -96,6 +96,10 @@ class CEmitter(self, filename: string) {
     self.runtime.needStringMethods()
   }
 
+  func needRegex(self) {
+    self.runtime.needRegex()
+  }
+
   func needModular(self) {
     self.include("<stdint.h>")
     self.runtime.cFragment("modular", "cbackend/cruntime/modular.inc")

@@ -991,6 +991,10 @@ enum CRuntimeFunction {
    ArgvArray
    StringChr
 
+   // Regex builtins (PCRE2-backed shim, cbackend/cruntime/regex.inc)
+   RegexCount
+   RegexReplace
+
    // String builtins
    StringAppend
    StringLength
@@ -1192,6 +1196,16 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.StringChr => {
         e.needStringMethods()
         e.write("string_chr")
+      }
+
+      CRuntimeFunction.RegexCount => {
+        e.needRegex()
+        e.write("rn_regex_count")
+      }
+
+      CRuntimeFunction.RegexReplace => {
+        e.needRegex()
+        e.write("rn_regex_replace")
       }
 
       CRuntimeFunction.StringLength => {

@@ -3449,6 +3449,21 @@ class TypeChecker(self) {
                   fnchild.val.symVal.typedValue)))) {
             self.newSymbol(fnchild.val.symVal!, FN(F(64), F(64)))
           }
+          // The regex builtins are typed on demand the same way: regexCount
+          // is (string, string) -> u64 and regexReplace is
+          // (string, string, string) -> string.  Bound at the call site only,
+          // so programs that never use regex see no change to inference.
+          if (fnchild.val.symVal.name == "regexCount" && isnull(callee) &&
+              isnull(self.findSymbolMapping(SymbolMapping(fnchild.val.symVal!,
+                  fnchild.val.symVal.typedValue)))) {
+            self.newSymbol(fnchild.val.symVal!, FN(TUPLE([STRING(), STRING()]), U(64)))
+          }
+          if (fnchild.val.symVal.name == "regexReplace" && isnull(callee) &&
+              isnull(self.findSymbolMapping(SymbolMapping(fnchild.val.symVal!,
+                  fnchild.val.symVal.typedValue)))) {
+            self.newSymbol(fnchild.val.symVal!,
+                FN(TUPLE([STRING(), STRING(), STRING()]), STRING()))
+          }
         }
         fnchild = expr.firstChildExpr!
         argchild = fnchild.nextExprChildExpr

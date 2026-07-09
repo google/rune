@@ -17,6 +17,7 @@ used to exercise and measure the **self-hosted (bootstrap) Rune compiler**
 | reverse-complement  | `reverse_complement.rn` | `reverse_complement_ref.c` | fasta output |
 | k-nucleotide        | `k_nucleotide.rn`       | `k_nucleotide_ref.c`       | fasta output |
 | pidigits            | `pidigits.rn`           | `pidigits_ref.c` (GMP)     | — |
+| regex-redux         | `regex_redux.rn`        | `regex_redux_ref.c` (PCRE2)| fasta output |
 
 Each `NAME.stdout` is a golden for a fixed small argument. Every C reference is
 verified byte-identical to its Rune counterpart.
@@ -30,7 +31,13 @@ With that patch applied, widening the state to e.g. `i15000` produces ~400
 correct digits. The committed `pidigits.rn` stays at `i8192` so it builds
 against an unpatched CTTK.
 
-Not ported: **regex-redux** — needs a regex engine, which Rune does not have.
+**regex-redux** uses two regex builtins added to the bootstrap compiler —
+`regexCount(pattern, text) -> u64` and `regexReplace(pattern, repl, text) ->
+string` — backed by a thin PCRE2 shim (`../bootstrap/cbackend/cruntime/regex.inc`).
+Building a program that calls them links `-lpcre2-8`, so **PCRE2 must be
+installed** (`libpcre2-dev` / `pcre2`); programs that don't use regex gain no
+such dependency. The C reference (`regex_redux_ref.c`) also uses PCRE2 and is
+byte-identical to the Rune version on the `fasta`-generated golden.
 
 ## Build & run one program
 
