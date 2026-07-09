@@ -16,7 +16,7 @@ compiler that emits C — and compared against hand-written C/C++ references at
 - **Machine:** Intel Core Ultra 9 285H, x86_64, clang 22.1.6, Linux.
 - Reproduce with `bash bench.sh` (from the repo root).
 
-All eight programs are correct: each Rune build matches its committed `.stdout`
+All nine programs are correct: each Rune build matches its committed `.stdout`
 golden and matches the C reference byte-for-byte across the sizes tested.
 
 ## Results
@@ -31,6 +31,7 @@ golden and matches the C reference byte-for-byte across the sizes tested.
 | spectral_norm (3000) |       4953 ms  |  276 ms | 17.95× |
 | n_body (5M)          |        694 ms  |  190 ms |  3.65× |
 | reverse_complement (5M) |    5260 ms  |   91 ms | 57.80× |
+| regex_redux (5M)     |       6269 ms  | 6023 ms |  **1.04×** |
 
 (arg is the CLI argument / input scale; reverse_complement and k_nucleotide read
 `fasta` output from stdin.)
@@ -52,6 +53,17 @@ by allocating and freeing millions of tree nodes. Rune's reference-counted
 object allocation is competitive with C++ `unique_ptr`, so the generated-code
 quality barely matters here. This is the encouraging data point: Rune's runtime
 is not the problem.
+
+**Parity when the work is in a shared library — regex_redux (1.04×).** Both the
+Rune and C versions call the same PCRE2 engine (Rune via a thin
+`rn_regex_count`/`rn_regex_replace` shim; see the benchmarks README), so nearly
+all of the ~6 s is spent inside `libpcre2` matching and substituting over the
+50 MB sequence. The Rune-vs-C difference is only the surrounding string
+plumbing (reading stdin, building the cleaned/expanded strings), which is
+negligible next to the regex work — hence near-parity, the same lesson as
+binary_trees from the other direction. It also validates the "thin wrapper over
+a C library" design: when a benchmark's cost lives in a mature C library,
+Rune pays no codegen tax for it.
 
 **No function inlining — spectral_norm (19×).** The hot loop calls `evalA(i,j)`
 once per matrix element (~180M calls at N=3000). The C compiler inlines it to a
