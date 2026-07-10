@@ -5,24 +5,11 @@
 // Reads FASTA from stdin (as produced by fasta), prints reverse-complement
 // of each record wrapped at 60 columns with uppercase output.
 //
-// Implementation notes:
-//   - We read with readByte() rather than readln() to avoid a heap-corruption
-//     bug in the legacy runtime's readln() for lines > 16 chars.
-//   - readByte() returns 0u8 at EOF in the bootstrap runtime and 255u8 in
-//     the legacy runtime (getchar() returns -1 = 0xFF as uint8_t).  Both
-//     are outside the valid FASTA alphabet, so we check for either.
-//   - The sequence buffer is a pre-allocated [u8] started from a 1-element
-//     literal (avoids the bootstrap empty-array-resize fragility).
-
-func isEOF(b: u8) -> bool {
-  if b == 0u8 {
-    return true
-  }
-  if b == 255u8 {
-    return true
-  }
-  return false
-}
+// The bootstrap readln() implementation uses getline and returns a headed Rune
+// string, so this processes each complete FASTA line without per-byte input
+// calls. CLBG FASTA inputs have no blank lines; an empty line is the EOF marker.
+// The sequence buffer starts from a 1-element literal to avoid empty-array
+// resize fragility and grows without a fixed record-size limit.
 
 func complement(b: u8) -> u8 {
   if b == 65u8 || b == 97u8 {
@@ -101,36 +88,28 @@ seq = [0u8]
 seq.resize(seqCap)
 seqLen = 0u64
 inRecord = false
-
-b = readByte()
-while !isEOF(b) {
-  if b == 62u8 {
+line = readln()
+while line.length() > 0u64 {
+  if <u8>line[0] == 62u8 {
     if inRecord {
       emitRevComp(seq, seqLen)
       seqLen = 0u64
     }
-    writeByte(b)
-    b = readByte()
-    while !isEOF(b) && b != 10u8 {
-      writeByte(b)
-      b = readByte()
-    }
-    writeByte(10u8)
+    println line
     inRecord = true
-    if !isEOF(b) {
-      b = readByte()
-    }
-  } else if b == 10u8 {
-    b = readByte()
   } else {
-    if seqLen >= seqCap {
-      seqCap = seqCap * 2u64
-      seq.resize(seqCap)
+    linePos = 0u64
+    while linePos < line.length() {
+      if seqLen >= seqCap {
+        seqCap = seqCap * 2u64
+        seq.resize(seqCap)
+      }
+      seq[seqLen] = <u8>line[linePos]
+      seqLen += 1u64
+      linePos += 1u64
     }
-    seq[seqLen] = b
-    seqLen += 1u64
-    b = readByte()
   }
+  line = readln()
 }
 
 if inRecord {

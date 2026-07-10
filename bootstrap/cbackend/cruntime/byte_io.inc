@@ -26,12 +26,15 @@ static inline char *readln(void) {
   size_t cap = 0;
   ssize_t len = getline(&line, &cap, stdin);
   if (len < 0) {
-    return "";
+    return rn_stralloc(0);
   }
   if (len > 0 && line[len - 1] == '\n') {
-    line[len - 1] = '\0';
+    --len;
   }
-  return line;
+  char *result = rn_stralloc((size_t)len);
+  memcpy(result, line, (size_t)len);
+  free(line);
+  return result;
 }
 
 static inline char *readBytes(uint64_t n) {

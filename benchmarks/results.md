@@ -120,6 +120,23 @@ reverse-complement it is 0.830x. The small fannkuch and regex shifts are within
 the expected powersave/minimum-sample session variation. Reverse-complement is
 the only established gap materially above the 1.15x target.
 
+## Stage 1 incremental update: line-based reverse-complement input
+
+On 2026-07-10, source `f9f8069+readln-revcomp`, bootstrap `readln()` was made
+length-safe by returning a headed Rune string. Reverse-complement now consumes
+complete FASTA lines through bootstrap `getline` rather than issuing one
+`getchar` per input byte. The compiler was rebuilt and the 205-test gate passed;
+both O0 and O3 match the committed golden and the full 50.8 MB naive-reference
+output byte-for-byte.
+
+| Benchmark (workload) | Rune flags | Rune O0 | Rune O3 | naive O3 | O0 / naive | O3 / naive | fastest published |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| reverse-complement (fasta 5M) | checked | 1049.213 | 135.825 | 77.415 | 13.553x | **1.755x** | pending |
+
+The CLBG FASTA input has no blank lines, so its empty `readln()` result is an
+unambiguous EOF marker. Record capacity remains dynamically doubled; no input
+size or amount of work was reduced.
+
 ## Current analysis
 
 ### The optimization unlock
@@ -157,17 +174,17 @@ semantic alignment with the legacy implementation, which leaves stdout buffered
 until normal process/file flushing.
 
 Giving generated functions internal linkage then lets clang inline reverse-
-complement's hot helper calls: it improves from 1.996x to 1.824x. This is a
-compiler-wide C emission improvement, not a benchmark-specific annotation; the
-full rebaseline remains correct with an established-program geometric mean below
-the naive references.
+complement's hot helper calls: it improves from 1.996x to 1.824x. Replacing its
+per-byte input loop with the length-safe bootstrap line reader further improves
+it to 1.755x. This is still not a fixed input cap: each record buffer grows by
+doubling and the timing output remains byte-identical.
 
-Reverse-complement still reads the roughly 50.8 MB `fasta 5000000` input one
-byte at a time and transforms it through a branch-heavy complement function.
-Those are now the next costs to attribute; the currently advertised bulk-byte
-API is not safe for this rewrite because its bootstrap implementation does not
-honor its declared array/length contract. Pidigits still needs a true bignum
-facility rather than local code-generation tuning.
+The next reverse-complement target is buffered exact-length output. The
+currently advertised `readBytes`/`writeBytes` byte-array API is not yet safe for
+general use because its bootstrap implementation does not honor the declared
+array/length contract; repair it before relying on it for binary-safe buffering.
+Pidigits still needs a true bignum facility rather than local code-generation
+tuning.
 
 ## Historical fixes retained in the current source
 
