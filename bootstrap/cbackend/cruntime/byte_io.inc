@@ -18,7 +18,6 @@ static inline uint8_t readByte(void) {
 
 static inline void writeByte(uint8_t b) {
   putchar(b);
-  fflush(stdout);
 }
 
 // Read one line from stdin, without the trailing newline.
@@ -44,5 +43,4 @@ static inline char *readBytes(uint64_t n) {
 
 static inline void writeBytes(const char *s) {
   fwrite(s, 1, strlen(s), stdout);
-  fflush(stdout);
 }

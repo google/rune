@@ -100,11 +100,13 @@ A speed number is only admissible if it is **correct, pinned, and reproducible.*
   with the harness above, rewrite `results.md`'s numbers and analysis to the real
   `-O3` figures. The established nine-row O3 geomean is 1.662×, dominated by
   the two I/O outliers; the other seven have a 0.860× geomean.
-- **Stage 1 — close the last single-thread gaps vs naive C.** fasta (6.656×) and
-  reverse_complement (41.874×): route them through bulk I/O (use the existing
-  `writeBytes`/`readBytes`, or make `writeByte`/`readByte` use a manual buffer /
-  the `_unlocked` stdio variants). Nudge mandelbrot (1.155×) if cheap. Target:
-  every benchmark ≤ ~1.15× the naive C reference.
+- **Stage 1 — close the last single-thread gaps vs naive C.** Buffered stdout is
+  complete: removing `writeByte`'s per-byte `fflush` moved fasta to 1.057×,
+  reverse-complement to 1.996×, and mandelbrot to 0.775×. Next, attribute and
+  remove reverse-complement's per-byte input/transformation cost. Do not use the
+  current `readBytes`/`writeBytes` implementation until its declared array and
+  length contract is repaired. Target: every benchmark ≤ ~1.15× the naive C
+  reference.
 - **Stage 2 — measure the real leaders & find the ceiling.** Build the fastest
   published entry for each program locally; that becomes the true target. For each,
   produce a gap analysis: what it does that Rune can't (threads, SIMD intrinsics,

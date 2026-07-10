@@ -70,6 +70,28 @@ spigot algorithm, but Rune uses fixed `i8192` state and is verified only through
 integers as a language/runtime feature gap, not the cost of a different
 algorithm, and no published leader has been measured yet.
 
+## Stage 1 incremental update: buffered byte output
+
+On 2026-07-10, source `b6c5748+buffered-stdout`, `writeByte` and `writeBytes`
+were aligned with the legacy runtime: they write through libc's normal stdout
+buffer instead of calling `fflush(stdout)` after every invocation. The full
+compiler gate passed (`PASS=205 FAIL=0`). Each row below again passed its
+committed golden and byte-identical full-workload reference comparison before
+the pinned warmup-plus-best-of-five timing.
+
+| Benchmark (workload) | Rune flags | Rune O0 | Rune O3 | naive O3 | O0 / naive | O3 / naive |
+|---|---:|---:|---:|---:|---:|---:|
+| mandelbrot (4000) | `-U` | 1628.294 | 248.932 | 321.340 | 5.067x | **0.775x** |
+| fasta (2.5M) | checked | 630.306 | 294.991 | 278.954 | 2.260x | **1.057x** |
+| reverse-complement (fasta 5M) | checked | 1190.246 | 156.516 | 78.418 | 15.178x | **1.996x** |
+| k-nucleotide (fasta 1M) | checked | 518.859 | 108.642 | 191.675 | 2.707x | **0.567x** |
+| pidigits (265 digits) | checked | 2114.417 | 387.289 | 1.316 | 1606.161x | **294.194x** |
+
+The small k-nucleotide and pidigits deltas are ordinary session variation; they
+are included because the shared runtime changed and every affected benchmark is
+revalidated. Fasta now meets the naive-reference target. Reverse-complement is
+the largest remaining established gap at 1.996x, so it remains the next target.
+
 ## Current analysis
 
 ### The optimization unlock
@@ -98,17 +120,19 @@ uses explicitly grown non-empty byte storage, fixed-size scratch arrays, numeric
 k-mer indices, and direct byte emission. It still processes all 5,000,000 bases;
 O0 and O3 match the repaired reference byte-for-byte at the full timing size.
 
-### The two genuine Stage 1 targets
+### Stage 1: buffered output removes the flush cliff
 
-Fasta (6.656x) and reverse-complement (41.874x) remain far behind even at O3.
-Both are dominated by per-byte stdio: `writeByte` calls locked `putchar` and
-then `fflush(stdout)` for every byte, while reverse-complement also reads the
-roughly 50.8 MB `fasta 5000000` input one byte at a time. Existing
-`readBytes`/`writeBytes` builtins provide the direct Stage 1 route to bulk I/O;
-switching only to `_unlocked` byte calls would leave the per-byte flush cost.
+The bootstrap `writeByte` helper had called `fflush(stdout)` after every byte.
+Removing that hidden flush drops fasta from 6.656x to 1.057x, reverse-complement
+from 41.874x to 1.996x, and mandelbrot from 1.155x to 0.775x. This is a runtime
+semantic alignment with the legacy implementation, which leaves stdout buffered
+until normal process/file flushing.
 
-Mandelbrot is the only residual compute gap at the target boundary (1.155x).
-It is a secondary tuning candidate after bulk I/O. Pidigits needs a true bignum
+Reverse-complement still reads the roughly 50.8 MB `fasta 5000000` input one
+byte at a time and transforms it through a branch-heavy complement function.
+Those are now the next costs to attribute; the currently advertised bulk-byte
+API is not safe for this rewrite because its bootstrap implementation does not
+honor its declared array/length contract. Pidigits still needs a true bignum
 facility rather than local code-generation tuning.
 
 ## Historical fixes retained in the current source
