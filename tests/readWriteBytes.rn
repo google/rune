@@ -17,3 +17,15 @@ result = [0u8]
 result.resize(0u64)
 result = appendBytes(result, bytes)
 writeBytes(result)
+
+TABLE_SIZE = 256u64
+table = [0u8]
+table.resize(TABLE_SIZE)
+i = 0u64
+while i < TABLE_SIZE {
+  table[i] = <u8>i
+  i += 1u64
+}
+table[65u64] = 90u8
+data = [65u8, 66u8, 67u8]
+writeReverseTranslated(data, table, 2u64, 10u8)
