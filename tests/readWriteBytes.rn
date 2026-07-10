@@ -13,4 +13,7 @@
 // limitations under the License.
 
 bytes = <[u8]>readBytes(4u64)
-writeBytes(bytes)
+result = [0u8]
+result.resize(0u64)
+result = appendBytes(result, bytes)
+writeBytes(result)
