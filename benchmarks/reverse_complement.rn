@@ -54,42 +54,6 @@ complementTable[98u64] = 86u8
 complementTable[78u64] = 78u8
 complementTable[110u64] = 78u8
 
-func emitRevComp(seq: [u8], seqLen: u64) {
-  // This local remains a compile-time constant in the generated helper.
-  outputBufferCapacity = 65536u64
-  output = [0u8]
-  output.resize(outputBufferCapacity)
-  outputLen = 0u64
-  col = 0u32
-  i = seqLen
-  while i > 0u64 {
-    i -= 1u64
-    output[outputLen] = complementTable[seq[i]]
-    outputLen += 1u64
-    if outputLen == outputBufferCapacity {
-      writeBytes(output)
-      outputLen = 0u64
-    }
-    col += 1u32
-    if col == 60u32 {
-      output[outputLen] = 10u8
-      outputLen += 1u64
-      if outputLen == outputBufferCapacity {
-        writeBytes(output)
-        outputLen = 0u64
-      }
-      col = 0u32
-    }
-  }
-  if col > 0u32 {
-    output[outputLen] = 10u8
-    outputLen += 1u64
-  }
-  if outputLen > 0u64 {
-    trimmedOutput = output.resize(outputLen)
-    writeBytes(trimmedOutput)
-  }
-}
 
 // Sequence buffer: start with a 1-element literal (avoids the bootstrap
 // empty-array-resize fragility), size to an initial capacity, then grow by
@@ -102,7 +66,7 @@ line = readlnInto(line)
 while line.length() > 0u64 {
   if line[0] == 62u8 {
     if inRecord {
-      emitRevComp(seq, seq.length())
+      writeReverseTranslated(seq, complementTable, 60u64, 10u8)
       seq.resize(0u64)
     }
     writeBytes(line)
@@ -115,5 +79,5 @@ while line.length() > 0u64 {
 }
 
 if inRecord {
-  emitRevComp(seq, seq.length())
+  writeReverseTranslated(seq, complementTable, 60u64, 10u8)
 }

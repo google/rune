@@ -258,6 +258,25 @@ constrained-leader gap to 2.341x.
 |---|---:|---:|---:|---:|---:|---:|---:|
 | reverse-complement (fasta 5M) | `-U` | 110.911 | 44.177 | 77.406 | 18.870 | **0.571x** | **2.341x** |
 
+## Stage 1 incremental update: generic reverse translation writer
+
+On 2026-07-10, `writeReverseTranslated(bytes, table, wrap, terminator)` was
+added to the bootstrap C backend. It accepts an arbitrary exact 256-byte
+translation table, reverses the input, translates it, and emits buffered,
+wrapped output. Its portable two-byte lookup table handles every byte mapping
+correctly, including NUL and identity entries; block-level wrapping keeps the
+wrap check out of the hot pair loop. `wrap == 0` emits an unwrapped translation.
+
+The embedded-NUL/wrapping check, compiler gate (`PASS=205 FAIL=0`), committed
+golden, and full 50.8 MB reference comparison all passed. The direct
+same-session result reaches 0.403x naive C and is within 1.772x of the
+constrained leader, still without benchmark-specific DNA logic, threads, or
+ISA-specific code.
+
+| Benchmark (workload) | Rune flags | Rune O0 | Rune O3 | naive O3 | constrained leader | O3 / naive | O3 / constrained leader |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| reverse-complement (fasta 5M) | `-U` | 65.824 | 30.897 | 76.618 | 17.434 | **0.403x** | **1.772x** |
+
 ## Current analysis
 
 ### The optimization unlock
@@ -307,11 +326,11 @@ lowering. The byte-array C ABI now honors actual array lengths and embedded
 NULs; source-level inference for a standalone `readBytes` result remains an
 independent type-checker gap. Reusable line storage removes the dominant
 per-line allocation churn, and `appendBytes` removes the scalar sequence-copy
-loop: with `-U`, a same-session constrained comparison is now 0.571x the naive
-C oracle and 2.341x the published leader source. Its 64 KiB reads, SSE4.1
-transform, and pthread chunks define the concrete remaining language/runtime
-roadmap. A prior Rune-level byte-chunk parser was correct but slower, so pursue
-bulk copying/vectorization only with a measured C-level path.
+loop. The generic pair translation writer then reaches 0.403x the naive C oracle
+and 1.772x the published leader source. The remaining leader features are now
+explicitly SSSE3/SSE4.1 16-byte translation and parallel chunks. A prior
+Rune-level byte-chunk parser was correct but slower, so pursue ISA dispatch only
+behind a measured, correct generic fallback.
 Pidigits still needs a true bignum facility rather than local code-generation
 tuning.
 

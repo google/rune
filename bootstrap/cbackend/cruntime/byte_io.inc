@@ -2,8 +2,8 @@
  * Rune C backend byte-level stdin/stdout builtins.
  *
  * Implements the Rune builtins readByte(), writeByte(), readBytes(),
- * writeBytes(), readlnInto() and appendBytes(). The helper names match the Rune
- * builtin names so calls can be emitted directly.
+ * writeBytes(), readlnInto(), appendBytes() and writeReverseTranslated(). The
+ * helper names match the Rune builtin names so calls can be emitted directly.
  */
 
 #include <stdint.h>
@@ -83,6 +83,89 @@ static inline uint8_t *appendBytes(uint8_t *destination, const uint8_t *source) 
   memcpy(destination + destArray->used, source, sourceLength);
   destArray->used = resultLength;
   return destination;
+}
+
+#define REVERSE_TRANSLATE_OUTPUT_CAPACITY 65536u
+#define REVERSE_TRANSLATE_TABLE_SIZE 256u
+
+static inline void writeReverseTranslatedOutput(const uint8_t *bytes,
+                                                 size_t count) {
+  while (count > 0) {
+    size_t wrote = fwrite(bytes, 1, count, stdout);
+    if (wrote == 0) {
+      raise("Error: could not write stdout");
+    }
+    bytes += wrote;
+    count -= wrote;
+  }
+}
+
+// Reverse an array, translate each byte through an exact 256-byte table, and
+// write buffered output. A nonzero wrap terminates each output block and the
+// final partial block; wrap == 0 writes one unwrapped reverse translation.
+// The two-byte table remains correct for arbitrary translations, including NUL
+// and identity mappings, unlike a DNA-specific bit-mask table.
+static inline void writeReverseTranslated(const uint8_t *bytes,
+                                          const uint8_t *translation,
+                                          uint64_t wrap,
+                                          uint8_t terminator) {
+  const array_t *source = ((const array_t *)bytes) - 1;
+  const array_t *table = ((const array_t *)translation) - 1;
+  if (table->used != REVERSE_TRANSLATE_TABLE_SIZE) {
+    raise("Error: reverse translation table must have 256 bytes");
+  }
+  if (wrap > SIZE_MAX) {
+    raise("Error: reverse translation wrap exceeds array size");
+  }
+
+  uint16_t pairs[REVERSE_TRANSLATE_TABLE_SIZE * REVERSE_TRANSLATE_TABLE_SIZE];
+  for (uint32_t low = 0; low < REVERSE_TRANSLATE_TABLE_SIZE; ++low) {
+    for (uint32_t high = 0; high < REVERSE_TRANSLATE_TABLE_SIZE; ++high) {
+      pairs[(low << 8) | high] = (uint16_t)translation[high] |
+          ((uint16_t)translation[low] << 8);
+    }
+  }
+
+  uint8_t output[REVERSE_TRANSLATE_OUTPUT_CAPACITY];
+  size_t outputLength = 0;
+  size_t remaining = source->used;
+  size_t lineWidth = (size_t)wrap;
+  while (remaining > 0) {
+    size_t blockLength = lineWidth == 0 || remaining < lineWidth ?
+        remaining : lineWidth;
+    size_t blockRemaining = blockLength;
+    int fitsOutput = lineWidth != 0 &&
+        blockLength + 1 <= REVERSE_TRANSLATE_OUTPUT_CAPACITY;
+    if (fitsOutput && outputLength + blockLength + 1 > REVERSE_TRANSLATE_OUTPUT_CAPACITY) {
+      writeReverseTranslatedOutput(output, outputLength);
+      outputLength = 0;
+    }
+    while (blockRemaining >= 2) {
+      if (!fitsOutput && outputLength + 2 > REVERSE_TRANSLATE_OUTPUT_CAPACITY) {
+        writeReverseTranslatedOutput(output, outputLength);
+        outputLength = 0;
+      }
+      uint8_t high = bytes[--remaining];
+      uint8_t low = bytes[--remaining];
+      uint16_t translated = pairs[((uint16_t)low << 8) | high];
+      output[outputLength++] = (uint8_t)translated;
+      output[outputLength++] = (uint8_t)(translated >> 8);
+      blockRemaining -= 2;
+    }
+    if (blockRemaining != 0) {
+      if (!fitsOutput && outputLength == REVERSE_TRANSLATE_OUTPUT_CAPACITY) {
+        writeReverseTranslatedOutput(output, outputLength);
+        outputLength = 0;
+      }
+      output[outputLength++] = translation[bytes[--remaining]];
+    }
+    if (lineWidth != 0) {
+      output[outputLength++] = terminator;
+    }
+  }
+  if (outputLength > 0) {
+    writeReverseTranslatedOutput(output, outputLength);
+  }
 }
 
 // Read up to |n| bytes. The returned Rune array carries the actual byte count,
