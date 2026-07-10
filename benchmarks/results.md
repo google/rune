@@ -331,6 +331,15 @@ and 1.772x the published leader source. The remaining leader features are now
 explicitly SSSE3/SSE4.1 16-byte translation and parallel chunks. A prior
 Rune-level byte-chunk parser was correct but slower, so pursue ISA dispatch only
 behind a measured, correct generic fallback.
+
+Recompiling the same generated C with `-march=native` did not help (32.046 ms
+versus 31.622 ms). A direct SSSE3 experiment reached 27.372 ms, but its masked
+five-bit lookup is not equivalent to an arbitrary 256-byte table. Checking every
+input byte before taking that path restored generic semantics but measured
+37.330 ms, slower than the portable pair implementation. That transparent
+dispatch was rejected. An explicit masked-table primitive would be a separate
+language-surface decision, not an invisible substitute for arbitrary byte
+translation.
 Pidigits still needs a true bignum facility rather than local code-generation
 tuning.
 
