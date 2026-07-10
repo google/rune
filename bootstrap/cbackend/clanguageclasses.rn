@@ -2281,7 +2281,7 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
     if self.toStringMethod != "" {
       // The user-defined method is emitted after the class (it depends on
       // the struct typedef), so forward-declare it here.
-      e.writeln("string_t %s(%s_t *self);" % (self.toStringMethod, self.name))
+      e.writeln("static string_t %s(%s_t *self);" % (self.toStringMethod, self.name))
     }
     e.write("void tostring_%s_t(%s_t *self)" % (self.name, self.name))
     e.writeopenln(" {")
@@ -2371,6 +2371,10 @@ class CFunctionDeclaration(self, location: db.Location, id: Sym,
    self.body = body
 
    func emit(self, e: CEmitter, proto: bool) {
+     // Each Rune program is emitted as one C translation unit. Internal linkage
+     // lets clang analyze and inline generated helper calls without changing the
+     // language-visible function or function-pointer semantics.
+     e.write("static ")
      self.returnType.emit(e)
      e.space()
      e.write(mangleCName(self.id.name) + "(")

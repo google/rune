@@ -102,11 +102,11 @@ A speed number is only admissible if it is **correct, pinned, and reproducible.*
   the two I/O outliers; the other seven have a 0.860× geomean.
 - **Stage 1 — close the last single-thread gaps vs naive C.** Buffered stdout is
   complete: removing `writeByte`'s per-byte `fflush` moved fasta to 1.057×,
-  reverse-complement to 1.996×, and mandelbrot to 0.775×. Next, attribute and
-  remove reverse-complement's per-byte input/transformation cost. Do not use the
-  current `readBytes`/`writeBytes` implementation until its declared array and
-  length contract is repaired. Target: every benchmark ≤ ~1.15× the naive C
-  reference.
+  reverse-complement to 1.996×, and mandelbrot to 0.775×. Internal generated-
+  function linkage then improved reverse-complement to 1.824×. Next, attribute
+  and remove its per-byte input/transformation cost. Do not use the current
+  `readBytes`/`writeBytes` implementation until its declared array and length
+  contract is repaired. Target: every benchmark ≤ ~1.15× the naive C reference.
 - **Stage 2 — measure the real leaders & find the ceiling.** Build the fastest
   published entry for each program locally; that becomes the true target. For each,
   produce a gap analysis: what it does that Rune can't (threads, SIMD intrinsics,

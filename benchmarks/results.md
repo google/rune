@@ -92,6 +92,34 @@ are included because the shared runtime changed and every affected benchmark is
 revalidated. Fasta now meets the naive-reference target. Reverse-complement is
 the largest remaining established gap at 1.996x, so it remains the next target.
 
+## Stage 1 incremental update: internal generated-function linkage
+
+On 2026-07-10, source `841dcae+internal-linkage`, generated Rune functions
+were given C internal linkage. The program is emitted as one translation unit,
+so this lets clang inline local helper calls while preserving Rune function and
+function-pointer semantics. Class `toString` forward declarations were updated
+to the same linkage. The compiler was rebuilt and the regression gate passed
+`PASS=205 FAIL=0`; all ten benchmarks then passed their golden and full-workload
+reference comparisons before this complete rebaseline.
+
+| Benchmark (workload) | Rune flags | Rune O0 | Rune O3 | naive O3 | O0 / naive | O3 / naive | fastest published |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| binary-trees (18) | checked | 1113.166 | 566.272 | 1104.992 | 1.007x | **0.512x** | pending |
+| fannkuch-redux (11) | `-U` | 2320.175 | 1162.699 | 1114.638 | 2.082x | **1.043x** | pending |
+| mandelbrot (4000) | `-U` | 1519.030 | 248.522 | 318.640 | 4.767x | **0.780x** | pending |
+| spectral-norm (3000) | `-U` | 1370.413 | 255.700 | 255.500 | 5.364x | **1.001x** | pending |
+| n-body (5M) | checked | 674.900 | 179.007 | 179.876 | 3.752x | **0.995x** | pending |
+| fasta (2.5M) | checked | 622.904 | 284.398 | 277.120 | 2.248x | **1.026x** | pending |
+| reverse-complement (fasta 5M) | checked | 1177.288 | 141.632 | 77.642 | 15.163x | **1.824x** | pending |
+| k-nucleotide (fasta 1M) | checked | 514.742 | 100.177 | 189.930 | 2.710x | **0.527x** | pending |
+| regex-redux (fasta 5M) | checked | 6251.908 | 6062.384 | 6022.648 | 1.038x | **1.007x** | pending |
+| pidigits (265 digits) | checked | 2208.451 | 386.695 | 1.326 | 1665.361x | **291.601x** | pending |
+
+The established nine-row O3 geometric mean is now 0.906x naive C; excluding
+reverse-complement it is 0.830x. The small fannkuch and regex shifts are within
+the expected powersave/minimum-sample session variation. Reverse-complement is
+the only established gap materially above the 1.15x target.
+
 ## Current analysis
 
 ### The optimization unlock
@@ -127,6 +155,12 @@ Removing that hidden flush drops fasta from 6.656x to 1.057x, reverse-complement
 from 41.874x to 1.996x, and mandelbrot from 1.155x to 0.775x. This is a runtime
 semantic alignment with the legacy implementation, which leaves stdout buffered
 until normal process/file flushing.
+
+Giving generated functions internal linkage then lets clang inline reverse-
+complement's hot helper calls: it improves from 1.996x to 1.824x. This is a
+compiler-wide C emission improvement, not a benchmark-specific annotation; the
+full rebaseline remains correct with an established-program geometric mean below
+the naive references.
 
 Reverse-complement still reads the roughly 50.8 MB `fasta 5000000` input one
 byte at a time and transforms it through a branch-heavy complement function.
