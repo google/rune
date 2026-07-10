@@ -137,6 +137,29 @@ The CLBG FASTA input has no blank lines, so its empty `readln()` result is an
 unambiguous EOF marker. Record capacity remains dynamically doubled; no input
 size or amount of work was reduced.
 
+## Stage 1 incremental update: exact buffered reverse-complement output
+
+On 2026-07-10, source `ae3b6cb+bulk-byte-writer`, the bootstrap C runtime's
+byte-array writer was made binary-safe and range-aware. It now writes from the
+Rune array header's used length rather than `strlen`, and its one-, two-, and
+three-argument Rune calls lower to a fixed `(bytes, count, offset)` C ABI. A
+zero count means the remaining bytes after the offset. The corresponding reader
+now returns a headed byte array with its actual `fread` length, including on a
+short read. The low-level C ABI is correct, but inferring the result type of a
+standalone `readBytes` call is a separate bootstrap type-checker repair; this
+benchmark only uses the fully typed writer path.
+
+Reverse-complement retains a complete dynamically grown sequence per record
+(required for reversal), but emits each result through one named 64 KiB byte
+buffer. The writer's binary NUL and optional-range forms passed focused checks;
+both Rune modes also remain byte-identical to the committed golden and the
+50.8 MB naive-reference workload. The compiler was rebuilt and the full gate
+passed `PASS=205 FAIL=0`.
+
+| Benchmark (workload) | Rune flags | Rune O0 | Rune O3 | naive O3 | O0 / naive | O3 / naive | fastest published |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| reverse-complement (fasta 5M) | checked | 1041.577 | 106.308 | 78.916 | 13.199x | **1.347x** | pending |
+
 ## Current analysis
 
 ### The optimization unlock
@@ -176,13 +199,15 @@ until normal process/file flushing.
 Giving generated functions internal linkage then lets clang inline reverse-
 complement's hot helper calls: it improves from 1.996x to 1.824x. Replacing its
 per-byte input loop with the length-safe bootstrap line reader further improves
-it to 1.755x. This is still not a fixed input cap: each record buffer grows by
-doubling and the timing output remains byte-identical.
+it to 1.755x. Its exact-length 64 KiB output buffer then reaches 1.347x. This
+is still not a fixed input cap: each record buffer grows by doubling and the
+timing output remains byte-identical.
 
-The next reverse-complement target is buffered exact-length output. The
-currently advertised `readBytes`/`writeBytes` byte-array API is not yet safe for
-general use because its bootstrap implementation does not honor the declared
-array/length contract; repair it before relying on it for binary-safe buffering.
+The next reverse-complement target is the remaining transform cost: clang has
+already compressed the IUB complement branch chain, so a length-safe lookup
+table must be measured rather than assumed beneficial. The byte-array C ABI now
+honors actual array lengths and embedded NULs; source-level inference for a
+standalone `readBytes` result remains an independent type-checker gap.
 Pidigits still needs a true bignum facility rather than local code-generation
 tuning.
 

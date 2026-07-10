@@ -3707,6 +3707,11 @@ class Expr(self, type: ExprType, location: Location) {
         } else {
           ioparms.appendCExpr(right.genC(builder))
         }
+        if builtinName == "writeBytes" {
+          while ioparms.countCExprs() < 3u64 {
+            ioparms.appendCExpr(builder.cIntLiteral(Bigint(0u64)))
+          }
+        }
         return builder.cCall(self.location, iofn, c.CExpr(ioparms))
       }
       if (builtinName == "regexCount" || builtinName == "regexReplace") &&

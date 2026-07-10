@@ -37,13 +37,42 @@ static inline char *readln(void) {
   return result;
 }
 
-static inline char *readBytes(uint64_t n) {
-  char *buf = (char *)malloc((size_t)n + 1);
+// Read up to |n| bytes. The returned Rune array carries the actual byte count,
+// so callers can distinguish a short read and preserve embedded NUL bytes.
+static inline uint8_t *readBytes(uint64_t n) {
+  uint8_t *buf = (uint8_t *)array_alloc(sizeof(uint8_t), (size_t)n);
+  array_t *array = ((array_t *)buf) - 1;
   size_t got = fread(buf, 1, (size_t)n, stdin);
-  buf[got] = '\0';
+  array->used = got;
+  if (got < (size_t)n && ferror(stdin)) {
+    raise("Error: could not read stdin");
+  }
   return buf;
 }
 
-static inline void writeBytes(const char *s) {
-  fwrite(s, 1, strlen(s), stdout);
+// Write an exact array range. A zero count means all remaining bytes from
+// |offset|, matching the public Rune API. Never use strlen: byte arrays may
+// contain embedded NUL values.
+static inline void writeBytes(const uint8_t *bytes, uint64_t count, uint64_t offset) {
+  const array_t *array = ((const array_t *)bytes) - 1;
+  size_t used = array->used;
+  if (offset > used) {
+    raise("Error: writeBytes offset exceeds array length");
+  }
+  if (count == 0) {
+    count = used - (size_t)offset;
+  }
+  if (count > used - (size_t)offset) {
+    raise("Error: writeBytes range exceeds array length");
+  }
+  const uint8_t *cursor = bytes + offset;
+  size_t remaining = (size_t)count;
+  while (remaining > 0) {
+    size_t wrote = fwrite(cursor, 1, remaining, stdout);
+    if (wrote == 0) {
+      raise("Error: could not write stdout");
+    }
+    cursor += wrote;
+    remaining -= wrote;
+  }
 }

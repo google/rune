@@ -64,19 +64,39 @@ func complement(b: u8) -> u8 {
 }
 
 func emitRevComp(seq: [u8], seqLen: u64) {
+  // This local remains a compile-time constant in the generated helper.
+  outputBufferCapacity = 65536u64
+  output = [0u8]
+  output.resize(outputBufferCapacity)
+  outputLen = 0u64
   col = 0u32
   i = seqLen
   while i > 0u64 {
     i -= 1u64
-    writeByte(complement(seq[i]))
+    output[outputLen] = complement(seq[i])
+    outputLen += 1u64
+    if outputLen == outputBufferCapacity {
+      writeBytes(output)
+      outputLen = 0u64
+    }
     col += 1u32
     if col == 60u32 {
-      writeByte(10u8)
+      output[outputLen] = 10u8
+      outputLen += 1u64
+      if outputLen == outputBufferCapacity {
+        writeBytes(output)
+        outputLen = 0u64
+      }
       col = 0u32
     }
   }
   if col > 0u32 {
-    writeByte(10u8)
+    output[outputLen] = 10u8
+    outputLen += 1u64
+  }
+  if outputLen > 0u64 {
+    trimmedOutput = output.resize(outputLen)
+    writeBytes(trimmedOutput)
   }
 }
 
