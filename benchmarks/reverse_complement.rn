@@ -11,57 +11,47 @@
 // The sequence buffer starts from a 1-element literal to avoid empty-array
 // resize fragility and grows without a fixed record-size limit.
 
-func complement(b: u8) -> u8 {
-  if b == 65u8 || b == 97u8 {
-    return 84u8
-  }
-  if b == 67u8 || b == 99u8 {
-    return 71u8
-  }
-  if b == 71u8 || b == 103u8 {
-    return 67u8
-  }
-  if b == 84u8 || b == 116u8 {
-    return 65u8
-  }
-  if b == 85u8 || b == 117u8 {
-    return 65u8
-  }
-  if b == 77u8 || b == 109u8 {
-    return 75u8
-  }
-  if b == 82u8 || b == 114u8 {
-    return 89u8
-  }
-  if b == 87u8 || b == 119u8 {
-    return 87u8
-  }
-  if b == 83u8 || b == 115u8 {
-    return 83u8
-  }
-  if b == 89u8 || b == 121u8 {
-    return 82u8
-  }
-  if b == 75u8 || b == 107u8 {
-    return 77u8
-  }
-  if b == 86u8 || b == 118u8 {
-    return 66u8
-  }
-  if b == 72u8 || b == 104u8 {
-    return 68u8
-  }
-  if b == 68u8 || b == 100u8 {
-    return 72u8
-  }
-  if b == 66u8 || b == 98u8 {
-    return 86u8
-  }
-  if b == 78u8 || b == 110u8 {
-    return 78u8
-  }
-  return b
+COMPLEMENT_TABLE_SIZE = 256u64
+complementTable = [0u8]
+complementTable.resize(COMPLEMENT_TABLE_SIZE)
+tableIndex = 0u64
+while tableIndex < COMPLEMENT_TABLE_SIZE {
+  complementTable[tableIndex] = <u8>tableIndex
+  tableIndex += 1u64
 }
+
+complementTable[65u64] = 84u8
+complementTable[97u64] = 84u8
+complementTable[67u64] = 71u8
+complementTable[99u64] = 71u8
+complementTable[71u64] = 67u8
+complementTable[103u64] = 67u8
+complementTable[84u64] = 65u8
+complementTable[116u64] = 65u8
+complementTable[85u64] = 65u8
+complementTable[117u64] = 65u8
+complementTable[77u64] = 75u8
+complementTable[109u64] = 75u8
+complementTable[82u64] = 89u8
+complementTable[114u64] = 89u8
+complementTable[87u64] = 87u8
+complementTable[119u64] = 87u8
+complementTable[83u64] = 83u8
+complementTable[115u64] = 83u8
+complementTable[89u64] = 82u8
+complementTable[121u64] = 82u8
+complementTable[75u64] = 77u8
+complementTable[107u64] = 77u8
+complementTable[86u64] = 66u8
+complementTable[118u64] = 66u8
+complementTable[72u64] = 68u8
+complementTable[104u64] = 68u8
+complementTable[68u64] = 72u8
+complementTable[100u64] = 72u8
+complementTable[66u64] = 86u8
+complementTable[98u64] = 86u8
+complementTable[78u64] = 78u8
+complementTable[110u64] = 78u8
 
 func emitRevComp(seq: [u8], seqLen: u64) {
   // This local remains a compile-time constant in the generated helper.
@@ -73,7 +63,7 @@ func emitRevComp(seq: [u8], seqLen: u64) {
   i = seqLen
   while i > 0u64 {
     i -= 1u64
-    output[outputLen] = complement(seq[i])
+    output[outputLen] = complementTable[seq[i]]
     outputLen += 1u64
     if outputLen == outputBufferCapacity {
       writeBytes(output)

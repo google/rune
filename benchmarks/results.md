@@ -160,6 +160,24 @@ passed `PASS=205 FAIL=0`.
 |---|---:|---:|---:|---:|---:|---:|---:|
 | reverse-complement (fasta 5M) | checked | 1041.577 | 106.308 | 78.916 | 13.199x | **1.347x** | pending |
 
+## Stage 1 incremental update: reverse-complement lookup table
+
+On 2026-07-10, source `4589e9e+complement-table`, the 16-pair IUB complement
+branch chain was replaced with a 256-byte table. It is initialized to identity
+for all byte values, then overwrites all uppercase and lowercase IUB mappings;
+the benchmark therefore preserves the prior behavior for both supported and
+unmapped bytes. This is a benchmark-only source change: no compiler/runtime
+code changed.
+
+Both Rune modes remain byte-identical to the committed golden and the 50.8 MB
+naive-reference workload. Although clang had already compressed the branch
+chain substantially, the direct lookup removes enough work to improve O3 from
+1.347x to 1.254x the naive reference.
+
+| Benchmark (workload) | Rune flags | Rune O0 | Rune O3 | naive O3 | O0 / naive | O3 / naive | fastest published |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| reverse-complement (fasta 5M) | checked | 456.207 | 96.860 | 77.226 | 5.907x | **1.254x** | pending |
+
 ## Current analysis
 
 ### The optimization unlock
@@ -203,11 +221,13 @@ it to 1.755x. Its exact-length 64 KiB output buffer then reaches 1.347x. This
 is still not a fixed input cap: each record buffer grows by doubling and the
 timing output remains byte-identical.
 
-The next reverse-complement target is the remaining transform cost: clang has
-already compressed the IUB complement branch chain, so a length-safe lookup
-table must be measured rather than assumed beneficial. The byte-array C ABI now
-honors actual array lengths and embedded NULs; source-level inference for a
-standalone `readBytes` result remains an independent type-checker gap.
+The direct 256-byte complement table then reaches 1.254x, confirming that the
+remaining transform cost was still material despite clang's branch-chain
+lowering. The byte-array C ABI now honors actual array lengths and embedded
+NULs; source-level inference for a standalone `readBytes` result remains an
+independent type-checker gap. Profile the residual reverse-complement gap before
+adding another source-level optimization, and build its published leader locally
+under the development-machine CPU constraint.
 Pidigits still needs a true bignum facility rather than local code-generation
 tuning.
 

@@ -105,10 +105,12 @@ A speed number is only admissible if it is **correct, pinned, and reproducible.*
   reverse-complement to 1.996×, and mandelbrot to 0.775×. Internal generated-
   function linkage then improved reverse-complement to 1.824×; length-safe
   getline input brought it to 1.755×; an exact 64 KiB byte-array output buffer
-  brings it to 1.347×. The C byte-array ABI is now binary- and range-safe, but
-  standalone `readBytes` result typing remains a separate bootstrap type-checker
-  repair. Next, measure a complement lookup table and profile the remaining
-  transform cost. Target: every benchmark ≤ ~1.15× the naive C reference.
+  brings it to 1.347×; a 256-byte complement lookup table reaches 1.254×. The C
+  byte-array ABI is now binary- and range-safe, but standalone `readBytes`
+  result typing remains a separate bootstrap type-checker repair. Next, profile
+  the remaining transform cost and build the published leader locally without
+  expanding beyond a safe CPU allocation. Target: every benchmark ≤ ~1.15× the
+  naive C reference.
 - **Stage 2 — measure the real leaders & find the ceiling.** Build the fastest
   published entry for each program locally; that becomes the true target. For each,
   produce a gap analysis: what it does that Rune can't (threads, SIMD intrinsics,
