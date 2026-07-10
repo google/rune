@@ -240,6 +240,24 @@ the same-session constrained-leader comparison.
 |---|---:|---:|---:|---:|---:|---:|---:|
 | reverse-complement (fasta 5M) | `-U` | 199.193 | 68.623 | 77.754 | 18.086 | **0.883x** | **3.794x** |
 
+## Stage 1 incremental update: bulk reverse-complement sequence append
+
+On 2026-07-10, `appendBytes(destination, source)` was added to the bootstrap C
+backend. It appends the exact used portion of one Rune byte array to another
+with `memcpy`, retains destination capacity across appends, grows only when
+needed, rejects size overflow, and is binary-safe. Reverse-complement now keeps
+the sequence's logical length in its array header rather than copying every
+60-byte input line one byte at a time through checked Rune assignments.
+
+An embedded-NUL append round-trip passed, as did the compiler gate
+(`PASS=205 FAIL=0`), committed golden, and full 50.8 MB reference comparison.
+The same-session result is 0.571x the naive C oracle and narrows the
+constrained-leader gap to 2.341x.
+
+| Benchmark (workload) | Rune flags | Rune O0 | Rune O3 | naive O3 | constrained leader | O3 / naive | O3 / constrained leader |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| reverse-complement (fasta 5M) | `-U` | 110.911 | 44.177 | 77.406 | 18.870 | **0.571x** | **2.341x** |
+
 ## Current analysis
 
 ### The optimization unlock
@@ -288,11 +306,12 @@ remaining transform cost was still material despite clang's branch-chain
 lowering. The byte-array C ABI now honors actual array lengths and embedded
 NULs; source-level inference for a standalone `readBytes` result remains an
 independent type-checker gap. Reusable line storage removes the dominant
-per-line allocation churn: with `-U`, a same-session constrained comparison is
-0.883x the naive C oracle and 3.794x the published leader source. Its 64 KiB
-reads, SSE4.1 transform, and pthread chunks now define the concrete remaining
-language/runtime roadmap. A prior Rune-level byte-chunk parser was correct but
-slower, so pursue bulk copying/vectorization only with a measured C-level path.
+per-line allocation churn, and `appendBytes` removes the scalar sequence-copy
+loop: with `-U`, a same-session constrained comparison is now 0.571x the naive
+C oracle and 2.341x the published leader source. Its 64 KiB reads, SSE4.1
+transform, and pthread chunks define the concrete remaining language/runtime
+roadmap. A prior Rune-level byte-chunk parser was correct but slower, so pursue
+bulk copying/vectorization only with a measured C-level path.
 Pidigits still needs a true bignum facility rather than local code-generation
 tuning.
 

@@ -2,8 +2,8 @@
  * Rune C backend byte-level stdin/stdout builtins.
  *
  * Implements the Rune builtins readByte(), writeByte(), readBytes(),
- * writeBytes() and readlnInto(). The helper names match the Rune builtin names
- * so calls can be emitted directly.
+ * writeBytes(), readlnInto() and appendBytes(). The helper names match the Rune
+ * builtin names so calls can be emitted directly.
  */
 
 #include <stdint.h>
@@ -63,6 +63,26 @@ static inline uint8_t *readlnInto(uint8_t *bytes) {
   memcpy(bytes, line, (size_t)len);
   array->used = (size_t)len;
   return bytes;
+}
+
+// Append an exact source byte array to a caller-owned destination array. The
+// destination's capacity is retained and grown only when required; both arrays
+// may contain embedded NUL bytes.
+static inline uint8_t *appendBytes(uint8_t *destination, const uint8_t *source) {
+  array_t *destArray = ((array_t *)destination) - 1;
+  const array_t *sourceArray = ((const array_t *)source) - 1;
+  size_t sourceLength = sourceArray->used;
+  if (sourceLength > SIZE_MAX - destArray->used) {
+    raise("Error: appendBytes result exceeds array size");
+  }
+  size_t resultLength = destArray->used + sourceLength;
+  if (resultLength > destArray->capacity) {
+    destArray = array_resize(destArray, resultLength);
+    destination = (uint8_t *)(destArray + 1);
+  }
+  memcpy(destination + destArray->used, source, sourceLength);
+  destArray->used = resultLength;
+  return destination;
 }
 
 // Read up to |n| bytes. The returned Rune array carries the actual byte count,

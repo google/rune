@@ -9,8 +9,8 @@
 // Rune byte array, so this processes each complete FASTA line without per-byte
 // input calls or a per-line allocation. CLBG FASTA inputs have no blank lines;
 // an empty line is the EOF marker.
-// The sequence buffer starts from a 1-element literal to avoid empty-array
-// resize fragility and grows without a fixed record-size limit.
+// The sequence buffer starts from a 1-element literal, then retains its
+// capacity across records while appendBytes() grows it as necessary.
 
 COMPLEMENT_TABLE_SIZE = 256u64
 complementTable = [0u8]
@@ -94,37 +94,26 @@ func emitRevComp(seq: [u8], seqLen: u64) {
 // Sequence buffer: start with a 1-element literal (avoids the bootstrap
 // empty-array-resize fragility), size to an initial capacity, then grow by
 // doubling as needed so arbitrarily long sequences are handled correctly.
-seqCap = 65536u64
 seq = [0u8]
-seq.resize(seqCap)
-seqLen = 0u64
+seq.resize(0u64)
 inRecord = false
 line = [0u8]
 line = readlnInto(line)
 while line.length() > 0u64 {
   if line[0] == 62u8 {
     if inRecord {
-      emitRevComp(seq, seqLen)
-      seqLen = 0u64
+      emitRevComp(seq, seq.length())
+      seq.resize(0u64)
     }
     writeBytes(line)
     writeByte(10u8)
     inRecord = true
   } else {
-    linePos = 0u64
-    while linePos < line.length() {
-      if seqLen >= seqCap {
-        seqCap = seqCap * 2u64
-        seq.resize(seqCap)
-      }
-      seq[seqLen] = line[linePos]
-      seqLen += 1u64
-      linePos += 1u64
-    }
+    seq = appendBytes(seq, line)
   }
   line = readlnInto(line)
 }
 
 if inRecord {
-  emitRevComp(seq, seqLen)
+  emitRevComp(seq, seq.length())
 }

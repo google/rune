@@ -989,6 +989,7 @@ enum CRuntimeFunction {
    WriteBytes
    ReadLn
    ReadLnInto
+   AppendBytes
    ArgvArray
    StringChr
 
@@ -1192,6 +1193,11 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.ReadLnInto => {
         e.needByteIo()
         e.write("readlnInto")
+      }
+
+      CRuntimeFunction.AppendBytes => {
+        e.needByteIo()
+        e.write("appendBytes")
       }
 
       CRuntimeFunction.ArgvArray => {

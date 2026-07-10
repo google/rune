@@ -112,10 +112,12 @@ A speed number is only admissible if it is **correct, pinned, and reproducible.*
   verified bounded reverse-complement counters. `readlnInto()` reuses caller
   storage and reaches 0.883× the naive C reference. The locally validated,
   CPU-0-constrained published leader is still 3.794× faster through raw bulk
-  I/O, SSE4.1, and threads. A Rune-level byte-chunk parser regressed and was
-  rejected; next, profile/measure a C-level bulk-copy path before adding it.
-  Continue building the other published leaders without expanding beyond a safe
-  CPU allocation. Target: every benchmark ≤ ~1.15× the naive C reference.
+  I/O, SSE4.1, and threads. `appendBytes()` then moves sequence lines with C
+  `memcpy`, reaching 0.571× naive C and leaving a 2.341× leader gap. A Rune-level
+  byte-chunk parser regressed and was rejected; next, profile/measure a C-level
+  vector transform before adding it. Continue building the other published
+  leaders without expanding beyond a safe CPU allocation. Target: every
+  benchmark ≤ ~1.15× the naive C reference.
 - **Stage 2 — measure the real leaders & find the ceiling.** Build the fastest
   published entry for each program locally; that becomes the true target. For each,
   produce a gap analysis: what it does that Rune can't (threads, SIMD intrinsics,
