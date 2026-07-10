@@ -16,9 +16,10 @@ constrained one-core setup; the remaining published-leader columns are pending.
 - **Rune builds:** `bootstrap/rune -q NAME.rn` for O0 and
   `bootstrap/rune -q -O NAME.rn` for O3. `-O` now selects clang `-O3`;
   `--optimize` is an equivalent long spelling. The compiler default remains O0.
-- **Unsafe mode:** fannkuch-redux, mandelbrot, and spectral-norm use `-U` at both
-  optimization levels. It removes fixed-width `+`, `-`, and `*` overflow checks;
-  bounds and division checks remain. All other rows are checked builds.
+- **Unsafe mode:** fannkuch-redux, mandelbrot, spectral-norm, and
+  reverse-complement use `-U` at both optimization levels. It removes fixed-width
+  `+`, `-`, and `*` overflow checks; bounds and division checks remain. All other
+  rows are checked builds.
 - **Naive references:** clang/clang++ `-O3`; n-body and spectral-norm add `-lm`,
   regex-redux adds `-lpcre2-8`, and pidigits adds `-lgmp`.
 - **Correctness before timing:** every Rune O0/O3 binary and naive reference is
@@ -205,6 +206,19 @@ input workload, so its published timing is not directly comparable to the
 bulk input/reuse primitive, then explicit SIMD and bounded parallelism to pursue
 this leader rather than merely its naive C oracle.
 
+## Stage 1 incremental update: reverse-complement unsafe arithmetic
+
+The remaining sequence and output counters are all bounded far below `u64` on
+the verified workload, so reverse-complement now opts into `-U`, like the other
+integer-heavy ports. It removes only fixed-width arithmetic overflow checks;
+array bounds checks and all I/O range validation remain. Both O0 and O3 outputs
+matched the committed golden and the complete 50.8 MB naive-reference output
+before timing.
+
+| Benchmark (workload) | Rune flags | Rune O0 | Rune O3 | naive O3 | constrained leader | O3 / naive | O3 / constrained leader |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| reverse-complement (fasta 5M) | `-U` | 221.892 | 91.697 | 77.794 | 17.167 | **1.179x** | **5.342x** |
+
 ## Current analysis
 
 ### The optimization unlock
@@ -252,11 +266,11 @@ The direct 256-byte complement table then reaches 1.254x, confirming that the
 remaining transform cost was still material despite clang's branch-chain
 lowering. The byte-array C ABI now honors actual array lengths and embedded
 NULs; source-level inference for a standalone `readBytes` result remains an
-independent type-checker gap. A same-session constrained comparison is 1.271x
-the naive C oracle and 5.556x the published leader source. Its 64 KiB reads,
-SSE4.1 transform, and pthread chunks define the first concrete language/runtime
-roadmap; pursue typed bulk-buffer reuse before attempting a slower Rune-level
-per-byte parser.
+independent type-checker gap. With `-U`, a same-session constrained comparison
+is 1.179x the naive C oracle and 5.342x the published leader source. Its 64 KiB
+reads, SSE4.1 transform, and pthread chunks define the first concrete
+language/runtime roadmap; pursue typed bulk-buffer reuse before attempting a
+slower Rune-level per-byte parser.
 Pidigits still needs a true bignum facility rather than local code-generation
 tuning.
 
