@@ -1398,6 +1398,12 @@ class Expr(self, type: ExprType, location: Location) {
       casted = c.CExpr(c.CCastExpr(self.location, cty!, narrowed))
       return self.maskToWidth(builder, casted, target)
     }
+    // genCType() caches an array's C spelling but does not emit its typedef.
+    // A cast may be the first and only array use, as in
+    // <[u8]>readBytes(n), so request the declaration explicitly.
+    if target.type == types.Type.TypeClass.Array {
+      builder.ensureArrayDeclared(self.location, target.array.elementType!)
+    }
     ctype = builder.genCType(target)
     if isnull(ctype) {
       raise Status.Unimplemented, "Cast target type not supported by C backend"

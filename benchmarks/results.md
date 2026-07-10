@@ -147,8 +147,10 @@ three-argument Rune calls lower to a fixed `(bytes, count, offset)` C ABI. A
 zero count means the remaining bytes after the offset. The corresponding reader
 now returns a headed byte array with its actual `fread` length, including on a
 short read. The low-level C ABI is correct, but inferring the result type of a
-standalone `readBytes` call is a separate bootstrap type-checker repair; this
-benchmark only uses the fully typed writer path.
+standalone `readBytes` call is a separate bootstrap type-checker repair. An
+explicit `<[u8]>readBytes(n)` cast now emits its required C typedef and is
+covered by the 205-test suite; this benchmark only uses the fully typed writer
+path.
 
 Reverse-complement retains a complete dynamically grown sequence per record
 (required for reversal), but emits each result through one named 64 KiB byte

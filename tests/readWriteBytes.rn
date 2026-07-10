@@ -12,4 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-writeBytes(readBytes(4))
+bytes = <[u8]>readBytes(4u64)
+writeBytes(bytes)
