@@ -22,57 +22,35 @@ func fmt3(v: f64) -> string {
   return s
 }
 
-// Lexicographic less-than for strings (char-by-char via u8 comparison).
-func strLt(a: string, b: string) -> bool {
-  alen = a.length()
-  blen = b.length()
-  idx = 0u64
-  cont = true
-  while idx < alen && idx < blen && cont {
-    ca = <u8>a[idx]
-    cb = <u8>b[idx]
-    if ca != cb {
-      cont = false
-    } else {
-      idx += 1u64
-    }
-  }
-  if cont {
-    return alen < blen
-  }
-  return <u8>a[idx] < <u8>b[idx]
-}
-
-// Insertion sort on two parallel arrays (descending count, ascending kmer for ties).
-func sortKmers(var kArr: [string], var cArr: [u64]) {
+// Sort base-4 k-mer indices by descending count, then ascending index. The
+// numeric index order is the lexicographic order for A,C,G,T.
+func sortKmerIndices(var kArr: [u64], var cArr: [u64]) {
   n = kArr.length()
   si = 1u64
   while si < n {
     keyK = kArr[si]
-    keyC = cArr[si]
+    keyC = cArr[keyK]
     j = si
     cont = true
     while j > 0u64 && cont {
-      prevC = cArr[j - 1u64]
       prevK = kArr[j - 1u64]
+      prevC = cArr[prevK]
       doSwap = false
       if prevC < keyC {
         doSwap = true
       }
       if prevC == keyC {
-        if strLt(keyK, prevK) {
+        if keyK < prevK {
           doSwap = true
         }
       }
       if doSwap {
-        cArr[j] = prevC
         kArr[j] = prevK
         j -= 1u64
       } else {
         cont = false
       }
     }
-    cArr[j] = keyC
     kArr[j] = keyK
     si += 1u64
   }
@@ -102,13 +80,10 @@ func printKmers(var dnaB: [u8], k: u64) {
     nKmers *= 4u64
     kc += 1u64
   }
-  // Allocate count array (nKmers zeros)
-  cntArr = arrayof(u64)
-  kc = 0u64
-  while kc < nKmers {
-    cntArr.append(0u64)
-    kc += 1u64
-  }
+  // Allocate fixed-size scratch arrays from non-empty literals. Large inputs
+  // expose the same empty-array append corruption avoided by the DNA buffer.
+  cntArr = [0u64]
+  cntArr.resize(nKmers)
   // Count k-mers using base-4 index
   ci = 0u64
   while ci + k <= dnaLen {
@@ -122,35 +97,38 @@ func printKmers(var dnaB: [u8], k: u64) {
     ci += 1u64
   }
   // Precompute powers of 4: powers[j] = 4^j
-  powers = arrayof(u64)
-  powers.append(1u64)
+  powers = [1u64]
+  powers.resize(k)
   pc = 1u64
   while pc < k {
     prev = powers[pc - 1u64]
-    powers.append(prev * 4u64)
+    powers[pc] = prev * 4u64
     pc += 1u64
   }
-  // Build kmer string array in index order
+  // Sort lightweight numeric indices; storing freshly-built strings in a Rune
+  // array exposes a large-input string value-semantics corruption.
   baseBytes = [65u8, 67u8, 71u8, 84u8]
-  kmerArr = arrayof(string)
+  kmerIndices = [0u64]
+  kmerIndices.resize(nKmers)
   km = 0u64
   while km < nKmers {
-    kmer = ""
-    jc = 0u64
-    while jc < k {
-      cIdxVal = (km / powers[k - 1u64 - jc]) % 4u64
-      kmer += <string>[baseBytes[cIdxVal]]
-      jc += 1u64
-    }
-    kmerArr.append(kmer)
+    kmerIndices[km] = km
     km += 1u64
   }
-  sortKmers(kmerArr, cntArr)
+  sortKmerIndices(kmerIndices, cntArr)
   total = dnaLen - k + 1u64
   pIdx = 0u64
   while pIdx < nKmers {
-    pct = 100.0f64 * <f64>cntArr[pIdx] / <f64>total
-    println kmerArr[pIdx], " ", fmt3(pct)
+    kmerIndex = kmerIndices[pIdx]
+    jc = 0u64
+    while jc < k {
+      cIdxVal = (kmerIndex / powers[k - 1u64 - jc]) % 4u64
+      writeByte(baseBytes[cIdxVal])
+      jc += 1u64
+    }
+    pct = 100.0f64 * <f64>cntArr[kmerIndex] / <f64>total
+    writeByte(32u8)
+    println fmt3(pct)
     pIdx += 1u64
   }
   println ""
@@ -190,9 +168,14 @@ func isEOF(bv: u8) -> bool {
   return false
 }
 
-// Main: read FASTA from stdin byte-by-byte, find >THREE section,
-// collect uppercase DNA as u8 array.
-dnaBytes = arrayof(u8)
+// Main: read FASTA from stdin byte-by-byte, find >THREE section, and collect
+// uppercase DNA. Start from a non-empty array and grow explicitly; the bootstrap
+// runtime's empty-array append path corrupts large byte arrays.
+initialDnaCapacity = 65536u64
+dnaCapacity = initialDnaCapacity
+dnaLength = 0u64
+dnaBytes = [0u8]
+dnaBytes.resize(dnaCapacity)
 inThree = false
 
 b = readByte()
@@ -230,11 +213,18 @@ while !isEOF(b) {
       if cb >= 97u8 && cb <= 122u8 {
         cb -= 32u8
       }
-      dnaBytes.append(cb)
+      if dnaLength >= dnaCapacity {
+        dnaCapacity *= 2u64
+        dnaBytes.resize(dnaCapacity)
+      }
+      dnaBytes[dnaLength] = cb
+      dnaLength += 1u64
     }
     b = readByte()
   }
 }
+
+dnaBytes.resize(dnaLength)
 
 // Print k=1 and k=2 kmer frequencies.
 printKmers(dnaBytes, 1u64)

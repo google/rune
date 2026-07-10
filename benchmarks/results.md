@@ -1,144 +1,143 @@
 # Rune benchmark results
 
 Rune ports of programs from the [Computer Language Benchmarks Game](https://benchmarksgame-team.pages.debian.net/benchmarksgame/index.html),
-built by the **self-hosted (bootstrap) Rune compiler** — the Rune-in-Rune
-compiler that emits C — and compared against hand-written C/C++ references at
-`-O3`.
+built by the self-hosted bootstrap compiler (Rune-in-Rune, emitting C). This
+scoreboard compares Rune at clang `-O0` and `-O3` with the committed naive C/C++
+references built locally at `-O3`.
 
-## Methodology
+The naive references are correctness oracles, not the fastest published CLBG
+programs. Building and validating the published leaders is Stage 2; those times
+and ratios are deliberately marked pending below.
 
-- **Rune compiler:** `bootstrap/rune` (self-hosted, emits C, then `clang -O3`).
-  Built each program with `bootstrap/rune -q NAME.rn`.
-- **C/C++ references:** `NAME_ref.c` (or `binary_trees.cc`), `clang/clang++ -O3`
-  (`-lm` where needed). Each reference is verified to produce **byte-identical
-  output** to the Rune version on the timing workload, so the two do the same work.
-- **Timing:** best (min) of 3 runs, wall clock, output to `/dev/null`.
-- **Machine:** Intel Core Ultra 9 285H, x86_64, clang 22.1.6, Linux.
-- Reproduce with `bash bench.sh` (from the repo root).
+## Reproducibility contract
 
-All nine programs are correct: each Rune build matches its committed `.stdout`
-golden and matches the C reference byte-for-byte across the sizes tested.
+- **Measurement date/source:** 2026-07-10; Stage 0 commit based on parent
+  `21f3534`.
+- **Rune builds:** `bootstrap/rune -q NAME.rn` for O0 and
+  `bootstrap/rune -q -O NAME.rn` for O3. `-O` now selects clang `-O3`;
+  `--optimize` is an equivalent long spelling. The compiler default remains O0.
+- **Unsafe mode:** fannkuch-redux, mandelbrot, and spectral-norm use `-U` at both
+  optimization levels. It removes fixed-width `+`, `-`, and `*` overflow checks;
+  bounds and division checks remain. All other rows are checked builds.
+- **Naive references:** clang/clang++ `-O3`; n-body and spectral-norm add `-lm`,
+  regex-redux adds `-lpcre2-8`, and pidigits adds `-lgmp`.
+- **Correctness before timing:** every Rune O0/O3 binary and naive reference is
+  byte-identical to the committed small `.stdout` golden. On the full timing
+  workload, Rune O0 and O3 are also byte-identical to the naive reference.
+- **Timing:** CPU 0 only; one discarded warmup, then the minimum wall time of
+  five runs; stdout to `/dev/null`. Runs and builds are serialized. The harness
+  lowers itself to nice level 15 and idle I/O priority to remain polite on a
+  development machine.
+- **Stdin:** generated once before consumer timing with the naive fasta
+  reference. `fasta 5000000` is reused by reverse-complement and regex-redux;
+  `fasta 1000000` feeds k-nucleotide. Input generation is never timed.
+- **Machine:** Intel Core Ultra 9 285H, x86_64, clang 22.1.6, Linux. The CPU
+  governor is `powersave`, so affinity and min-of-five are required.
+- **Reproduce:** `bash benchmarks/bench.sh`. Raw tab-separated output is written
+  to `${TMPDIR:-/tmp}/rune-bench/results.tsv`.
 
-## Results
+## Stage 0 scoreboard
 
-| Benchmark (arg)      | bootstrap Rune | C `-O3` | Rune / C |
-|----------------------|---------------:|--------:|---------:|
-| binary_trees (18)    |       1093 ms  | 1073 ms |  **1.02×** |
-| fannkuch_redux (11)  |       4329 ms  | 1087 ms |  3.98× |
-| mandelbrot (4000)    |       2333 ms  |  314 ms |  7.43× |
-| fasta (2.5M)         |       2411 ms  |  269 ms |  8.96× |
-| k_nucleotide (1M)    |        520 ms  |   56 ms |  9.29× |
-| spectral_norm (3000) |       4953 ms  |  276 ms | 17.95× |
-| n_body (5M)          |        694 ms  |  190 ms |  3.65× |
-| reverse_complement (5M) |    5260 ms  |   91 ms | 57.80× |
-| regex_redux (5M)     |       6269 ms  | 6023 ms |  **1.04×** |
+All rows passed both the golden and full timing-workload correctness checks.
+Times are milliseconds; ratios use the harness's unrounded nanosecond samples.
 
-(arg is the CLI argument / input scale; reverse_complement and k_nucleotide read
-`fasta` output from stdin.)
+| Date | Revision | Benchmark (workload) | Rune flags | Rune O0 | Rune O3 | naive O3 | fastest published | O0 / naive | O3 / naive | O3 / fastest |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2026-07-10 | `21f3534+stage0` | binary-trees (18) | checked | 1092.621 | 559.730 | 1084.867 | pending | 1.007x | **0.516x** | pending |
+| 2026-07-10 | `21f3534+stage0` | fannkuch-redux (11) | `-U` | 2340.287 | 1101.191 | 1073.604 | pending | 2.180x | **1.026x** | pending |
+| 2026-07-10 | `21f3534+stage0` | mandelbrot (4000) | `-U` | 1586.631 | 360.621 | 312.353 | pending | 5.080x | **1.155x** | pending |
+| 2026-07-10 | `21f3534+stage0` | spectral-norm (3000) | `-U` | 1355.426 | 244.308 | 242.964 | pending | 5.579x | **1.006x** | pending |
+| 2026-07-10 | `21f3534+stage0` | n-body (5M) | checked | 652.396 | 169.603 | 170.274 | pending | 3.831x | **0.996x** | pending |
+| 2026-07-10 | `21f3534+stage0` | fasta (2.5M) | checked | 2264.612 | 1783.652 | 267.966 | pending | 8.451x | **6.656x** | pending |
+| 2026-07-10 | `21f3534+stage0` | reverse-complement (fasta 5M) | checked | 4713.012 | 3260.564 | 77.866 | pending | 60.527x | **41.874x** | pending |
+| 2026-07-10 | `21f3534+stage0` | k-nucleotide (fasta 1M) | checked | 511.110 | 108.349 | 189.865 | pending | 2.692x | **0.571x** | pending |
+| 2026-07-10 | `21f3534+stage0` | regex-redux (fasta 5M) | checked | 6179.480 | 5959.708 | 5993.815 | pending | 1.031x | **0.994x** | pending |
+| 2026-07-10 | `21f3534+stage0` | pidigits (265 digits) | checked | 2013.194 | 376.297 | 1.329 | pending | 1515.381x | **283.248x** | pending |
 
-Two of the gaps below were subsequently fixed (see "Fixes applied"):
-- **n_body was 23×**; exposing libm `sqrt` (a bare `sqrt(x)` now lowers to the
-  hardware instruction) dropped it to **3.65×**.
-- **spectral_norm is 17.95× in the default checked build**; compiling with the
-  new `-U` unsafe flag (which omits fixed-width integer overflow checks) drops it
-  to **~5×** (1389 ms), output identical.
+`21f3534+stage0` means the measured Stage 0 worktree based on parent SHA
+`21f3534`; using the eventual commit's own SHA inside that same commit would be
+self-referential. Future appended runs should use their exact source SHA.
 
-## Analysis
+The first nine rows are the established benchmark set. Their O3/naive geometric
+mean is 1.662x because the two per-byte I/O outliers dominate it. Excluding fasta
+and reverse-complement, the other seven have a 0.860x geometric mean and every
+one is at or below 1.155x the naive reference. The same nine-row O0 geometric
+mean is 4.115x.
 
-The spread — from parity to ~56× — tracks *what each benchmark spends its time
-on*, and points at three concrete gaps in the current bootstrap C backend.
+Pidigits is supplementary rather than CLBG-scale: both ports use the Gibbons
+spigot algorithm, but Rune uses fixed `i8192` state and is verified only through
+265 digits while the C oracle uses GMP. Its result identifies arbitrary-precision
+integers as a language/runtime feature gap, not the cost of a different
+algorithm, and no published leader has been measured yet.
 
-**Parity when the bottleneck isn't codegen — binary_trees (1.02×).** Dominated
-by allocating and freeing millions of tree nodes. Rune's reference-counted
-object allocation is competitive with C++ `unique_ptr`, so the generated-code
-quality barely matters here. This is the encouraging data point: Rune's runtime
-is not the problem.
+## Current analysis
 
-**Parity when the work is in a shared library — regex_redux (1.04×).** Both the
-Rune and C versions call the same PCRE2 engine (Rune via a thin
-`rn_regex_count`/`rn_regex_replace` shim; see the benchmarks README), so nearly
-all of the ~6 s is spent inside `libpcre2` matching and substituting over the
-50 MB sequence. The Rune-vs-C difference is only the surrounding string
-plumbing (reading stdin, building the cleaned/expanded strings), which is
-negligible next to the regex work — hence near-parity, the same lesson as
-binary_trees from the other direction. It also validates the "thin wrapper over
-a C library" design: when a benchmark's cost lives in a mature C library,
-Rune pays no codegen tax for it.
+### The optimization unlock
 
-**No function inlining — spectral_norm (19×).** The hot loop calls `evalA(i,j)`
-once per matrix element (~180M calls at N=3000). The C compiler inlines it to a
-few arithmetic ops; the bootstrap backend emits a real C function call every
-time (confirmed in the generated C), and clang can't inline across the call
-because the whole inner loop is a call. This is the single biggest structural
-gap and also inflates n_body.
+The bootstrap driver already had code to choose clang `-O3`, but no command-line
+branch could set its `optimized` variable. Earlier benchmark reports therefore
+timed generated C at O0 while describing it as optimized. Wiring `-O` removes
+that artifact: n-body is 0.996x the naive C reference, spectral-norm is 1.006x,
+fannkuch-redux is 1.026x, and regex-redux is 0.994x. The former claims of a
+general 4-9x code-generation band and missing cross-function inlining do not
+survive a real O3 build.
 
-**No hardware `sqrt` — n_body (23×).** Rune exposes no libm intrinsic, so
-`math.sqrt` is a software Newton's-method routine. Isolating it (same 5M
-workload):
+Binary-trees and k-nucleotide beat their naive references at 0.516x and 0.571x,
+respectively. These are comparisons with the committed straightforward oracles,
+not claims of beating the published CLBG leaders. Binary-trees benefits from
+Rune's reusable object pool; k-nucleotide uses indexed base-4 counters while its
+naive C reference linearly searches small k-mer tables.
 
-| n_body 5M                     | time   |
-|-------------------------------|-------:|
-| C, libm `sqrt`                | 181 ms |
-| C, **same** Newton `sqrt`     | 1164 ms |
-| Rune (Newton `sqrt`)          | 4133 ms |
+### Correctness bugs exposed by the new contract
 
-So the 23× headline factors as **~6.4× (software vs hardware sqrt) × ~3.5×
-(pure codegen)**. Running the *same* algorithm, Rune is ~3.5× C — the honest
-codegen number. Exposing libm `sqrt` would drop n_body to roughly that.
+The old k-nucleotide timing was invalid. Its C reference stored the 5,000,000-base
+`>THREE` record in a fixed 2,000,000-byte array, writing roughly 3 MB out of
+bounds. Repairing that oracle then exposed large-input corruption in the Rune
+port's empty-array append and freshly-built string-array paths. The Rune port now
+uses explicitly grown non-empty byte storage, fixed-size scratch arrays, numeric
+k-mer indices, and direct byte emission. It still processes all 5,000,000 bases;
+O0 and O3 match the repaired reference byte-for-byte at the full timing size.
 
-**Per-byte I/O — reverse_complement (56×).** Reads ~25 MB one byte at a time via
-`readByte()`/`writeByte()`, each a runtime function call, versus C's buffered
-`getc`/`putc`. Almost entirely call overhead, not codegen. Bulk I/O
-(`readBytes`/`writeBytes`) would close most of this gap.
-(An earlier version of this benchmark *looked* 2× faster than C — it was a bug:
-a fixed 10000-byte sequence buffer silently truncated large inputs so it did
-almost no work. Fixed to grow by doubling; the honest number is 56×.)
+### The two genuine Stage 1 targets
 
-**The middle band (4–9×) — fannkuch, mandelbrot, fasta, k_nucleotide.** Tight
-compute/array loops with no calls and no sqrt. This is the baseline
-Rune-vs-C codegen overhead: bounds/idiom differences, less aggressive
-vectorization, and Rune's value-semantics array copies. 4–9× is a reasonable
-starting point for an unoptimized C-emitting compiler.
+Fasta (6.656x) and reverse-complement (41.874x) remain far behind even at O3.
+Both are dominated by per-byte stdio: `writeByte` calls locked `putchar` and
+then `fflush(stdout)` for every byte, while reverse-complement also reads the
+roughly 50.8 MB `fasta 5000000` input one byte at a time. Existing
+`readBytes`/`writeBytes` builtins provide the direct Stage 1 route to bulk I/O;
+switching only to `_unlocked` byte calls would leave the per-byte flush cost.
 
-## Fixes applied
+Mandelbrot is the only residual compute gap at the target boundary (1.155x).
+It is a secondary tuning candidate after bulk I/O. Pidigits needs a true bignum
+facility rather than local code-generation tuning.
 
-Investigating the slow benchmarks turned up the real bottlenecks — a couple of
-which were not what they looked like — and two were fixed:
+## Historical fixes retained in the current source
 
-1. **Hardware `sqrt` (DONE).** A bare `sqrt(x)` call now lowers to libm's `sqrt`
-   instruction instead of the software Newton routine. **n_body: 23× → 3.65×.**
-   (The clean path types the bare call `f64->f64` on demand at the call site; a
-   global builtin symbol or a `misc.rn` function both trip a latent
-   tyvar-resolution fragility that corrupts unrelated programs.)
-2. **`-U` overflow-elision mode (DONE).** Fixed-width integer add/sub/mul emit
-   plain C arithmetic instead of overflow-checked helpers (whose guard costs an
-   integer divide per multiply). **spectral_norm: 17.95× → ~5× with `-U`.** Off
-   by default; correctness-relevant checks (division, bounds) are kept.
-3. **"Inline small functions" — a red herring.** Clang -O3 already inlines across
-   the single-`.c` output; adding `static`/`inline` measured 0×. spectral_norm's
-   real cost was the overflow checks (#2), not call overhead.
-4. **Wide-int compiler crash (DONE, in the dependency).** Rendering a wide-int
-   literal >~10571 bits crashed the compiler; root cause was a stack-buffer
-   overflow in CTTK (`lib/libcttk.a`), not Rune — see
-   [`../patches/`](../patches/README.md). With the patch, pidigits scales from
-   265 to ~400 digits.
+- A bare `sqrt(x)` lowers to hardware/libm sqrt, which is essential to n-body's
+  current parity.
+- `-U` provides explicit overflow-check elision for integer-heavy programs while
+  leaving it opt-in.
+- Regex builtins use a thin PCRE2 shim, explaining regex-redux parity once the
+  surrounding generated code is optimized.
+- Earlier benchmark work fixed argv indexing, stepped ranges, array value-copy
+  semantics, a generated-C `main` collision, and missing parentheses around
+  same-precedence right operands.
 
-Still open: **per-byte I/O** (reverse_complement's 57× is `readByte`/`writeByte`
-call overhead — bulk `readBytes`/`writeBytes` would close it), and the general
-**4–9× codegen band** (value-semantics array copies, vectorization). None are
-runtime-model problems — binary_trees (1.05×) proves the allocator is fine; the
-rest is C-backend codegen maturity.
+## Retired pre-Stage-0 measurements
 
-## Bugs found and fixed along the way
+These values are preserved only as history. They were best-of-three, unpinned,
+used Rune O0 despite being labeled O3, did not record both optimization levels,
+and did not satisfy the current correctness contract. The k-nucleotide reference
+also overflowed its fixed buffer at the timing workload.
 
-Porting these benchmarks to the bootstrap compiler surfaced five real
-compiler/codegen bugs, each fixed with the suite held at 205/205:
-
-- `argv[i]` indexed `void*` (returned void) — `rn_argv_array` now returns `char**`.
-- `range(lo, hi, step)` ignored the step (hardcoded +1).
-- Array assignment `q = p` aliased the buffer instead of copying (value semantics).
-- A user function named `main` collided with the C entry point.
-- **The C backend dropped parentheses around a same-precedence right operand**:
-  `a / (b * c)` emitted as `a / b * c`. A broad correctness bug the test suite
-  never happened to exercise; found because n_body's `dt / (d2 * dist)` came out
-  as `(dt / d2) * dist`.
+| Benchmark | recorded Rune | recorded naive O3 | recorded ratio |
+|---|---:|---:|---:|
+| binary-trees (18) | 1093 ms | 1073 ms | 1.02x |
+| fannkuch-redux (11) | 4329 ms | 1087 ms | 3.98x |
+| mandelbrot (4000) | 2333 ms | 314 ms | 7.43x |
+| fasta (2.5M) | 2411 ms | 269 ms | 8.96x |
+| k-nucleotide (fasta 1M) | 520 ms | 56 ms | 9.29x |
+| spectral-norm (3000) | 4953 ms | 276 ms | 17.95x |
+| n-body (5M) | 694 ms | 190 ms | 3.65x |
+| reverse-complement (fasta 5M) | 5260 ms | 91 ms | 57.80x |
+| regex-redux (fasta 5M) | 6269 ms | 6023 ms | 1.04x |

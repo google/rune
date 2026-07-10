@@ -43,18 +43,25 @@ byte-identical to the Rune version on the `fasta`-generated golden.
 
 ```sh
 # from the repo root
-bootstrap/rune -q benchmarks/n_body.rn      # -> benchmarks/n_body (via C + clang)
+bootstrap/rune -q -O benchmarks/n_body.rn   # -> benchmarks/n_body (via C + clang -O3)
 ./benchmarks/n_body 1000
 ```
 
-The legacy LLVM compiler (`../rune -U -O benchmarks/NAME.rn`) also builds most of
+Omit `-O` for the clang O0 build; `--optimize` is the equivalent long spelling.
+
+The legacy LLVM compiler (`./rune -U -O benchmarks/NAME.rn`) also builds most of
 these and is handy as a second oracle, though it has its own quirks (rejects
 underscore identifiers; miscompiles n_body's step loop).
 
 ## Timing
 
 ```sh
-bash benchmarks/bench.sh     # builds every program + its C ref, times best-of-3
+bash benchmarks/bench.sh
 ```
+
+The harness builds Rune at O0 and O3 plus each naive reference at O3, pins all
+serialized work to CPU 0 at reduced priority, verifies the committed goldens and
+full timing outputs byte-for-byte, discards one warmup, and records the best of
+five measured runs. Stdin workloads are generated once before timing.
 
 See [results.md](results.md) for the current numbers and analysis.

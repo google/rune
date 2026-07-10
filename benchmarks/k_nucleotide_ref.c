@@ -4,8 +4,11 @@
 #include <string.h>
 #include <ctype.h>
 
-static char dna[2000000];
-static int dna_len = 0;
+enum { INITIAL_DNA_CAPACITY = 64 * 1024 };
+
+static char *dna;
+static size_t dna_len;
+static size_t dna_capacity;
 
 typedef struct {
     char key[20];
@@ -27,7 +30,7 @@ static int cmp_kmer(const void *a, const void *b) {
 static void count_kmers(int k) {
     num_kmers = 0;
     char key[20];
-    for (int i = 0; i + k <= dna_len; i++) {
+    for (size_t i = 0; i + (size_t)k <= dna_len; i++) {
         memcpy(key, dna + i, k);
         key[k] = '\0';
         int found = 0;
@@ -50,6 +53,13 @@ int main(void) {
     char line[4096];
     int in_three = 0;
 
+    dna_capacity = INITIAL_DNA_CAPACITY;
+    dna = malloc(dna_capacity);
+    if (!dna) {
+        perror("malloc");
+        return 1;
+    }
+
     while (fgets(line, sizeof(line), stdin)) {
         int len = (int)strlen(line);
         if (len > 0 && line[len-1] == '\n') line[--len] = '\0';
@@ -60,6 +70,18 @@ int main(void) {
             else
                 in_three = 0;
         } else if (in_three) {
+            size_t required = dna_len + (size_t)len;
+            if (required > dna_capacity) {
+                while (required > dna_capacity)
+                    dna_capacity *= 2;
+                char *grown = realloc(dna, dna_capacity);
+                if (!grown) {
+                    perror("realloc");
+                    free(dna);
+                    return 1;
+                }
+                dna = grown;
+            }
             for (int i = 0; i < len; i++)
                 dna[dna_len++] = (char)toupper((unsigned char)line[i]);
         }
@@ -86,12 +108,13 @@ int main(void) {
     for (int s = 0; s < 5; s++) {
         int k = (int)strlen(seqs[s]);
         long cnt = 0;
-        for (int i = 0; i + k <= dna_len; i++) {
+        for (size_t i = 0; i + (size_t)k <= dna_len; i++) {
             if (memcmp(dna + i, seqs[s], k) == 0)
                 cnt++;
         }
         printf("%ld\t%s\n", cnt, seqs[s]);
     }
 
+    free(dna);
     return 0;
 }

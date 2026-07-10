@@ -201,11 +201,12 @@ would be 64 bits on a 64-bit machine. In Rune, only the string references are
 cache** during the traversal, improving memory load times, while simultaneously
 improving cache hit rates.
 
-This is why Rune's `binary_trees.rn` code already runs faster than any other
-single-threaded result in the [Benchmark
-Games](https://benchmarksgame-team.pages.debian.net/benchmarksgame/index.html).
-(Rune is not yet multi-threaded). The only close competitor is C++, where the
-author uses the little-known `std::pmr::monotonic_buffer_resource` class from the `<memory_resource>` library.
+Rune's `binary_trees.rn` currently beats the committed naive C++ oracle. A
+comparison with the fastest published [Benchmark
+Games](https://benchmarksgame-team.pages.debian.net/benchmarksgame/index.html)
+entry has not yet been validated locally. Rune is not yet multi-threaded.
+One relevant published C++ technique uses
+`std::pmr::monotonic_buffer_resource` from the `<memory_resource>` library.
 Not only is Rune's SoA memory layout faster, but its solution is more generic:
 we can create/destroy Node objects arbitrarily, unlike the C++ benchmark based
 on `std::pmr::monotonic_buffer_resource`. When completed, we expect Rune to win most memory-intensive
