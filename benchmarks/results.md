@@ -6,8 +6,8 @@ scoreboard compares Rune at clang `-O0` and `-O3` with the committed naive C/C++
 references built locally at `-O3`.
 
 The naive references are correctness oracles, not the fastest published CLBG
-programs. Building and validating the published leaders is Stage 2; those times
-and ratios are deliberately marked pending below.
+programs. Stage 2 has validated reverse-complement's leader under a deliberately
+constrained one-core setup; the remaining published-leader columns are pending.
 
 ## Reproducibility contract
 
@@ -178,6 +178,33 @@ chain substantially, the direct lookup removes enough work to improve O3 from
 |---|---:|---:|---:|---:|---:|---:|---:|
 | reverse-complement (fasta 5M) | checked | 456.207 | 96.860 | 77.226 | 5.907x | **1.254x** | pending |
 
+## Stage 2 initial leader comparison: reverse-complement
+
+The current official CLBG leader is C gcc #7 (Jeremy Zerfas). Its canonical
+source was read from the benchmarksgame Salsa tree at `40296663ed35`, then built
+locally with its published flags, `gcc -pipe -Wall -O3 -fomit-frame-pointer
+-march=ivybridge -pthread` (local GCC 16.1.1). All leader, Rune, and naive-C
+outputs matched the committed golden and the same pre-generated 50.8 MB input
+byte-for-byte.
+
+The leader obtains its speed from 64 KiB POSIX `read`, raw `write`, a two-byte
+lookup table plus SSE4.1 16-byte transform, cache-sized chunks, and pthreads.
+It sizes its thread pool with `_SC_NPROCESSORS_ONLN`, which does not honor
+affinity. For a safe development-machine comparison, the entire process was
+pinned and lowered to CPU 0/nice 15; every spawned leader thread inherited that
+one CPU. This is a reproducible **constrained-leader** result, not a claim to
+reproduce the published multicore wall time.
+
+| Benchmark (workload) | Rune flags | Rune O0 | Rune O3 | naive O3 | constrained leader | O3 / naive | O3 / constrained leader |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| reverse-complement (fasta 5M) | checked | 461.360 | 98.935 | 77.837 | 17.806 | 1.271x | **5.556x** |
+
+The published table reports gcc #7 at 0.44 seconds for the larger 100,000,001
+input workload, so its published timing is not directly comparable to the
+50.8 MB local input. The feature gap, however, is direct: Rune needs a typed
+bulk input/reuse primitive, then explicit SIMD and bounded parallelism to pursue
+this leader rather than merely its naive C oracle.
+
 ## Current analysis
 
 ### The optimization unlock
@@ -225,9 +252,11 @@ The direct 256-byte complement table then reaches 1.254x, confirming that the
 remaining transform cost was still material despite clang's branch-chain
 lowering. The byte-array C ABI now honors actual array lengths and embedded
 NULs; source-level inference for a standalone `readBytes` result remains an
-independent type-checker gap. Profile the residual reverse-complement gap before
-adding another source-level optimization, and build its published leader locally
-under the development-machine CPU constraint.
+independent type-checker gap. A same-session constrained comparison is 1.271x
+the naive C oracle and 5.556x the published leader source. Its 64 KiB reads,
+SSE4.1 transform, and pthread chunks define the first concrete language/runtime
+roadmap; pursue typed bulk-buffer reuse before attempting a slower Rune-level
+per-byte parser.
 Pidigits still needs a true bignum facility rather than local code-generation
 tuning.
 
