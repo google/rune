@@ -221,6 +221,25 @@ before timing.
 |---|---:|---:|---:|---:|---:|---:|---:|
 | reverse-complement (fasta 5M) | `-U` | 221.892 | 91.697 | 77.794 | 17.167 | **1.179x** | **5.342x** |
 
+## Stage 1 incremental update: reusable reverse-complement line storage
+
+On 2026-07-10, `readlnInto(buffer)` was added to the bootstrap C backend. It
+uses one reusable `getline` buffer and copies each newline-stripped line into a
+caller-owned Rune byte array, growing that array only when necessary and
+returning its possibly reallocated data pointer. This preserves `readln()`'s
+safe value semantics while eliminating its allocation and `free` on every FASTA
+line. The reverse-complement port reuses one such `[u8]` line buffer and writes
+headers with exact byte-array output.
+
+The focused reusable-buffer check, compiler gate (`PASS=205 FAIL=0`), committed
+golden, and full 50.8 MB reference comparison all passed. This is the first
+reverse-complement result faster than the naive C oracle; its row also updates
+the same-session constrained-leader comparison.
+
+| Benchmark (workload) | Rune flags | Rune O0 | Rune O3 | naive O3 | constrained leader | O3 / naive | O3 / constrained leader |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| reverse-complement (fasta 5M) | `-U` | 199.193 | 68.623 | 77.754 | 18.086 | **0.883x** | **3.794x** |
+
 ## Current analysis
 
 ### The optimization unlock
@@ -268,11 +287,12 @@ The direct 256-byte complement table then reaches 1.254x, confirming that the
 remaining transform cost was still material despite clang's branch-chain
 lowering. The byte-array C ABI now honors actual array lengths and embedded
 NULs; source-level inference for a standalone `readBytes` result remains an
-independent type-checker gap. With `-U`, a same-session constrained comparison
-is 1.179x the naive C oracle and 5.342x the published leader source. Its 64 KiB
-reads, SSE4.1 transform, and pthread chunks define the first concrete
-language/runtime roadmap; pursue typed bulk-buffer reuse before attempting a
-slower Rune-level per-byte parser.
+independent type-checker gap. Reusable line storage removes the dominant
+per-line allocation churn: with `-U`, a same-session constrained comparison is
+0.883x the naive C oracle and 3.794x the published leader source. Its 64 KiB
+reads, SSE4.1 transform, and pthread chunks now define the concrete remaining
+language/runtime roadmap. A prior Rune-level byte-chunk parser was correct but
+slower, so pursue bulk copying/vectorization only with a measured C-level path.
 Pidigits still needs a true bignum facility rather than local code-generation
 tuning.
 

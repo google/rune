@@ -205,9 +205,10 @@ class CRuntime(self) {
 
   func needByteIo(self) {
     cf = self.cFragment("byte_io", "cbackend/cruntime/byte_io.inc")
-    // readln() returns a Rune headed string and readBytes() returns a headed
-    // byte array, so both allocation helpers must precede byte I/O.
-    cf.addDependencies([self.needStringMethods(), self.needArrayAlloc()])
+    // readln() returns a Rune headed string, readBytes() returns a headed byte
+    // array, and readlnInto() can grow a caller-provided byte array.
+    cf.addDependencies([self.needStringMethods(), self.needArrayAlloc(),
+        self.needArrayResize()])
   }
 
   func needStringMethods(self) -> CFragment {

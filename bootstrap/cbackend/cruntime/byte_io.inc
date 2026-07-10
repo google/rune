@@ -1,9 +1,9 @@
 /*
  * Rune C backend byte-level stdin/stdout builtins.
  *
- * Implements the Rune builtins readByte(), writeByte(), readBytes() and
- * writeBytes().  The helper names match the Rune builtin names so calls can
- * be emitted directly.
+ * Implements the Rune builtins readByte(), writeByte(), readBytes(),
+ * writeBytes() and readlnInto(). The helper names match the Rune builtin names
+ * so calls can be emitted directly.
  */
 
 #include <stdint.h>
@@ -35,6 +35,34 @@ static inline char *readln(void) {
   memcpy(result, line, (size_t)len);
   free(line);
   return result;
+}
+
+// Reuse a caller-owned Rune byte array for one line from stdin. Like readln(),
+// the returned array excludes the trailing newline and has used == 0 at EOF.
+// Unlike readln(), the caller explicitly owns the mutable storage and receives
+// its possibly reallocated data pointer back.
+static inline uint8_t *readlnInto(uint8_t *bytes) {
+  static char *line = NULL;
+  static size_t capacity = 0;
+  ssize_t len = getline(&line, &capacity, stdin);
+  array_t *array = ((array_t *)bytes) - 1;
+  if (len < 0) {
+    if (ferror(stdin)) {
+      raise("Error: could not read stdin");
+    }
+    array->used = 0;
+    return bytes;
+  }
+  if (len > 0 && line[len - 1] == '\n') {
+    --len;
+  }
+  if ((size_t)len > array->capacity) {
+    array = array_resize(array, (size_t)len);
+    bytes = (uint8_t *)(array + 1);
+  }
+  memcpy(bytes, line, (size_t)len);
+  array->used = (size_t)len;
+  return bytes;
 }
 
 // Read up to |n| bytes. The returned Rune array carries the actual byte count,

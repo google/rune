@@ -5,9 +5,10 @@
 // Reads FASTA from stdin (as produced by fasta), prints reverse-complement
 // of each record wrapped at 60 columns with uppercase output.
 //
-// The bootstrap readln() implementation uses getline and returns a headed Rune
-// string, so this processes each complete FASTA line without per-byte input
-// calls. CLBG FASTA inputs have no blank lines; an empty line is the EOF marker.
+// The bootstrap readlnInto() implementation uses getline and reuses a headed
+// Rune byte array, so this processes each complete FASTA line without per-byte
+// input calls or a per-line allocation. CLBG FASTA inputs have no blank lines;
+// an empty line is the EOF marker.
 // The sequence buffer starts from a 1-element literal to avoid empty-array
 // resize fragility and grows without a fixed record-size limit.
 
@@ -98,14 +99,16 @@ seq = [0u8]
 seq.resize(seqCap)
 seqLen = 0u64
 inRecord = false
-line = readln()
+line = [0u8]
+line = readlnInto(line)
 while line.length() > 0u64 {
-  if <u8>line[0] == 62u8 {
+  if line[0] == 62u8 {
     if inRecord {
       emitRevComp(seq, seqLen)
       seqLen = 0u64
     }
-    println line
+    writeBytes(line)
+    writeByte(10u8)
     inRecord = true
   } else {
     linePos = 0u64
@@ -114,12 +117,12 @@ while line.length() > 0u64 {
         seqCap = seqCap * 2u64
         seq.resize(seqCap)
       }
-      seq[seqLen] = <u8>line[linePos]
+      seq[seqLen] = line[linePos]
       seqLen += 1u64
       linePos += 1u64
     }
   }
-  line = readln()
+  line = readlnInto(line)
 }
 
 if inRecord {

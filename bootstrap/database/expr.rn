@@ -3697,12 +3697,13 @@ class Expr(self, type: ExprType, location: Location) {
       }
       if (builtinName == "exit" || builtinName == "readByte" ||
           builtinName == "writeByte" || builtinName == "readBytes" ||
-          builtinName == "writeBytes") {
+          builtinName == "writeBytes" || builtinName == "readlnInto") {
         switch builtinName {
           "exit" => iofn = c.CRuntimeFunction.Exit
           "readByte" => iofn = c.CRuntimeFunction.ReadByte
           "writeByte" => iofn = c.CRuntimeFunction.WriteByte
           "readBytes" => iofn = c.CRuntimeFunction.ReadBytes
+          "readlnInto" => iofn = c.CRuntimeFunction.ReadLnInto
           default => iofn = c.CRuntimeFunction.WriteBytes
         }
         ioparms = c.CExprList()
