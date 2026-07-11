@@ -28,7 +28,9 @@ func renderAvx(width: u32, height: u32, var bitmap: [u8]) {
   imaginaryScale = 2.0f64 / <f64>height
   realCoordinates = arrayof(f64).resize(<u64>width)
   for x = 0u32, x < width, x += 1u32 {
-    realCoordinates[<u64>x] = coordinateScale * <f64>x - 1.5f64
+    groupBase = <u64>x / lanesPerVector * lanesPerVector
+    reversedDestination = groupBase + lanesPerVector - 1u64 - (<u64>x - groupBase)
+    realCoordinates[reversedDestination] = coordinateScale * <f64>x - 1.5f64
   }
 
   escapeLimit = f64x4Splat(escapeLimitSquared)
@@ -39,13 +41,8 @@ func renderAvx(width: u32, height: u32, var bitmap: [u8]) {
 
     for byteX = 0u32, byteX < bytesPerRow, byteX += 1u32 {
       pixelX = <u64>byteX * <u64>pixelsPerByte
-      initialReal0 = f64x4FromLanes(
-          realCoordinates[pixelX + 3u64], realCoordinates[pixelX + 2u64],
-          realCoordinates[pixelX + 1u64], realCoordinates[pixelX])
-      initialReal1 = f64x4FromLanes(
-          realCoordinates[pixelX + 7u64], realCoordinates[pixelX + 6u64],
-          realCoordinates[pixelX + 5u64],
-          realCoordinates[pixelX + lanesPerVector])
+      initialReal0 = f64x4Load(realCoordinates, pixelX)
+      initialReal1 = f64x4Load(realCoordinates, pixelX + lanesPerVector)
       real0 = initialReal0
       real1 = initialReal1
       imaginary0 = initialImaginary

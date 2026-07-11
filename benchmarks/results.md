@@ -624,6 +624,36 @@ layout before adding threads. Reverse-complement's roughly 1.5x gap again
 becomes the largest validated direct target. K-nucleotide's required hash-table
 migration is measured immediately below.
 
+The coordinate-precompute follow-up removes almost all of that bounded gap.
+Rune now computes every horizontal coordinate once, preserving the exact
+`scale * x - 1.5` operation order, and stores coordinates in reversed groups of
+four. The hot loop can therefore load each F64x4 directly without lane-building
+shuffles or range checks. Optimized assembly confirms that the hot path has no
+coordinate shuffles or bounds failures. Rune remains byte-identical to the
+official N=200 golden, the N=4000 oracle at O0, and all N=16000 references at
+O3; the full-output SHA-256 is unchanged and begins `609262`.
+
+The fresh exact N=16000 pre-change baseline was Rune 1438.576 ms, naive C
+4727.020 ms, and the constrained one-thread leader 1190.631 ms, putting Rune
+at 1.208x the leader before prepacking.
+
+Ten alternating-order O3 pairs favored prepacking 10/10. Old/new best times
+were 1438.625/1212.404 ms (0.843x), and means were 1441.237/1216.831 ms, a
+roughly 15.7% improvement. Two exact benchmark-only scheduling experiments
+were rejected and fully reverted: splitting the multiply streams lost 0/10
+pairs (best 1436.348/1464.641 ms, means 1438.624/1467.071 ms), while
+short-circuiting the vector comparison also lost 0/10 (best
+1437.604/1463.373 ms, means 1441.255/1466.256 ms).
+
+| official Mandelbrot (16000) | Rune O3 | naive C O3 | g++ #4 one thread | O3 / naive | O3 / one-thread leader |
+|---|---:|---:|---:|---:|---:|
+| prepacked coordinates | 1213.308 | 4728.927 | 1195.156 | **0.257x** | **1.015x** |
+
+The standard O0 N=4000 run measured 24910.286 ms, consistent with the known
+unoptimized by-value vector cost. At official size, Rune is now at constrained
+single-thread leader parity, with a measured 1.5% gap; this is not a leader
+claim.
+
 ## Stage 2: k-nucleotide hash-table compliance
 
 The current CLBG specification requires a built-in or library hash table for
@@ -728,8 +758,8 @@ warmup-plus-best-of-five series measured Rune O0 9683.787 ms, Rune O3
 therefore **0.547x the naive oracle** and **1.168x the leader**. This is a
 validated hash-kernel improvement, not a leader result.
 
-Mandelbrot is now the largest current validated gap at 1.206x, followed by
-k-nucleotide at 1.168x, n-body at 1.152x, and reverse-complement at 1.089x.
+The largest current validated gap is now k-nucleotide at 1.168x, followed by
+n-body at 1.152x, reverse-complement at 1.089x, and Mandelbrot at 1.015x.
 
 ## Stage 2: regex-redux current-workload alignment
 
