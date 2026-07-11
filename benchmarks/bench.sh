@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Correctness-checked benchmark harness for the self-hosted Rune compiler.
-# Builds Rune at both clang -O0 and -O3, builds the naive C/C++ references at
-# -O3, verifies golden and timing-workload output, then measures one process at
-# a time on a pinned CPU (one discarded warmup plus best-of-five).
+# Builds Rune at generic clang -O0 and host-targeted clang -O3 -march=native.
+# The native O3 build matches published CLBG host targeting while disabling FP
+# contraction for reproducible output; O0 remains generic. Builds naive C/C++
+# references at -O3, verifies golden and timing-workload output, then measures
+# one process at a time on a pinned CPU (one discarded warmup plus best-of-five).
 set -euo pipefail
 shopt -s inherit_errexit
 
@@ -17,6 +19,7 @@ readonly WARMUP_RUNS=1
 readonly MEASURED_RUNS=5
 readonly FASTA_REVERSE_SIZE=5000000
 readonly FASTA_KNUCLEOTIDE_SIZE=1000000
+readonly -a OPTIMIZED_RUNE_FLAGS=(-O -N)
 
 CC=${CC:-clang}
 CXX=${CXX:-clang++}
@@ -92,7 +95,8 @@ build_rune() {
     read -r -a flags <<< "${RUNE_FLAGS[$name]}"
   fi
   if [[ $mode == o3 ]]; then
-    bootstrap/rune -q -O "${flags[@]}" --oc "$OUT/$name.o3.c" "$B/$name.rn"
+    bootstrap/rune -q "${OPTIMIZED_RUNE_FLAGS[@]}" "${flags[@]}" \
+      --oc "$OUT/$name.o3.c" "$B/$name.rn"
   else
     bootstrap/rune -q "${flags[@]}" --oc "$OUT/$name.o0.c" "$B/$name.rn"
   fi
@@ -263,6 +267,10 @@ printf 'date\trevision\tcpu\tbenchmark\tworkload\tflags\trune_o0_ms\trune_o3_ms\
 for name in "${BENCHMARKS[@]}"; do
   input=$(timing_input "$name")
   workload=$(timing_workload "$name")
+  reported_flags="${OPTIMIZED_RUNE_FLAGS[*]}"
+  if [[ -n ${RUNE_FLAGS[$name]} ]]; then
+    reported_flags+=" ${RUNE_FLAGS[$name]}"
+  fi
   args=()
   if [[ -v "TIMING_ARG[$name]" ]]; then
     args=("${TIMING_ARG[$name]}")
@@ -273,7 +281,7 @@ for name in "${BENCHMARKS[@]}"; do
   ref_ns=$(time_one "$input" "$OUT/$name.ref" "${args[@]}")
   awk -v date="$measurement_date" -v revision="$source_revision" \
       -v cpu="$BENCH_CPU" -v name="$name" -v workload="$workload" \
-      -v flags="${RUNE_FLAGS[$name]:--}" \
+      -v flags="$reported_flags" \
       -v o0="$o0_ns" -v o3="$o3_ns" -v ref="$ref_ns" \
       'BEGIN {
         printf "%s\t%s\t%s\t%s\t%s\t%s\t%.6f\t%.6f\t%.6f\tpending\t%.6f\t%.6f\tpending\n",

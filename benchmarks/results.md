@@ -13,9 +13,10 @@ constrained one-core setup; the remaining published-leader columns are pending.
 
 - **Measurement date/source:** 2026-07-10; Stage 0 commit based on parent
   `21f3534`.
-- **Rune builds:** `bootstrap/rune -q NAME.rn` for O0 and
-  `bootstrap/rune -q -O NAME.rn` for O3. `-O` now selects clang `-O3`;
-  `--optimize` is an equivalent long spelling. The compiler default remains O0.
+- **Rune builds:** `bootstrap/rune -q NAME.rn` for generic O0 and
+  `bootstrap/rune -q -O -N NAME.rn` for host-targeted O3. `-O` selects clang
+  `-O3`; `-N`/`--native` independently adds
+  `-march=native -ffp-contract=off`. The compiler default remains generic O0.
 - **Unsafe mode:** fannkuch-redux, k-nucleotide, mandelbrot, spectral-norm, and
   reverse-complement use `-U` at both optimization levels. It removes fixed-width
   `+`, `-`, and `*` overflow checks; bounds and division checks remain.
@@ -412,8 +413,55 @@ standard warmup-plus-best-of-five series measured:
 |---|---:|---:|---:|---:|---:|---:|---:|
 | reverse-complement (fasta 5M) | `-U` | 57.644 | 18.599 | 74.091 | 17.946 | **0.251x** | **1.036x** |
 
-The largest current validated gap is now n-body at 1.087x, followed by
-k-nucleotide at 1.084x, reverse-complement at 1.036x, and Mandelbrot at 1.015x.
+This direct-append checkpoint's 1.036x ratio used a slower leader session. The
+native-target rebaseline below supersedes it for current ranking.
+
+## Native-target compiler and full rebaseline
+
+The compiler now accepts `-N`/`--native` independently of optimization and
+passes `-march=native -ffp-contract=off` to clang. The benchmark harness uses
+`-O -N` for production O3 while retaining generic O0 builds. A first bare
+native build failed the Mandelbrot golden because the target enabled floating-
+point contraction; explicitly disabling contraction preserves its required
+operation order and exact output. After rebuilding the compiler, the mandatory
+gate passed `PASS=205 FAIL=0`.
+
+The complete serialized ten-program harness then passed every committed golden
+and full timing-workload comparison. These are the raw run's best-of-five
+milliseconds and unrounded-sample ratios from
+`/tmp/rune-bench/results.tsv` (`d5da1a8ca0c2+dirty`, before the checkpoint
+commit):
+
+| Benchmark (workload) | Flags | Rune O0 | Rune O3 `-O -N` | naive O3 | O0 / naive | O3 / naive |
+|---|---:|---:|---:|---:|---:|---:|
+| binary-trees (18) | checked | 1046.572 | 518.727 | 1037.225 | 1.009x | **0.500x** |
+| fannkuch-redux (11) | `-U` | 2195.402 | 1076.417 | 1091.384 | 2.012x | **0.986x** |
+| mandelbrot (4000) | `-U` | 24930.940 | 78.072 | 301.197 | 82.773x | **0.259x** |
+| spectral-norm (3000) | `-U` | 1295.584 | 241.390 | 241.491 | 5.365x | **1.000x** |
+| n-body (5M) | checked | 12718.625 | 101.588 | 169.869 | 74.873x | **0.598x** |
+| fasta (2.5M) | checked | 157.078 | 46.895 | 71.270 | 2.204x | **0.658x** |
+| reverse-complement (fasta 5M) | `-U` | 58.314 | 19.382 | 73.654 | 0.792x | **0.263x** |
+| k-nucleotide (fasta 1M) | `-U` | 297.195 | 97.041 | 182.072 | 1.632x | **0.533x** |
+| regex-redux (fasta 5M) | checked | 1573.243 | 1575.290 | 1568.577 | 1.003x | **1.004x** |
+| pidigits (10000) | checked | 353.535 | 351.630 | 769.234 | 0.460x | **0.457x** |
+
+Focused published-comparator checks also remained exact. N-body preserves the
+full-output SHA-256 beginning `a209`; across 30 fresh alternating pairs against
+gcc #9, Rune won 3/30, with best times 101.141/99.873 ms, means
+102.753/100.520 ms, and a best-time ratio of 1.013x. Official N=16000
+Mandelbrot measured 1207.465 ms versus 1190.114 ms for one-thread g++ #4
+(1.015x). Official 25M k-nucleotide measured 2193.076 ms versus 2040.550 ms for
+constrained g++ #2 (1.075x).
+
+Reverse-complement's standard warmup-plus-best-of-five series measured Rune
+18.868 ms versus gcc #7 17.291 ms, or 1.091x. In 100 alternating pairs Rune won
+27/100; Rune/leader best times were 18.589/16.183 ms, means were
+19.261/18.449 ms, and medians were 19.263/18.391 ms. The leader has a wide long
+tail, and median five-run-block minima yield a 1.125x ratio. Ranking continues
+to use the established standard best-of-five contract: reverse-complement is
+the largest validated gap at 1.091x, followed by k-nucleotide at 1.075x,
+Mandelbrot at 1.015x, and n-body at 1.013x. The earlier reverse-complement
+1.036x ratio used a slower leader session and is superseded for ranking.
 
 ## Current analysis
 
@@ -863,11 +911,12 @@ standard warmup-plus-best-of-five series measured Rune O0 7194.054 ms, Rune O3
 2209.640 ms, naive C 4353.842 ms, and constrained g++ #2 2039.065 ms. Rune is
 therefore **0.508x the naive oracle** and **1.084x the leader**.
 
-The largest current validated gap is n-body at 1.087x, followed by k-nucleotide
-at 1.084x, reverse-complement at 1.036x, and Mandelbrot at 1.015x. This ranking
-uses contemporaneous comparator measurements; the earlier 1.089x and 1.162x
-reverse-complement results remain valid same-session checkpoints but are not
-the current direct-append baseline.
+The native-target rebaseline makes reverse-complement the largest current
+validated gap at 1.091x, followed by k-nucleotide at 1.075x, Mandelbrot at
+1.015x, and n-body at 1.013x. This ranking uses contemporaneous comparator
+measurements and the standard warmup-plus-best-of-five contract; older
+reverse-complement ratios remain valid within their sessions but are
+superseded for global prioritization.
 
 ## Stage 2: regex-redux current-workload alignment
 
