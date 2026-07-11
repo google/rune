@@ -1164,13 +1164,10 @@ semantic-mismatch regex row as the relevant local comparison.
 |---|---:|---:|---:|---:|
 | regex-redux (fasta 5M, current CLBG substitutions) | 7514.058 | 7329.149 | 7286.571 | **1.006x** |
 
-Current fastest-published Rust #7 cannot yet be built locally because its
-published build depends on missing prebuilt Rayon and PCRE2 FFI artifacts. The
-current C gcc #5 source is the practical constrained reference after this
-alignment; it uses PCRE2 JIT plus OpenMP, so its one-CPU result must be labelled
-constrained. The next generic runtime experiment is safe PCRE2 JIT enablement
-with an explicit `PCRE2_ERROR_JIT_STACKLIMIT` fallback to `PCRE2_NO_JIT`; this
-must apply equally to the local C oracle before comparing timings.
+At this checkpoint the fastest-published Rust #7 still lacked a local
+dependency closure. A later closure is documented below. The current C gcc #5
+source remained the practical constrained reference for this measurement; it
+uses PCRE2 JIT plus OpenMP, so its one-CPU result is labelled constrained.
 
 ## Stage 2: regex-redux PCRE2 JIT and bulk input
 
@@ -1195,13 +1192,12 @@ own implementation, so it is a fair local code-generation/runtime comparison.
 | JIT, byte input | 1875.484 | 1713.221 | 1655.060 | 1.035x |
 | JIT, bulk input | 1655.488 | 1633.824 | 1646.232 | **0.992x** |
 
-The locally built current C gcc #5 leader source also matches both outputs.
+The locally built current C gcc #5 source also matches both outputs.
 With `OMP_NUM_THREADS=1` and CPU-0 affinity it measures 1556.601 ms, so Rune
-O3 is 1.050x behind this **constrained** leader. This is not a reproduction of
-its published OpenMP result; the fastest Rust #7 source remains unavailable
-locally because its published Rayon/PCRE2 FFI artifacts are absent. The remaining
-single-thread attribution is PCRE2 match-context/JIT-stack and replacement-path
-engineering, not input or general Rune code generation.
+O3 is 1.050x behind this **constrained** comparator. This is not a reproduction
+of its published OpenMP result. The remaining single-thread attribution is
+PCRE2 match-context/JIT-stack and replacement-path engineering, not input or
+general Rune code generation.
 
 An explicit reusable 16 KiB PCRE2 JIT stack was also tested in the matched C
 path before adding persistent runtime state: it was exact but measured 1602.528
@@ -1426,7 +1422,8 @@ constrained published gcc #5 implementation, which uses direct JIT matching,
 a custom literal replacement builder, and reusable execution state. Fasta near
 1.03x, this fannkuch result near 1.026x, and n-body near 1.009x are the next
 reported gaps. The fastest published regex Rust entry and binary-trees
-comparator still require local dependency closure before stronger leader claims.
+comparator closures are now complete as documented below; both still require
+quiet paired timings before stronger leader claims.
 
 ## Generality canaries
 
@@ -1458,6 +1455,49 @@ All three default workloads are byte-exact across Rune O0, Rune O3, their C
 oracles, and the committed goldens. The added regex semantics test raises the
 full bootstrap gate to `PASS=206 FAIL=0`. Informational canary timings were
 intentionally not collected while the development machine was busy.
+
+## Stage 2 comparator closure: regex-redux Rust #7
+
+The fastest-published Rust #7 source and its Rayon/PCRE2 dependency closure are
+now locally buildable. The source is pinned at SHA-256
+`172bd6c289d08e46bfaef9e19b2087b6813a6343d94add363c646c52fda1f6d0`; the
+reconstructed lockfile is retained and explicitly not claimed as the original
+CLBG dependency set. The accepted executable was built with rustc 1.84.1
+(`e71f9a9a9`, LLVM 19.1.5), `-C target-cpu=ivybridge`, and system PCRE2 10.47;
+its SHA-256 is
+`9b80f8559590fe4b1566df3e73bf09cca42d1ee0e1299db3dc948862ac2ad305`.
+Both its committed-golden output and full 50.8 MB
+output are byte-exact with Rune and the C oracles.
+
+The published source has a receiver-before-producer Rayon task graph that
+starves with one worker. Its constrained CPU-0 comparison therefore uses four
+Rayon workers all sharing CPU 0. A separately built one-worker source variant
+is attribution-only and is never labelled as the published entry. No timing is
+reported yet: recurring external load kept the fail-closed harness above its
+load threshold.
+
+## Stage 2 comparator closure: binary-trees C++ #7
+
+The current fastest elapsed-time binary-trees entry is C++ g++ #7 from Salsa
+revision `40296663`; its extracted source SHA-256 is
+`eb9473d17b90bc80a60af6a1741691cd0df284ff311b6b226fe4dbf7234dd35c`.
+The local
+reconstruction uses the published `-O3 -fomit-frame-pointer -march=ivybridge
+-std=gnu++17` and `-ltbb` flags, g++ 16.1.1, oneTBB 2023.0.0, and pinned Boost
+1.91 headers. Its executable SHA-256 is
+`2e187a15c37889e0a87e18a644417ecc2c537829b243340f8cad0e5e92a712fa`.
+
+Rune, the naive C++ oracle, and the leader are now raw-byte-identical at the
+N=10 committed golden and official N=21 workload. The previous Rune/oracle
+format omitted the official entry's single space after `check:`; both sources
+and the golden were aligned before any timing. The main benchmark harness now
+uses N=21 for binary-trees.
+
+The leader uses nested TBB-backed parallel algorithms, per-tree monotonic
+arenas, and a thread-local unsynchronized pool backing those arenas. Under the
+required CPU-0 affinity it is a constrained published-source comparator, not a
+reproduction of the published multicore result. Quiet paired timing remains
+pending, so the earlier 0.50x naive-oracle ratio is not yet a leader claim.
 
 ## Historical fixes retained in the current source
 

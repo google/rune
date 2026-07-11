@@ -52,7 +52,7 @@ if argv.length() > 1 {
 }
 stretchDepth = maxDepth + 1
 tree = makeTree(stretchDepth)
-println "stretch tree of depth %u\t check:" % stretchDepth, tree.check()
+println "stretch tree of depth %u\t check: " % stretchDepth, tree.check()
 tree.destroy()
 longLivedTree = makeTree(maxDepth)
 iterations = 1u32 << maxDepth
@@ -63,8 +63,7 @@ for depth in range(minDepth, stretchDepth, 2u32) {
         checkTotal += tree.check()
         tree.destroy()
     }
-    println "%u\t trees of depth %u\t check:" % (iterations, depth), checkTotal
+    println "%u\t trees of depth %u\t check: " % (iterations, depth), checkTotal
     iterations >>= 2
 }
-println "long lived tree of depth %u\t check:" % maxDepth, longLivedTree.check()
-
+println "long lived tree of depth %u\t check: " % maxDepth, longLivedTree.check()

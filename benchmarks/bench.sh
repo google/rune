@@ -65,7 +65,7 @@ declare -Ar GOLDEN_ARG=(
 )
 
 declare -Ar TIMING_ARG=(
-  [binary_trees]=18
+  [binary_trees]=21
   [fannkuch_redux]=12
   [mandelbrot]=4000
   [spectral_norm]=5500

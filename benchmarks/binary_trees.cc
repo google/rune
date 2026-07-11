@@ -51,7 +51,7 @@ int main(int argc, char **argv) {
   }
   uint32_t stretchDepth = maxDepth + 1;
   auto tree = Node::makeTree(stretchDepth);
-  printf("stretch tree of depth %u\t check:%u\n", stretchDepth, tree->check());
+  printf("stretch tree of depth %u\t check: %u\n", stretchDepth, tree->check());
   tree.reset();
   auto longLivedTree = Node::makeTree(maxDepth);
   uint32_t iterations = 1 << maxDepth;
@@ -62,11 +62,11 @@ int main(int argc, char **argv) {
       checkTotal += tree->check();
       tree.reset();
     }
-    printf("%u\t trees of depth %u\t check:%u\n", iterations, depth,
+    printf("%u\t trees of depth %u\t check: %u\n", iterations, depth,
            checkTotal);
     iterations >>= 2;
   }
-  printf("long lived tree of depth %u\t check:%u\n", maxDepth,
+  printf("long lived tree of depth %u\t check: %u\n", maxDepth,
          longLivedTree->check());
   return 0;
 }
