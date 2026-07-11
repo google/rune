@@ -507,6 +507,42 @@ K-nucleotide is now the largest stable validated gap at 1.075x.
 Reverse-complement is comparator parity to roughly 1.04x, followed by
 Mandelbrot at 1.015x and n-body at 1.013x.
 
+## K-nucleotide buffered input
+
+K-nucleotide now consumes FASTA with the existing buffered `ByteReader`, using
+peek plus a reusable `readlnInto` array instead of locked per-byte `getc`.
+Record selection still begins only at a header with the `>THREE` prefix; sequence bytes
+are normalized case-insensitively and appended with the same capacity-doubling
+policy. A parity diagnostic against the prior reader covers a line longer than
+64 KiB, a blank line, lowercase input, and a final unterminated line.
+
+The committed golden is byte-exact at O0/O3. At the official 25M workload, O3
+is byte-identical to both the naive oracle and constrained g++ #2, with output
+SHA-256 beginning `f8c042fe`. In ten alternating official-size comparisons the
+prior/buffered paths measured best times 2192.837/1997.804 ms and means
+2201.989/2023.868 ms. The buffered path won 10/10, with new/old ratios of
+0.911x for the minima and 0.919x for the means.
+
+Ten alternating candidate/leader pairs then favored Rune 8/10. Rune/g++ #2
+best times were 2019.313/2036.573 ms and means were 2032.759/2044.601 ms,
+giving ratios of 0.992x and 0.994x. A fresh standard warmup-plus-best-of-five
+series measured:
+
+| Benchmark (workload) | Rune mode | Rune O0 | Rune O3 | naive O3 | constrained g++ #2 | O3 / naive | O3 / constrained leader |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| k-nucleotide (official fasta 25M) | O0 `-U`; O3 `-O -N -U` | 5794.981 | 2017.665 | 4365.906 | 2041.647 | **0.462x** | **0.988x** |
+
+This is a measured narrow win over the constrained published comparator, not a
+claim that Rune is “by far” fastest. A fresh profile still assigns 88.79% of
+runtime to `countKmers`. The next measured candidate separates rolling-key
+warmup from the steady-state loop, eliminating 874,999,989 redundant
+post-warmup comparisons/branches on the official workload. That directly
+attributed branch-free split is the next scoped continuation because it can
+widen this narrow win.
+
+Reverse-complement, whose bimodal gcc #7 comparison ranges from parity to
+roughly 1.04x, is the largest remaining stable/uncertain comparator gap.
+
 ## Current analysis
 
 ### The optimization unlock
@@ -955,11 +991,13 @@ standard warmup-plus-best-of-five series measured Rune O0 7194.054 ms, Rune O3
 2209.640 ms, naive C 4353.842 ms, and constrained g++ #2 2039.065 ms. Rune is
 therefore **0.508x the naive oracle** and **1.084x the leader**.
 
-The AVX2 checkpoint makes k-nucleotide the largest stable validated gap at
-1.075x. Reverse-complement is now comparator parity to roughly 1.04x because
-gcc #7's bimodal samples do not support a durable win; Mandelbrot and n-body
-remain at 1.015x and 1.013x. Older reverse-complement ratios remain valid within
-their sessions but are superseded for global prioritization.
+Buffered input gives k-nucleotide a narrow measured 0.988x win over constrained
+g++ #2. Reverse-complement is now the largest remaining stable/uncertain
+comparator gap, at parity to roughly 1.04x because gcc #7's bimodal samples do
+not support a durable win; Mandelbrot and n-body remain at 1.015x and 1.013x.
+The next scoped experiment nevertheless stays on k-nucleotide's directly
+attributed branch-free counting split to determine whether its narrow win can
+be widened.
 
 ## Stage 2: regex-redux current-workload alignment
 

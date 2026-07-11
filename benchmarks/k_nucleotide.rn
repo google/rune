@@ -1,8 +1,9 @@
 // k-nucleotide benchmark - The Computer Language Benchmarks Game
 // https://benchmarksgame-team.pages.debian.net/benchmarksgame/
 //
-// NOTE: uses readByte() instead of readln() because the legacy LLVM runtime
-// has a heap-corruption bug in readln() for lines longer than ~16 chars.
+// The explicit ByteReader buffers stdin and reuses one line array. This avoids
+// a runtime call per input byte while retaining arbitrary-length and final
+// unterminated FASTA lines.
 
 DNA_BASE_BITS = 2u64
 DNA_ALPHABET_SIZE = 4u64
@@ -20,7 +21,7 @@ ASCII_LOWER_A = 97u8
 ASCII_LOWER_Z = 122u8
 ASCII_CASE_OFFSET = 32u8
 FASTA_HEADER = 62u8
-LINE_FEED = 10u8
+BYTE_READER_EOF = 256u16
 
 // Format a f64 as a string with exactly 3 decimal places.
 func fmt3(v: f64) -> string {
@@ -188,70 +189,50 @@ func countSeq(var dnaB: [u8], seq: string) -> u64 {
   return count
 }
 
-func isEOF(bv: u8) -> bool {
-  if bv == 0u8 {
-    return true
-  }
-  if bv == 255u8 {
-    return true
-  }
-  return false
-}
-
-// Main: read FASTA from stdin byte-by-byte, find >THREE, and collect the DNA as
-// packed-base digits. Start from a non-empty array and grow explicitly; the
-// bootstrap runtime's empty-array append path corrupts large byte arrays.
+// Main: read buffered FASTA lines, find the header beginning with >THREE, and
+// collect that record's DNA as packed-base digits. Start from a non-empty array
+// and grow explicitly by doubling so input lines and records are unbounded by
+// the initial allocation.
 dnaCapacity = INITIAL_DNA_CAPACITY
 dnaLength = 0u64
 dnaBytes = [0u8]
 dnaBytes.resize(dnaCapacity)
 inThree = false
-
-b = readByte()
-while !isEOF(b) {
-  if b == FASTA_HEADER {
-    // Header line: read first 5 bytes after '>' to check for "THREE"
-    b = readByte()
-    hc0 = b
-    b = readByte()
-    hc1 = b
-    b = readByte()
-    hc2 = b
-    b = readByte()
-    hc3 = b
-    b = readByte()
-    hc4 = b
-    // Skip remainder of header line
-    b = readByte()
-    while !isEOF(b) && b != LINE_FEED {
-      b = readByte()
-    }
-    // Check if first 5 chars are T H R E E
+line = [0u8]
+line.resize(0u64)
+reader = byteReaderNew()
+nextByte = byteReaderPeekByte(reader)
+while nextByte != BYTE_READER_EOF {
+  line = byteReaderReadlnInto(reader, line)
+  lineLength = line.length()
+  if lineLength > 0u64 && line[0] == FASTA_HEADER {
     inThree = false
-    if hc0 == ASCII_T && hc1 == ASCII_H && hc2 == ASCII_R && hc3 == ASCII_E && hc4 == ASCII_E {
+    if lineLength >= 6u64 && line[1] == ASCII_T && line[2] == ASCII_H && line[3] == ASCII_R && line[4] == ASCII_E && line[5] == ASCII_E {
       inThree = true
     }
-    if !isEOF(b) {
-      b = readByte()
+  } else if inThree {
+    requiredCapacity = dnaLength + lineLength
+    while dnaCapacity < requiredCapacity {
+      dnaCapacity *= 2u64
     }
-  } else if b == LINE_FEED {
-    b = readByte()
-  } else {
-    if inThree {
-      cb = b
+    if dnaBytes.length() < dnaCapacity {
+      dnaBytes.resize(dnaCapacity)
+    }
+
+    lineIndex = 0u64
+    while lineIndex < lineLength {
+      cb = line[lineIndex]
       if cb >= ASCII_LOWER_A && cb <= ASCII_LOWER_Z {
         cb -= ASCII_CASE_OFFSET
       }
-      if dnaLength >= dnaCapacity {
-        dnaCapacity *= 2u64
-        dnaBytes.resize(dnaCapacity)
-      }
       dnaBytes[dnaLength] = <u8>charIdx(cb)
       dnaLength += 1u64
+      lineIndex += 1u64
     }
-    b = readByte()
   }
+  nextByte = byteReaderPeekByte(reader)
 }
+byteReaderFree(reader)
 
 dnaBytes.resize(dnaLength)
 
