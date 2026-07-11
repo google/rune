@@ -1439,8 +1439,9 @@ programs are correctness-only oracles, never performance comparators.
 The canary runner builds Rune O0 and host-native O3, requires exact agreement
 with both the oracle and committed default-workload golden, and optionally
 records alternating informational Rune O0/O3 timings. Timing has no leaderboard
-threshold and fails closed unless the one-minute load is at most 1.0 and CPU 0
-is idle. A small normal-suite regex test independently covers non-overlapping
+threshold and starts only when the one-minute load is at most 1.0. Subsequent
+before/after-pair checks reject active external CPU contention without treating
+the harness's own completed warmups as load. A small normal-suite regex test independently covers non-overlapping
 matches, literal and zero-width substitution, embedded-NUL explicit lengths,
 and the interpreter fallback when a pattern disables PCRE2 JIT.
 

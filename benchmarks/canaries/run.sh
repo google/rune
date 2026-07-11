@@ -13,21 +13,25 @@ readonly CC="${CC:-clang}"
 measure=false
 
 quiet_for_measurement() {
-  local load1 busy
+  local label=$1 check_load=${2:-false} load1 busy
   read -r load1 _ < /proc/loadavg
-  awk -v load_value="$load1" 'BEGIN { exit !(load_value <= 1.0) }' || {
-    printf 'Refusing canary timing: one-minute load is %s (> 1.0)\n' "$load1" >&2
-    return 1
-  }
+  if $check_load; then
+    awk -v load_value="$load1" 'BEGIN { exit !(load_value <= 1.0) }' || {
+      printf 'Refusing canary timing at %s: one-minute load is %s (> 1.0)\n' \
+        "$label" "$load1" >&2
+      return 1
+    }
+  fi
   busy=$(
     probe_pid=$BASHPID
     ps -eo pid=,ppid=,psr=,pcpu=,comm= |
       awk -v self="$$" -v probe="$probe_pid" \
         '$1 != self && $2 != self && $1 != probe && $2 != probe &&
-         $3 == 0 && $4 > 50.0 { print; exit }'
+         (($3 == 0 && $4 > 10.0) || $4 > 50.0) { print; exit }'
   )
   if [[ -n $busy ]]; then
-    printf 'Refusing canary timing: CPU 0 has a >50%% process: %s\n' "$busy" >&2
+    printf 'Refusing canary timing at %s: unrelated process exceeds >50%% anywhere or >10%% on CPU 0: %s\n' \
+      "$label" "$busy" >&2
     return 1
   fi
 }
@@ -91,14 +95,16 @@ elapsed_ns() {
 }
 
 measure_rune_pair() {
-  local rune_o0=$1 rune_o3=$2 pair
+  local name=$1 rune_o0=$2 rune_o3=$3 pair
   local o0_best=999999999999999999 o3_best=999999999999999999
   local o0_sum=0 o3_sum=0 o0_ns o3_ns
   for ((pair = 0; pair < WARMUPS; pair++)); do
     "$rune_o0" "${args[@]}" >/dev/null
     "$rune_o3" "${args[@]}" >/dev/null
   done
+  quiet_for_measurement "$name after warmup"
   for ((pair = 1; pair <= PAIRS; pair++)); do
+    quiet_for_measurement "$name pair $pair"
     if ((pair % 2 == 1)); then
       elapsed_ns "$rune_o0"; o0_ns=$ELAPSED_NS
       elapsed_ns "$rune_o3"; o3_ns=$ELAPSED_NS
@@ -110,6 +116,7 @@ measure_rune_pair() {
     ((o3_ns < o3_best)) && o3_best=$o3_ns
     o0_sum=$((o0_sum + o0_ns))
     o3_sum=$((o3_sum + o3_ns))
+    quiet_for_measurement "$name pair $pair complete"
   done
   O0_BEST_NS=$o0_best
   O3_BEST_NS=$o3_best
@@ -124,7 +131,7 @@ results_tmp="$OUT/.results.tsv.$$"
 trap 'rm -f "$results_tmp"' EXIT INT TERM
 if $measure; then
   rm -f "$OUT/results.tsv"
-  quiet_for_measurement
+  quiet_for_measurement initial true
   printf 'canary\trune_o0_best_ms\trune_o3_best_ms\trune_o0_mean_ms\trune_o3_mean_ms\n' \
     > "$results_tmp"
 fi
@@ -158,8 +165,8 @@ for ref_src in "${refs[@]}"; do
   printf '%-28s PASS\n' "$name"
 
   if $measure; then
-    quiet_for_measurement
-    measure_rune_pair "$rune_o0" "$rune_o3"
+    quiet_for_measurement "$name before timing"
+    measure_rune_pair "$name" "$rune_o0" "$rune_o3"
     awk -v name="$name" -v o0b="$O0_BEST_NS" -v o3b="$O3_BEST_NS" \
         -v o0m="$O0_MEAN_NS" -v o3m="$O3_MEAN_NS" \
       'BEGIN { printf "%s\t%.3f\t%.3f\t%.3f\t%.3f\n", name, o0b/1e6, o3b/1e6, o0m/1e6, o3m/1e6 }' \

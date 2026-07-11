@@ -28,9 +28,11 @@ Measurement is serialized on CPU 0 at nice 15 and idle I/O priority. Rune O0
 and O3 each warm once, then run in alternating order for five pairs. Only their
 best and mean times are recorded; the C oracle is never timed. There is
 initially no timing threshold: results are evidence for detecting and
-investigating drift, not a benchmark leaderboard. Timing fails closed when the
-one-minute load exceeds 1.0 or another process last scheduled on CPU 0 exceeds
-50% CPU. Set `CANARY_SCALE=N`, where
+investigating drift, not a benchmark leaderboard. Timing starts only when the
+one-minute load is at most 1.0. After correctness and warmups begin, checks
+before and after every pair reject unrelated processes above 50% CPU anywhere
+or above 10% CPU when last scheduled on CPU 0; the harness's own completed
+work therefore cannot trip the initial load gate. Set `CANARY_SCALE=N`, where
 N is an integer from 1 through 1000, as a quick-run override passed equally to
 every canary. Defaults remain each canary's authoritative workload. Committed
 default-scale goldens are skipped under an override while Rune/reference
