@@ -711,11 +711,25 @@ the mean). A fresh standard warmup-plus-best-of-five series measured Rune O0
 2041.814 ms. Rune is therefore **0.591x the naive oracle** and **1.261x the
 leader**. This is a real but small cache-layout win, not a leader result.
 
-K-nucleotide remains the largest current validated gap at 1.261x, ahead of
-mandelbrot at 1.206x and reverse-complement at 1.089x. The next measurement
-target is its hot hash kernel—especially hash-mode specialization,
-fingerprinting, and probe layout—while preserving small-default growth and
-avoiding benchmark-specific reservation.
+The next measured hash-kernel change replaces the two-multiply SplitMix64
+path with capacity-aware Fibonacci multiplicative hashing. It selects the high
+product bits using a shift derived from the table capacity, requiring one
+multiply and one count-leading-zeros operation per hash. Identity hashing for
+k <= 6 is unchanged; using low-bit masking for the longer packed keys remains
+pathologically clustered. The official golden and full 25M outputs remain
+byte-identical at O0/O3 to both references, and the compiler gate remains
+`PASS=205 FAIL=0`.
+
+In ten alternating-order O3 pairs, Fibonacci hashing won 10/10. Old/new best
+times were 2548.041/2371.032 ms (0.931x), and means were
+2572.147/2398.348 ms (about 6.8% faster). A fresh standard
+warmup-plus-best-of-five series measured Rune O0 9683.787 ms, Rune O3
+2377.900 ms, naive C 4344.362 ms, and constrained g++ #2 2036.207 ms. Rune is
+therefore **0.547x the naive oracle** and **1.168x the leader**. This is a
+validated hash-kernel improvement, not a leader result.
+
+Mandelbrot is now the largest current validated gap at 1.206x, followed by
+k-nucleotide at 1.168x, n-body at 1.152x, and reverse-complement at 1.089x.
 
 ## Stage 2: regex-redux current-workload alignment
 

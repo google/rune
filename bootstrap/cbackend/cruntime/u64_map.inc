@@ -11,12 +11,7 @@
 #define RN_U64MAP_LOAD_DENOMINATOR ((size_t)4)
 #define RN_U64MAP_EMPTY ((uint8_t)0)
 #define RN_U64MAP_OCCUPIED ((uint8_t)1)
-#define RN_U64MAP_MIX_GAMMA UINT64_C(0x9e3779b97f4a7c15)
-#define RN_U64MAP_MIX_MULTIPLIER_1 UINT64_C(0xbf58476d1ce4e5b9)
-#define RN_U64MAP_MIX_MULTIPLIER_2 UINT64_C(0x94d049bb133111eb)
-#define RN_U64MAP_MIX_SHIFT_1 30u
-#define RN_U64MAP_MIX_SHIFT_2 27u
-#define RN_U64MAP_MIX_SHIFT_3 31u
+#define RN_U64MAP_FIBONACCI_MULTIPLIER UINT64_C(0x9e3779b97f4a7c15)
 
 #if defined(__GNUC__) || defined(__clang__)
 #define RN_U64MAP_COLD __attribute__((cold, noinline))
@@ -54,12 +49,12 @@ static RN_U64MAP_HOT uint64_t rn_u64map_hash(const rn_u64map *map, uint64_t key)
   if (map->identity_hash) {
     return key;
   }
-  uint64_t value = key + RN_U64MAP_MIX_GAMMA;
-  value = (value ^ (value >> RN_U64MAP_MIX_SHIFT_1)) *
-      RN_U64MAP_MIX_MULTIPLIER_1;
-  value = (value ^ (value >> RN_U64MAP_MIX_SHIFT_2)) *
-      RN_U64MAP_MIX_MULTIPLIER_2;
-  return value ^ (value >> RN_U64MAP_MIX_SHIFT_3);
+  // Power-of-two tables must select the high product bits: masking the low
+  // bits would preserve the packed-key correlations that mixing is meant to
+  // remove. capacity >= 32 makes capacity - 1 nonzero for clz.
+  unsigned shift = (unsigned)__builtin_clzll(
+      (unsigned long long)(map->capacity - 1));
+  return (key * RN_U64MAP_FIBONACCI_MULTIPLIER) >> shift;
 }
 
 static RN_U64MAP_COLD void rn_u64map_allocate_arrays(
@@ -210,9 +205,4 @@ static inline void rn_u64map_free(rn_u64map_t map) {
 
 #undef RN_U64MAP_COLD
 #undef RN_U64MAP_HOT
-#undef RN_U64MAP_MIX_GAMMA
-#undef RN_U64MAP_MIX_MULTIPLIER_1
-#undef RN_U64MAP_MIX_MULTIPLIER_2
-#undef RN_U64MAP_MIX_SHIFT_1
-#undef RN_U64MAP_MIX_SHIFT_2
-#undef RN_U64MAP_MIX_SHIFT_3
+#undef RN_U64MAP_FIBONACCI_MULTIPLIER
