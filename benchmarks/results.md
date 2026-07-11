@@ -6,8 +6,29 @@ scoreboard compares Rune at clang `-O0` and `-O3` with the committed naive C/C++
 references built locally at `-O3`.
 
 The naive references are correctness oracles, not the fastest published CLBG
-programs. Stage 2 has validated reverse-complement's leader under a deliberately
-constrained one-core setup; the remaining published-leader columns are pending.
+programs. Fastest-published source/dependency closure is now complete for all
+ten programs. Comparisons to parallel entries are explicitly CPU-0-constrained;
+they do not reproduce published multicore elapsed times.
+
+## Current comparator status
+
+| Benchmark | Fastest-published local comparator | Current evidence |
+|---|---|---|
+| binary-trees | C++ g++ #7 / TBB | Exact N=10/N=21; quiet paired timing pending |
+| fannkuch-redux | gcc #6 `-t 1` | Exact official N=12; stable paired Rune loss **1.026x** |
+| mandelbrot | g++ #4 one-worker attribution | Exact N=16000; paired parity/slight Rune win **0.997x** |
+| spectral-norm | gcc #6, `OMP_NUM_THREADS=1` | Exact N=5500; stable Rune win **0.786x** |
+| n-body | single-thread gcc #9 | Exact 5M; stable paired Rune loss **1.009x** |
+| fasta | tied C++ g++ #9 / Rust #7 | Exact full output; published two-worker source is feature-blocked on CPU 0 |
+| reverse-complement | gcc #7 constrained to CPU 0 | Exact full output; typical Rune win **0.955x**, rare faster leader minimum |
+| k-nucleotide | g++ #2 constrained to CPU 0 | Exact official input; stable Rune win **0.973x** |
+| regex-redux | Rust #7 constrained to CPU 0 | Exact golden/full output; quiet paired timing pending |
+| pidigits | gcc #2 / GMP | Exact 10,000 digits; best-of-five parity **1.003x**, paired timing pending |
+
+Thus every fastest entry has source and feature attribution. The remaining
+measurement gaps are binary-trees, regex-redux, and a stronger paired pidigits
+series. FASTA's published leader is not a missing artifact: it is a concrete
+structured-concurrency feature gap under the one-core contract.
 
 ## Reproducibility contract
 
@@ -1499,6 +1520,59 @@ arenas, and a thread-local unsynchronized pool backing those arenas. Under the
 required CPU-0 affinity it is a constrained published-source comparator, not a
 reproduction of the published multicore result. Quiet paired timing remains
 pending, so the earlier 0.50x naive-oracle ratio is not yet a leader claim.
+
+## Stage 2 comparator closure: FASTA tied leaders
+
+The current FASTA table ties Rust #7 and C++ g++ #9 at 0.78 elapsed / 1.55 CPU
+seconds. Both are two-worker spin pipelines, so their published result is
+unambiguously multicore. C++ #9 was selected for local closure because its
+dependencies are C++17, pthreads, and header-only Boost.Range. Its official
+source SHA-256 is
+`a4b26b42410c311c9c4df5c093829f4e0d3bfdeb51123dd8593dce925c209ab7`;
+the exact locally built binary SHA-256 is
+`ac71ab68d2d77b7278f4888554e90952df15e332c6a4fdbb705915a3161d7297`.
+The reconstruction uses the published flags, g++ 16.1.1, and pinned Boost 1.91
+headers.
+
+The source hardcodes two spin-wait workers. With both confined to CPU 0 it
+emitted only 4,096 bytes of the N=1000 output after roughly one minute, so the
+run was terminated and no elapsed result was accepted. Widening affinity would
+violate this report's one-core contract. A clearly labelled correctness-only
+derivative changing only the worker count from two to one matches Rune, the
+aligned oracle, and the committed N=1000 golden byte-for-byte. At official
+N=25,000,000, Rune and that derivative both match the 254,166,745-byte oracle,
+SHA-256
+`3fcf4f78104c8a65ef210fe1d469f4e473456c791225f2f1f9114f4986aa09fa`.
+The derivative was not timed and is not called the published leader.
+
+FASTA is therefore not blocked on code generation or comparator availability.
+It is blocked on a general bounded-concurrency feature capable of expressing
+the leader's independent ordered output jobs.
+
+## Cross-benchmark language roadmap
+
+The remaining published-leader features converge on two general facilities:
+
+- A bounded, deterministic synchronous `parallelMap`/map-reduce abstraction.
+  It would cover FASTA's two ordered generators, regex-redux's independent
+  counts plus later task overlap, and binary-trees' depth/iteration jobs.
+  Worker counts must be explicit or conservatively bounded so Rune never
+  silently consumes the development machine.
+- A safe lexical region/arena abstraction. Binary-trees g++ #7 bump-allocates
+  each tree and releases it in O(1), while Rune's reusable class pool still
+  stores identity/refcount/relation metadata and walks every node on destroy.
+
+Raw pthread exposure is not a safe shortcut. Current generated programs have
+file-static class pools, exception state, module variables, and formatting
+state; strings and arrays can be mutable. A first concurrency slice therefore
+needs compiler-generated typed worker thunks, thread-local runtime state, a
+bounded persistent pool, deterministic index-ordered results, and callback
+effect/transfer checks that reject shared mutable globals, I/O, nested
+parallelism, and class references crossing the boundary. Canary coverage must
+include ordered skewed jobs, exact-once execution, one-worker fallback, checked
+error propagation, worker-local allocation/destruction, and negative sharing
+diagnostics. Regions should follow with conservative no-escape rules before
+representation metadata is elided.
 
 ## Historical fixes retained in the current source
 
