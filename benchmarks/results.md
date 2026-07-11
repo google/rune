@@ -322,6 +322,23 @@ measured Rune O0 64.126 ms, Rune O3 30.054 ms, naive C 79.360 ms, and gcc #7
 gap. Increasing libc's stdin buffer with `stdbuf` to 64 KiB, 1 MiB, or 8 MiB
 was also measured and rejected; all three were slower than the default.
 
+A general read-all experiment added native byte-subsequence search and native
+range compaction, then parsed only the three FASTA record boundaries in Rune.
+It was fully correct but regressed to 46.077 ms versus the committed 29.669 ms:
+materializing the whole input and then a second dense sequence outweighed the
+removed line calls. Exact regular-file pre-sizing plus one-pass exclusion cut
+the experiment to 32.615 ms versus 29.431 ms, still 1.108x slower. Reserving
+the full input capacity through ordinary array resize made it worse at 35.298
+ms versus 29.289 ms. The entire experiment was reverted. A future raw-input
+path must translate wrapped bytes directly without constructing a dense second
+copy; do not repeat read-all plus record compaction.
+
+A CPU-checked SSE4.1 helper using `pblendvb` in place of the SSSE3 boolean
+selection was also exact, but a 30-pair alternating series did not separate it
+from the committed path: best times were 29.497 and 29.504 ms, with 16/30 wins
+and a 0.119 ms mean paired advantage. It was reverted as noise-level. The
+remaining single-thread gap is not the table-selection instruction count.
+
 ## Current analysis
 
 ### The optimization unlock
