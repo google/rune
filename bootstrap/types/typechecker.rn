@@ -792,6 +792,23 @@ class TypeChecker(self) {
         self.statement(s, fn.subBlock!)
       }
       self.connectResultType(fn)
+      deferredParams = arrayof(Type)
+      for deferredVar in fn.variables() {
+        if deferredVar.isParam && !isnull(deferredVar.typedValue) {
+          deferredParams.append(self.resolve(deferredVar.typedValue!))
+        }
+      }
+      if deferredParams.length() == 1 {
+        deferredParamType = deferredParams[0]
+      } else {
+        deferredParamType = Type(TupleType(deferredParams))
+      }
+      deferredResultType = Type(TypeName(Sym.new("none")))
+      if !isnull(fn.subBlock.returnType) {
+        deferredResultType = self.resolve(fn.subBlock.returnType!)
+      }
+      self.rejectF64x4FunctionBoundary(deferredParamType, deferredResultType,
+                                       fn.location)
     }
     if fn.type == db.FuncType.Constructor {
       // Bake the re-discovered field types while the instantiation's
@@ -806,6 +823,7 @@ class TypeChecker(self) {
         for bfi in range(bakeInfo.strct.fieldtypes.length()) {
           bakeInfo.strct.fieldtypes[bfi] = self.resolve(bakeInfo.strct.fieldtypes[bfi])
         }
+        self.validateNoF64x4Fields(bakeInfo, fn.location)
         if !isnull(bakeInfo.selfType) {
           bakeSelfR = self.resolve(bakeInfo.selfType!)
           if !self.hasFreeVars(bakeSelfR) {
@@ -2056,6 +2074,82 @@ class TypeChecker(self) {
     }
   }
 
+  // F64x4 is deliberately a local expression value, not a general aggregate
+  // or ABI type. Keep this recursive so an inferred container cannot hide a
+  // vector behind a tuple, array, struct, function, choice, or type argument.
+  func containsF64x4(self, ty: Type) -> bool {
+    t = ty
+    if t.type == Type.TypeClass.Var {
+      t = self.resolve(t)
+    }
+    switch t.type {
+      Type.TypeClass.Typename => {
+        if t.tyname.name.name == "F64x4" {
+          return true
+        }
+        if !isnull(t.tyname.params) {
+          for el in t.tyname.params.elements {
+            if self.containsF64x4(el) {
+              return true
+            }
+          }
+        }
+        return false
+      }
+      Type.TypeClass.Array => return self.containsF64x4(t.array.elementType!)
+      Type.TypeClass.Tuple => {
+        for el in t.tuple.elements {
+          if self.containsF64x4(el) {
+            return true
+          }
+        }
+        return false
+      }
+      Type.TypeClass.Struct => {
+        for ft in t.strct.fieldtypes {
+          if self.containsF64x4(ft) {
+            return true
+          }
+        }
+        return false
+      }
+      Type.TypeClass.Function => {
+        if self.containsF64x4(t.function.params) {
+          return true
+        }
+        return self.containsF64x4(t.function.result)
+      }
+      Type.TypeClass.Polymorphic => return self.containsF64x4(t.poly.scope)
+      Type.TypeClass.Choice => {
+        for ch in t.choice.choices {
+          if self.containsF64x4(ch) {
+            return true
+          }
+        }
+        return false
+      }
+      default => return false
+    }
+  }
+
+  func rejectF64x4FunctionBoundary(self, params: Type, result: Type,
+                                    location: db.Location) {
+    if self.containsF64x4(params) {
+      self.typeError("F64x4 values cannot be function parameters", location)
+    }
+    if self.containsF64x4(result) {
+      self.typeError("F64x4 values cannot be returned from functions", location)
+    }
+  }
+
+  func validateNoF64x4Fields(self, info: ClassInfo, location: db.Location) {
+    for ft in info.strct.fieldtypes {
+      if self.containsF64x4(ft) {
+        self.typeError("F64x4 values cannot be stored in class fields", location)
+      }
+    }
+  }
+
   func isComparisonOp(self, t: db.ExprType) -> bool {
     return (t == db.ExprType.Lt || t == db.ExprType.Le ||
             t == db.ExprType.Gt || t == db.ExprType.Ge ||
@@ -2349,7 +2443,8 @@ class TypeChecker(self) {
       }
       if (isnull(self.lookupEnum(name)) &&
           isnull(self.lookupTyname(name)) && name.name != "string" &&
-          name.name != "bool" && name.name != "none") {
+          name.name != "bool" && name.name != "none" &&
+          name.name != "F64x4") {
         // An unrecognized name; likely an unsupported constraint form.
         return Type(self.newTyvar())
       }
@@ -2792,6 +2887,14 @@ class TypeChecker(self) {
           expr.isType = true
         }
         result = Type(TupleType(elements))
+        // Tuple/List nodes also encode a call's argument bundle. Those values
+        // are ephemeral operands, not stored composites, and are allowed.
+        tupleParent = expr.parentExpr
+        if (isnull(tupleParent) || tupleParent.type != db.ExprType.Call) &&
+            self.containsF64x4(result!) {
+          self.typeError("F64x4 values cannot be stored in tuples or lists",
+                         expr.location)
+        }
       }
 
       // Binary expressions --------------------------------------------------
@@ -3334,6 +3437,9 @@ class TypeChecker(self) {
          }
          expr.firstChildExpr.typedValue = aofTy
          result = ARRAY(self.resolve(aofTy!))
+         if self.containsF64x4(result!) {
+           self.typeError("F64x4 values cannot be stored in arrays", expr.location)
+         }
          // Stage 0: note an as-yet-unregistered class element so Stage 2's
          // per-signature materialization can be demanded here.  Today this arm
          // is silent, which is why Dict's ctor never defers.  Recording only --
@@ -3364,6 +3470,9 @@ class TypeChecker(self) {
           }
         }
         result = ARRAY(self.resolve(ty!))
+        if self.containsF64x4(result!) {
+          self.typeError("F64x4 values cannot be stored in arrays", expr.location)
+        }
       }
 
       db.ExprType.Negate, db.ExprType.NegateTrunc, db.ExprType.Bitnot, db.ExprType.Not => {
@@ -3494,36 +3603,37 @@ class TypeChecker(self) {
               self.newSymbol(fnchild.val.symVal!, FN(bigInt, STRING()))
             }
           }
-          // F64x4 is a small, opaque SIMD-runtime handle.  All mutating
-          // operations take a destination first so callers can allocate a
-          // fixed set of handles outside a hot loop.
+          // F64x4 is a non-escaping four-lane value. Operations return values
+          // so the C optimizer can retain local expression chains in vector
+          // registers instead of routing them through heap-backed handles.
           if (isnull(callee) &&
               isnull(self.findSymbolMapping(SymbolMapping(fnchild.val.symVal!,
                   fnchild.val.symVal.typedValue)))) {
             f64x4 = F64X4()
             f64x4Array = ARRAY(F(64))
             f64x4Name = fnchild.val.symVal.name
-            if f64x4Name == "f64x4New" {
-              f64x4NoArgs = arrayof(Type)
-              self.newSymbol(fnchild.val.symVal!, FN(TUPLE(f64x4NoArgs), f64x4))
-            } else if f64x4Name == "f64x4Set" {
+            if f64x4Name == "f64x4FromLanes" {
               self.newSymbol(fnchild.val.symVal!,
-                  FN(TUPLE([f64x4, f64x4]), NONETY()))
+                  FN(TUPLE([F(64), F(64), F(64), F(64)]), f64x4))
             } else if f64x4Name == "f64x4Splat" {
+              self.newSymbol(fnchild.val.symVal!, FN(F(64), f64x4))
+            } else if f64x4Name == "f64x4Load" {
               self.newSymbol(fnchild.val.symVal!,
-                  FN(TUPLE([f64x4, F(64)]), NONETY()))
-            } else if f64x4Name == "f64x4Load" || f64x4Name == "f64x4Store" {
+                  FN(TUPLE([f64x4Array, UINTEGER()]), f64x4))
+            } else if f64x4Name == "f64x4Store" {
               self.newSymbol(fnchild.val.symVal!,
                   FN(TUPLE([f64x4, f64x4Array, UINTEGER()]), NONETY()))
             } else if (f64x4Name == "f64x4Add" || f64x4Name == "f64x4Sub" ||
                 f64x4Name == "f64x4Mul") {
               self.newSymbol(fnchild.val.symVal!,
-                  FN(TUPLE([f64x4, f64x4, f64x4]), NONETY()))
+                  FN(TUPLE([f64x4, f64x4]), f64x4))
+            } else if f64x4Name == "f64x4Lane" {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([f64x4, UINTEGER()]), F(64)))
             } else if f64x4Name == "f64x4HorizontalSum" {
               self.newSymbol(fnchild.val.symVal!, FN(f64x4, F(64)))
             } else if f64x4Name == "f64x4ApproxReciprocalSqrt" {
-              self.newSymbol(fnchild.val.symVal!,
-                  FN(TUPLE([f64x4, f64x4]), NONETY()))
+              self.newSymbol(fnchild.val.symVal!, FN(f64x4, f64x4))
             } else if f64x4Name == "simdAvxAvailable" {
               f64x4NoArgs2 = arrayof(Type)
               self.newSymbol(fnchild.val.symVal!, FN(TUPLE(f64x4NoArgs2), BOOLEAN()))
@@ -4895,6 +5005,19 @@ class TypeChecker(self) {
         }
         for statement in fn.subBlock.statements() {
           self.statement(statement, fn.subBlock)
+          if statement.type == db.StateType.Assign && !isnull(statement.expr) {
+            moduleAssign = statement.expr!
+            if moduleAssign.type == db.ExprType.Equals {
+              moduleLhs = moduleAssign.firstChildExpr!
+              moduleRhs = moduleLhs.nextExprChildExpr!
+              if moduleLhs.type == db.ExprType.Ident &&
+                  !isnull(moduleRhs.typedValue) &&
+                  self.containsF64x4(moduleRhs.typedValue!) {
+                self.typeError("F64x4 values cannot be stored in module globals",
+                               statement.location)
+              }
+            }
+          }
         }
       }
 
@@ -5024,6 +5147,7 @@ class TypeChecker(self) {
     for statement in fn.subBlock.statements() {
       self.statement(statement, fn.subBlock)
     }
+    self.validateNoF64x4Fields(info, fn.location)
     // A constructor body that errors structurally on unconstrained
     // parameters (self.rows = m.length()) typechecks again under a
     // concrete instantiation before emission; the fields it created in
@@ -5056,6 +5180,9 @@ class TypeChecker(self) {
 
     bindingScope = self.closeScope()
     paramType = self.resolve(paramType)
+    if self.containsF64x4(paramType) {
+      self.typeError("F64x4 values cannot be constructor parameters", fn.location)
+    }
     boundVars = arrayof(Type)
     for sm in bindingScope.symbolMappings() {
       if !isnull(sm.value) && sm.value.type == Type.TypeClass.Var {
@@ -5773,6 +5900,9 @@ class TypeChecker(self) {
     }
 
     tynameDef = Type(StructType(fieldnames, fieldtypes))
+    if self.containsF64x4(paramType) || self.containsF64x4(tynameDef) {
+      self.typeError("F64x4 values cannot be stored in struct fields", fn.location)
+    }
     if boundVars.length() > 0 {
       resType = Type(TypeName(fn.sym, TupleType(boundVars)))
       fnType = Type(FunctionType(paramType, resType))
@@ -5885,6 +6015,9 @@ class TypeChecker(self) {
     if isnull(returnType) {
       returnType = Type(TypeName(Sym.new("none")))
     }
+    // Check before either the deferred or ordinary epilogue can publish a
+    // user-function ABI containing the local-only SIMD value.
+    self.rejectF64x4FunctionBoundary(paramType, returnType!, fn.location)
     // A body that errors on member access or indexing of unconstrained
     // parameters typechecks again under a concrete instantiation before
     // emission, like the legacy compiler.  Concrete functions keep their
@@ -6128,6 +6261,10 @@ class TypeChecker(self) {
     // instantiations, if any.
     paramType = self.resolve(paramType)
     returnType = self.resolve(returnType!)
+
+    // Calls in the body can be what finally resolve an annotated or inferred
+    // boundary to F64x4, so validate again after the last ordinary resolve.
+    self.rejectF64x4FunctionBoundary(paramType, returnType!, fn.location)
 
     fnType = Type(FunctionType(paramType, returnType!))
     boundVars = arrayof(Type)

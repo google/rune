@@ -3780,10 +3780,11 @@ class Expr(self, type: ExprType, location: Location) {
         }
         return builder.cCall(self.location, bigIntFn, c.CExpr(bigIntArgs))
       }
-      if (builtinName == "f64x4New" || builtinName == "f64x4Set" ||
-          builtinName == "f64x4Splat" || builtinName == "f64x4Load" ||
+      if (builtinName == "f64x4FromLanes" || builtinName == "f64x4Splat" ||
+          builtinName == "f64x4Load" ||
           builtinName == "f64x4Store" || builtinName == "f64x4Add" ||
           builtinName == "f64x4Sub" || builtinName == "f64x4Mul" ||
+          builtinName == "f64x4Lane" ||
           builtinName == "f64x4HorizontalSum" ||
           builtinName == "f64x4ApproxReciprocalSqrt" ||
           builtinName == "simdAvxAvailable") &&
@@ -3791,18 +3792,19 @@ class Expr(self, type: ExprType, location: Location) {
         // Mark only the enclosing generated function for the AVX target. The
         // runtime defines the target macro and keeps all other Rune functions
         // on the portable baseline target.
-        if !isnull(builder.currentEmittingFn) {
+        if builtinName != "simdAvxAvailable" &&
+            !isnull(builder.currentEmittingFn) {
           builder.currentEmittingFn!.usesF64x4 = true
         }
         switch builtinName {
-          "f64x4New" => f64x4Fn = c.CRuntimeFunction.F64x4New
-          "f64x4Set" => f64x4Fn = c.CRuntimeFunction.F64x4Set
+          "f64x4FromLanes" => f64x4Fn = c.CRuntimeFunction.F64x4FromLanes
           "f64x4Splat" => f64x4Fn = c.CRuntimeFunction.F64x4Splat
           "f64x4Load" => f64x4Fn = c.CRuntimeFunction.F64x4Load
           "f64x4Store" => f64x4Fn = c.CRuntimeFunction.F64x4Store
           "f64x4Add" => f64x4Fn = c.CRuntimeFunction.F64x4Add
           "f64x4Sub" => f64x4Fn = c.CRuntimeFunction.F64x4Sub
           "f64x4Mul" => f64x4Fn = c.CRuntimeFunction.F64x4Mul
+          "f64x4Lane" => f64x4Fn = c.CRuntimeFunction.F64x4Lane
           "f64x4HorizontalSum" => f64x4Fn = c.CRuntimeFunction.F64x4HorizontalSum
           "f64x4ApproxReciprocalSqrt" => f64x4Fn = c.CRuntimeFunction.F64x4ApproxReciprocalSqrt
           default => f64x4Fn = c.CRuntimeFunction.SimdAvxAvailable

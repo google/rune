@@ -255,10 +255,8 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
       // CDefinedType appends its conventional `_t` suffix at emission.
       return CTypeExpr(CDefinedType("rn_bigint"))
     }
-    // F64x4 values are opaque runtime handles.  The runtime typedef itself is
-    // a pointer to scalar lane storage, so do not add another C pointer here;
-    // this keeps generated Rune functions out of any vector-register ABI even
-    // before the runtime grows AVX-targeted helpers.
+    // F64x4 is a portable by-value runtime struct. The typechecker confines it
+    // to locals, so it never becomes part of a generated user-function ABI.
     if ty.name.name == "F64x4" {
       return CTypeExpr(CDefinedType("rn_f64x4"))
     }

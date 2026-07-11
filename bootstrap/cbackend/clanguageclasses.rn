@@ -1014,16 +1014,15 @@ enum CRuntimeFunction {
    BigIntToU64
    BigIntToString
 
-   // Opaque four-lane f64 SIMD foundation.  The portable implementation is
-   // scalar; AVX-targeted helpers can be substituted behind this ABI later.
-   F64x4New
-   F64x4Set
+   // Non-escaping four-lane f64 SIMD values.
+   F64x4FromLanes
    F64x4Splat
    F64x4Load
    F64x4Store
    F64x4Add
    F64x4Sub
    F64x4Mul
+   F64x4Lane
    F64x4HorizontalSum
    F64x4ApproxReciprocalSqrt
    SimdAvxAvailable
@@ -1321,14 +1320,9 @@ relevantType: CTypeExpr?) {
         e.write("rn_bigint_to_string")
       }
 
-      CRuntimeFunction.F64x4New => {
+      CRuntimeFunction.F64x4FromLanes => {
         e.needF64x4()
-        e.write("f64x4New")
-      }
-
-      CRuntimeFunction.F64x4Set => {
-        e.needF64x4()
-        e.write("f64x4Set")
+        e.write("f64x4FromLanes")
       }
 
       CRuntimeFunction.F64x4Splat => {
@@ -1359,6 +1353,11 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.F64x4Mul => {
         e.needF64x4()
         e.write("f64x4Mul")
+      }
+
+      CRuntimeFunction.F64x4Lane => {
+        e.needF64x4()
+        e.write("f64x4Lane")
       }
 
       CRuntimeFunction.F64x4HorizontalSum => {
