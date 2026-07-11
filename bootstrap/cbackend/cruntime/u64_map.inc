@@ -11,6 +11,12 @@
 #define RN_U64MAP_LOAD_DENOMINATOR ((size_t)4)
 #define RN_U64MAP_EMPTY ((uint8_t)0)
 #define RN_U64MAP_OCCUPIED ((uint8_t)1)
+#define RN_U64MAP_MIX_GAMMA UINT64_C(0x9e3779b97f4a7c15)
+#define RN_U64MAP_MIX_MULTIPLIER_1 UINT64_C(0xbf58476d1ce4e5b9)
+#define RN_U64MAP_MIX_MULTIPLIER_2 UINT64_C(0x94d049bb133111eb)
+#define RN_U64MAP_MIX_SHIFT_1 30u
+#define RN_U64MAP_MIX_SHIFT_2 27u
+#define RN_U64MAP_MIX_SHIFT_3 31u
 
 #if defined(__GNUC__) || defined(__clang__)
 #define RN_U64MAP_COLD __attribute__((cold, noinline))
@@ -33,26 +39,23 @@ typedef struct rn_u64map {
 typedef rn_u64map *rn_u64map_t;
 
 static RN_U64MAP_HOT void rn_u64map_require(const rn_u64map *map) {
-  if (map == NULL || map->magic != RN_U64MAP_MAGIC ||
-      map->control == NULL || map->keys == NULL || map->values == NULL ||
-      map->capacity < RN_U64MAP_INITIAL_CAPACITY ||
-      (map->capacity & (map->capacity - 1)) != 0) {
+  // The representation is opaque to Rune code, so a live handle's internal
+  // arrays and power-of-two capacity can only be established by this runtime.
+  if (map == NULL || map->magic != RN_U64MAP_MAGIC) {
     raise("U64MapInvalid");
   }
-}
-
-static RN_U64MAP_HOT uint64_t rn_u64map_rotl64(uint64_t value, unsigned shift) {
-  return (value << shift) | (value >> (64u - shift));
 }
 
 static RN_U64MAP_HOT uint64_t rn_u64map_hash(const rn_u64map *map, uint64_t key) {
   if (map->identity_hash) {
     return key;
   }
-  return rn_u64map_rotl64(
-      (key ^ UINT64_C(0xa5a5a5a5a5a5a5a5)) *
-          UINT64_C(0xdeadbeef31415927),
-      23u);
+  uint64_t value = key + RN_U64MAP_MIX_GAMMA;
+  value = (value ^ (value >> RN_U64MAP_MIX_SHIFT_1)) *
+      RN_U64MAP_MIX_MULTIPLIER_1;
+  value = (value ^ (value >> RN_U64MAP_MIX_SHIFT_2)) *
+      RN_U64MAP_MIX_MULTIPLIER_2;
+  return value ^ (value >> RN_U64MAP_MIX_SHIFT_3);
 }
 
 static RN_U64MAP_COLD void rn_u64map_allocate_arrays(
@@ -217,3 +220,9 @@ static inline void rn_u64map_free(rn_u64map_t map) {
 
 #undef RN_U64MAP_COLD
 #undef RN_U64MAP_HOT
+#undef RN_U64MAP_MIX_GAMMA
+#undef RN_U64MAP_MIX_MULTIPLIER_1
+#undef RN_U64MAP_MIX_MULTIPLIER_2
+#undef RN_U64MAP_MIX_SHIFT_1
+#undef RN_U64MAP_MIX_SHIFT_2
+#undef RN_U64MAP_MIX_SHIFT_3

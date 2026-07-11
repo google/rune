@@ -647,9 +647,33 @@ safe `insert`), but two measured library API experiments disproved it as the
 dominant cause. A generic `findOrInsert` wrapper regressed best time by 2.2%
 because it did not inline and added a call on every update. A miss-only
 constructor method was exact but noise-level at 3755.006 versus 3758.370 ms.
-Both were reverted. The credible roadmap is hash-capacity reservation and then
-a value-storing open-addressed integer map/identity-hash option; do not repeat
-mutable-entry API churn without an inlining mechanism.
+Both were reverted. Do not repeat mutable-entry API churn without an inlining
+mechanism.
+
+The measured follow-up adds a reusable, value-storing open-addressed `U64Map`
+runtime collection. It begins at the small library default and grows normally,
+so it preserves the specification's required hash-table workload rather than
+reserving a benchmark-specific final capacity. The k-nucleotide port uses
+identity hashing for k <= 6, where packed keys distribute cleanly, and the
+runtime's SplitMix64 avalanche mixer for k=12/18. This hybrid is load-bearing:
+identity hashing averaged 16.0076 probes at k=12 and 19.6821 at k=18, while an
+initial rotate/multiply mixer was catastrophically clustered and its run was
+aborted. The SplitMix hybrid keeps the k<=6 cases near one probe while avoiding
+the long-key clustering.
+
+At the official 25M size, Rune O0/O3, the naive C oracle, and constrained g++
+#2 again produced byte-identical output. Serialized CPU-0 warmup-plus-best-of-
+five times were Rune O0 10084.689 ms, Rune O3 2630.359 ms, naive C 4369.015 ms,
+and g++ #2 2045.277 ms. The open-addressed map improves O0 by 40.1% and O3 by
+30.0% over the compliant `Dict` port; Rune is now **0.602x the naive oracle**
+and **1.286x the leader**. Reducing redundant opaque-handle checks accounted
+for the final measured improvement from 2852.219 to 2630.359 ms, with the full
+compiler gate still at `PASS=205 FAIL=0`.
+
+The next measured design target is the map's memory layout. Its control, key,
+and value arrays are currently separate; an array-of-structures key/value slot
+layout should reduce hot-probe cache traffic. Measure that directly before
+considering broader features or benchmark-specific sizing.
 
 ## Stage 2: regex-redux current-workload alignment
 

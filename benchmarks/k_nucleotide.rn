@@ -7,6 +7,7 @@
 DNA_BASE_BITS = 2u64
 DNA_ALPHABET_SIZE = 4u64
 INITIAL_DNA_CAPACITY = 65536u64
+IDENTITY_HASH_MAX_K = 6u64
 
 ASCII_A = 65u8
 ASCII_C = 67u8
@@ -93,11 +94,13 @@ func kmerMask(k: u64) -> u64 {
   return (1u64 << (DNA_BASE_BITS * k)) - 1u64
 }
 
-// Count every k-mer with Rune's library hash table. Keeping the packed key in
-// a u64 makes the rolling update constant-time for all requested lengths.
-// findEntry is used so an existing Dict value can be incremented in place.
-func countKmers(var dnaB: [u8], k: u64) {
-  counts = Dict(u64, u64)
+// Count every k-mer with Rune's open-addressed u64 map. Keeping the packed key
+// in a u64 makes the rolling update constant-time for all requested lengths.
+func countKmers(var dnaB: [u8], k: u64) -> U64Map {
+  // Small packed keys already occupy the table uniformly. The FASTA
+  // generator strongly correlates low bits for longer k-mers, so those use
+  // the map's avalanche mixer instead of pathological identity slots.
+  counts = u64MapNew(k <= IDENTITY_HASH_MAX_K)
   dnaLen = dnaB.length()
   if k > dnaLen {
     return counts
@@ -109,12 +112,7 @@ func countKmers(var dnaB: [u8], k: u64) {
   while i < dnaLen {
     key = ((key << DNA_BASE_BITS) | <u64>dnaB[i]) & mask
     if i + 1u64 >= k {
-      entry = counts.findEntry(key)
-      if isnull(entry) {
-        counts.insert(key, 1u64)
-      } else {
-        entry.value += 1u64
-      }
+      u64MapAdd(counts, key, 1u64)
     }
     i += 1u64
   }
@@ -136,21 +134,18 @@ func printKmers(var dnaB: [u8], k: u64) {
     pc += 1u64
   }
 
-  // Copy the hash entries into small parallel arrays for deterministic output.
-  // These are sorting scratch, not an alternate direct-count table.
-  nKmers = 1u64 << (DNA_BASE_BITS * k)
-  kmerIndices = [0u64]
-  kmerIndices.resize(nKmers)
+  // Copy the map into small parallel arrays for deterministic output. The key
+  // array is independent of the map, so the map can be freed before sorting.
+  kmerIndices = u64MapKeys(counts)
+  numEntries = kmerIndices.length()
   kmerCounts = [0u64]
-  kmerCounts.resize(nKmers)
-  numEntries = 0u64
-  for pair in counts.items() {
-    kmerIndices[numEntries] = pair[0]
-    kmerCounts[numEntries] = pair[1]
-    numEntries += 1u64
-  }
-  kmerIndices.resize(numEntries)
   kmerCounts.resize(numEntries)
+  countIndex = 0u64
+  while countIndex < numEntries {
+    kmerCounts[countIndex] = u64MapGetOrZero(counts, kmerIndices[countIndex])
+    countIndex += 1u64
+  }
+  u64MapFree(counts)
   sortKmerIndices(kmerIndices, kmerCounts)
 
   baseBytes = [ASCII_A, ASCII_C, ASCII_G, ASCII_T]
@@ -182,15 +177,13 @@ func encodeSeq(seq: string) -> u64 {
   return key
 }
 
-// Count every k-mer of seq's length in a library Dict, then query the requested
+// Count every k-mer of seq's length in a library map, then query the requested
 // sequence. This deliberately performs the full CLBG hash-table workload.
 func countSeq(var dnaB: [u8], seq: string) -> u64 {
   counts = countKmers(dnaB, seq.length())
-  entry = counts.findEntry(encodeSeq(seq))
-  if isnull(entry) {
-    return 0u64
-  }
-  return entry.value
+  count = u64MapGetOrZero(counts, encodeSeq(seq))
+  u64MapFree(counts)
+  return count
 }
 
 func isEOF(bv: u8) -> bool {
