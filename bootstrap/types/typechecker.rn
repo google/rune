@@ -3691,7 +3691,8 @@ class TypeChecker(self) {
                   FN(TUPLE([f64x4, UINTEGER()]), F(64)))
             } else if f64x4Name == "f64x4HorizontalSum" {
               self.newSymbol(fnchild.val.symVal!, FN(f64x4, F(64)))
-            } else if f64x4Name == "f64x4ApproxReciprocalSqrt" {
+            } else if (f64x4Name == "f64x4ApproxReciprocal" ||
+                f64x4Name == "f64x4ApproxReciprocalSqrt") {
               self.newSymbol(fnchild.val.symVal!, FN(f64x4, f64x4))
             } else if f64x4Name == "simdAvxAvailable" {
               f64x4NoArgs2 = arrayof(Type)

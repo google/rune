@@ -1269,6 +1269,56 @@ near-leader. N-body's later register-resident SIMD port reduces its raw leader
 gap from 1.684x to 1.152x; reverse-complement's validated 1.583x gap is now the
 largest direct current target.
 
+## Stage 3: spectral-norm exact AVX recurrence and one-core leader win
+
+Spectral-norm now uses the official CLBG N=5500 workload and output format,
+exactly nine digits after the decimal point. Rune, its scalar C oracle, and the
+locally rebuilt published comparator agree at every validation size: the N=100
+golden is `1.274219991`, while N=3000 and N=5500 are `1.274224153` (the latter
+output's SHA-256 is
+`f9d5b5e3eb7657cf1bbba4cc856651864df9cd9fd9a6be9b9bc5fcbb67150deb`).
+
+The comparator is the canonical C gcc #6 source from the Salsa master source
+archive at revision `40296663`; its extracted source SHA-256 is
+`8de0459b5b79a5bc7cffd2d62d84501cb9dfc2ced2b4584151d3db10f6a5d938`.
+It was rebuilt with its published flags, `gcc -pipe -Wall -O3
+-fomit-frame-pointer -march=ivybridge -fopenmp`, and constrained with
+`OMP_NUM_THREADS=1` on CPU 0. This is therefore a reproducible one-core
+comparison, not the entry's unconstrained parallel result.
+
+The exact scalar Rune baseline measured 810.589 ms versus 538.496 ms for gcc
+#6, a 1.505x gap. A direct four-row AVX kernel using the new general
+`f64x4ApproxReciprocal` builtin reduced Rune to 672.352 ms. The builtin follows
+the published float-reciprocal/Goldschmidt operation order on AVX and retains
+a scalar reciprocal fallback. Replacing repeated denominator evaluation with
+an output-exact `u64` recurrence then measured 485.353 ms. Finally, a guarded
+`i32` recurrence removed the remaining wide-integer cost.
+
+The `i32` path has a proved bound rather than an unchecked public operation:
+for N <= 32768, four-lane padding makes the largest row and column index 32767,
+and the maximum denominator is 2,147,418,113, below `i32` maximum. The kernel
+divides the even triangular factor before multiplying so every intermediate
+also fits. Larger workloads, non-AVX hosts, and unsupported targets take the
+existing scalar fallback. The compiler regression gate is `PASS=205 FAIL=0`.
+
+| Official spectral-norm (5500) | Rune O0 | Rune O3 | naive scalar C | constrained gcc #6 | O0 / naive | O3 / naive | O3 / leader |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| final best-of-five | 23307.077 | 424.661 | 815.519 | 540.294 | 28.579x | **0.521x** | **0.786x** |
+
+In a final ten-pair alternating-order series, Rune won 10/10. Rune/gcc #6 best
+times were 427.071/543.148 ms (0.7863x), and means were 430.757/546.904 ms
+(0.7876x). Rune is therefore about 21% faster than the fastest published C
+entry when both are constrained to one core.
+
+Two tempting variants were rejected. Factoring each row's four denominators to
+share one packed reciprocal made the direct AVX kernel slower, 671.722 versus
+693.628 ms. Removing vector-load range checks won only 8/20 pairs and raised
+mean time by 0.17%; no unchecked-load API was retained. This is a strong
+spectral-norm result, not completion of the whole benchmark objective. The next
+unvalidated fastest-published
+comparators are fannkuch-redux and binary-trees; fannkuch-redux is likely the
+more immediately buildable target.
+
 ## Historical fixes retained in the current source
 
 - A bare `sqrt(x)` lowers to hardware/libm sqrt, which is essential to n-body's

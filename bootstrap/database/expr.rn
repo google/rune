@@ -3788,6 +3788,7 @@ class Expr(self, type: ExprType, location: Location) {
           builtinName == "f64x4LessEqualMask" ||
           builtinName == "f64x4Lane" ||
           builtinName == "f64x4HorizontalSum" ||
+          builtinName == "f64x4ApproxReciprocal" ||
           builtinName == "f64x4ApproxReciprocalSqrt" ||
           builtinName == "simdAvxAvailable") &&
           isnull(builder.findFunction(builtinName)) {
@@ -3810,6 +3811,7 @@ class Expr(self, type: ExprType, location: Location) {
           "f64x4LessEqualMask" => f64x4Fn = c.CRuntimeFunction.F64x4LessEqualMask
           "f64x4Lane" => f64x4Fn = c.CRuntimeFunction.F64x4Lane
           "f64x4HorizontalSum" => f64x4Fn = c.CRuntimeFunction.F64x4HorizontalSum
+          "f64x4ApproxReciprocal" => f64x4Fn = c.CRuntimeFunction.F64x4ApproxReciprocal
           "f64x4ApproxReciprocalSqrt" => f64x4Fn = c.CRuntimeFunction.F64x4ApproxReciprocalSqrt
           default => f64x4Fn = c.CRuntimeFunction.SimdAvxAvailable
         }

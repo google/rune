@@ -1,14 +1,10 @@
 // C reference implementation of spectral_norm benchmark.
-// Matches output of benchmarks/spectral_norm.rn byte-for-byte.
-//
-// Uses Rune's float formatting: %.6e, strip trailing mantissa zeros,
-// omit exponent when zero (else write e<n> with no + sign).
+// Uses the standard CLBG output format: exactly nine decimal places.
 // Uses Rune's own Newton-Raphson sqrt (same algorithm as the generated C)
 // to ensure bit-identical results.
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 // Replicates Rune's rn_user_sqrt(squared, 3e-14).
 static double rn_sqrt(double squared) {
@@ -23,42 +19,6 @@ static double rn_sqrt(double squared) {
         if (diff < 0.0) diff = -diff;
     }
     return nextGuess;
-}
-
-// Replicates Rune's tostring_rune_float(d, 6) formatting.
-static void print_rune_float(double d) {
-    char buf[64], out[64];
-    // Rune treats non-finite and overflow as NaN
-    if (d != d || d > 1.7976931348623157e+308 || d < -1.7976931348623157e+308) {
-        printf("NaN");
-        return;
-    }
-    if (d == 0.0) { printf("0.0"); return; }
-    snprintf(buf, sizeof(buf), "%.6e", d);
-    char *p = buf, *q = out;
-    // Copy mantissa part (up to 'e')
-    while (*p != 'e' && *p != '\0') *q++ = *p++;
-    // Strip trailing zeros from mantissa, keeping at least one decimal digit
-    while (q[-1] == '0' && q[-2] != '.') q--;
-    // Parse exponent
-    long exponent = 0;
-    int expSign = 1;
-    if (*p == 'e') {
-        p++;
-        if (*p == '+') p++;
-        else if (*p == '-') { expSign = -1; p++; }
-        while (*p >= '0' && *p <= '9') {
-            exponent = exponent * 10 + (*p - '0');
-            p++;
-        }
-        exponent *= expSign;
-    }
-    if (exponent != 0) {
-        snprintf(q, sizeof(out) - (size_t)(q - out), "e%ld", exponent);
-    } else {
-        *q = '\0';
-    }
-    printf("%s\n", out);
 }
 
 static double evalA(unsigned long i, unsigned long j) {
@@ -93,6 +53,10 @@ static void ATimesTransp(double *v, double *u, unsigned long n) {
 int main(int argc, char *argv[]) {
     unsigned long N = 100;
     if (argc > 1) N = (unsigned long)atol(argv[1]);
+    if (N == 0) {
+        printf("NaN\n");
+        return 0;
+    }
 
     double *u = (double *)malloc(N * sizeof(double));
     double *v = (double *)malloc(N * sizeof(double));
@@ -111,7 +75,7 @@ int main(int argc, char *argv[]) {
         vv  += v[i] * v[i];
     }
 
-    print_rune_float(rn_sqrt(vBv / vv));
+    printf("%.9f\n", rn_sqrt(vBv / vv));
 
     free(u);
     free(v);

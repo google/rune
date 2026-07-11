@@ -1042,6 +1042,7 @@ enum CRuntimeFunction {
    F64x4LessEqualMask
    F64x4Lane
    F64x4HorizontalSum
+   F64x4ApproxReciprocal
    F64x4ApproxReciprocalSqrt
    SimdAvxAvailable
 
@@ -1451,6 +1452,11 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.F64x4HorizontalSum => {
         e.needF64x4()
         e.write("f64x4HorizontalSum")
+      }
+
+      CRuntimeFunction.F64x4ApproxReciprocal => {
+        e.needF64x4()
+        e.write("f64x4ApproxReciprocal")
       }
 
       CRuntimeFunction.F64x4ApproxReciprocalSqrt => {

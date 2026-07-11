@@ -233,6 +233,29 @@ RN_F64X4_VALUE_FN double f64x4HorizontalSum(rn_f64x4_t value) {
 #endif
 }
 
+/* Explicitly approximate: convert through float reciprocal and perform the
+ * published spectral-norm leader's Goldschmidt refinement in its observable
+ * operation order. */
+RN_F64X4_VALUE_FN rn_f64x4_t
+f64x4ApproxReciprocal(rn_f64x4_t source) {
+  rn_f64x4_t result;
+#if RN_F64X4_HAS_X86_AVX
+  __m256d x = _mm256_cvtps_pd(_mm_rcp_ps(_mm256_cvtpd_ps(source)));
+  __m256d w = _mm256_mul_pd(x, source);
+  const __m256d y = _mm256_set1_pd(3.0);
+  __m256d z2 = _mm256_mul_pd(w, x);
+  w = _mm256_sub_pd(w, y);
+  x = _mm256_mul_pd(x, y);
+  z2 = _mm256_mul_pd(z2, w);
+  result = _mm256_add_pd(z2, x);
+#else
+  for (uint64_t lane = 0; lane < RN_F64X4_LANES; lane++) {
+    result.lane[lane] = 1.0 / source.lane[lane];
+  }
+#endif
+  return result;
+}
+
 /* Explicitly approximate: convert through float rsqrt and perform one
  * Goldschmidt refinement.  The multiplication order is the published n-body
  * leader's order and is observable after millions of integration steps. */

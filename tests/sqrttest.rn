@@ -32,6 +32,15 @@ func f64x4TargetedSmoke() {
   if f64x4Lane(inverseRoot, 0u64) < 0.0f64 {
     println "unreachable negative reciprocal square root"
   }
+  reciprocal = f64x4ApproxReciprocal(source)
+  assert abs(f64x4Lane(reciprocal, 0u64) -
+             1.0f64 / f64x4Lane(source, 0u64)) < 0.000001f64
+  assert abs(f64x4Lane(reciprocal, 1u64) -
+             1.0f64 / f64x4Lane(source, 1u64)) < 0.000001f64
+  assert abs(f64x4Lane(reciprocal, 2u64) -
+             1.0f64 / f64x4Lane(source, 2u64)) < 0.000001f64
+  assert abs(f64x4Lane(reciprocal, 3u64) -
+             1.0f64 / f64x4Lane(source, 3u64)) < 0.000001f64
   two = f64x4Splat(2.0f64)
   result = f64x4Add(source, two)
   result = f64x4Sub(result, two)

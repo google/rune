@@ -14,6 +14,32 @@
 
 import math
 
+// Match the CLBG reference's %.9f output; Rune has no precision specifier.
+func fmt9(v: f64) -> string {
+  neg = v < 0.0f64
+  a = v
+  if neg {
+    a = -v
+  }
+  scaled = a * 1.0e9f64 + 0.5f64
+  n = <u64>scaled
+  ip = n / 1000000000u64
+  fp = n % 1000000000u64
+  s = ""
+  if neg {
+    s = "-"
+  }
+  s += ip.toString()
+  s += "."
+  fps = fp.toString()
+  pad = 9u64 - fps.length()
+  for k = 0u64, k < pad, k += 1 {
+    s += "0"
+  }
+  s += fps
+  return s
+}
+
 func evalA(i: u64, j: u64) {
   return <f64>((i + j)*(i + j + 1)/2 + i + 1)
 }
@@ -42,25 +68,205 @@ func ATimesTransp(var v: [f64], var u: [f64]) {
   TimesTransp(v, x)
 }
 
+// At this bound padded row and column indices are at most 32767, and the
+// largest denominator is evalA(32767, 32767) = 2147418113 <= i32 max.
+// Divide the even triangular-number factor first so intermediates also fit.
+SIMD_I32_MAX_N = 32768u64
+
+// The AVX kernel reads and writes complete four-lane blocks. The padded lanes
+// stay zero, so they contribute no work to any real output row.
+func TimesSimd(var v: [f64], var u: [f64], n: u64, paddedN: u64) {
+  for i = 0u64, i < paddedN, i += 4u64 {
+    sum0 = f64x4Splat(0.0f64)
+    sum1 = f64x4Splat(0.0f64)
+    sum2 = f64x4Splat(0.0f64)
+    sum3 = f64x4Splat(0.0f64)
+
+    for j = 0u64, j < paddedN, j += 4u64 {
+      values = f64x4Load(u, j)
+      iValue = <i32>i
+      jValue = <i32>j
+      row0 = iValue
+      indexSum0 = row0 + jValue
+      d00 = (indexSum0 / 2i32) * (indexSum0 + 1i32) + row0 + 1i32
+      d01 = d00 + row0 + jValue + 1i32
+      d02 = d01 + row0 + jValue + 2i32
+      d03 = d02 + row0 + jValue + 3i32
+      denominator0 = f64x4FromLanes(
+          <f64>d00, <f64>d01, <f64>d02, <f64>d03)
+
+      row1 = iValue + 1i32
+      indexSum1 = row1 + jValue
+      d10 = indexSum1 * ((indexSum1 + 1i32) / 2i32) + row1 + 1i32
+      d11 = d10 + row1 + jValue + 1i32
+      d12 = d11 + row1 + jValue + 2i32
+      d13 = d12 + row1 + jValue + 3i32
+      denominator1 = f64x4FromLanes(
+          <f64>d10, <f64>d11, <f64>d12, <f64>d13)
+
+      row2 = iValue + 2i32
+      indexSum2 = row2 + jValue
+      d20 = (indexSum2 / 2i32) * (indexSum2 + 1i32) + row2 + 1i32
+      d21 = d20 + row2 + jValue + 1i32
+      d22 = d21 + row2 + jValue + 2i32
+      d23 = d22 + row2 + jValue + 3i32
+      denominator2 = f64x4FromLanes(
+          <f64>d20, <f64>d21, <f64>d22, <f64>d23)
+
+      row3 = iValue + 3i32
+      indexSum3 = row3 + jValue
+      d30 = indexSum3 * ((indexSum3 + 1i32) / 2i32) + row3 + 1i32
+      d31 = d30 + row3 + jValue + 1i32
+      d32 = d31 + row3 + jValue + 2i32
+      d33 = d32 + row3 + jValue + 3i32
+      denominator3 = f64x4FromLanes(
+          <f64>d30, <f64>d31, <f64>d32, <f64>d33)
+      sum0 = f64x4Add(sum0, f64x4Mul(
+          values, f64x4ApproxReciprocal(denominator0)))
+      sum1 = f64x4Add(sum1, f64x4Mul(
+          values, f64x4ApproxReciprocal(denominator1)))
+      sum2 = f64x4Add(sum2, f64x4Mul(
+          values, f64x4ApproxReciprocal(denominator2)))
+      sum3 = f64x4Add(sum3, f64x4Mul(
+          values, f64x4ApproxReciprocal(denominator3)))
+    }
+
+    v[i] = f64x4HorizontalSum(sum0)
+    v[i + 1u64] = f64x4HorizontalSum(sum1)
+    v[i + 2u64] = f64x4HorizontalSum(sum2)
+    v[i + 3u64] = f64x4HorizontalSum(sum3)
+  }
+  for i = n, i < paddedN, i += 1u64 {
+    v[i] = 0.0f64
+  }
+}
+
+func TimesTranspSimd(var v: [f64], var u: [f64], n: u64,
+                     paddedN: u64) {
+  for i = 0u64, i < paddedN, i += 4u64 {
+    sum0 = f64x4Splat(0.0f64)
+    sum1 = f64x4Splat(0.0f64)
+    sum2 = f64x4Splat(0.0f64)
+    sum3 = f64x4Splat(0.0f64)
+
+    for j = 0u64, j < paddedN, j += 4u64 {
+      values = f64x4Load(u, j)
+      iValue = <i32>i
+      jValue = <i32>j
+      row0 = iValue
+      indexSum0 = jValue + row0
+      d00 = (indexSum0 / 2i32) * (indexSum0 + 1i32) + jValue + 1i32
+      d01 = d00 + jValue + row0 + 2i32
+      d02 = d01 + jValue + row0 + 3i32
+      d03 = d02 + jValue + row0 + 4i32
+      denominator0 = f64x4FromLanes(
+          <f64>d00, <f64>d01, <f64>d02, <f64>d03)
+
+      row1 = iValue + 1i32
+      indexSum1 = jValue + row1
+      d10 = indexSum1 * ((indexSum1 + 1i32) / 2i32) + jValue + 1i32
+      d11 = d10 + jValue + row1 + 2i32
+      d12 = d11 + jValue + row1 + 3i32
+      d13 = d12 + jValue + row1 + 4i32
+      denominator1 = f64x4FromLanes(
+          <f64>d10, <f64>d11, <f64>d12, <f64>d13)
+
+      row2 = iValue + 2i32
+      indexSum2 = jValue + row2
+      d20 = (indexSum2 / 2i32) * (indexSum2 + 1i32) + jValue + 1i32
+      d21 = d20 + jValue + row2 + 2i32
+      d22 = d21 + jValue + row2 + 3i32
+      d23 = d22 + jValue + row2 + 4i32
+      denominator2 = f64x4FromLanes(
+          <f64>d20, <f64>d21, <f64>d22, <f64>d23)
+
+      row3 = iValue + 3i32
+      indexSum3 = jValue + row3
+      d30 = indexSum3 * ((indexSum3 + 1i32) / 2i32) + jValue + 1i32
+      d31 = d30 + jValue + row3 + 2i32
+      d32 = d31 + jValue + row3 + 3i32
+      d33 = d32 + jValue + row3 + 4i32
+      denominator3 = f64x4FromLanes(
+          <f64>d30, <f64>d31, <f64>d32, <f64>d33)
+      sum0 = f64x4Add(sum0, f64x4Mul(
+          values, f64x4ApproxReciprocal(denominator0)))
+      sum1 = f64x4Add(sum1, f64x4Mul(
+          values, f64x4ApproxReciprocal(denominator1)))
+      sum2 = f64x4Add(sum2, f64x4Mul(
+          values, f64x4ApproxReciprocal(denominator2)))
+      sum3 = f64x4Add(sum3, f64x4Mul(
+          values, f64x4ApproxReciprocal(denominator3)))
+    }
+
+    v[i] = f64x4HorizontalSum(sum0)
+    v[i + 1u64] = f64x4HorizontalSum(sum1)
+    v[i + 2u64] = f64x4HorizontalSum(sum2)
+    v[i + 3u64] = f64x4HorizontalSum(sum3)
+  }
+  for i = n, i < paddedN, i += 1u64 {
+    v[i] = 0.0f64
+  }
+}
+
+func spectralNormResult(var u: [f64], var v: [f64], n: u64) -> f64 {
+  vBv = 0.0f64
+  vv = 0.0f64
+  for i = 0u64, i < n, i += 1u64 {
+    vBv += u[i] * v[i]
+    vv += v[i] * v[i]
+  }
+  return math.sqrt(vBv / vv)
+}
+
+func spectralNormScalar(n: u64) -> f64 {
+  u = arrayof(f64).resize(n)
+  for i = 0u64, i < n, i += 1u64 {
+    u[i] = 1.0f64
+  }
+  v = arrayof(f64).resize(n)
+  for iter = 0u64, iter < 10u64, iter += 1u64 {
+    ATimesTransp(v, u)
+    ATimesTransp(u, v)
+  }
+  return spectralNormResult(u, v, n)
+}
+
+func spectralNormSimd(n: u64) -> f64 {
+  paddedN = (n + 3u64) / 4u64 * 4u64
+  u = arrayof(f64).resize(paddedN)
+  v = arrayof(f64).resize(paddedN)
+  scratch = arrayof(f64).resize(paddedN)
+  for i = 0u64, i < paddedN, i += 1u64 {
+    u[i] = 0.0f64
+    v[i] = 0.0f64
+    scratch[i] = 0.0f64
+  }
+  for i = 0u64, i < n, i += 1u64 {
+    u[i] = 1.0f64
+  }
+
+  for iter = 0u64, iter < 10u64, iter += 1u64 {
+    TimesSimd(scratch, u, n, paddedN)
+    TimesTranspSimd(v, scratch, n, paddedN)
+    TimesSimd(scratch, v, n, paddedN)
+    TimesTranspSimd(u, scratch, n, paddedN)
+  }
+  return spectralNormResult(u, v, n)
+}
+
 N = 100u64
 if argv.length() > 1 {
   passed = false
   N = argv[1].toUint(u64, passed)
 }
-u = arrayof(f64).resize(N)
-for i = 0u64, i < N, i += 1 {
-  u[i] = 1.0f64
+if N == 0u64 {
+  println "NaN"
+} else {
+  result = 0.0f64
+  if simdAvxAvailable() && N <= SIMD_I32_MAX_N {
+    result = spectralNormSimd(N)
+  } else {
+    result = spectralNormScalar(N)
+  }
+  println fmt9(result)
 }
-v = arrayof(f64).resize(N)
-for iter = 0u64, iter < 10u64, iter += 1 {
-  ATimesTransp(v, u)
-  ATimesTransp(u, v)
-}
-
-vBv = 0.0f64
-vv = 0.0f64
-for i = 0u64, i < N, i += 1 {
-  vBv += u[i] * v[i]
-  vv += v[i] * v[i]
-}
-println math.sqrt(vBv/vv)
