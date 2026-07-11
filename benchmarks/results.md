@@ -632,6 +632,25 @@ port still beats the naive oracle and lands within 16.9% of the optimized
 leader. The official 25M scaling run remains to be recorded before any
 published-size claim.
 
+The official `fasta 25000000` input was then generated once outside timing
+(254,166,745 bytes, SHA-256
+`3fcf4f78104c8a65ef210fe1d469f4e473456c791225f2f1f9114f4986aa09fa`).
+Rune O0/O3, naive C, and g++ #2 again produced byte-identical output. Pinned
+warmup-plus-best-of-five times were Rune O0 16850.124 ms, Rune O3 3759.007 ms,
+naive C 4360.669 ms, and constrained g++ #2 2038.751 ms: Rune remains faster
+than the oracle at **0.862x**, but scales to **1.844x the leader**. This is now
+the largest valid direct gap.
+
+Gprof assigns 92.35% of the compliant Rune run to the seven `countKmers`
+calls. Generated C showed an apparent duplicate miss lookup (`findEntry` then
+safe `insert`), but two measured library API experiments disproved it as the
+dominant cause. A generic `findOrInsert` wrapper regressed best time by 2.2%
+because it did not inline and added a call on every update. A miss-only
+constructor method was exact but noise-level at 3755.006 versus 3758.370 ms.
+Both were reverted. The credible roadmap is hash-capacity reservation and then
+a value-storing open-addressed integer map/identity-hash option; do not repeat
+mutable-entry API churn without an inlining mechanism.
+
 ## Stage 2: regex-redux current-workload alignment
 
 The former Rune and C-oracle regex-redux sources used an obsolete eleven-IUB
