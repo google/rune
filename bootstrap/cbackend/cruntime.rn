@@ -257,6 +257,14 @@ class CRuntime(self) {
     return cf
   }
 
+  // U8x16 uses a portable value representation with target-local byte SIMD.
+  func needU8x16(self) -> CFragment {
+    self.needRaiseError()
+    cf = self.cFragment("simd_u8x16", "cbackend/cruntime/simd_u8x16.inc")
+    cf.addDependencies([self.needArrayType()])
+    return cf
+  }
+
   func needIntAdd(self, width: u32) -> string {
     self.needRaiseError()
     self.needIntAddFn = true

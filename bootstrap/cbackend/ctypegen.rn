@@ -266,6 +266,10 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
     if ty.name.name == "F64x4" {
       return CTypeExpr(CDefinedType("rn_f64x4"))
     }
+    // U8x16 follows the same local-only ABI restriction as F64x4.
+    if ty.name.name == "U8x16" {
+      return CTypeExpr(CDefinedType("rn_u8x16"))
+    }
     if !isnull(self.typechecker.lookupClass(ty.name)) {
       // The instance's struct collapses phantom parameters (see
       // TypeChecker.dropPhantomParams), so two instances differing only there

@@ -21,6 +21,18 @@
 #define RN_F64X4_AVX_TARGET
 #endif
 
+/* Both SIMD fragments define this identically and guard it so either fragment
+ * may be emitted first. Mixed-target functions need one explicit union of all
+ * required ISA features rather than compiler-dependent stacked attributes. */
+#ifndef RN_SIMD_COMBINED_TARGET
+#if defined(__x86_64__) || defined(__i386__)
+#define RN_SIMD_COMBINED_TARGET \
+  __attribute__((target("avx,ssse3,sse4.1")))
+#else
+#define RN_SIMD_COMBINED_TARGET
+#endif
+#endif
+
 #if RN_F64X4_HAS_X86_AVX
 typedef __m256d rn_f64x4_t;
 #else
@@ -39,12 +51,7 @@ typedef struct rn_f64x4_value {
 
 static inline int rn_f64x4_avx_available(void) {
 #if RN_F64X4_HAS_X86_AVX
-  static int available = -1;
-  if (available < 0) {
-    __builtin_cpu_init();
-    available = __builtin_cpu_supports("avx") ? 1 : 0;
-  }
-  return available;
+  return __builtin_cpu_supports("avx") ? 1 : 0;
 #else
   return 0;
 #endif

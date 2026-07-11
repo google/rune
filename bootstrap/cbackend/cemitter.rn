@@ -118,6 +118,12 @@ class CEmitter(self, filename: string) {
     self.runtime.needF64x4()
   }
 
+  // Request the local sixteen-lane u8 runtime support used by explicit SIMD
+  // builtins. The runtime fragment supplies a scalar-safe fallback.
+  func needU8x16(self) {
+    self.runtime.needU8x16()
+  }
+
   func needModular(self) {
     self.include("<stdint.h>")
     self.runtime.cFragment("modular", "cbackend/cruntime/modular.inc")

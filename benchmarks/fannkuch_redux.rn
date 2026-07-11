@@ -14,8 +14,10 @@
 
 maxN = 16u32
 storageLength = 17u64
+simdMinN = 6u32
+simdMaxN = 15u32
 
-func fannkuch(n) {
+func fannkuch(n: u32) -> (i64, u32) {
     assert n >= 1u32 && n <= maxN, "fannkuch n must be in 1..16"
     if n == 1u32 {
         return (0i64, 0u32)
@@ -96,11 +98,169 @@ func fannkuch(n) {
     return (0i64, 0u32)  // Dummy return
 }
 
+func fannkuchSimd(n: u32) -> (i64, u32) {
+    vectorLength = 16u64
+    maxBlocks = 24u64
+    lowByteMask = 0xffu32
+
+    factorials = arrayof(u64).resize(storageLength)
+    factorials[0u64] = 1u64
+    for i = 1u32, i <= maxN, i += 1u32 {
+        factorials[i] = factorials[i - 1u32] * <u64>i
+    }
+
+    // Build gcc #6's ramp and prefix-rotation masks as ordinary byte arrays;
+    // U8x16 values remain local to this scalar-returning function.
+    rampBytes = arrayof(u8).resize(vectorLength)
+    rampShiftBytes = arrayof(u8).resize(vectorLength)
+    maskBytes = arrayof(u8).resize(vectorLength * vectorLength)
+    for lane = 0u64, lane < vectorLength, lane += 1u64 {
+        rampBytes[lane] = <u8>lane
+        if lane + 1u64 < vectorLength {
+            rampShiftBytes[lane] = <u8>(lane + 1u64)
+        }
+    }
+
+    ramp = u8x16Load(rampBytes, 0u64)
+    rampShift = u8x16Load(rampShiftBytes, 0u64)
+    zero = u8x16Splat(0u8)
+    one = u8x16Splat(1u8)
+    rotationMask = ramp
+    negativeRamp = u8x16Sub(zero, ramp)
+    for maskIndex = 0u32, maskIndex < maxN, maskIndex += 1u32 {
+        nonnegativeRamp = u8x16BlendByHighBit(
+            negativeRamp, ramp, negativeRamp)
+        priorNegativeRamp = u8x16Sub(negativeRamp, one)
+        shuffleIndices = u8x16BlendByHighBit(
+            rampShift, nonnegativeRamp, priorNegativeRamp)
+        rotationMask = u8x16Shuffle(rotationMask, shuffleIndices)
+        u8x16Store(rotationMask, maskBytes,
+                   <u64>maskIndex * vectorLength)
+        negativeRamp = u8x16Add(negativeRamp, one)
+    }
+
+    permutationCount = factorials[n]
+    blockSize = permutationCount / maxBlocks
+    checksum = 0i64
+    maxFlips = 0u32
+
+    // For n >= 6, n!/24 is even. Thus every one of the 24 ordered blocks
+    // starts at an even global rank and each duplicated pair is exactly X(+),
+    // X(-). The dispatch excludes the odd small-block cases in gcc #6.
+    for blockStart = 0u64,
+        blockStart < permutationCount, blockStart += blockSize {
+        current = ramp
+        countVector = zero
+        unrankIndex = n
+        rankRemainder = blockStart
+        activeMask = u8x16Sub(ramp, u8x16Splat(<u8>n))
+
+        // Factoradic-unrank this block's first global permutation. Inserting
+        // each digit at lane zero and applying the masked pshufb rotation is
+        // the published vector initialization, not a shortened workload.
+        while unrankIndex > 0u32 {
+            unrankIndex -= 1u32
+            digit = rankRemainder / factorials[unrankIndex]
+            rankRemainder -= digit * factorials[unrankIndex]
+            digitVector = u8x16Splat(<u8>digit)
+            countVector = u8x16ShiftRightInsertLow(
+                countVector, <u8>digit)
+            rotatedIndices = u8x16Add(ramp, digitVector)
+            maskedIndices = u8x16Add(activeMask, digitVector)
+            maskedIndices = u8x16BlendByHighBit(
+                maskedIndices, rotatedIndices, maskedIndices)
+            rotatedCurrent = u8x16Shuffle(current, maskedIndices)
+            current = u8x16BlendByHighBit(
+                current, rotatedCurrent, activeMask)
+            activeMask = u8x16Add(activeMask, one)
+        }
+
+        blockLeft = blockSize
+        while blockLeft > 0u64 {
+            // Published X(+): advance the count/permutation vectors first,
+            // then count prefix flips on the saved permutation with pshufb.
+            flipPermutation = current
+            first = u8x16LowU32(current)
+            countDifference = u8x16Sub(countVector, ramp)
+            rotationIndex = u16TrailingZeros(
+                u8x16MoveMask(countDifference))
+            rotationIndexVector = u8x16Splat(<u8>rotationIndex)
+            greaterMask = u8x16GreaterThanSigned(rotationIndexVector, ramp)
+            retainedCounts = u8x16AndNot(greaterMask, countVector)
+            equalMask = u8x16Equal(rotationIndexVector, ramp)
+            countVector = u8x16Sub(retainedCounts, equalMask)
+            current = u8x16Shuffle(current, u8x16Load(
+                maskBytes, <u64>rotationIndex * vectorLength))
+
+            if first & lowByteMask != 0u32 {
+                flips = 0u32
+                firstVector = u8x16Shuffle(flipPermutation, zero)
+                do {
+                    reversalIndices = u8x16Sub(firstVector, ramp)
+                    firstVector = u8x16Shuffle(
+                        flipPermutation, firstVector)
+                    reversalIndices = u8x16BlendByHighBit(
+                        reversalIndices, ramp, reversalIndices)
+                    flipPermutation = u8x16Shuffle(
+                        flipPermutation, reversalIndices)
+                    first = u8x16LowU32(firstVector)
+                    flips += 1u32
+                } while first & lowByteMask != 0u32
+                checksum += <i64>flips
+                if flips > maxFlips {
+                    maxFlips = flips
+                }
+            }
+
+            // Published X(-), intentionally duplicated so its state transition
+            // and checksum sign remain visibly identical to the C macro body.
+            flipPermutation = current
+            first = u8x16LowU32(current)
+            countDifference = u8x16Sub(countVector, ramp)
+            rotationIndex = u16TrailingZeros(
+                u8x16MoveMask(countDifference))
+            rotationIndexVector = u8x16Splat(<u8>rotationIndex)
+            greaterMask = u8x16GreaterThanSigned(rotationIndexVector, ramp)
+            retainedCounts = u8x16AndNot(greaterMask, countVector)
+            equalMask = u8x16Equal(rotationIndexVector, ramp)
+            countVector = u8x16Sub(retainedCounts, equalMask)
+            current = u8x16Shuffle(current, u8x16Load(
+                maskBytes, <u64>rotationIndex * vectorLength))
+
+            if first & lowByteMask != 0u32 {
+                flips = 0u32
+                firstVector = u8x16Shuffle(flipPermutation, zero)
+                do {
+                    reversalIndices = u8x16Sub(firstVector, ramp)
+                    firstVector = u8x16Shuffle(
+                        flipPermutation, firstVector)
+                    reversalIndices = u8x16BlendByHighBit(
+                        reversalIndices, ramp, reversalIndices)
+                    flipPermutation = u8x16Shuffle(
+                        flipPermutation, reversalIndices)
+                    first = u8x16LowU32(firstVector)
+                    flips += 1u32
+                } while first & lowByteMask != 0u32
+                checksum -= <i64>flips
+                if flips > maxFlips {
+                    maxFlips = flips
+                }
+            }
+            blockLeft -= 2u64
+        }
+    }
+    return (checksum, maxFlips)
+}
+
 n = 12u32
 if argv.length() > 1 {
     passed = false
     n = argv[1].toUint(u32, passed)
 }
-pf = fannkuch(n)
+if n >= simdMinN && n <= simdMaxN && simdU8x16Available() {
+    pf = fannkuchSimd(n)
+} else {
+    pf = fannkuch(n)
+}
 println(pf[0])
 println "Pfannkuchen(", n, ") = ", pf[1]

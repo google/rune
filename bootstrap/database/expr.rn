@@ -3825,6 +3825,51 @@ class Expr(self, type: ExprType, location: Location) {
         }
         return builder.cCall(self.location, f64x4Fn, c.CExpr(f64x4Args))
       }
+      if (builtinName == "u8x16Load" || builtinName == "u8x16Store" ||
+          builtinName == "u8x16Splat" || builtinName == "u8x16Add" ||
+          builtinName == "u8x16Sub" || builtinName == "u8x16AndNot" ||
+          builtinName == "u8x16Equal" ||
+          builtinName == "u8x16GreaterThanSigned" ||
+          builtinName == "u8x16Shuffle" ||
+          builtinName == "u8x16BlendByHighBit" ||
+          builtinName == "u8x16ShiftRightInsertLow" ||
+          builtinName == "u8x16MoveMask" || builtinName == "u8x16LowU32" ||
+          builtinName == "u16TrailingZeros" ||
+          builtinName == "simdU8x16Available") &&
+          isnull(builder.findFunction(builtinName)) {
+        // Keep the ISA target local to the function containing byte-vector
+        // operations. Availability detection itself remains baseline-safe.
+        if builtinName != "simdU8x16Available" &&
+            !isnull(builder.currentEmittingFn) {
+          builder.currentEmittingFn!.usesU8x16 = true
+        }
+        switch builtinName {
+          "u8x16Load" => u8x16Fn = c.CRuntimeFunction.U8x16Load
+          "u8x16Store" => u8x16Fn = c.CRuntimeFunction.U8x16Store
+          "u8x16Splat" => u8x16Fn = c.CRuntimeFunction.U8x16Splat
+          "u8x16Add" => u8x16Fn = c.CRuntimeFunction.U8x16Add
+          "u8x16Sub" => u8x16Fn = c.CRuntimeFunction.U8x16Sub
+          "u8x16AndNot" => u8x16Fn = c.CRuntimeFunction.U8x16AndNot
+          "u8x16Equal" => u8x16Fn = c.CRuntimeFunction.U8x16Equal
+          "u8x16GreaterThanSigned" => u8x16Fn = c.CRuntimeFunction.U8x16GreaterThanSigned
+          "u8x16Shuffle" => u8x16Fn = c.CRuntimeFunction.U8x16Shuffle
+          "u8x16BlendByHighBit" => u8x16Fn = c.CRuntimeFunction.U8x16BlendByHighBit
+          "u8x16ShiftRightInsertLow" => u8x16Fn = c.CRuntimeFunction.U8x16ShiftRightInsertLow
+          "u8x16MoveMask" => u8x16Fn = c.CRuntimeFunction.U8x16MoveMask
+          "u8x16LowU32" => u8x16Fn = c.CRuntimeFunction.U8x16LowU32
+          "u16TrailingZeros" => u8x16Fn = c.CRuntimeFunction.U16TrailingZeros
+          default => u8x16Fn = c.CRuntimeFunction.SimdU8x16Available
+        }
+        u8x16Args = c.CExprList()
+        if right.typedValue.type == types.Type.TypeClass.Tuple {
+          for child in right.childExprs() {
+            u8x16Args.appendCExpr(child.genC(builder))
+          }
+        } else if !(right.type == ExprType.List && isnull(right.firstChildExpr)) {
+          u8x16Args.appendCExpr(right.genC(builder))
+        }
+        return builder.cCall(self.location, u8x16Fn, c.CExpr(u8x16Args))
+      }
       if (builtinName == "u64MapNew" || builtinName == "u64MapAdd" ||
           builtinName == "u64MapIncrementUnchecked" ||
           builtinName == "u64MapGetOrZero" || builtinName == "u64MapKeys" ||

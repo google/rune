@@ -1046,6 +1046,23 @@ enum CRuntimeFunction {
    F64x4ApproxReciprocalSqrt
    SimdAvxAvailable
 
+   // Non-escaping sixteen-lane u8 SIMD values.
+   U8x16Load
+   U8x16Store
+   U8x16Splat
+   U8x16Add
+   U8x16Sub
+   U8x16AndNot
+   U8x16Equal
+   U8x16GreaterThanSigned
+   U8x16Shuffle
+   U8x16BlendByHighBit
+   U8x16ShiftRightInsertLow
+   U8x16MoveMask
+   U8x16LowU32
+   U16TrailingZeros
+   SimdU8x16Available
+
    // String builtins
    StringAppend
    StringLength
@@ -1467,6 +1484,81 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.SimdAvxAvailable => {
         e.needF64x4()
         e.write("simdAvxAvailable")
+      }
+
+      CRuntimeFunction.U8x16Load => {
+        e.needU8x16()
+        e.write("u8x16Load")
+      }
+
+      CRuntimeFunction.U8x16Store => {
+        e.needU8x16()
+        e.write("u8x16Store")
+      }
+
+      CRuntimeFunction.U8x16Splat => {
+        e.needU8x16()
+        e.write("u8x16Splat")
+      }
+
+      CRuntimeFunction.U8x16Add => {
+        e.needU8x16()
+        e.write("u8x16Add")
+      }
+
+      CRuntimeFunction.U8x16Sub => {
+        e.needU8x16()
+        e.write("u8x16Sub")
+      }
+
+      CRuntimeFunction.U8x16AndNot => {
+        e.needU8x16()
+        e.write("u8x16AndNot")
+      }
+
+      CRuntimeFunction.U8x16Equal => {
+        e.needU8x16()
+        e.write("u8x16Equal")
+      }
+
+      CRuntimeFunction.U8x16GreaterThanSigned => {
+        e.needU8x16()
+        e.write("u8x16GreaterThanSigned")
+      }
+
+      CRuntimeFunction.U8x16Shuffle => {
+        e.needU8x16()
+        e.write("u8x16Shuffle")
+      }
+
+      CRuntimeFunction.U8x16BlendByHighBit => {
+        e.needU8x16()
+        e.write("u8x16BlendByHighBit")
+      }
+
+      CRuntimeFunction.U8x16ShiftRightInsertLow => {
+        e.needU8x16()
+        e.write("u8x16ShiftRightInsertLow")
+      }
+
+      CRuntimeFunction.U8x16MoveMask => {
+        e.needU8x16()
+        e.write("u8x16MoveMask")
+      }
+
+      CRuntimeFunction.U8x16LowU32 => {
+        e.needU8x16()
+        e.write("u8x16LowU32")
+      }
+
+      CRuntimeFunction.U16TrailingZeros => {
+        e.needU8x16()
+        e.write("u16TrailingZeros")
+      }
+
+      CRuntimeFunction.SimdU8x16Available => {
+        e.needU8x16()
+        e.write("simdU8x16Available")
       }
 
       CRuntimeFunction.StringLength => {
@@ -2624,21 +2716,30 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
 
 class CFunctionDeclaration(self, location: db.Location, id: Sym,
                            params: CParamList, returnType: CTypeExpr,
-                           body: CBlock, simdTarget: bool = false) {
+                           body: CBlock, f64x4Target: bool = false,
+                           u8x16Target: bool = false) {
    self.location = location
    self.id = id
    self.params = params
    self.returnType = returnType
    self.body = body
-   self.simdTarget = simdTarget
+   self.f64x4Target = f64x4Target
+   self.u8x16Target = u8x16Target
 
    func emit(self, e: CEmitter, proto: bool) {
      // Each Rune program is emitted as one C translation unit. Internal linkage
      // lets clang analyze and inline generated helper calls without changing the
      // language-visible function or function-pointer semantics.
      e.write("static ")
-     if self.simdTarget {
-       e.write("RN_F64X4_AVX_TARGET ")
+     if self.f64x4Target && self.u8x16Target {
+       e.write("RN_SIMD_COMBINED_TARGET ")
+     } else {
+       if self.f64x4Target {
+         e.write("RN_F64X4_AVX_TARGET ")
+       }
+       if self.u8x16Target {
+         e.write("RN_U8X16_TARGET ")
+       }
      }
      self.returnType.emit(e)
      e.space()

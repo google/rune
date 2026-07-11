@@ -1363,6 +1363,71 @@ about 2.48x behind the one-thread packed-byte comparator. The residual is now
 concretely scoped to a general `U8x16` byte-shuffle SIMD feature, which is the
 next fannkuch target.
 
+## Stage 3: fannkuch-redux packed-byte SIMD
+
+Rune now has a general, local-only `U8x16` value and the byte operations needed
+by the published packed permutation kernel: checked unaligned array load/store,
+splat, wrapping add/sub, and-not, equality and signed-greater masks, `pshufb`
+shuffle, high-bit blend, byte shift/insert, movemask, low-lane extraction, and
+zero-defined `u16` trailing-zero count. On x86 the representation is `__m128i`
+inside SSSE3/SSE4.1-targeted generated functions; other targets retain exact
+scalar definitions. Mixed F64x4/U8x16 functions use one explicit combined
+target. Runtime feature detection has no mutable first-call cache.
+
+The typechecker confines U8x16 to inferred locals in generated functions,
+methods, and constructors. It rejects module-level instruction use, named
+annotations/casts, parameters/results, fields, arrays, tuples/lists, globals,
+generic `==`/`!=`, and non-`u64` typed load/store offsets. Positive O0/O3 Clang
+and O3 GCC smoke tests cover every operation plus monomorphic, polymorphic,
+constructor, method, scalar-tuple-result, and mixed-target emission. Focused
+negative probes confirmed each new diagnostic and produced no C. The generated
+tuple typedef precedes its targeted method, and the compiler gate is
+`PASS=205 FAIL=0`.
+
+The fannkuch port faithfully follows gcc #6's 24 sequential blocks,
+factoradic unranking, paired positive/negative checksum order, vector state
+advance, and prefix-flip shuffles. SIMD is selected for N=6..15; the public
+N=1..16 contract remains intact through the scalar path at N=16, avoiding the
+published kernel's final out-of-range state advance without changing the
+official N=12 hot path. Current Rune O0/O3 and the scalar oracle are byte-exact
+for every N=1..12, and both Rune binaries match the N=10 golden and published
+N=12 output SHA-256
+`4265a65135c506a68d90d6474003fb9030b7ee244a06c046bd89b3932a28ce20`.
+
+| Official fannkuch-redux (12) | Rune O0 | Rune O3 | naive C | gcc #6 `-t 1` | O0 / naive | O3 / naive | O3 / leader |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| packed `U8x16` | 63611.214 | 5781.414 | 13870.998 | 5635.260 | 4.586x | **0.417x** | **1.026x** |
+
+The stable ten-pair official series favored gcc #6 10/10. Rune/leader best
+times were 5781.414/5635.260 ms (1.02594x), and means were
+5812.542/5655.599 ms (1.02775x). Thus the general SIMD feature removes about
+98% of the prior 2.48x leader gap, but Rune is still a reproducible 2.6--2.8%
+behind and this is not a leader claim. The final reviewed binary's generated
+hot body is identical to that measured candidate. A 20-pair N=11 regression
+check against it split 8/20 for the final binary with a 1.00336x mean ratio,
+confirming no material review-fix regression.
+
+Several tempting changes were measured and rejected. Unchecked vector table
+loads, a nonzero-only trailing-zero primitive, and reordered state advance each
+regressed roughly 12--14%; 64-byte loop alignment was neutral; GCC versus
+Clang was inconclusive at N=12; and O2/unrolling/branch hints did not improve
+the kernel. Extending the mask allocation from 256 to 272 bytes for an N=16
+sentinel also regressed 13.8% (final lost 0/20 at N=11), so it was replaced by
+the scalar N=16 dispatch above. A later official timing attempt during system
+load average 9.70 ranged from 15.9 down to 6.8 seconds and was discarded under
+the measurement contract rather than blended into the stable series.
+
+Regex-redux is at matched-algorithm C parity rather than 1.05x behind it: the
+latest rebaseline measured Rune/matched JIT PCRE2 C at 1575.290/1568.577 ms
+(1.004x), while the earlier focused checkpoint reversed the sub-percent sign
+at 1633.824/1646.232 ms (0.992x). No alternating paired series exists, so
+neither is a stable win or loss. The distinct 1.050x result is against the
+constrained published gcc #5 implementation, which uses direct JIT matching,
+a custom literal replacement builder, and reusable execution state. Fasta near
+1.03x, this fannkuch result near 1.026x, and n-body near 1.009x are the next
+reported gaps. The fastest published regex Rust entry and binary-trees
+comparator still require local dependency closure before stronger leader claims.
+
 ## Historical fixes retained in the current source
 
 - A bare `sqrt(x)` lowers to hardware/libm sqrt, which is essential to n-body's

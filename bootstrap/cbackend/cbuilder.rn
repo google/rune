@@ -1104,9 +1104,12 @@ class CBuilder(self, tc: types.TypeChecker) {
   // type, rather than derived from the symbol's typed value.
   func cFunDefWithReturnType(self, location: db.Location, name: string,
                              params: CParamList, body: CBlock,
-                             returnType: CTypeExpr) -> CDeclaration {
+                             returnType: CTypeExpr,
+                             f64x4Target: bool = false,
+                             u8x16Target: bool = false) -> CDeclaration {
     fundec = CDeclaration(CFunctionDeclaration(location, Sym.new(name), params,
-                                               returnType, body))
+                                               returnType, body,
+                                               f64x4Target, u8x16Target))
     return fundec
   }
 
@@ -1953,7 +1956,8 @@ class CBuilder(self, tc: types.TypeChecker) {
   // specializedType is used when generating specific instances of a
   // polymorphic type.
   func cFunDef(self, location: db.Location, id: Sym, params: CParamList,
-               body: CBlock, simdTarget: bool = false) -> CDeclaration {
+               body: CBlock, f64x4Target: bool = false,
+               u8x16Target: bool = false) -> CDeclaration {
     type = id.typedValue
     switch type.type {
       types.Type.TypeClass.Function => {
@@ -1975,7 +1979,7 @@ class CBuilder(self, tc: types.TypeChecker) {
       }
     }
     return CDeclaration(CFunctionDeclaration(location, id, params, returnType!,
-                                               body, simdTarget))
+                                               body, f64x4Target, u8x16Target))
   }
 
 }

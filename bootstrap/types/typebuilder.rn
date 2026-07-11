@@ -59,6 +59,12 @@ func F64X4() -> Type {
   return Type(TypeName(Sym.new("F64x4")))
 }
 
+// A non-escaping sixteen-lane u8 value supplied by explicit SIMD builtins.
+// Like F64x4, it is confined to function locals.
+func U8X16() -> Type {
+  return Type(TypeName(Sym.new("U8x16")))
+}
+
 func INTEGER() -> Type {
   return Type(AnyIntType(true))
 }

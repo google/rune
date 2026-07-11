@@ -60,6 +60,138 @@ func f64x4TargetedSmoke() {
   assert f64x4Lane(lengths, 3u64) == 126.0f64
 }
 
+// Keep U8x16 values inside a target-dispatched function and verify their
+// exact byte semantics silently so sqrttest stdout remains unchanged.
+func u8x16TargetedSmoke() {
+  source = [1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8,
+            9u8, 10u8, 11u8, 12u8, 13u8, 14u8, 15u8, 16u8]
+  output = arrayof(u8).resize(16u64)
+  loaded = u8x16Load(source, 0u64)
+  u8x16Store(loaded, output, 0u64)
+  for lane = 0u64, lane < 16u64, lane += 1u64 {
+    assert output[lane] == source[lane]
+  }
+
+  ones = u8x16Splat(1u8)
+  allBytes = u8x16Splat(0xffu8)
+  wrapped = u8x16Add(allBytes, ones)
+  u8x16Store(wrapped, output, 0u64)
+  for lane = 0u64, lane < 16u64, lane += 1u64 {
+    assert output[lane] == 0u8
+  }
+  wrapped = u8x16Sub(wrapped, ones)
+  u8x16Store(wrapped, output, 0u64)
+  for lane = 0u64, lane < 16u64, lane += 1u64 {
+    assert output[lane] == 0xffu8
+  }
+
+  andNot = u8x16AndNot(u8x16Splat(0x0fu8), allBytes)
+  u8x16Store(andNot, output, 0u64)
+  for lane = 0u64, lane < 16u64, lane += 1u64 {
+    assert output[lane] == 0xf0u8
+  }
+
+  assert u8x16MoveMask(u8x16Equal(loaded, loaded)) == 0xffffu16
+  signedLeft = [0x7fu8, 0x80u8, 0xffu8, 0u8,
+                0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+                0u8, 0u8, 0u8, 0u8]
+  signedRight = [0x80u8, 0x7fu8, 0u8, 0xffu8,
+                 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+                 0u8, 0u8, 0u8, 0u8]
+  signedGreater = u8x16GreaterThanSigned(
+      u8x16Load(signedLeft, 0u64), u8x16Load(signedRight, 0u64))
+  assert u8x16MoveMask(signedGreater) == 0x0009u16
+
+  // 0x71 verifies that pshufb ignores index bits 4..6; 0x80 verifies
+  // that a set high bit writes zero instead of selecting a source lane.
+  shuffleIndices = [15u8, 14u8, 13u8, 12u8, 11u8, 10u8, 9u8, 8u8,
+                    7u8, 6u8, 5u8, 4u8, 3u8, 2u8, 0x71u8, 0x80u8]
+  shuffled = u8x16Shuffle(loaded, u8x16Load(shuffleIndices, 0u64))
+  u8x16Store(shuffled, output, 0u64)
+  for lane = 0u64, lane < 15u64, lane += 1u64 {
+    assert output[lane] == <u8>(16u64 - lane)
+  }
+  assert output[15u64] == 0u8
+
+  blendMask = [0u8, 0x80u8, 0u8, 0x80u8,
+               0u8, 0x80u8, 0u8, 0x80u8,
+               0u8, 0x80u8, 0u8, 0x80u8,
+               0u8, 0x80u8, 0u8, 0x80u8]
+  blended = u8x16BlendByHighBit(
+      u8x16Splat(0x11u8), u8x16Splat(0x22u8),
+      u8x16Load(blendMask, 0u64))
+  u8x16Store(blended, output, 0u64)
+  for lane = 0u64, lane < 16u64, lane += 1u64 {
+    if lane % 2u64 == 0u64 {
+      assert output[lane] == 0x11u8
+    } else {
+      assert output[lane] == 0x22u8
+    }
+  }
+
+  shifted = u8x16ShiftRightInsertLow(loaded, 99u8)
+  u8x16Store(shifted, output, 0u64)
+  assert output[0u64] == 99u8
+  for lane = 1u64, lane < 16u64, lane += 1u64 {
+    assert output[lane] == source[lane - 1u64]
+  }
+
+  assert u8x16LowU32(loaded) == 0x04030201u32
+  assert u16TrailingZeros(0x0100u16) == 8u32
+  assert u16TrailingZeros(0u16) == 16u32
+}
+
+// Exercise one generated function carrying the combined SIMD target.
+func mixedSimdTargetedSmoke() {
+  doubles = f64x4Splat(3.0f64)
+  assert f64x4Lane(doubles, 2u64) == 3.0f64
+  bytes = u8x16Splat(0x2au8)
+  assert u8x16LowU32(bytes) == 0x2a2a2a2au32
+}
+
+// Each scalar call gets its own polymorphic C specialization. Both must carry
+// the combined target even though no SIMD value crosses the Rune boundary.
+func polymorphicSimdTargetedSmoke(value) {
+  doubles = f64x4Splat(5.0f64)
+  assert f64x4Lane(doubles, 1u64) == 5.0f64
+  bytes = u8x16Splat(0x3cu8)
+  assert u8x16LowU32(bytes) == 0x3c3c3c3cu32
+  return value
+}
+
+// Constructor and method bodies have separate generated-C emission paths.
+// Keep their interfaces and stored fields scalar; the tuple-returning method
+// also verifies that its result typedef precedes the generated prototype.
+class SimdEmitterCoverage(self, seed: u32) {
+  constructorDoubles = f64x4Splat(7.0f64)
+  assert f64x4Lane(constructorDoubles, 3u64) == 7.0f64
+  constructorBytes = u8x16Splat(0x4du8)
+  assert u8x16LowU32(constructorBytes) == 0x4d4d4d4du32
+  self.seed = seed
+
+  func scalarTuple(self, value: u32) -> (u32, u32) {
+    methodDoubles = f64x4Splat(9.0f64)
+    assert f64x4Lane(methodDoubles, 0u64) == 9.0f64
+    methodBytes = u8x16Splat(0x5eu8)
+    assert u8x16LowU32(methodBytes) == 0x5e5e5e5eu32
+    return (value, self.seed)
+  }
+}
+
 if simdAvxAvailable() {
   f64x4TargetedSmoke()
+}
+
+if simdU8x16Available() {
+  u8x16TargetedSmoke()
+}
+
+if simdAvxAvailable() && simdU8x16Available() {
+  mixedSimdTargetedSmoke()
+  assert polymorphicSimdTargetedSmoke(11u32) == 11u32
+  assert polymorphicSimdTargetedSmoke(13u64) == 13u64
+  simdEmitterCoverage = SimdEmitterCoverage(17u32)
+  scalarTuple = simdEmitterCoverage.scalarTuple(19u32)
+  assert scalarTuple[0] == 19u32
+  assert scalarTuple[1] == 17u32
 }

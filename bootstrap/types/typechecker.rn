@@ -351,6 +351,10 @@ class TypeChecker(self) {
   self.numTypeErrorsReported = 0
   // Set while typechecking a class constructor or its methods.
   self.currentClassInfo = null(ClassInfo)
+  // U8x16 operations require a generated function target attribute. Module
+  // initialization has no such boundary; only availability detection is safe
+  // there. Nesting handles demand/re-typechecks reached from another body.
+  self.u8x16GeneratedBodyDepth = 0u32
   // True while apply() is attempting one arm of a Choice: a failed arm
   // must fail CLEANLY so the next arm gets its turn — the Polymorphic
   // arm's constraint-relaxed retry would accept anything and shadow the
@@ -682,7 +686,9 @@ class TypeChecker(self) {
     self.currentClassInfo = info
     self.currentSelfType = info.selfType
     self.classBoundVars = info.paramVars
+    self.u8x16GeneratedBodyDepth += 1u32
     self.plainFunction(method)
+    self.u8x16GeneratedBodyDepth -= 1u32
     self.currentClassInfo = prevClassInfo
     self.currentSelfType = prevSelfType
     self.classBoundVars = prevClassBoundVars
@@ -744,6 +750,7 @@ class TypeChecker(self) {
   // rewriting (iterator inlining) completes first.
   func retypecheckDeferred(self, fn: db.Function) {
     self.retypecheckNesting += 1u32
+    self.u8x16GeneratedBodyDepth += 1u32
     prevRoundIsCtor = self.roundIsCtor
     self.roundIsCtor = fn.type == db.FuncType.Constructor
     prevWatermark = self.roundVarWatermark
@@ -809,6 +816,8 @@ class TypeChecker(self) {
       }
       self.rejectF64x4FunctionBoundary(deferredParamType, deferredResultType,
                                        fn.location)
+      self.rejectU8x16FunctionBoundary(deferredParamType, deferredResultType,
+                                        fn.location)
     }
     if fn.type == db.FuncType.Constructor {
       // Bake the re-discovered field types while the instantiation's
@@ -824,6 +833,7 @@ class TypeChecker(self) {
           bakeInfo.strct.fieldtypes[bfi] = self.resolve(bakeInfo.strct.fieldtypes[bfi])
         }
         self.validateNoF64x4Fields(bakeInfo, fn.location)
+        self.validateNoU8x16Fields(bakeInfo, fn.location)
         if !isnull(bakeInfo.selfType) {
           bakeSelfR = self.resolve(bakeInfo.selfType!)
           if !self.hasFreeVars(bakeSelfR) {
@@ -873,6 +883,7 @@ class TypeChecker(self) {
     self.classBoundVars = prevClassBoundVars
     self.roundIsCtor = prevRoundIsCtor
     self.roundVarWatermark = prevWatermark
+    self.u8x16GeneratedBodyDepth -= 1u32
     self.retypecheckNesting -= 1u32
   }
 
@@ -2132,6 +2143,84 @@ class TypeChecker(self) {
     }
   }
 
+  // U8x16 has the same local-expression-only boundary as F64x4. Keep a
+  // distinct predicate so diagnostics continue to name the actual type.
+  func containsU8x16(self, ty: Type) -> bool {
+    t = ty
+    if t.type == Type.TypeClass.Var {
+      t = self.resolve(t)
+    }
+    switch t.type {
+      Type.TypeClass.Typename => {
+        if t.tyname.name.name == "U8x16" {
+          return true
+        }
+        if !isnull(t.tyname.params) {
+          for el in t.tyname.params.elements {
+            if self.containsU8x16(el) {
+              return true
+            }
+          }
+        }
+        return false
+      }
+      Type.TypeClass.Array => return self.containsU8x16(t.array.elementType!)
+      Type.TypeClass.Tuple => {
+        for el in t.tuple.elements {
+          if self.containsU8x16(el) {
+            return true
+          }
+        }
+        return false
+      }
+      Type.TypeClass.Struct => {
+        for ft in t.strct.fieldtypes {
+          if self.containsU8x16(ft) {
+            return true
+          }
+        }
+        return false
+      }
+      Type.TypeClass.Function => {
+        if self.containsU8x16(t.function.params) {
+          return true
+        }
+        return self.containsU8x16(t.function.result)
+      }
+      Type.TypeClass.Polymorphic => return self.containsU8x16(t.poly.scope)
+      Type.TypeClass.Choice => {
+        for ch in t.choice.choices {
+          if self.containsU8x16(ch) {
+            return true
+          }
+        }
+        return false
+      }
+      default => return false
+    }
+  }
+
+  func isU8x16BuiltinName(self, name: string) -> bool {
+    return name == "u8x16Load" || name == "u8x16Store" ||
+        name == "u8x16Splat" || name == "u8x16Add" ||
+        name == "u8x16Sub" || name == "u8x16AndNot" ||
+        name == "u8x16Equal" || name == "u8x16GreaterThanSigned" ||
+        name == "u8x16Shuffle" || name == "u8x16BlendByHighBit" ||
+        name == "u8x16ShiftRightInsertLow" || name == "u8x16MoveMask" ||
+        name == "u8x16LowU32" || name == "u16TrailingZeros" ||
+        name == "simdU8x16Available"
+  }
+
+  func explicitNamedType(self, name: Sym, location: db.Location) -> Type {
+    result = self.namedType(name)
+    if name.name == "U8x16" {
+      self.typeError(
+          "U8x16 is builtin-inferred only and cannot be named in a type annotation or cast",
+          location)
+    }
+    return result
+  }
+
   func rejectF64x4FunctionBoundary(self, params: Type, result: Type,
                                     location: db.Location) {
     if self.containsF64x4(params) {
@@ -2142,10 +2231,28 @@ class TypeChecker(self) {
     }
   }
 
+  func rejectU8x16FunctionBoundary(self, params: Type, result: Type,
+                                    location: db.Location) {
+    if self.containsU8x16(params) {
+      self.typeError("U8x16 values cannot be function parameters", location)
+    }
+    if self.containsU8x16(result) {
+      self.typeError("U8x16 values cannot be returned from functions", location)
+    }
+  }
+
   func validateNoF64x4Fields(self, info: ClassInfo, location: db.Location) {
     for ft in info.strct.fieldtypes {
       if self.containsF64x4(ft) {
         self.typeError("F64x4 values cannot be stored in class fields", location)
+      }
+    }
+  }
+
+  func validateNoU8x16Fields(self, info: ClassInfo, location: db.Location) {
+    for ft in info.strct.fieldtypes {
+      if self.containsU8x16(ft) {
+        self.typeError("U8x16 values cannot be stored in class fields", location)
       }
     }
   }
@@ -2382,7 +2489,8 @@ class TypeChecker(self) {
       db.ExprType.StringType => return STR
       db.ExprType.BoolType => return BOOL
       db.ExprType.NoneType => return NONETY()
-      db.ExprType.Ident => return self.namedType(typeExpr.val.symVal!)
+      db.ExprType.Ident => return self.explicitNamedType(
+          typeExpr.val.symVal!, typeExpr.location)
       default => {
         t = self.tryExplicitType(typeExpr)
         if !isnull(t) {
@@ -2444,7 +2552,7 @@ class TypeChecker(self) {
       if (isnull(self.lookupEnum(name)) &&
           isnull(self.lookupTyname(name)) && name.name != "string" &&
           name.name != "bool" && name.name != "none" &&
-          name.name != "F64x4") {
+          name.name != "F64x4" && name.name != "U8x16") {
         // An unrecognized name; likely an unsupported constraint form.
         return Type(self.newTyvar())
       }
@@ -2462,7 +2570,8 @@ class TypeChecker(self) {
       db.ExprType.StringType => return STR
       db.ExprType.BoolType => return BOOL
       db.ExprType.NoneType => return NONETY()
-      db.ExprType.Ident => return self.namedType(typeExpr.val.symVal!)
+      db.ExprType.Ident => return self.explicitNamedType(
+          typeExpr.val.symVal!, typeExpr.location)
       db.ExprType.Dot => {
         // A qualified type name in a type position: a module-qualified name
         // (`c.CExpr`) or a nested-class name (`Heapq.Element`).  Bootstrap
@@ -2471,7 +2580,7 @@ class TypeChecker(self) {
         // `arrayof(c.CExpr?)` — a nullable module-qualified element type).
         dotMember = typeExpr.firstChildExpr.nextExprChildExpr
         if !isnull(dotMember) && dotMember.type == db.ExprType.Ident {
-          return self.namedType(dotMember.val.symVal!)
+          return self.explicitNamedType(dotMember.val.symVal!, dotMember.location)
         }
         return null(Type)
       }
@@ -2817,6 +2926,11 @@ class TypeChecker(self) {
       ty = Type(self.newTyvar())
     } else {
       ty = self.constraintType(v.typeExpr!)
+      if self.containsU8x16(ty) {
+        self.typeError(
+            "U8x16 local and parameter types must be inferred from U8x16 builtins",
+            v.typeExpr.location)
+      }
     }
     if v.isParam {
       self.newSymbol(v.sym, ty)
@@ -2895,6 +3009,11 @@ class TypeChecker(self) {
           self.typeError("F64x4 values cannot be stored in tuples or lists",
                          expr.location)
         }
+        if (isnull(tupleParent) || tupleParent.type != db.ExprType.Call) &&
+            self.containsU8x16(result!) {
+          self.typeError("U8x16 values cannot be stored in tuples or lists",
+                         expr.location)
+        }
       }
 
       // Binary expressions --------------------------------------------------
@@ -2932,32 +3051,52 @@ class TypeChecker(self) {
         if isnull(left) || isnull(right) {
           return left
         }
-        bopty = self.operatorChoices(expr.type, builtinType(expr.type))!
-        // In a plain top-level function (no enclosing class context), a user
-        // operator overload applied to bare-variable operands must NOT commit
-        // to that overload -- doing so binds the operands to the overload's
-        // class and monomorphizes the function.  Keep the operands polymorphic;
-        // the C backend re-dispatches the operator per concrete instantiation.
-        // Scoped to isnull(currentClassInfo) so it does not fire inside class
-        // methods / relation-transformer compares (e.g. classheapsort's
-        // _compareElement), which rely on the commit.
-        ddDefer = false
-        if bopty.type == Type.TypeClass.Choice && isnull(self.currentClassInfo) {
-          ddL = self.resolve(left!)
-          ddR = self.resolve(right!)
-          if ddL.type == Type.TypeClass.Var && ddR.type == Type.TypeClass.Var {
-            ddDefer = true
-          }
+        // Local assignment constraints are stored as a third child rather
+        // than as db.Variable.typeExpr. U8x16 locals must remain wholly
+        // inferred, including when the constraint is a derived typeof(...).
+        assignmentConstraint = expr.firstChildExpr!.nextExprChildExpr!.nextExprChildExpr
+        if expr.type == db.ExprType.Equals &&
+            !isnull(assignmentConstraint) && self.containsU8x16(right!) {
+          self.typeError(
+              "U8x16 local types must be inferred from U8x16 builtins",
+              assignmentConstraint.location)
         }
-        if ddDefer {
-          if self.isComparisonOp(expr.type) {
-            result = BOOL
-          } else {
-            result = left
-          }
+        u8x16GenericEquality = (expr.type == db.ExprType.Equal ||
+             expr.type == db.ExprType.Notequal) &&
+            (self.containsU8x16(left!) || self.containsU8x16(right!))
+        if u8x16GenericEquality {
+          self.typeError(
+              "U8x16 values do not support == or !=; use u8x16Equal followed by u8x16MoveMask",
+              expr.location)
+          result = BOOL
         } else {
-          argty = Type(TupleType([left!, right!]))
-          result = self.apply(bopty, argty, expr.location)
+          bopty = self.operatorChoices(expr.type, builtinType(expr.type))!
+          // In a plain top-level function (no enclosing class context), a user
+          // operator overload applied to bare-variable operands must NOT commit
+          // to that overload -- doing so binds the operands to the overload's
+          // class and monomorphizes the function. Keep the operands polymorphic;
+          // the C backend re-dispatches the operator per concrete instantiation.
+          // Scoped to isnull(currentClassInfo) so it does not fire inside class
+          // methods / relation-transformer compares (e.g. classheapsort's
+          // _compareElement), which rely on the commit.
+          ddDefer = false
+          if bopty.type == Type.TypeClass.Choice && isnull(self.currentClassInfo) {
+            ddL = self.resolve(left!)
+            ddR = self.resolve(right!)
+            if ddL.type == Type.TypeClass.Var && ddR.type == Type.TypeClass.Var {
+              ddDefer = true
+            }
+          }
+          if ddDefer {
+            if self.isComparisonOp(expr.type) {
+              result = BOOL
+            } else {
+              result = left
+            }
+          } else {
+            argty = Type(TupleType([left!, right!]))
+            result = self.apply(bopty, argty, expr.location)
+          }
         }
      }
 
@@ -2982,6 +3121,11 @@ class TypeChecker(self) {
         if isnull(castTarget) {
           self.typeError("Unsupported cast target type", expr.location)
           return null(Type)
+        }
+        if self.containsU8x16(castTarget!) {
+          self.typeError(
+              "Cannot cast to U8x16; U8x16 values must be inferred from U8x16 builtins",
+              expr.location)
         }
         castTypeChild.typedValue = castTarget
         result = castTarget
@@ -3440,6 +3584,9 @@ class TypeChecker(self) {
          if self.containsF64x4(result!) {
            self.typeError("F64x4 values cannot be stored in arrays", expr.location)
          }
+         if self.containsU8x16(result!) {
+           self.typeError("U8x16 values cannot be stored in arrays", expr.location)
+         }
          // Stage 0: note an as-yet-unregistered class element so Stage 2's
          // per-signature materialization can be demanded here.  Today this arm
          // is silent, which is why Dict's ctor never defers.  Recording only --
@@ -3472,6 +3619,9 @@ class TypeChecker(self) {
         result = ARRAY(self.resolve(ty!))
         if self.containsF64x4(result!) {
           self.typeError("F64x4 values cannot be stored in arrays", expr.location)
+        }
+        if self.containsU8x16(result!) {
+          self.typeError("U8x16 values cannot be stored in arrays", expr.location)
         }
       }
 
@@ -3699,6 +3849,55 @@ class TypeChecker(self) {
               self.newSymbol(fnchild.val.symVal!, FN(TUPLE(f64x4NoArgs2), BOOLEAN()))
             }
           }
+          // U8x16 is likewise a non-escaping local SIMD value. Keeping its
+          // operations nominal prevents accidental mixing with byte arrays.
+          if (isnull(callee) &&
+              isnull(self.findSymbolMapping(SymbolMapping(fnchild.val.symVal!,
+                  fnchild.val.symVal.typedValue)))) {
+            u8x16 = U8X16()
+            u8x16Array = ARRAY(U(8))
+            u8x16Name = fnchild.val.symVal.name
+            if self.isU8x16BuiltinName(u8x16Name) &&
+                u8x16Name != "simdU8x16Available" &&
+                self.u8x16GeneratedBodyDepth == 0u32 {
+              self.typeError(
+                  "U8x16 operations must be inside a function, method, or constructor",
+                  expr.location)
+            }
+            if u8x16Name == "u8x16Load" {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([u8x16Array, U(64)]), u8x16))
+            } else if u8x16Name == "u8x16Store" {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([u8x16, u8x16Array, U(64)]), NONETY()))
+            } else if u8x16Name == "u8x16Splat" {
+              self.newSymbol(fnchild.val.symVal!, FN(U(8), u8x16))
+            } else if (u8x16Name == "u8x16Add" ||
+                u8x16Name == "u8x16Sub" ||
+                u8x16Name == "u8x16AndNot" ||
+                u8x16Name == "u8x16Equal" ||
+                u8x16Name == "u8x16GreaterThanSigned" ||
+                u8x16Name == "u8x16Shuffle") {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([u8x16, u8x16]), u8x16))
+            } else if u8x16Name == "u8x16BlendByHighBit" {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([u8x16, u8x16, u8x16]), u8x16))
+            } else if u8x16Name == "u8x16ShiftRightInsertLow" {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([u8x16, U(8)]), u8x16))
+            } else if u8x16Name == "u8x16MoveMask" {
+              self.newSymbol(fnchild.val.symVal!, FN(u8x16, U(16)))
+            } else if u8x16Name == "u8x16LowU32" {
+              self.newSymbol(fnchild.val.symVal!, FN(u8x16, U(32)))
+            } else if u8x16Name == "u16TrailingZeros" {
+              self.newSymbol(fnchild.val.symVal!, FN(U(16), U(32)))
+            } else if u8x16Name == "simdU8x16Available" {
+              u8x16NoArgs = arrayof(Type)
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE(u8x16NoArgs), BOOLEAN()))
+            }
+          }
         }
         fnchild = expr.firstChildExpr!
         argchild = fnchild.nextExprChildExpr
@@ -3854,6 +4053,11 @@ class TypeChecker(self) {
           } else {
             nullTy = nullChildTy
           }
+        }
+        if self.containsU8x16(nullTy!) {
+          self.typeError(
+              "Cannot construct nullable U8x16; U8x16 values must be inferred from U8x16 builtins",
+              expr.location)
         }
         result = nullTy
       }
@@ -4913,6 +5117,12 @@ class TypeChecker(self) {
 
   // Typecheck Functions, including modules ---------------------------------
   func function(self, fn: db.Function) {
+    u8x16GeneratedBody = fn.type == db.FuncType.Plain ||
+        fn.type == db.FuncType.Operator ||
+        fn.type == db.FuncType.Constructor || fn.type == db.FuncType.Final
+    if u8x16GeneratedBody {
+      self.u8x16GeneratedBodyDepth += 1u32
+    }
     switch fn.type {
       db.FuncType.Module => {
         // Desugaring -- transformer/relation expansion, nested-class and
@@ -5076,6 +5286,12 @@ class TypeChecker(self) {
                 self.typeError("F64x4 values cannot be stored in module globals",
                                statement.location)
               }
+              if moduleLhs.type == db.ExprType.Ident &&
+                  !isnull(moduleRhs.typedValue) &&
+                  self.containsU8x16(moduleRhs.typedValue!) {
+                self.typeError("U8x16 values cannot be stored in module globals",
+                               statement.location)
+              }
             }
           }
         }
@@ -5120,6 +5336,9 @@ class TypeChecker(self) {
       default => {
         raise Status.Unimplemented, "Function type not yet supported by typechecker: ", fn.type
       }
+    }
+    if u8x16GeneratedBody {
+      self.u8x16GeneratedBodyDepth -= 1u32
     }
   }
 
@@ -5208,6 +5427,7 @@ class TypeChecker(self) {
       self.statement(statement, fn.subBlock)
     }
     self.validateNoF64x4Fields(info, fn.location)
+    self.validateNoU8x16Fields(info, fn.location)
     // A constructor body that errors structurally on unconstrained
     // parameters (self.rows = m.length()) typechecks again under a
     // concrete instantiation before emission; the fields it created in
@@ -5242,6 +5462,9 @@ class TypeChecker(self) {
     paramType = self.resolve(paramType)
     if self.containsF64x4(paramType) {
       self.typeError("F64x4 values cannot be constructor parameters", fn.location)
+    }
+    if self.containsU8x16(paramType) {
+      self.typeError("U8x16 values cannot be constructor parameters", fn.location)
     }
     boundVars = arrayof(Type)
     for sm in bindingScope.symbolMappings() {
@@ -5963,6 +6186,9 @@ class TypeChecker(self) {
     if self.containsF64x4(paramType) || self.containsF64x4(tynameDef) {
       self.typeError("F64x4 values cannot be stored in struct fields", fn.location)
     }
+    if self.containsU8x16(paramType) || self.containsU8x16(tynameDef) {
+      self.typeError("U8x16 values cannot be stored in struct fields", fn.location)
+    }
     if boundVars.length() > 0 {
       resType = Type(TypeName(fn.sym, TupleType(boundVars)))
       fnType = Type(FunctionType(paramType, resType))
@@ -6078,6 +6304,7 @@ class TypeChecker(self) {
     // Check before either the deferred or ordinary epilogue can publish a
     // user-function ABI containing the local-only SIMD value.
     self.rejectF64x4FunctionBoundary(paramType, returnType!, fn.location)
+    self.rejectU8x16FunctionBoundary(paramType, returnType!, fn.location)
     // A body that errors on member access or indexing of unconstrained
     // parameters typechecks again under a concrete instantiation before
     // emission, like the legacy compiler.  Concrete functions keep their
@@ -6325,6 +6552,7 @@ class TypeChecker(self) {
     // Calls in the body can be what finally resolve an annotated or inferred
     // boundary to F64x4, so validate again after the last ordinary resolve.
     self.rejectF64x4FunctionBoundary(paramType, returnType!, fn.location)
+    self.rejectU8x16FunctionBoundary(paramType, returnType!, fn.location)
 
     fnType = Type(FunctionType(paramType, returnType!))
     boundVars = arrayof(Type)

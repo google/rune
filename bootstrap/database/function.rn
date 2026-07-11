@@ -90,10 +90,11 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   // typechecks again under a concrete instantiation before emission.
   self.deferredTypecheck = false
   self.deferredRetypechecked = false
-  // Set during C emission when this function directly uses an F64x4 builtin.
-  // Such functions may opt into the runtime's AVX target attribute; ordinary
-  // generated functions retain the baseline target.
+  // Set during C emission when this function directly uses an explicit SIMD
+  // builtin. Such functions opt into the corresponding target attribute;
+  // ordinary generated functions retain the baseline target.
   self.usesF64x4 = false
+  self.usesU8x16 = false
   // The specialization key whose bindings this body's shared expression
   // types were last re-typechecked under (per-signature materialization).
   self.lastMaterializedSpec = ""
@@ -295,6 +296,7 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       // variable instead of sharing the module static.
       monoPrevEmittingFn = builder.currentEmittingFn
       self.usesF64x4 = false
+      self.usesU8x16 = false
       builder.currentEmittingFn = self
       builder.openBlock(self.subBlock.location)
       for bodyStatement in self.subBlock.statements() {
@@ -303,11 +305,21 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       self.emitScopeExitFinals(builder)
       body = builder.closeBlock()
       monoUsesF64x4 = self.usesF64x4
+      monoUsesU8x16 = self.usesU8x16
       builder.currentEmittingFn = monoPrevEmittingFn
       builder.closeFunctionTryContext(savedTryBase)
       builder.closeScope()
       fundec = builder.cFunDef(self.location, self.sym, paramList, body,
-          monoUsesF64x4)
+          monoUsesF64x4, monoUsesU8x16)
+      // The return type appears in the function prototype before the body can
+      // call the tuple constructor. Ensure and depend on its typedef directly;
+      // relying on the body dependency is too late for declaration ordering.
+      monoResultType = builder.typechecker.resolve(fntype.function.result!)
+      if monoResultType.type == types.Type.TypeClass.Tuple {
+        builder.ensureTupleDeclared(self.location, monoResultType)
+        fundec.addDependencyName(
+            builder.typeGenerator.genCTuple(monoResultType.tuple!).name)
+      }
       // Function-pointer parameters need their fnptr<N> typedef emitted first.
       for monoVar in self.variables() {
         if monoVar.isParam && !isnull(monoVar.typedValue) {
@@ -785,6 +797,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     prevEmittingFn = builder.currentEmittingFn
     prevEmittingName = builder.currentEmittingName
     prevEmittingResultWide = builder.currentEmittingResultWide
+    polyPrevUsesF64x4 = self.usesF64x4
+    polyPrevUsesU8x16 = self.usesU8x16
+    self.usesF64x4 = false
+    self.usesU8x16 = false
     builder.currentEmittingFn = self
     builder.currentEmittingName = specializedName
     prevEmittingParamTuple = builder.currentEmittingParamTuple
@@ -829,6 +845,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     } else {
       body = self.subBlock.genC(builder)
     }
+    polyUsesF64x4 = self.usesF64x4
+    polyUsesU8x16 = self.usesU8x16
+    self.usesF64x4 = polyPrevUsesF64x4
+    self.usesU8x16 = polyPrevUsesU8x16
     if self.sym.name == "decParens" {
       dbgA = "null"
       if !isnull(instantiation.type) {
@@ -910,7 +930,19 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       newsym.typedValue = types.Type(types.FunctionType(paramTuple,
           types.NONETY()))
     }
-    fundec = builder.cFunDef(self.location, newsym, paramList, body)
+    fundec = builder.cFunDef(self.location, newsym, paramList, body,
+        polyUsesF64x4, polyUsesU8x16)
+    // A specialized result tuple has the same prototype-order requirement as
+    // a monomorphic one, even when no tuple literal survives in its body.
+    polyFnType = builder.typechecker.resolve(newsym.typedValue!)
+    if polyFnType.type == types.Type.TypeClass.Function {
+      polyResultType = builder.typechecker.resolve(polyFnType.function.result!)
+      if polyResultType.type == types.Type.TypeClass.Tuple {
+        builder.ensureTupleDeclared(self.location, polyResultType)
+        fundec.addDependencyName(
+            builder.typeGenerator.genCTuple(polyResultType.tuple!).name)
+      }
+    }
     // Class-typed parameters need the class struct typedef emitted first.
     for pt in paramTypes {
       if builder.isClassType(pt) {
@@ -1168,6 +1200,15 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     builder.openDependencyList()
     builder.openBlock(self.location)
 
+    ctorPrevEmittingFn = builder.currentEmittingFn
+    ctorPrevEmittingName = builder.currentEmittingName
+    ctorPrevUsesF64x4 = self.usesF64x4
+    ctorPrevUsesU8x16 = self.usesU8x16
+    self.usesF64x4 = false
+    self.usesU8x16 = false
+    builder.currentEmittingFn = self
+    builder.currentEmittingName = ctorName
+
     selfSym = Sym.new("self")
     ptrType = builder.genCType(instType)
     selfRef = builder.declareLocal(selfSym, ptrType)
@@ -1190,9 +1231,16 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     retRef = c.CExpr(c.CIdentifier(selfSym, null(c.CTypeExpr), false, false, false))
     builder.addStatement(self.location, builder.cReturnStatement(self.location, retRef))
     body = builder.closeBlock()
+    ctorUsesF64x4 = self.usesF64x4
+    ctorUsesU8x16 = self.usesU8x16
+    self.usesF64x4 = ctorPrevUsesF64x4
+    self.usesU8x16 = ctorPrevUsesU8x16
+    builder.currentEmittingFn = ctorPrevEmittingFn
+    builder.currentEmittingName = ctorPrevEmittingName
     builder.closeScope()
 
-    fundec = builder.cFunDefWithReturnType(self.location, ctorName, paramList, body, ptrType!)
+    fundec = builder.cFunDefWithReturnType(self.location, ctorName, paramList,
+        body, ptrType!, ctorUsesF64x4, ctorUsesU8x16)
     fundec.addDependencyName(className + "_class")
     fundec.addDependencies(builder.topDependencyList().names)
     builder.closeDependencyList()
@@ -1446,6 +1494,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     savedTryBase = builder.openFunctionTryContext()
     methodPrevEmittingFn = builder.currentEmittingFn
     methodPrevEmittingName = builder.currentEmittingName
+    methodPrevUsesF64x4 = self.usesF64x4
+    methodPrevUsesU8x16 = self.usesU8x16
+    self.usesF64x4 = false
+    self.usesU8x16 = false
     builder.currentEmittingFn = self
     builder.currentEmittingName = methodName
     // Publish this method instance's GROUND param tuple, exactly as
@@ -1543,6 +1595,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     } else {
       body = self.subBlock.genC(builder)
     }
+    methodUsesF64x4 = self.usesF64x4
+    methodUsesU8x16 = self.usesU8x16
+    self.usesF64x4 = methodPrevUsesF64x4
+    self.usesU8x16 = methodPrevUsesU8x16
     builder.currentEmittingFn = methodPrevEmittingFn
     builder.currentEmittingName = methodPrevEmittingName
     builder.currentEmittingParamTuple = methodPrevEmittingParamTuple
@@ -1556,7 +1612,13 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     } else {
       returnType = builder.genCType(resTy)
     }
-    fundec = builder.cFunDefWithReturnType(self.location, methodName, paramList, body, returnType!)
+    fundec = builder.cFunDefWithReturnType(self.location, methodName, paramList,
+        body, returnType!, methodUsesF64x4, methodUsesU8x16)
+    if resTy.type == types.Type.TypeClass.Tuple {
+      builder.ensureTupleDeclared(self.location, resTy)
+      fundec.addDependencyName(
+          builder.typeGenerator.genCTuple(resTy.tuple!).name)
+    }
     // The method's self parameter needs the class struct typedef.
     params2 = fnInstType.function.params
     if params2.type == types.Type.TypeClass.Tuple && params2.tuple.elements.length() > 0 {
