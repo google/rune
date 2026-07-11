@@ -161,6 +161,41 @@ RN_F64X4_VALUE_FN rn_f64x4_t f64x4Mul(rn_f64x4_t left,
   return result;
 }
 
+// Return the squared pairwise horizontal sum of each input in the
+// corresponding output lane. This matches the reduction and lane assembly
+// used by the published n-body AVX implementation.
+RN_F64X4_VALUE_FN rn_f64x4_t
+f64x4SquaredLengths4(rn_f64x4_t input0, rn_f64x4_t input1,
+                     rn_f64x4_t input2, rn_f64x4_t input3) {
+  rn_f64x4_t result;
+#if RN_F64X4_HAS_X86_AVX
+  const __m256d value0 = _mm256_loadu_pd(input0.lane);
+  const __m256d value1 = _mm256_loadu_pd(input1.lane);
+  const __m256d value2 = _mm256_loadu_pd(input2.lane);
+  const __m256d value3 = _mm256_loadu_pd(input3.lane);
+  const __m256d squared0 = _mm256_mul_pd(value0, value0);
+  const __m256d squared1 = _mm256_mul_pd(value1, value1);
+  const __m256d squared2 = _mm256_mul_pd(value2, value2);
+  const __m256d squared3 = _mm256_mul_pd(value3, value3);
+  const __m256d pair01 = _mm256_hadd_pd(squared0, squared1);
+  const __m256d pair23 = _mm256_hadd_pd(squared2, squared3);
+  const __m256d highLow = _mm256_permute2f128_pd(pair01, pair23, 0x21);
+  const __m256d lowHigh = _mm256_blend_pd(pair01, pair23, 0x0c);
+  _mm256_storeu_pd(result.lane, _mm256_add_pd(highLow, lowHigh));
+#else
+  const rn_f64x4_t inputs[RN_F64X4_LANES] = {
+      input0, input1, input2, input3};
+  for (uint64_t input = 0; input < RN_F64X4_LANES; input++) {
+    const double squared0 = inputs[input].lane[0] * inputs[input].lane[0];
+    const double squared1 = inputs[input].lane[1] * inputs[input].lane[1];
+    const double squared2 = inputs[input].lane[2] * inputs[input].lane[2];
+    const double squared3 = inputs[input].lane[3] * inputs[input].lane[3];
+    result.lane[input] = (squared0 + squared1) + (squared2 + squared3);
+  }
+#endif
+  return result;
+}
+
 // Return the ordered <= comparison result with lane 0 in bit 0. Upper bits
 // are always clear; in particular, NaN lanes compare false on every target.
 RN_F64X4_VALUE_FN uint8_t f64x4LessEqualMask(rn_f64x4_t left,

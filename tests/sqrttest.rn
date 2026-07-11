@@ -40,6 +40,15 @@ func f64x4TargetedSmoke() {
   println f64x4HorizontalSum(result)
   comparison = f64x4FromLanes(1.0f64, 3.0f64, 2.0f64, 4.0f64)
   println f64x4LessEqualMask(comparison, two)
+  lengths = f64x4SquaredLengths4(
+      f64x4FromLanes(1.0f64, 2.0f64, 3.0f64, 4.0f64),
+      f64x4FromLanes(2.0f64, 3.0f64, 4.0f64, 5.0f64),
+      f64x4FromLanes(3.0f64, 4.0f64, 5.0f64, 6.0f64),
+      f64x4FromLanes(4.0f64, 5.0f64, 6.0f64, 7.0f64))
+  assert f64x4Lane(lengths, 0u64) == 30.0f64
+  assert f64x4Lane(lengths, 1u64) == 54.0f64
+  assert f64x4Lane(lengths, 2u64) == 86.0f64
+  assert f64x4Lane(lengths, 3u64) == 126.0f64
 }
 
 if simdAvxAvailable() {

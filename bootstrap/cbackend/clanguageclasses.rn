@@ -1034,6 +1034,7 @@ enum CRuntimeFunction {
    F64x4Add
    F64x4Sub
    F64x4Mul
+   F64x4SquaredLengths4
    F64x4LessEqualMask
    F64x4Lane
    F64x4HorizontalSum
@@ -1406,6 +1407,11 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.F64x4Mul => {
         e.needF64x4()
         e.write("f64x4Mul")
+      }
+
+      CRuntimeFunction.F64x4SquaredLengths4 => {
+        e.needF64x4()
+        e.write("f64x4SquaredLengths4")
       }
 
       CRuntimeFunction.F64x4LessEqualMask => {
