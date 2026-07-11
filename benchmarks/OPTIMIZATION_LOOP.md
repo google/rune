@@ -210,10 +210,11 @@ the full `PASS=205 FAIL=0` compiler gate. It initially made no performance
 claim; the follow-on runtime update adds CPU-checked AVX helper bodies and the
 explicit float-rsqrt/Goldschmidt path while retaining a scalar fallback.
 Generated smoke-test assembly contains `vrsqrtps`, `vaddpd`, and `vmulpd`.
-N-body is still unchanged and unscored: the remaining work is local-only
-escape restrictions, per-generated-function targeting if vector values become
-register-resident, and the leader's padded four-pair layout. Scalar `sqrt`
-remains unchanged.
+A direct F64x4 builtin now marks only its enclosing generated function with an
+AVX target attribute; a guarded smoke function confirms the helpers inline into
+that function while generated `main` remains baseline. N-body is still
+unchanged and unscored: the remaining work is local-only escape restrictions
+and the leader's padded four-pair layout. Scalar `sqrt` remains unchanged.
 
 ---
 

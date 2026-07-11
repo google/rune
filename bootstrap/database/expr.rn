@@ -3786,6 +3786,12 @@ class Expr(self, type: ExprType, location: Location) {
           builtinName == "f64x4ApproxReciprocalSqrt" ||
           builtinName == "simdAvxAvailable") &&
           isnull(builder.findFunction(builtinName)) {
+        // Mark only the enclosing generated function for the AVX target. The
+        // runtime defines the target macro and keeps all other Rune functions
+        // on the portable baseline target.
+        if !isnull(builder.currentEmittingFn) {
+          builder.currentEmittingFn!.usesF64x4 = true
+        }
         switch builtinName {
           "f64x4New" => f64x4Fn = c.CRuntimeFunction.F64x4New
           "f64x4Set" => f64x4Fn = c.CRuntimeFunction.F64x4Set

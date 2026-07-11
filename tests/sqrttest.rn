@@ -16,10 +16,24 @@ import math
 
 println math.sqrt(4.0)
 
-// Portable F64x4 builtin smoke coverage.  The runtime is deliberately scalar
-// at this stage; this exercises its opaque handle, array traffic, arithmetic,
-// reciprocal-sqrt surface, and availability query without making a performance
-// assertion.
+// This function is only called when the runtime reports AVX support. It keeps
+// F64x4 use inside a generated function so the C backend's target annotation
+// can be exercised without making the generated main AVX-only.
+func f64x4TargetedSmoke() {
+  avxSource = f64x4New()
+  avxResult = f64x4New()
+  f64x4Splat(avxSource, 4.0f64)
+  f64x4ApproxReciprocalSqrt(avxResult, avxSource)
+  f64x4Mul(avxSource, avxSource, avxResult)
+}
+
+if simdAvxAvailable() {
+  f64x4TargetedSmoke()
+}
+
+// Portable F64x4 builtin smoke coverage. This exercises the opaque handle,
+// array traffic, arithmetic, reciprocal-sqrt surface, and availability query
+// without making an n-body performance assertion.
 lanes = [1.0f64, 4.0f64, 9.0f64, 16.0f64]
 source = f64x4New()
 scratch = f64x4New()

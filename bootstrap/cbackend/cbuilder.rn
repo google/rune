@@ -1953,7 +1953,7 @@ class CBuilder(self, tc: types.TypeChecker) {
   // specializedType is used when generating specific instances of a
   // polymorphic type.
   func cFunDef(self, location: db.Location, id: Sym, params: CParamList,
-               body: CBlock) -> CDeclaration {
+               body: CBlock, simdTarget: bool = false) -> CDeclaration {
     type = id.typedValue
     switch type.type {
       types.Type.TypeClass.Function => {
@@ -1974,8 +1974,8 @@ class CBuilder(self, tc: types.TypeChecker) {
         raise Status.InvalidArgument, "The type of function ", id.name, " should be a function"
       }
     }
-    return CDeclaration(CFunctionDeclaration(location, id, params, returnType!, body))
+    return CDeclaration(CFunctionDeclaration(location, id, params, returnType!,
+                                               body, simdTarget))
   }
 
 }
-

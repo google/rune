@@ -90,6 +90,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   // typechecks again under a concrete instantiation before emission.
   self.deferredTypecheck = false
   self.deferredRetypechecked = false
+  // Set during C emission when this function directly uses an F64x4 builtin.
+  // Such functions may opt into the runtime's AVX target attribute; ordinary
+  // generated functions retain the baseline target.
+  self.usesF64x4 = false
   // The specialization key whose bindings this body's shared expression
   // types were last re-typechecked under (per-signature materialization).
   self.lastMaterializedSpec = ""
@@ -290,6 +294,7 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       // locals (including loop variables) shadow any same-named module
       // variable instead of sharing the module static.
       monoPrevEmittingFn = builder.currentEmittingFn
+      self.usesF64x4 = false
       builder.currentEmittingFn = self
       builder.openBlock(self.subBlock.location)
       for bodyStatement in self.subBlock.statements() {
@@ -297,10 +302,12 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       }
       self.emitScopeExitFinals(builder)
       body = builder.closeBlock()
+      monoUsesF64x4 = self.usesF64x4
       builder.currentEmittingFn = monoPrevEmittingFn
       builder.closeFunctionTryContext(savedTryBase)
       builder.closeScope()
-      fundec = builder.cFunDef(self.location, self.sym, paramList, body)
+      fundec = builder.cFunDef(self.location, self.sym, paramList, body,
+          monoUsesF64x4)
       // Function-pointer parameters need their fnptr<N> typedef emitted first.
       for monoVar in self.variables() {
         if monoVar.isParam && !isnull(monoVar.typedValue) {

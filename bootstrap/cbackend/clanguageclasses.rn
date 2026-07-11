@@ -2525,18 +2525,22 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
 
 class CFunctionDeclaration(self, location: db.Location, id: Sym,
                            params: CParamList, returnType: CTypeExpr,
-                           body: CBlock) {
+                           body: CBlock, simdTarget: bool = false) {
    self.location = location
    self.id = id
    self.params = params
    self.returnType = returnType
    self.body = body
+   self.simdTarget = simdTarget
 
    func emit(self, e: CEmitter, proto: bool) {
      // Each Rune program is emitted as one C translation unit. Internal linkage
      // lets clang analyze and inline generated helper calls without changing the
      // language-visible function or function-pointer semantics.
      e.write("static ")
+     if self.simdTarget {
+       e.write("RN_F64X4_AVX_TARGET ")
+     }
      self.returnType.emit(e)
      e.space()
      e.write(mangleCName(self.id.name) + "(")
