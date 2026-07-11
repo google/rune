@@ -528,6 +528,10 @@ ABIs or stored aggregates. The n-body port keeps all positions, velocities,
 pair deltas, three padded reciprocal-square-root batches, both energy
 evaluations, and the complete advance loop in one guarded monomorphic
 `runAvx(n: u64)` function. Machines without AVX retain the prior scalar path.
+The follow-up `f64x4SquaredLengths4` primitive computes four squared lengths
+with the gcc #9 leader's exact hadd/permute/blend/add order, and has a portable
+pairwise fallback. The advance loop now feeds its ten pair deltas through
+three of these batched reductions before reciprocal-square-root refinement.
 
 Before timing, Rune O0/O3, the rebuilt naive C oracle, and the pinned published
 gcc #9 binary were byte-identical at both the committed N=1000 golden and the
@@ -535,21 +539,29 @@ full N=5,000,000 workload. The runtime's pairwise lane reduction and
 Goldschmidt refinement were also corrected to match the leader's exact
 floating-point parenthesization. Optimized assembly contains inline
 `vrsqrtps`, `vaddpd`, `vsubpd`, and `vmulpd` with no F64x4 helper calls or heap
-allocation. It still has 83 stack vector-traffic sites in the deliberately
-large function, which is the concrete remaining n-body optimization target.
+allocation. The batched-reduction version likewise has no helper call and
+reduces total spill/reload annotations from 118 to 115. The committed N=1000
+and full N=5,000,000 results remain exact; the latter output's SHA-256 begins
+`a209`.
 
 | n-body (5M) | Rune O0 | Rune O3 | naive C O3 | published C gcc #9 | O3 / naive | O3 / leader |
 |---|---:|---:|---:|---:|---:|---:|
-| register-resident F64x4 | 13426.275 | 117.353 | 172.681 | 101.840 | **0.680x** | **1.152x** |
+| batched F64x4 reductions | 12712.866 | 109.111 | 169.940 | 100.349 | **0.642x** | **1.087x** |
 
 Each series was pinned to CPU 0 at nice 15/idle I/O priority, discarded one
 warmup, and used the best of five. O0 is intentionally poor because value
 struct copies are only scalar-replaced by optimization; the benchmark result
-is the checked O3 row. Compared with the validated 169.476/100.649 ms scalar
-session, the direct leader gap fell from 1.684x to 1.152x. This meets the
-roughly-1.15x feature target to measurement precision, but does not beat the
-leader; a general batched dot/reduction primitive or a less spill-heavy kernel
-shape is needed for that.
+is the checked O3 row. In 20 alternating-order O3 pairs the batched kernel won
+20/20: old/new best times were 115.185/109.120 ms (0.947x), and means were
+118.411/110.080 ms (about 7.0% faster). Compared with the validated
+169.476/100.649 ms scalar session, the direct leader gap has fallen from
+1.684x to 1.087x.
+
+Two exact experiments were not retained. A phased-source rewrite produced a
+byte-identical binary and assembly, so it could not change runtime. Compiling
+n-body with `-U` won only 10/15 alternating pairs: checked/unsafe means were
+123.052/122.508 ms and best times were 122.373/121.118 ms. That marginal,
+noisy result is not part of the normal benchmark harness.
 
 ## Stage 2: Mandelbrot official-output alignment and leader gap
 
@@ -787,9 +799,8 @@ warmup-plus-best-of-five series measured Rune O0 7771.462 ms, Rune O3
 2318.900 ms, naive C 4346.744 ms, and constrained g++ #2 2044.810 ms. Rune is
 therefore **0.533x the naive oracle** and **1.134x the leader**.
 
-The largest current validated gap is now n-body at 1.152x, followed by
-k-nucleotide at 1.134x, reverse-complement at 1.089x, and Mandelbrot at
-1.015x.
+The largest current validated gap is now k-nucleotide at 1.134x, followed by
+reverse-complement at 1.089x, n-body at 1.087x, and Mandelbrot at 1.015x.
 
 ## Stage 2: regex-redux current-workload alignment
 
