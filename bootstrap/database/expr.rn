@@ -3852,16 +3852,21 @@ class Expr(self, type: ExprType, location: Location) {
         return builder.cCall(self.location, u64MapFn, c.CExpr(u64MapArgs))
       }
       if (builtinName == "byteReaderNew" ||
+          builtinName == "byteReaderPeekByte" ||
+          builtinName == "byteReaderAppendlnInto" ||
           builtinName == "byteReaderReadlnInto" ||
           builtinName == "byteReaderFree") &&
           isnull(builder.findFunction(builtinName)) {
-        if builtinName == "byteReaderReadlnInto" {
+        if (builtinName == "byteReaderAppendlnInto" ||
+            builtinName == "byteReaderReadlnInto") {
           // A builtin returning [u8] does not otherwise guarantee that the
           // generated array pointer typedef has been requested.
           builder.ensureArrayDeclared(self.location, types.U(8))
         }
         switch builtinName {
           "byteReaderNew" => byteReaderFn = c.CRuntimeFunction.ByteReaderNew
+          "byteReaderPeekByte" => byteReaderFn = c.CRuntimeFunction.ByteReaderPeekByte
+          "byteReaderAppendlnInto" => byteReaderFn = c.CRuntimeFunction.ByteReaderAppendLnInto
           "byteReaderReadlnInto" => byteReaderFn = c.CRuntimeFunction.ByteReaderReadLnInto
           default => byteReaderFn = c.CRuntimeFunction.ByteReaderFree
         }

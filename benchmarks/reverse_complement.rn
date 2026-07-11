@@ -5,12 +5,12 @@
 // Reads FASTA from stdin (as produced by fasta), prints reverse-complement
 // of each record wrapped at 60 columns with uppercase output.
 //
-// The explicit ByteReader buffers stdin and reuses a headed Rune byte array,
-// so this processes each complete FASTA line without per-byte input calls or
-// a per-line allocation. CLBG FASTA inputs have no blank lines; an empty line
-// is the EOF marker.
+// The explicit ByteReader buffers stdin and appends sequence lines directly
+// into a headed Rune byte array, avoiding both per-byte input calls and the
+// intermediate copy of each sequence line. A binary-safe peek distinguishes
+// all byte values from EOF.
 // The sequence buffer starts from a 1-element literal, then retains its
-// capacity across records while appendBytes() grows it as necessary.
+// capacity across records while direct line appends grow it as necessary.
 
 // writeReverseMasked5Translated() indexes its 32-byte table with byte & 31.
 // Precondition: every sequence byte is an ASCII IUB base (case-insensitive).
@@ -34,9 +34,11 @@ seq.resize(0u64)
 inRecord = false
 line = [0u8]
 reader = byteReaderNew()
-line = byteReaderReadlnInto(reader, line)
-while line.length() > 0u64 {
-  if line[0] == 62u8 {
+BYTE_READER_EOF = 256u16
+nextByte = byteReaderPeekByte(reader)
+while nextByte != BYTE_READER_EOF {
+  if nextByte == 62u16 {
+    line = byteReaderReadlnInto(reader, line)
     if inRecord {
       writeReverseMasked5Translated(seq, maskedIubComplementTable, 60u64, 10u8)
       seq.resize(0u64)
@@ -45,9 +47,9 @@ while line.length() > 0u64 {
     writeByte(10u8)
     inRecord = true
   } else {
-    seq = appendBytes(seq, line)
+    seq = byteReaderAppendlnInto(reader, seq)
   }
-  line = byteReaderReadlnInto(reader, line)
+  nextByte = byteReaderPeekByte(reader)
 }
 byteReaderFree(reader)
 

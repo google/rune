@@ -23,11 +23,14 @@ writeBytes(result)
 // returns the final LF-terminated line without LF, then reports EOF as empty.
 reader = byteReaderNew()
 line = [0u8]
-line = byteReaderReadlnInto(reader, line)
+line.resize(0u64)
+assert byteReaderPeekByte(reader) == 105u16
+line = byteReaderAppendlnInto(reader, line)
 assert line.length() == 3u64
 assert line[0] == 105u8
 assert line[1] == 110u8
 assert line[2] == 103u8
+assert byteReaderPeekByte(reader) == 256u16
 line = byteReaderReadlnInto(reader, line)
 assert line.length() == 0u64
 byteReaderFree(reader)

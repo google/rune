@@ -1024,6 +1024,8 @@ enum CRuntimeFunction {
 
    // Explicit buffered standard-input reader.
    ByteReaderNew
+   ByteReaderPeekByte
+   ByteReaderAppendLnInto
    ByteReaderReadLnInto
    ByteReaderFree
 
@@ -1368,6 +1370,16 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.ByteReaderNew => {
         e.needByteReader()
         e.write("rn_byte_reader_new")
+      }
+
+      CRuntimeFunction.ByteReaderPeekByte => {
+        e.needByteReader()
+        e.write("rn_byte_reader_peek_byte")
+      }
+
+      CRuntimeFunction.ByteReaderAppendLnInto => {
+        e.needByteReader()
+        e.write("rn_byte_reader_appendln_into")
       }
 
       CRuntimeFunction.ByteReaderReadLnInto => {

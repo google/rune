@@ -8,6 +8,7 @@
 
 #define RN_BYTE_READER_MAGIC UINT64_C(0x52554e4542524452)
 #define RN_BYTE_READER_BUFFER_CAPACITY ((size_t)65536)
+#define RN_BYTE_READER_EOF ((uint16_t)256)
 
 #if defined(__GNUC__) || defined(__clang__)
 #define RN_BYTE_READER_HOT inline __attribute__((always_inline))
@@ -46,13 +47,45 @@ static inline rn_byte_reader_t rn_byte_reader_new(void) {
   return reader;
 }
 
-// Read one line into caller-owned Rune storage, stripping only the terminating
-// LF. The last unterminated line is returned normally; a subsequent call
-// returns the same allocation with used == 0. While a reader is live, its
-// stream must not be consumed through a second API because it owns prefetch.
-static RN_BYTE_READER_HOT uint8_t *rn_byte_reader_readln_into(
-    rn_byte_reader_t reader, uint8_t *bytes) {
+// Refill only after every previously buffered byte has been consumed. While a
+// reader is live, its stream must not be consumed through a second API because
+// the reader owns this prefetch.
+static RN_BYTE_READER_HOT uint8_t rn_byte_reader_refill(
+    rn_byte_reader_t reader) {
+  if (reader->position != reader->available) {
+    return 1;
+  }
+  reader->position = 0;
+  reader->available = 0;
+  if (reader->reached_eof) {
+    return 0;
+  }
+  size_t count = fread(reader->buffer, 1,
+                       RN_BYTE_READER_BUFFER_CAPACITY, reader->stream);
+  if (count == 0) {
+    if (ferror(reader->stream)) {
+      raise("Error: could not read stdin");
+    }
+    reader->reached_eof = 1;
+    return 0;
+  }
+  reader->available = count;
+  return 1;
+}
+
+// Return the next byte without consuming it. u16 keeps all byte values
+// distinct from the binary-safe EOF sentinel, 256.
+static RN_BYTE_READER_HOT uint16_t rn_byte_reader_peek_byte(
+    rn_byte_reader_t reader) {
   rn_byte_reader_require(reader);
+  if (!rn_byte_reader_refill(reader)) {
+    return RN_BYTE_READER_EOF;
+  }
+  return (uint16_t)reader->buffer[reader->position];
+}
+
+static RN_BYTE_READER_HOT array_t *rn_byte_reader_require_array(
+    uint8_t *bytes) {
   if (bytes == NULL) {
     raise("ByteReaderInvalidArray");
   }
@@ -62,25 +95,20 @@ static RN_BYTE_READER_HOT uint8_t *rn_byte_reader_readln_into(
       array->used > array->capacity) {
     raise("ByteReaderInvalidArray");
   }
-  array->used = 0;
+  return array;
+}
+
+// Append one line to caller-owned Rune storage, stripping only the terminating
+// LF. Existing contents and capacity are retained. The last unterminated line
+// is appended normally; a subsequent call at EOF leaves the array unchanged.
+static RN_BYTE_READER_HOT uint8_t *rn_byte_reader_appendln_into(
+    rn_byte_reader_t reader, uint8_t *bytes) {
+  rn_byte_reader_require(reader);
+  array_t *array = rn_byte_reader_require_array(bytes);
 
   for (;;) {
-    if (reader->position == reader->available) {
-      reader->position = 0;
-      reader->available = 0;
-      if (reader->reached_eof) {
-        return bytes;
-      }
-      size_t count = fread(reader->buffer, 1,
-                           RN_BYTE_READER_BUFFER_CAPACITY, reader->stream);
-      if (count == 0) {
-        if (ferror(reader->stream)) {
-          raise("Error: could not read stdin");
-        }
-        reader->reached_eof = 1;
-        return bytes;
-      }
-      reader->available = count;
+    if (!rn_byte_reader_refill(reader)) {
+      return bytes;
     }
 
     const uint8_t *start = reader->buffer + reader->position;
@@ -119,6 +147,16 @@ static RN_BYTE_READER_HOT uint8_t *rn_byte_reader_readln_into(
   }
 }
 
+// Read one line into caller-owned Rune storage, preserving the original API's
+// replacement semantics while sharing the append implementation above.
+static RN_BYTE_READER_HOT uint8_t *rn_byte_reader_readln_into(
+    rn_byte_reader_t reader, uint8_t *bytes) {
+  rn_byte_reader_require(reader);
+  array_t *array = rn_byte_reader_require_array(bytes);
+  array->used = 0;
+  return rn_byte_reader_appendln_into(reader, bytes);
+}
+
 static inline void rn_byte_reader_free(rn_byte_reader_t reader) {
   if (reader == NULL) {
     return;
@@ -133,5 +171,6 @@ static inline void rn_byte_reader_free(rn_byte_reader_t reader) {
 }
 
 #undef RN_BYTE_READER_BUFFER_CAPACITY
+#undef RN_BYTE_READER_EOF
 #undef RN_BYTE_READER_HOT
 #undef RN_BYTE_READER_MAGIC

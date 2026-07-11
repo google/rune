@@ -389,10 +389,31 @@ warmup-plus-best-of-five series measured:
 | reverse-complement (fasta 5M) | `-U` | 59.284 | 19.683 | 72.738 | 16.942 | **0.271x** | **1.162x** |
 
 The earlier 1.089x ByteReader ratio was valid within its own session, but its
-leader comparator ran materially slower. Current cross-benchmark ranking uses
-the fresh four-way series above: reverse-complement is the largest validated
-gap at 1.162x, followed by n-body at 1.087x, k-nucleotide at 1.084x, and
-Mandelbrot at 1.015x.
+leader comparator ran materially slower. This forced-inline series superseded
+that checkpoint; the direct-append update below now supersedes both.
+
+### ByteReader direct-append update
+
+Reverse-complement now peeks with a binary-safe `u16` EOF sentinel of 256 and
+appends sequence lines directly into its retained sequence array, removing the
+intermediate line copy. The committed golden and full 50,833,411-byte workload
+remain byte-exact at O0/O3 against the naive oracle and constrained gcc #7
+leader, with SHA-256 beginning `e92b329f`. Diagnostics cover a line longer than
+64 KiB, embedded NUL distinct from EOF, and a final unterminated line.
+Optimized assembly has no ByteReader helper calls, and the compiler regression
+gate remains `PASS=205 FAIL=0`.
+
+In 100 alternating-order O3 pairs against the forced-inline baseline, direct
+append won 77/100. Old/new best times were 24.044/23.492 ms, means were
+25.479/25.058 ms, and the median paired delta was -0.541092 ms. A fresh
+standard warmup-plus-best-of-five series measured:
+
+| Benchmark (workload) | Rune flags | Rune O0 | Rune O3 | naive O3 | constrained gcc #7 | O3 / naive | O3 / constrained leader |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| reverse-complement (fasta 5M) | `-U` | 57.644 | 18.599 | 74.091 | 17.946 | **0.251x** | **1.036x** |
+
+The largest current validated gap is now n-body at 1.087x, followed by
+k-nucleotide at 1.084x, reverse-complement at 1.036x, and Mandelbrot at 1.015x.
 
 ## Current analysis
 
@@ -842,11 +863,11 @@ standard warmup-plus-best-of-five series measured Rune O0 7194.054 ms, Rune O3
 2209.640 ms, naive C 4353.842 ms, and constrained g++ #2 2039.065 ms. Rune is
 therefore **0.508x the naive oracle** and **1.084x the leader**.
 
-The largest current validated gap is reverse-complement at 1.162x, followed by
-n-body at 1.087x, k-nucleotide at 1.084x, and Mandelbrot at 1.015x. This ranking
-uses contemporaneous comparator measurements; the earlier 1.089x
-reverse-complement result remains a valid same-session checkpoint but is not
-the current four-way baseline.
+The largest current validated gap is n-body at 1.087x, followed by k-nucleotide
+at 1.084x, reverse-complement at 1.036x, and Mandelbrot at 1.015x. This ranking
+uses contemporaneous comparator measurements; the earlier 1.089x and 1.162x
+reverse-complement results remain valid same-session checkpoints but are not
+the current direct-append baseline.
 
 ## Stage 2: regex-redux current-workload alignment
 
