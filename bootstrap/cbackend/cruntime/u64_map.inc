@@ -172,6 +172,32 @@ static RN_U64MAP_HOT uint64_t rn_u64map_add(rn_u64map_t map, uint64_t key,
   return delta;
 }
 
+/* The caller guarantees that map is live and that an existing value is less
+   than UINT64_MAX. This explicit unchecked operation keeps those two checks
+   out of bounded counting loops while preserving add's insertion/grow rules. */
+static RN_U64MAP_HOT uint64_t rn_u64map_increment_unchecked(
+    rn_u64map_t map, uint64_t key) {
+  uint8_t found;
+  size_t slot = rn_u64map_find_slot(map, key, &found);
+  if (found) {
+    ++map->slots[slot].value;
+    return map->slots[slot].value;
+  }
+
+  /* capacity - capacity/4 is exactly 75% for power-of-two capacities. */
+  size_t load_limit = map->capacity -
+      map->capacity / RN_U64MAP_LOAD_DENOMINATOR;
+  if (map->count >= load_limit) {
+    rn_u64map_grow(map);
+    slot = rn_u64map_find_slot(map, key, &found);
+  }
+  map->control[slot] = RN_U64MAP_OCCUPIED;
+  map->slots[slot].key = key;
+  map->slots[slot].value = UINT64_C(1);
+  ++map->count;
+  return UINT64_C(1);
+}
+
 static RN_U64MAP_HOT uint64_t rn_u64map_get_or_zero(const rn_u64map_t map,
                                                     uint64_t key) {
   rn_u64map_require(map);

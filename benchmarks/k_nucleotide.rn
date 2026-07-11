@@ -112,7 +112,9 @@ func countKmers(var dnaB: [u8], k: u64) -> U64Map {
   while i < dnaLen {
     key = ((key << DNA_BASE_BITS) | <u64>dnaB[i]) & mask
     if i + 1u64 >= k {
-      u64MapAdd(counts, key, 1u64)
+      // This benchmark is built with -U. Its owned live map and finite input
+      // establish the unchecked increment's lifetime and count bounds.
+      u64MapIncrementUnchecked(counts, key)
     }
     i += 1u64
   }

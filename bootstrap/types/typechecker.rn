@@ -3633,6 +3633,9 @@ class TypeChecker(self) {
             } else if u64MapName == "u64MapAdd" {
               self.newSymbol(fnchild.val.symVal!,
                   FN(TUPLE([u64Map, U(64), U(64)]), U(64)))
+            } else if u64MapName == "u64MapIncrementUnchecked" {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([u64Map, U(64)]), U(64)))
             } else if u64MapName == "u64MapGetOrZero" {
               self.newSymbol(fnchild.val.symVal!,
                   FN(TUPLE([u64Map, U(64)]), U(64)))

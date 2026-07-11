@@ -799,8 +799,26 @@ warmup-plus-best-of-five series measured Rune O0 7771.462 ms, Rune O3
 2318.900 ms, naive C 4346.744 ms, and constrained g++ #2 2044.810 ms. Rune is
 therefore **0.533x the naive oracle** and **1.134x the leader**.
 
-The largest current validated gap is now k-nucleotide at 1.134x, followed by
-reverse-complement at 1.089x, n-body at 1.087x, and Mandelbrot at 1.015x.
+The latest hash-update checkpoint adds an explicit
+`u64MapIncrementUnchecked` operation for callers that have already established
+the map lifetime and that incrementing the stored count cannot overflow. The
+existing checked `u64MapAdd` API and its validation remain unchanged.
+K-nucleotide opts into this narrow operation under `-U`: all seven maps stay
+live for every update, and each finite input position contributes at most one
+increment to a table, so no count can approach `u64` overflow on the verified
+workloads.
+
+The committed golden and official 25M outputs are byte-identical at O0/O3 to
+the naive oracle and constrained leader, and the compiler gate is
+`PASS=205 FAIL=0`. In ten alternating-order O3 pairs, the unchecked increment
+won 10/10. Cached-unsafe/unchecked best times were 2321.117/2220.807 ms
+(0.957x), and means were 2354.525/2239.153 ms (about 4.9% faster). A fresh
+standard warmup-plus-best-of-five series measured Rune O0 7194.054 ms, Rune O3
+2209.640 ms, naive C 4353.842 ms, and constrained g++ #2 2039.065 ms. Rune is
+therefore **0.508x the naive oracle** and **1.084x the leader**.
+
+The largest current validated gap is now reverse-complement at 1.089x,
+followed by n-body at 1.087x, k-nucleotide at 1.084x, and Mandelbrot at 1.015x.
 
 ## Stage 2: regex-redux current-workload alignment
 

@@ -3824,6 +3824,7 @@ class Expr(self, type: ExprType, location: Location) {
         return builder.cCall(self.location, f64x4Fn, c.CExpr(f64x4Args))
       }
       if (builtinName == "u64MapNew" || builtinName == "u64MapAdd" ||
+          builtinName == "u64MapIncrementUnchecked" ||
           builtinName == "u64MapGetOrZero" || builtinName == "u64MapKeys" ||
           builtinName == "u64MapFree") &&
           isnull(builder.findFunction(builtinName)) {
@@ -3835,6 +3836,7 @@ class Expr(self, type: ExprType, location: Location) {
         switch builtinName {
           "u64MapNew" => u64MapFn = c.CRuntimeFunction.U64MapNew
           "u64MapAdd" => u64MapFn = c.CRuntimeFunction.U64MapAdd
+          "u64MapIncrementUnchecked" => u64MapFn = c.CRuntimeFunction.U64MapIncrementUnchecked
           "u64MapGetOrZero" => u64MapFn = c.CRuntimeFunction.U64MapGetOrZero
           "u64MapKeys" => u64MapFn = c.CRuntimeFunction.U64MapKeys
           default => u64MapFn = c.CRuntimeFunction.U64MapFree

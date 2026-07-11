@@ -47,7 +47,11 @@ assert u64MapAdd(identityMap, 0u64, 1u64) == 1u64
 assert u64MapAdd(identityMap, 32u64, 2u64) == 2u64
 assert u64MapAdd(identityMap, 64u64, 3u64) == 3u64
 assert u64MapAdd(identityMap, 32u64, 4u64) == 6u64
-assert u64MapGetOrZero(identityMap, 32u64) == 6u64
+// The explicit unchecked form requires a live map and a non-maximal count.
+assert u64MapIncrementUnchecked(identityMap, 32u64) == 7u64
+assert u64MapIncrementUnchecked(identityMap, 16u64) == 1u64
+assert u64MapGetOrZero(identityMap, 32u64) == 7u64
+assert u64MapGetOrZero(identityMap, 16u64) == 1u64
 assert u64MapGetOrZero(identityMap, 96u64) == 0u64
 
 // More than 24 occupied slots crosses the initial table's 75% load limit.
@@ -58,7 +62,7 @@ for mapIndex = 3u64, mapIndex < 30u64, mapIndex += 1u64 {
 maxKey = 0xffffffffffffffffu64
 assert u64MapAdd(identityMap, maxKey, 9u64) == 9u64
 identityKeys = u64MapKeys(identityMap)
-assert identityKeys.length() == 31u64
+assert identityKeys.length() == 32u64
 u64MapFree(identityMap)
 
 // keys() owns its headed array independently of the freed map.

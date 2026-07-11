@@ -1017,6 +1017,7 @@ enum CRuntimeFunction {
    // Runtime-backed open-addressed u64-to-u64 map.
    U64MapNew
    U64MapAdd
+   U64MapIncrementUnchecked
    U64MapGetOrZero
    U64MapKeys
    U64MapFree
@@ -1342,6 +1343,11 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.U64MapAdd => {
         e.needU64Map()
         e.write("rn_u64map_add")
+      }
+
+      CRuntimeFunction.U64MapIncrementUnchecked => {
+        e.needU64Map()
+        e.write("rn_u64map_increment_unchecked")
       }
 
       CRuntimeFunction.U64MapGetOrZero => {
