@@ -463,6 +463,50 @@ the largest validated gap at 1.091x, followed by k-nucleotide at 1.075x,
 Mandelbrot at 1.015x, and n-body at 1.013x. The earlier reverse-complement
 1.036x ratio used a slower leader session and is superseded for ranking.
 
+## AVX2 masked-five reverse translation
+
+The general `writeReverseMasked5Translated` runtime path now dispatches to an
+AVX2 32-byte translation kernel when the CPU supports it, then preserves the
+exact 16-byte and 12-byte remainder handling. Existing SSSE3, scalar, and
+non-x86 fallbacks are unchanged. The AVX2 branch is selected only when
+`__OPTIMIZE__` is defined: enabling it unconditionally regressed O0 from about
+57.7 to 104.3 ms, while the optimization guard restored the O0 best time to
+57.728 ms. Native optimized assembly contains YMM `vpshufb` instructions and
+lane swaps with no writer helper call.
+
+A temporary 257-byte binary/table parity diagnostic passed with both wrap 60
+and wrap 0 at O0/O3, and `readWriteBytes` remained exact at both optimization
+levels. Reverse-complement's committed golden and full 50,833,411-byte output
+remain byte-identical to the naive oracle and constrained gcc #7, with SHA-256
+beginning `e92b329f`. The compiler regression gate passed `PASS=205 FAIL=0`.
+
+Two independent 100-pair comparisons against the prior native path favored
+AVX2 67/100 and 73/100. Old/new best times were 18.413/18.327 and
+18.374/18.252 ms; means were 18.984/18.891 and 18.981/18.854 ms, respectively.
+The repeatable improvement is small, roughly 0.5–0.7%, but separated from
+noise in both series. A fresh standard warmup-plus-best-of-five measured:
+
+| Benchmark (workload) | Rune flags | Rune O0 | Rune O3 | naive O3 | constrained gcc #7 | O3 / naive | O3 / constrained leader |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| reverse-complement (fasta 5M) | `-O -N -U` | 57.728 | 18.698 | 72.502 | 18.770 | **0.258x** | **0.996x** |
+
+That favorable minimum is not a durable leader claim because gcc #7 remains
+bimodal. In a separate 100-pair candidate/leader series Rune won 73/100;
+Rune/leader best times were 18.435/16.701 ms, means were 19.036/19.778 ms, and
+median five-run-block minima give a 1.041x ratio. Reverse-complement is
+therefore best described as parity to roughly 1.04x, not ranked from the single
+0.996x sample.
+
+Three exact, clean I/O probes were rejected and fully reverted. Increasing the
+output buffer to 512 KiB won 28/100 pairs and raised mean time about 1.0%; a
+512 KiB reader buffer won 36/100 and raised mean time about 0.7%; replacing
+the write with `fwrite_unlocked` completed 97 clean pairs, won 39, and had a
++0.043 ms median paired delta. None is a useful next step.
+
+K-nucleotide is now the largest stable validated gap at 1.075x.
+Reverse-complement is comparator parity to roughly 1.04x, followed by
+Mandelbrot at 1.015x and n-body at 1.013x.
+
 ## Current analysis
 
 ### The optimization unlock
@@ -911,12 +955,11 @@ standard warmup-plus-best-of-five series measured Rune O0 7194.054 ms, Rune O3
 2209.640 ms, naive C 4353.842 ms, and constrained g++ #2 2039.065 ms. Rune is
 therefore **0.508x the naive oracle** and **1.084x the leader**.
 
-The native-target rebaseline makes reverse-complement the largest current
-validated gap at 1.091x, followed by k-nucleotide at 1.075x, Mandelbrot at
-1.015x, and n-body at 1.013x. This ranking uses contemporaneous comparator
-measurements and the standard warmup-plus-best-of-five contract; older
-reverse-complement ratios remain valid within their sessions but are
-superseded for global prioritization.
+The AVX2 checkpoint makes k-nucleotide the largest stable validated gap at
+1.075x. Reverse-complement is now comparator parity to roughly 1.04x because
+gcc #7's bimodal samples do not support a durable win; Mandelbrot and n-body
+remain at 1.015x and 1.013x. Older reverse-complement ratios remain valid within
+their sessions but are superseded for global prioritization.
 
 ## Stage 2: regex-redux current-workload alignment
 

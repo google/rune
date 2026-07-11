@@ -89,17 +89,28 @@ static inline uint8_t *appendBytes(uint8_t *destination, const uint8_t *source) 
 #define REVERSE_TRANSLATE_OUTPUT_CAPACITY 65536u
 #define REVERSE_TRANSLATE_TABLE_SIZE 256u
 #define REVERSE_MASKED5_TRANSLATE_TABLE_SIZE 32u
+#define RN_REVERSE_MASKED5_AVX2_WIDTH ((size_t)32)
+#define RN_REVERSE_MASKED5_SSSE3_WIDTH ((size_t)16)
+#define RN_REVERSE_MASKED5_COMMON_TAIL_WIDTH ((size_t)12)
+#define RN_REVERSE_MASKED5_LOW_BITS_MASK 31
+#define RN_REVERSE_MASKED5_LOW_TABLE_MAX 15
+#define RN_REVERSE_MASKED5_AVX2_SWAP_LANES 0x01
 
-// The explicitly masked variant may use SSSE3 pshufb for 16 bytes at a time.
-// Keep the ISA-specific implementation behind runtime detection: generated
-// Rune programs must continue to run on CPUs without SSSE3.
+// The explicitly masked variant may use SSSE3 pshufb for 16 bytes at a time or
+// AVX2 pshufb for 32 bytes at a time. Keep the ISA-specific implementations
+// behind runtime detection: generated Rune programs must continue to run on
+// CPUs without either extension.
 #if defined(__x86_64__) || defined(__i386__)
-#include <tmmintrin.h>
+#include <immintrin.h>
 #define RN_REVERSE_MASKED5_HAS_SSSE3 1
 #define RN_REVERSE_MASKED5_SSSE3_TARGET __attribute__((target("ssse3")))
+#define RN_REVERSE_MASKED5_HAS_AVX2 1
+#define RN_REVERSE_MASKED5_AVX2_TARGET __attribute__((target("avx2")))
 #else
 #define RN_REVERSE_MASKED5_HAS_SSSE3 0
 #define RN_REVERSE_MASKED5_SSSE3_TARGET
+#define RN_REVERSE_MASKED5_HAS_AVX2 0
+#define RN_REVERSE_MASKED5_AVX2_TARGET
 #endif
 
 static inline void writeReverseTranslatedOutput(const uint8_t *bytes,
@@ -120,6 +131,19 @@ static inline int rn_reverse_masked5_ssse3_available(void) {
   if (available < 0) {
     __builtin_cpu_init();
     available = __builtin_cpu_supports("ssse3") ? 1 : 0;
+  }
+  return available;
+#else
+  return 0;
+#endif
+}
+
+static inline int rn_reverse_masked5_avx2_available(void) {
+#if RN_REVERSE_MASKED5_HAS_AVX2 && defined(__OPTIMIZE__)
+  static int available = -1;
+  if (available < 0) {
+    __builtin_cpu_init();
+    available = __builtin_cpu_supports("avx2") ? 1 : 0;
   }
   return available;
 #else
@@ -151,11 +175,12 @@ rn_reverse_masked5_translate_ssse3(uint8_t *destination,
   const __m128i tableHigh = _mm_loadu_si128((const __m128i *)(table + 16));
   const __m128i reverse = _mm_set_epi8(0, 1, 2, 3, 4, 5, 6, 7,
                                         8, 9, 10, 11, 12, 13, 14, 15);
-  const __m128i lowFiveBits = _mm_set1_epi8(31);
-  const __m128i fifteen = _mm_set1_epi8(15);
+  const __m128i lowFiveBits = _mm_set1_epi8(RN_REVERSE_MASKED5_LOW_BITS_MASK);
+  const __m128i fifteen = _mm_set1_epi8(RN_REVERSE_MASKED5_LOW_TABLE_MAX);
 
-  while (count >= 16) {
-    __m128i values = _mm_loadu_si128((const __m128i *)(source + count - 16));
+  while (count >= RN_REVERSE_MASKED5_SSSE3_WIDTH) {
+    __m128i values = _mm_loadu_si128(
+        (const __m128i *)(source + count - RN_REVERSE_MASKED5_SSSE3_WIDTH));
     values = _mm_shuffle_epi8(values, reverse);
     values = _mm_and_si128(values, lowFiveBits);
     const __m128i low = _mm_shuffle_epi8(tableLow, values);
@@ -164,8 +189,8 @@ rn_reverse_masked5_translate_ssse3(uint8_t *destination,
     values = _mm_or_si128(_mm_andnot_si128(selectHigh, low),
                           _mm_and_si128(selectHigh, high));
     _mm_storeu_si128((__m128i *)destination, values);
-    destination += 16;
-    count -= 16;
+    destination += RN_REVERSE_MASKED5_SSSE3_WIDTH;
+    count -= RN_REVERSE_MASKED5_SSSE3_WIDTH;
   }
 
   // Wrapped FASTA output commonly leaves twelve bytes after one or more full
@@ -173,7 +198,8 @@ rn_reverse_masked5_translate_ssse3(uint8_t *destination,
   // load those bytes, select source[11] through source[0], and store only the
   // twelve translated result bytes. Short inputs retain the scalar path below
   // because a sixteen-byte load would extend beyond their source interval.
-  if (count == 12 && originalCount >= 16) {
+  if (count == RN_REVERSE_MASKED5_COMMON_TAIL_WIDTH &&
+      originalCount >= RN_REVERSE_MASKED5_SSSE3_WIDTH) {
     const __m128i reverseTwelve = _mm_setr_epi8(
         11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, -1, -1, -1, -1);
     __m128i values = _mm_loadu_si128((const __m128i *)source);
@@ -184,6 +210,88 @@ rn_reverse_masked5_translate_ssse3(uint8_t *destination,
     const __m128i selectHigh = _mm_cmpgt_epi8(values, fifteen);
     values = _mm_or_si128(_mm_andnot_si128(selectHigh, low),
                           _mm_and_si128(selectHigh, high));
+    _mm_storel_epi64((__m128i *)destination, values);
+    const uint32_t tail = (uint32_t)_mm_cvtsi128_si32(
+        _mm_srli_si128(values, 8));
+    memcpy(destination + 8, &tail, sizeof(tail));
+    return;
+  }
+  rn_reverse_masked5_translate_scalar(destination, source, count, table);
+}
+#endif
+
+#if RN_REVERSE_MASKED5_HAS_AVX2
+static RN_REVERSE_MASKED5_AVX2_TARGET void
+rn_reverse_masked5_translate_avx2(uint8_t *destination,
+                                  const uint8_t *source,
+                                  size_t count,
+                                  const uint8_t *table) {
+  const size_t originalCount = count;
+  const __m128i tableLow128 = _mm_loadu_si128((const __m128i *)table);
+  const __m128i tableHigh128 =
+      _mm_loadu_si128((const __m128i *)(table + 16));
+  const __m256i tableLow = _mm256_broadcastsi128_si256(tableLow128);
+  const __m256i tableHigh = _mm256_broadcastsi128_si256(tableHigh128);
+  const __m256i reverseWithinLanes = _mm256_setr_epi8(
+      15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0,
+      15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
+  const __m256i lowFiveBits =
+      _mm256_set1_epi8(RN_REVERSE_MASKED5_LOW_BITS_MASK);
+  const __m256i fifteen =
+      _mm256_set1_epi8(RN_REVERSE_MASKED5_LOW_TABLE_MAX);
+
+  while (count >= RN_REVERSE_MASKED5_AVX2_WIDTH) {
+    __m256i values =
+        _mm256_loadu_si256((const __m256i *)(source + count -
+                                             RN_REVERSE_MASKED5_AVX2_WIDTH));
+    values = _mm256_shuffle_epi8(values, reverseWithinLanes);
+    values = _mm256_permute2x128_si256(
+        values, values, RN_REVERSE_MASKED5_AVX2_SWAP_LANES);
+    values = _mm256_and_si256(values, lowFiveBits);
+    const __m256i low = _mm256_shuffle_epi8(tableLow, values);
+    const __m256i high = _mm256_shuffle_epi8(tableHigh, values);
+    const __m256i selectHigh = _mm256_cmpgt_epi8(values, fifteen);
+    values = _mm256_blendv_epi8(low, high, selectHigh);
+    _mm256_storeu_si256((__m256i *)destination, values);
+    destination += RN_REVERSE_MASKED5_AVX2_WIDTH;
+    count -= RN_REVERSE_MASKED5_AVX2_WIDTH;
+  }
+
+  // Keep the common 60-byte wrapped-line remainder inside this AVX2-targeted
+  // function: one 16-byte transform followed by the exact 12-byte tail.
+  const __m128i reverse16 = _mm_set_epi8(0, 1, 2, 3, 4, 5, 6, 7,
+                                          8, 9, 10, 11, 12, 13, 14, 15);
+  const __m128i lowFiveBits16 =
+      _mm_set1_epi8(RN_REVERSE_MASKED5_LOW_BITS_MASK);
+  const __m128i fifteen16 =
+      _mm_set1_epi8(RN_REVERSE_MASKED5_LOW_TABLE_MAX);
+  while (count >= RN_REVERSE_MASKED5_SSSE3_WIDTH) {
+    __m128i values =
+        _mm_loadu_si128(
+            (const __m128i *)(source + count -
+                              RN_REVERSE_MASKED5_SSSE3_WIDTH));
+    values = _mm_shuffle_epi8(values, reverse16);
+    values = _mm_and_si128(values, lowFiveBits16);
+    const __m128i low = _mm_shuffle_epi8(tableLow128, values);
+    const __m128i high = _mm_shuffle_epi8(tableHigh128, values);
+    const __m128i selectHigh = _mm_cmpgt_epi8(values, fifteen16);
+    values = _mm_blendv_epi8(low, high, selectHigh);
+    _mm_storeu_si128((__m128i *)destination, values);
+    destination += RN_REVERSE_MASKED5_SSSE3_WIDTH;
+    count -= RN_REVERSE_MASKED5_SSSE3_WIDTH;
+  }
+
+  if (count == RN_REVERSE_MASKED5_COMMON_TAIL_WIDTH &&
+      originalCount >= RN_REVERSE_MASKED5_SSSE3_WIDTH) {
+    const __m128i reverseTwelve = _mm_setr_epi8(
+        11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, -1, -1, -1, -1);
+    __m128i values = _mm_loadu_si128((const __m128i *)source);
+    values = _mm_shuffle_epi8(values, reverseTwelve);
+    values = _mm_and_si128(values, lowFiveBits16);
+    const __m128i low = _mm_shuffle_epi8(tableLow128, values);
+    const __m128i high = _mm_shuffle_epi8(tableHigh128, values);
+    const __m128i selectHigh = _mm_cmpgt_epi8(values, fifteen16);
+    values = _mm_blendv_epi8(low, high, selectHigh);
     _mm_storel_epi64((__m128i *)destination, values);
     const uint32_t tail = (uint32_t)_mm_cvtsi128_si32(
         _mm_srli_si128(values, 8));
@@ -280,7 +388,8 @@ static inline void writeReverseMasked5Translated(const uint8_t *bytes,
     raise("Error: reverse translation wrap exceeds array size");
   }
 
-  const int useSsse3 = rn_reverse_masked5_ssse3_available();
+  const int useAvx2 = rn_reverse_masked5_avx2_available();
+  const int useSsse3 = !useAvx2 && rn_reverse_masked5_ssse3_available();
   uint8_t output[REVERSE_TRANSLATE_OUTPUT_CAPACITY];
   size_t outputLength = 0;
   size_t remaining = source->used;
@@ -298,19 +407,28 @@ static inline void writeReverseMasked5Translated(const uint8_t *bytes,
         chunkLength = lineRemaining;
       }
       const uint8_t *chunkSource = bytes + remaining - chunkLength;
+#if RN_REVERSE_MASKED5_HAS_AVX2
+      if (useAvx2) {
+        rn_reverse_masked5_translate_avx2(output + outputLength, chunkSource,
+                                          chunkLength, translation);
+      } else
+#endif
 #if RN_REVERSE_MASKED5_HAS_SSSE3
       if (useSsse3) {
         rn_reverse_masked5_translate_ssse3(output + outputLength, chunkSource,
                                            chunkLength, translation);
-      } else {
-        rn_reverse_masked5_translate_scalar(output + outputLength, chunkSource,
-                                            chunkLength, translation);
-      }
-#else
+      } else
+#endif
+      {
+#if !RN_REVERSE_MASKED5_HAS_AVX2
+        (void)useAvx2;
+#endif
+#if !RN_REVERSE_MASKED5_HAS_SSSE3
       (void)useSsse3;
+#endif
       rn_reverse_masked5_translate_scalar(output + outputLength, chunkSource,
                                           chunkLength, translation);
-#endif
+      }
       outputLength += chunkLength;
       remaining -= chunkLength;
       lineRemaining -= chunkLength;
@@ -367,3 +485,14 @@ static inline void writeBytes(const uint8_t *bytes, uint64_t count, uint64_t off
     remaining -= wrote;
   }
 }
+
+#undef RN_REVERSE_MASKED5_AVX2_SWAP_LANES
+#undef RN_REVERSE_MASKED5_LOW_TABLE_MAX
+#undef RN_REVERSE_MASKED5_LOW_BITS_MASK
+#undef RN_REVERSE_MASKED5_COMMON_TAIL_WIDTH
+#undef RN_REVERSE_MASKED5_SSSE3_WIDTH
+#undef RN_REVERSE_MASKED5_AVX2_WIDTH
+#undef RN_REVERSE_MASKED5_AVX2_TARGET
+#undef RN_REVERSE_MASKED5_HAS_AVX2
+#undef RN_REVERSE_MASKED5_SSSE3_TARGET
+#undef RN_REVERSE_MASKED5_HAS_SSSE3
