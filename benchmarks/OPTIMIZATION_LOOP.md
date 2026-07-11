@@ -143,6 +143,16 @@ At 10,000 digits Rune O3 is 351.701 ms versus 350.583 ms for that leader
 (1.003x) and 769.219 ms for the committed GMP oracle (0.457x). See
 `results.md` for flags, source provenance, and the full contract.
 
+### Stage 2 update: n-body (2026-07-10)
+
+The locally built current C gcc #9 leader is single-threaded and exact at the
+current 5M workload. Rune O3 is 169.476 ms versus its 100.649 ms (1.684x),
+while already 0.994x the scalar naive C oracle. Exact-output `-U` and manual
+`-march=ivybridge` experiments were rejected (noise-level and 11.9% regression,
+respectively). The bounded roadmap item is opt-in SIMD vector support paired
+with an explicit approximate reciprocal-square-root primitive; scalar `sqrt`
+must keep its exact existing behavior.
+
 ---
 
 ## LOOP PROMPT (this is what you paste into `/loop`)

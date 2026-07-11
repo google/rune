@@ -387,6 +387,32 @@ material overhead on this single-threaded benchmark. This closes pidigits as a
 language/runtime blocker and moves its direct leader gap from unbounded
 fixed-width failure to practical parity.
 
+## Stage 2: n-body leader gap and SIMD boundary
+
+The current official C gcc #9 n-body leader is single-threaded, so unlike
+threaded entries it can be compared directly under CPU-0 affinity. Its source
+was taken from the pinned
+[Salsa page](https://salsa.debian.org/benchmarksgame-team/benchmarksgame/-/raw/40296663ed350d5fe4a6ab5e367bab61cb77c219/public/program/nbody-gcc-9.html)
+and built with its published `gcc -pipe -Wall -O3 -fomit-frame-pointer
+-march=ivybridge` flags. It, Rune O0/O3, and the committed naive C reference
+all matched the golden and the current 5,000,000-step timing output exactly.
+
+| Benchmark (workload) | Rune O0 | Rune O3 | naive C O3 | published C gcc #9 | O3 / naive | O3 / leader |
+|---|---:|---:|---:|---:|---:|---:|
+| n-body (5M) | 640.322 | 169.476 | 170.426 | 100.649 | **0.994x** | **1.684x** |
+
+Rune’s emitted hot loop is the same scalar `sqrtsd`/`divsd` shape as the naive
+oracle. The leader instead batches padded body pairs in AVX lanes and uses a
+float reciprocal-square-root estimate followed by Goldschmidt refinement; it
+remains accurate at the required nine decimal output places. Two smaller paths
+were measured and rejected before feature work: `-U` preserved exact output but
+was 170.447 ms versus 170.246 ms checked O3, and manually recompiling Rune’s
+identical generated C with `-march=ivybridge` preserved output but regressed to
+189.548 ms versus 169.447 ms portable O3. The concrete remaining feature is
+therefore explicit, opt-in SIMD vectors plus an explicitly named approximate
+reciprocal-square-root primitive and target dispatch. It must not silently
+change the semantics of scalar `sqrt`.
+
 ## Historical fixes retained in the current source
 
 - A bare `sqrt(x)` lowers to hardware/libm sqrt, which is essential to n-body's
