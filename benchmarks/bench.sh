@@ -78,7 +78,8 @@ declare -Ar RUNE_FLAGS=(
   [n_body]=""
   [fasta]=""
   [reverse_complement]="-U"
-  [k_nucleotide]=""
+  # Rolling indices and counts are bounded by the benchmark workload.
+  [k_nucleotide]="-U"
   [regex_redux]=""
   [pidigits]=""
 )

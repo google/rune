@@ -16,10 +16,12 @@ constrained one-core setup; the remaining published-leader columns are pending.
 - **Rune builds:** `bootstrap/rune -q NAME.rn` for O0 and
   `bootstrap/rune -q -O NAME.rn` for O3. `-O` now selects clang `-O3`;
   `--optimize` is an equivalent long spelling. The compiler default remains O0.
-- **Unsafe mode:** fannkuch-redux, mandelbrot, spectral-norm, and
+- **Unsafe mode:** fannkuch-redux, k-nucleotide, mandelbrot, spectral-norm, and
   reverse-complement use `-U` at both optimization levels. It removes fixed-width
-  `+`, `-`, and `*` overflow checks; bounds and division checks remain. All other
-  rows are checked builds.
+  `+`, `-`, and `*` overflow checks; bounds and division checks remain.
+  K-nucleotide's rolling indices and counts are bounded by the generated input
+  workload, so they cannot overflow at the measured size. All other rows are
+  checked builds.
 - **Naive references:** clang/clang++ `-O3`; n-body and spectral-norm add `-lm`,
   regex-redux adds `-lpcre2-8`, and pidigits adds `-lgmp`.
 - **Correctness before timing:** every Rune O0/O3 binary and naive reference is
@@ -772,15 +774,21 @@ warmup-plus-best-of-five series measured Rune O0 9710.216 ms, Rune O3
 therefore **0.534x the naive oracle** and **1.154x the leader**. This modest
 checkpoint is exact and repeatable, but is not a leader result.
 
-A separate exact eight-pair probe found that compiling k-nucleotide with `-U`
-won 8/8 against checked mode: checked/unsafe best times were
-2372.789/2326.186 ms (0.980x), and means were 2377.817/2333.890 ms (about
-1.85% faster). This probe is not folded into the cached-shift checkpoint;
-the next step is to enable and document the benchmark's `-U` policy through
-the normal harness before publishing an unsafe-mode baseline.
+An exact eight-pair probe found that compiling k-nucleotide with `-U` won 8/8
+against checked mode: checked/unsafe best times were 2372.789/2326.186 ms
+(0.980x), and means were 2377.817/2333.890 ms (about 1.85% faster). This is a
+sound unsafe-mode use because the rolling indices and accumulated counts are
+bounded by the generated input workload. The normal benchmark harness now
+applies `-U` to both k-nucleotide builds; `bash -n benchmarks/bench.sh` passes.
 
-The largest current validated checked-mode gap is now k-nucleotide at 1.154x,
-followed by n-body at 1.152x, reverse-complement at 1.089x, and Mandelbrot at
+The committed golden and official 25M outputs remain byte-identical at O0/O3
+to the naive oracle and constrained leader. A fresh unsafe-mode standard
+warmup-plus-best-of-five series measured Rune O0 7771.462 ms, Rune O3
+2318.900 ms, naive C 4346.744 ms, and constrained g++ #2 2044.810 ms. Rune is
+therefore **0.533x the naive oracle** and **1.134x the leader**.
+
+The largest current validated gap is now n-body at 1.152x, followed by
+k-nucleotide at 1.134x, reverse-complement at 1.089x, and Mandelbrot at
 1.015x.
 
 ## Stage 2: regex-redux current-workload alignment
