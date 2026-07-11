@@ -18,7 +18,11 @@
  * stack limit retries through the interpreter so acceleration stays
  * semantically transparent.
  */
-static int rn_regex_enable_jit(pcre2_code *re) {
+static void rn_regex_request_jit(pcre2_code *re) {
+    (void)pcre2_jit_compile(re, PCRE2_JIT_COMPLETE);
+}
+
+static int rn_regex_prepare_count_jit(pcre2_code *re) {
     if (pcre2_jit_compile(re, PCRE2_JIT_COMPLETE) != 0) {
         return 0;
     }
@@ -102,7 +106,7 @@ static uint64_t rn_regex_count(const char *pattern, const char *text) {
                 (size_t)erroffset, (char *)errbuf);
         exit(1);
     }
-    int jit_ready = rn_regex_enable_jit(re);
+    int jit_ready = rn_regex_prepare_count_jit(re);
 
     pcre2_match_data *md = pcre2_match_data_create_from_pattern(re, NULL);
     size_t text_len = (size_t)string_length(text);
@@ -171,7 +175,7 @@ static char *rn_regex_replace(const char *pattern, const char *repl,
                 (size_t)erroffset, (char *)errbuf);
         exit(1);
     }
-    (void)rn_regex_enable_jit(re);
+    rn_regex_request_jit(re);
 
     size_t text_len = (size_t)string_length(text);
     size_t repl_len = (size_t)string_length(repl);
