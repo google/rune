@@ -554,6 +554,16 @@ single-core leader gap. The concrete Rune roadmap is an explicit packed-byte
 SIMD kernel (building on register-resident vector values), five-iteration
 escape batching, and buffered bitmap output; bounded tasks come afterward.
 
+As the first isolated step, Rune now stores the exact bitmap in one byte array
+and issues one `writeBytes` call instead of two million locked `writeByte`
+calls at N=4000. O0/O3 remain exact at N=200 and N=4000. In a ten-pair
+alternating O3 comparison the bulk form improved best time from 237.044 to
+234.904 ms (0.991x) and mean time from 238.521 to 235.776 ms. A separate
+standard series measured Rune O0 1463.007 ms, Rune O3 245.288 ms, naive C
+305.612 ms, and g++ #4 one-thread 81.879 ms; powersave state shifted the whole
+session, so the paired series is the attribution evidence. The remaining gap
+is overwhelmingly the scalar kernel.
+
 ## Stage 2: regex-redux current-workload alignment
 
 The former Rune and C-oracle regex-redux sources used an obsolete eleven-IUB

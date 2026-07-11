@@ -24,6 +24,8 @@ maxIterations = 50u32
 limit = 2.0
 limitSq = limit * limit
 print "P4\n%u %u\n" % (width, height)
+bitmapSize = <u64>height * <u64>maxX
+bitmap = arrayof(u8).resize(bitmapSize)
 cr0 = arrayof(f64).resize(8)
 cr = arrayof(f64).resize(8)
 ci = arrayof(f64).resize(8)
@@ -54,6 +56,7 @@ for y = 0u32, y < height, y += 1 {
                 }
             }
         }
-        writeByte(~bits)
+        bitmap[<u64>y * <u64>maxX + <u64>x] = ~bits
     }
 }
+writeBytes(bitmap, bitmapSize, 0u64)
