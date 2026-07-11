@@ -42,6 +42,11 @@ func BIGINT() -> Type {
   return Type(TypeName(Sym.new("BigInt")))
 }
 
+// An opaque runtime-backed open-addressed u64-to-u64 map.
+func U64MAP() -> Type {
+  return Type(TypeName(Sym.new("U64Map")))
+}
+
 // A non-escaping four-lane f64 value supplied by explicit SIMD builtins. It is
 // confined to function locals rather than exposed as a general aggregate or
 // user-function ABI type.

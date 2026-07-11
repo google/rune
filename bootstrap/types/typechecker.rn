@@ -3603,6 +3603,27 @@ class TypeChecker(self) {
               self.newSymbol(fnchild.val.symVal!, FN(bigInt, STRING()))
             }
           }
+          // Runtime-backed open-addressed u64 map. Keep the ABI exact rather
+          // than integer-polymorphic so every operation lowers to uint64_t.
+          if (isnull(callee) &&
+              isnull(self.findSymbolMapping(SymbolMapping(fnchild.val.symVal!,
+                  fnchild.val.symVal.typedValue)))) {
+            u64Map = U64MAP()
+            u64MapName = fnchild.val.symVal.name
+            if u64MapName == "u64MapNew" {
+              self.newSymbol(fnchild.val.symVal!, FN(BOOLEAN(), u64Map))
+            } else if u64MapName == "u64MapAdd" {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([u64Map, U(64), U(64)]), U(64)))
+            } else if u64MapName == "u64MapGetOrZero" {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([u64Map, U(64)]), U(64)))
+            } else if u64MapName == "u64MapKeys" {
+              self.newSymbol(fnchild.val.symVal!, FN(u64Map, ARRAY(U(64))))
+            } else if u64MapName == "u64MapFree" {
+              self.newSymbol(fnchild.val.symVal!, FN(u64Map, NONETY()))
+            }
+          }
           // F64x4 is a non-escaping four-lane value. Operations return values
           // so the C optimizer can retain local expression chains in vector
           // registers instead of routing them through heap-backed handles.

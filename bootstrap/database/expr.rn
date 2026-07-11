@@ -3821,6 +3821,32 @@ class Expr(self, type: ExprType, location: Location) {
         }
         return builder.cCall(self.location, f64x4Fn, c.CExpr(f64x4Args))
       }
+      if (builtinName == "u64MapNew" || builtinName == "u64MapAdd" ||
+          builtinName == "u64MapGetOrZero" || builtinName == "u64MapKeys" ||
+          builtinName == "u64MapFree") &&
+          isnull(builder.findFunction(builtinName)) {
+        // The runtime returns a headed Rune array, but a builtin call alone
+        // does not otherwise cause the array typedef to be emitted.
+        if builtinName == "u64MapKeys" {
+          builder.ensureArrayDeclared(self.location, types.U(64))
+        }
+        switch builtinName {
+          "u64MapNew" => u64MapFn = c.CRuntimeFunction.U64MapNew
+          "u64MapAdd" => u64MapFn = c.CRuntimeFunction.U64MapAdd
+          "u64MapGetOrZero" => u64MapFn = c.CRuntimeFunction.U64MapGetOrZero
+          "u64MapKeys" => u64MapFn = c.CRuntimeFunction.U64MapKeys
+          default => u64MapFn = c.CRuntimeFunction.U64MapFree
+        }
+        u64MapArgs = c.CExprList()
+        if right.typedValue.type == types.Type.TypeClass.Tuple {
+          for child in right.childExprs() {
+            u64MapArgs.appendCExpr(child.genC(builder))
+          }
+        } else {
+          u64MapArgs.appendCExpr(right.genC(builder))
+        }
+        return builder.cCall(self.location, u64MapFn, c.CExpr(u64MapArgs))
+      }
     }
 
     // Calls to extern "C" functions are emitted under an rn_ prefix and

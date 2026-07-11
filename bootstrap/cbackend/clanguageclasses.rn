@@ -1014,6 +1014,13 @@ enum CRuntimeFunction {
    BigIntToU64
    BigIntToString
 
+   // Runtime-backed open-addressed u64-to-u64 map.
+   U64MapNew
+   U64MapAdd
+   U64MapGetOrZero
+   U64MapKeys
+   U64MapFree
+
    // Non-escaping four-lane f64 SIMD values.
    F64x4FromLanes
    F64x4Splat
@@ -1319,6 +1326,31 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.BigIntToString => {
         e.needGmp()
         e.write("rn_bigint_to_string")
+      }
+
+      CRuntimeFunction.U64MapNew => {
+        e.needU64Map()
+        e.write("rn_u64map_new")
+      }
+
+      CRuntimeFunction.U64MapAdd => {
+        e.needU64Map()
+        e.write("rn_u64map_add")
+      }
+
+      CRuntimeFunction.U64MapGetOrZero => {
+        e.needU64Map()
+        e.write("rn_u64map_get_or_zero")
+      }
+
+      CRuntimeFunction.U64MapKeys => {
+        e.needU64Map()
+        e.write("rn_u64map_keys")
+      }
+
+      CRuntimeFunction.U64MapFree => {
+        e.needU64Map()
+        e.write("rn_u64map_free")
       }
 
       CRuntimeFunction.F64x4FromLanes => {

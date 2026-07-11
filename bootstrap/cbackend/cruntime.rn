@@ -232,6 +232,14 @@ class CRuntime(self) {
     return cf
   }
 
+  // Opaque open-addressed integer map. keys() returns a headed Rune array.
+  func needU64Map(self) -> CFragment {
+    self.needRaiseError()
+    cf = self.cFragment("u64_map", "cbackend/cruntime/u64_map.inc")
+    cf.addDependencies([self.needArrayAlloc()])
+    return cf
+  }
+
   // F64x4 uses a portable value representation with target-local AVX helpers.
   func needF64x4(self) -> CFragment {
     self.needRaiseError()

@@ -34,3 +34,50 @@ println bigIntToString(result)
 bigIntAddU64(result, result, 2u64)
 println bigIntToU64(result)
 println bigIntLess(negative, result)
+
+// Runtime-backed U64Map smoke coverage lives here so the opaque runtime type
+// is exercised without adding output or another test target.
+emptyMap = u64MapNew(true)
+emptyKeys = u64MapKeys(emptyMap)
+assert emptyKeys.length() == 0u64
+u64MapFree(emptyMap)
+
+identityMap = u64MapNew(true)
+assert u64MapAdd(identityMap, 0u64, 1u64) == 1u64
+assert u64MapAdd(identityMap, 32u64, 2u64) == 2u64
+assert u64MapAdd(identityMap, 64u64, 3u64) == 3u64
+assert u64MapAdd(identityMap, 32u64, 4u64) == 6u64
+assert u64MapGetOrZero(identityMap, 32u64) == 6u64
+assert u64MapGetOrZero(identityMap, 96u64) == 0u64
+
+// More than 24 occupied slots crosses the initial table's 75% load limit.
+for mapIndex = 3u64, mapIndex < 30u64, mapIndex += 1u64 {
+  mapKey = mapIndex * 32u64
+  assert u64MapAdd(identityMap, mapKey, mapIndex) == mapIndex
+}
+maxKey = 0xffffffffffffffffu64
+assert u64MapAdd(identityMap, maxKey, 9u64) == 9u64
+identityKeys = u64MapKeys(identityMap)
+assert identityKeys.length() == 31u64
+u64MapFree(identityMap)
+
+// keys() owns its headed array independently of the freed map.
+sawZero = false
+sawMax = false
+for savedKey in identityKeys {
+  if savedKey == 0u64 {
+    sawZero = true
+  }
+  if savedKey == maxKey {
+    sawMax = true
+  }
+}
+assert sawZero && sawMax
+
+mixedMap = u64MapNew(false)
+assert u64MapAdd(mixedMap, 7u64, 11u64) == 11u64
+assert u64MapGetOrZero(mixedMap, 7u64) == 11u64
+mixedKeys = u64MapKeys(mixedMap)
+assert mixedKeys.length() == 1u64
+u64MapFree(mixedMap)
+assert mixedKeys[0u64] == 7u64
