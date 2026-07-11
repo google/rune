@@ -12,18 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+maxN = 16u32
+storageLength = 17u64
+
 func fannkuch(n) {
-    p = arrayof(u32).resize(n + 1)
+    assert n >= 1u32 && n <= maxN, "fannkuch n must be in 1..16"
+    if n == 1u32 {
+        return (0i64, 0u32)
+    }
+    if n == 2u32 {
+        return (-1i64, 1u32)
+    }
+
+    p = arrayof(u8).resize(storageLength)
     for i = 1u32, i <= n, i += 1 {
-        p[i] = i
+        p[i] = <u8>i
     }
     q = p
     s = p
-    sign = 1i32; maxflips = 0u32; sum = 0i32
+    sign = 1i64; maxflips = 0u32; sum = 0i64
     while true {
         q0 = p[1]
         if q0 != 1 {
-            for i = 2u32, i <= n, i += 1 {
+            // p[n+1..16] stays zero and permutation/flip indices never exceed
+            // n. The fixed copy is therefore safe; q[1] stays invariant at 1.
+            for i = 2u32, i <= maxN, i += 1 {
                 q[i] = p[i]
             }
             flips = 1u32
@@ -32,7 +45,7 @@ func fannkuch(n) {
             } while qq != 1 {
                 q[q0] = q0
                 if q0 >= 4 {
-                    i = 2u32; j = q0-1
+                    i = 2u32; j = <u32>q0 - 1u32
                     do {
                         t = q[i]
                         q[i] = q[j]
@@ -44,7 +57,7 @@ func fannkuch(n) {
                 q0 = qq
                 flips += 1
             }
-            sum += sign*<i32>flips
+            sum += sign*<i64>flips
             if (flips > maxflips) {
                 maxflips = flips
             }
@@ -54,12 +67,12 @@ func fannkuch(n) {
             t = p[2]
             p[2] = p[1]
             p[1] = t
-            sign = -1i32
+            sign = -1i64
         } else {
             t = p[2]
             p[2] = p[3]
             p[3] = t
-            sign = 1i32
+            sign = 1i64
             cont = true
             for i = 3u32, i <= n && cont, i += 1 {
                 sx = s[i]
@@ -70,7 +83,7 @@ func fannkuch(n) {
                     if i == n {
                         return (sum, maxflips)
                     }
-                    s[i] = i
+                    s[i] = <u8>i
                     t = p[1]
                     for j = 1u32, j <= i, j += 1 {
                         p[j] = p[j+1]
@@ -80,10 +93,7 @@ func fannkuch(n) {
             }
         }
     }
-    return (0i32, 0u32)  // Dummy return
-}
-
-func nextPerm(var p, var s, var sum, var maxFlips, n) {
+    return (0i64, 0u32)  // Dummy return
 }
 
 n = 12u32

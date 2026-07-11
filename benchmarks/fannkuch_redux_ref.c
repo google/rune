@@ -2,14 +2,23 @@
 // Matches output of benchmarks/fannkuch_redux.rn byte-for-byte.
 //
 // Algorithm: direct port of the Rune 1-indexed Knuth-Schrage-Rosenkrantz variant.
-// Output: two lines — checksum (signed int), then "Pfannkuchen(N) = maxflips".
+// Output: two lines — signed 64-bit checksum, then "Pfannkuchen(N) = maxflips".
 
 #include <stdio.h>
 #include <stdlib.h>
 
-typedef struct { int sum; unsigned maxflips; } FannResult;
+enum { MAX_N = 16 };
+
+typedef struct { long long sum; unsigned maxflips; } FannResult;
 
 static FannResult fannkuch(unsigned n) {
+    if (n < 1 || n > MAX_N) {
+        fprintf(stderr, "fannkuch n must be in 1..16\n");
+        exit(EXIT_FAILURE);
+    }
+    if (n == 1) return (FannResult){0, 0};
+    if (n == 2) return (FannResult){-1, 1};
+
     // 1-indexed arrays of size n+1 (index 0 unused)
     unsigned *p = (unsigned *)calloc(n + 1, sizeof(unsigned));
     unsigned *q = (unsigned *)calloc(n + 1, sizeof(unsigned));
@@ -19,7 +28,7 @@ static FannResult fannkuch(unsigned n) {
         p[i] = q[i] = s[i] = i;
     }
 
-    int sign = 1, sum = 0;
+    long long sign = 1, sum = 0;
     unsigned maxflips = 0;
 
     while (1) {
@@ -44,7 +53,7 @@ static FannResult fannkuch(unsigned n) {
                 flips++;
                 qq = q[q0];
             }
-            sum += sign * (int)flips;
+            sum += sign * (long long)flips;
             if (flips > maxflips) maxflips = flips;
         }
 
@@ -81,7 +90,7 @@ int main(int argc, char *argv[]) {
     unsigned n = 12;
     if (argc > 1) n = (unsigned)atoi(argv[1]);
     FannResult r = fannkuch(n);
-    printf("%d\n", r.sum);
+    printf("%lld\n", r.sum);
     printf("Pfannkuchen(%u) = %u\n", n, r.maxflips);
     return 0;
 }

@@ -1315,9 +1315,53 @@ share one packed reciprocal made the direct AVX kernel slower, 671.722 versus
 693.628 ms. Removing vector-load range checks won only 8/20 pairs and raised
 mean time by 0.17%; no unchecked-load API was retained. This is a strong
 spectral-norm result, not completion of the whole benchmark objective. The next
-unvalidated fastest-published
-comparators are fannkuch-redux and binary-trees; fannkuch-redux is likely the
+unvalidated fastest-published comparators are fannkuch-redux and binary-trees;
+fannkuch-redux is likely the
 more immediately buildable target.
+
+## Stage 3: fannkuch-redux fixed-width state and published-leader gap
+
+Fannkuch-redux now uses the official N=12 workload. The locally built
+comparator is the canonical C gcc #6 source from Salsa master `40296663`; its
+source SHA-256 is
+`0049ef7ffd23dd32145db91de7eeac981234f44d098cbb791911f1ad5dfebcf0`.
+It was built with the published `gcc -pipe -Wall -O3 -fomit-frame-pointer
+-march=ivybridge -pthread` flags. The source defaults to four workers and also
+supports `-t 1`. Both comparator modes were constrained to CPU 0, so the
+one-thread result isolates the kernel while the default-four result preserves
+the published configuration with all workers sharing one core.
+
+Rune O0/O3 and the scalar reference are byte-exact for every N from 1 through
+12. The gcc #6 comparator is also exact at the N=10 golden and official N=12;
+the latter output is `3968050\nPfannkuchen(12) = 65\n`, with SHA-256
+`4265a65135c506a68d90d6474003fb9030b7ee244a06c046bd89b3932a28ce20`.
+
+The scalar baseline best times were Rune 14038.163 ms, naive C 13870.998 ms,
+the one-thread leader 5598.003 ms, and the constrained default-four leader
+5652.888 ms. Rune was already near its scalar oracle; the remaining gap is the
+leader's packed-byte shuffle algorithm rather than generic scalar codegen.
+
+The source checkpoint narrows each permutation array to fixed 17-byte `u8`
+storage for the proved input domain 1..16. Permutation and flip indices never
+exceed N, slots above N remain zero, and `q[1]` remains invariant, so the hot
+full-array value copy and its `memcpy` are replaced by the fixed `q[2..16]`
+copy. The checksum and sign use `i64`, matching the full supported domain;
+explicit N=1/N=2 results preserve the boundary cases.
+The full compiler regression gate remains `PASS=205 FAIL=0`.
+
+| Official fannkuch-redux (12) | Rune O0 | Rune O3 | naive C | gcc #6 `-t 1` | gcc #6 default 4 | O0 / O3 | O3 / naive | O3 / t1 | O3 / default 4 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| fixed `u8` state | 33420.851 | 13880.162 | 13870.998 | 5598.003 | 5652.888 | 2.409x | **1.001x** | **2.479x** | **2.455x** |
+
+At N=11, `u8` won 20/20 alternating scalar/`u8` pairs. Best times were
+1060.543/1077.715 ms (`u8`/scalar), and the mean ratio was 0.98018x. At
+official N=12 it won 5/5: best times were 13880.162/14113.759 ms (0.98345x),
+and means were 13949.675/14160.379 ms (0.98512x).
+
+This is a green source-level improvement, not a leader claim: Rune remains
+about 2.48x behind the one-thread packed-byte comparator. The residual is now
+concretely scoped to a general `U8x16` byte-shuffle SIMD feature, which is the
+next fannkuch target.
 
 ## Historical fixes retained in the current source
 
