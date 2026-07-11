@@ -698,10 +698,24 @@ and **1.286x the leader**. Reducing redundant opaque-handle checks accounted
 for the final measured improvement from 2852.219 to 2630.359 ms, with the full
 compiler gate still at `PASS=205 FAIL=0`.
 
-The next measured design target is the map's memory layout. Its control, key,
-and value arrays are currently separate; an array-of-structures key/value slot
-layout should reduce hot-probe cache traffic. Measure that directly before
-considering broader features or benchmark-specific sizing.
+The measured layout follow-up keeps control bytes in their own compact array,
+but combines each key and value into one contiguous slot array. The official
+golden and full 25M outputs remain byte-identical at O0/O3 to both references,
+and the compiler gate remains `PASS=205 FAIL=0`.
+
+Ten alternating-order O3 pairs validate a modest improvement: the combined
+slot layout won 8/10 pairs, old/new best times were 2563.275/2549.648 ms
+(0.995x), and old/new means were 2627.394/2577.278 ms (about 1.9% faster by
+the mean). A fresh standard warmup-plus-best-of-five series measured Rune O0
+9926.711 ms, Rune O3 2575.632 ms, naive C 4358.133 ms, and constrained g++ #2
+2041.814 ms. Rune is therefore **0.591x the naive oracle** and **1.261x the
+leader**. This is a real but small cache-layout win, not a leader result.
+
+K-nucleotide remains the largest current validated gap at 1.261x, ahead of
+mandelbrot at 1.206x and reverse-complement at 1.089x. The next measurement
+target is its hot hash kernel—especially hash-mode specialization,
+fingerprinting, and probe layout—while preserving small-default growth and
+avoiding benchmark-specific reservation.
 
 ## Stage 2: regex-redux current-workload alignment
 

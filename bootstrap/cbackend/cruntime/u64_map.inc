@@ -26,11 +26,15 @@
 #define RN_U64MAP_HOT inline
 #endif
 
+typedef struct rn_u64map_slot {
+  uint64_t key;
+  uint64_t value;
+} rn_u64map_slot;
+
 typedef struct rn_u64map {
   uint64_t magic;
   uint8_t *control;
-  uint64_t *keys;
-  uint64_t *values;
+  rn_u64map_slot *slots;
   size_t capacity;
   size_t count;
   uint8_t identity_hash;
@@ -59,23 +63,20 @@ static RN_U64MAP_HOT uint64_t rn_u64map_hash(const rn_u64map *map, uint64_t key)
 }
 
 static RN_U64MAP_COLD void rn_u64map_allocate_arrays(
-    size_t capacity, uint8_t **control_out, uint64_t **keys_out,
-    uint64_t **values_out) {
-  if (capacity > SIZE_MAX / sizeof(uint64_t)) {
+    size_t capacity, uint8_t **control_out, rn_u64map_slot **slots_out) {
+  if (capacity > SIZE_MAX / sizeof(rn_u64map_slot)) {
     raise("U64MapCapacityOverflow");
   }
   uint8_t *control = (uint8_t *)calloc(capacity, sizeof(uint8_t));
-  uint64_t *keys = (uint64_t *)malloc(capacity * sizeof(uint64_t));
-  uint64_t *values = (uint64_t *)malloc(capacity * sizeof(uint64_t));
-  if (control == NULL || keys == NULL || values == NULL) {
+  rn_u64map_slot *slots =
+      (rn_u64map_slot *)malloc(capacity * sizeof(rn_u64map_slot));
+  if (control == NULL || slots == NULL) {
     free(control);
-    free(keys);
-    free(values);
+    free(slots);
     raise("OutOfMemory");
   }
   *control_out = control;
-  *keys_out = keys;
-  *values_out = values;
+  *slots_out = slots;
 }
 
 static RN_U64MAP_HOT size_t rn_u64map_find_slot(const rn_u64map *map,
@@ -83,7 +84,7 @@ static RN_U64MAP_HOT size_t rn_u64map_find_slot(const rn_u64map *map,
   size_t mask = map->capacity - 1;
   size_t slot = (size_t)rn_u64map_hash(map, key) & mask;
   while (map->control[slot] == RN_U64MAP_OCCUPIED) {
-    if (map->keys[slot] == key) {
+    if (map->slots[slot].key == key) {
       *found = 1;
       return slot;
     }
@@ -99,51 +100,42 @@ static RN_U64MAP_COLD void rn_u64map_grow(rn_u64map *map) {
   }
   size_t new_capacity = map->capacity * 2;
   uint8_t *new_control;
-  uint64_t *new_keys;
-  uint64_t *new_values;
-  rn_u64map_allocate_arrays(new_capacity, &new_control, &new_keys,
-                            &new_values);
+  rn_u64map_slot *new_slots;
+  rn_u64map_allocate_arrays(new_capacity, &new_control, &new_slots);
 
   uint8_t *old_control = map->control;
-  uint64_t *old_keys = map->keys;
-  uint64_t *old_values = map->values;
+  rn_u64map_slot *old_slots = map->slots;
   size_t old_capacity = map->capacity;
   map->control = new_control;
-  map->keys = new_keys;
-  map->values = new_values;
+  map->slots = new_slots;
   map->capacity = new_capacity;
 
   for (size_t old_slot = 0; old_slot < old_capacity; ++old_slot) {
     if (old_control[old_slot] == RN_U64MAP_OCCUPIED) {
       uint8_t found;
-      size_t new_slot = rn_u64map_find_slot(map, old_keys[old_slot], &found);
+      size_t new_slot =
+          rn_u64map_find_slot(map, old_slots[old_slot].key, &found);
       map->control[new_slot] = RN_U64MAP_OCCUPIED;
-      map->keys[new_slot] = old_keys[old_slot];
-      map->values[new_slot] = old_values[old_slot];
+      map->slots[new_slot] = old_slots[old_slot];
     }
   }
   free(old_control);
-  free(old_keys);
-  free(old_values);
+  free(old_slots);
 }
 
 static inline rn_u64map_t rn_u64map_new(uint8_t identity_hash) {
   uint8_t *control;
-  uint64_t *keys;
-  uint64_t *values;
-  rn_u64map_allocate_arrays(RN_U64MAP_INITIAL_CAPACITY, &control, &keys,
-                            &values);
+  rn_u64map_slot *slots;
+  rn_u64map_allocate_arrays(RN_U64MAP_INITIAL_CAPACITY, &control, &slots);
   rn_u64map *map = (rn_u64map *)malloc(sizeof(rn_u64map));
   if (map == NULL) {
     free(control);
-    free(keys);
-    free(values);
+    free(slots);
     raise("OutOfMemory");
   }
   memset(map, 0, sizeof(*map));
   map->control = control;
-  map->keys = keys;
-  map->values = values;
+  map->slots = slots;
   map->capacity = RN_U64MAP_INITIAL_CAPACITY;
   map->identity_hash = identity_hash ? 1 : 0;
   map->magic = RN_U64MAP_MAGIC;
@@ -156,11 +148,11 @@ static RN_U64MAP_HOT uint64_t rn_u64map_add(rn_u64map_t map, uint64_t key,
   uint8_t found;
   size_t slot = rn_u64map_find_slot(map, key, &found);
   if (found) {
-    if (UINT64_MAX - map->values[slot] < delta) {
+    if (UINT64_MAX - map->slots[slot].value < delta) {
       raise("Overflow");
     }
-    map->values[slot] += delta;
-    return map->values[slot];
+    map->slots[slot].value += delta;
+    return map->slots[slot].value;
   }
 
   /* capacity - capacity/4 is exactly 75% for power-of-two capacities. */
@@ -171,8 +163,8 @@ static RN_U64MAP_HOT uint64_t rn_u64map_add(rn_u64map_t map, uint64_t key,
     slot = rn_u64map_find_slot(map, key, &found);
   }
   map->control[slot] = RN_U64MAP_OCCUPIED;
-  map->keys[slot] = key;
-  map->values[slot] = delta;
+  map->slots[slot].key = key;
+  map->slots[slot].value = delta;
   ++map->count;
   return delta;
 }
@@ -182,7 +174,7 @@ static RN_U64MAP_HOT uint64_t rn_u64map_get_or_zero(const rn_u64map_t map,
   rn_u64map_require(map);
   uint8_t found;
   size_t slot = rn_u64map_find_slot(map, key, &found);
-  return found ? map->values[slot] : UINT64_C(0);
+  return found ? map->slots[slot].value : UINT64_C(0);
 }
 
 static inline uint64_t *rn_u64map_keys(const rn_u64map_t map) {
@@ -195,7 +187,7 @@ static inline uint64_t *rn_u64map_keys(const rn_u64map_t map) {
   size_t result_index = 0;
   for (size_t slot = 0; slot < map->capacity; ++slot) {
     if (map->control[slot] == RN_U64MAP_OCCUPIED) {
-      result[result_index++] = map->keys[slot];
+      result[result_index++] = map->slots[slot].key;
     }
   }
   return result;
@@ -208,11 +200,9 @@ static inline void rn_u64map_free(rn_u64map_t map) {
   rn_u64map_require(map);
   map->magic = 0;
   free(map->control);
-  free(map->keys);
-  free(map->values);
+  free(map->slots);
   map->control = NULL;
-  map->keys = NULL;
-  map->values = NULL;
+  map->slots = NULL;
   map->capacity = 0;
   map->count = 0;
   free(map);
