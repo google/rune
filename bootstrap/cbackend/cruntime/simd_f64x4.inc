@@ -88,11 +88,13 @@ static RN_F64X4_AVX_TARGET void rn_f64x4_approx_rsqrt_avx(
   const __m256d squared = _mm256_loadu_pd(source->lane);
   __m256d estimate = _mm256_cvtps_pd(_mm_rsqrt_ps(_mm256_cvtpd_ps(squared)));
   const __m256d y = _mm256_mul_pd(squared, _mm256_mul_pd(estimate, estimate));
-  const __m256d correction = _mm256_add_pd(
-      _mm256_sub_pd(_mm256_mul_pd(_mm256_set1_pd(0.375),
-                                  _mm256_mul_pd(y, y)),
-                    _mm256_mul_pd(_mm256_set1_pd(1.25), y)),
-      _mm256_set1_pd(1.875));
+  // Preserve the leader's Goldschmidt multiplication order.  It matters once
+  // five million n-body steps amplify the reciprocal-square-root rounding.
+  __m256d correction = _mm256_mul_pd(y, _mm256_set1_pd(0.375));
+  correction = _mm256_mul_pd(correction, y);
+  __m256d subtraction = _mm256_mul_pd(y, _mm256_set1_pd(1.25));
+  subtraction = _mm256_sub_pd(subtraction, _mm256_set1_pd(1.875));
+  correction = _mm256_sub_pd(correction, subtraction);
   estimate = _mm256_mul_pd(estimate, correction);
   _mm256_storeu_pd(destination->lane, estimate);
 }
