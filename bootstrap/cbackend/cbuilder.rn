@@ -221,6 +221,8 @@ class CBuilder(self, tc: types.TypeChecker) {
   // Monotonic counter for generated temporaries (e.g. print-argument
   // pre-evaluation locals), unique across the whole emission.
   self.printTempCounter = 0u64
+  // Unique names for call-site-specialized parallelMap helpers.
+  self.parallelMapCounter = 0u64
   self.insertDependencyStack(DependencyStack())
 
   // Re-run the round for the spec currently being emitted.  Nested
@@ -1800,6 +1802,33 @@ class CBuilder(self, tc: types.TypeChecker) {
     }
     self.addDeclaration(decl)
     def.defined = true
+  }
+
+  // Declare one typed synchronous parallelMap helper. Stage 1 calls this only
+  // after the typechecker has restricted item/context/result to by-value
+  // scalar types.
+  func ensureParallelMapDeclared(self, location: db.Location,
+      itemType: types.Type, contextType: types.Type,
+      resultType: types.Type) -> string {
+    itemArray = self.ensureArrayDeclared(location, itemType)
+    resultArray = self.ensureArrayDeclared(location, resultType)
+    itemCType = self.genCType(itemType)!
+    contextCType = self.genCType(contextType)!
+    resultCType = self.genCType(resultType)!
+    itemsArrayCType = self.genCType(types.ARRAY(itemType))!
+    resultsArrayCType = self.genCType(types.ARRAY(resultType))!
+    name = "rn_parallel_map_%u64" % self.parallelMapCounter
+    self.parallelMapCounter += 1u64
+    dec = CDeclaration(CParallelMapDeclaration(location, name, itemCType,
+        contextCType, resultCType, itemsArrayCType, resultsArrayCType))
+    if !isnull(itemArray.dec) {
+      dec.addDependency(itemArray.dec!)
+    }
+    if !isnull(resultArray.dec) {
+      dec.addDependency(resultArray.dec!)
+    }
+    self.addDeclaration(dec)
+    return name
   }
 
   func cTuple(self, location: db.Location, type: types.Type?, elements: CExprList) -> CExpr {

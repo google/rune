@@ -168,6 +168,9 @@ class TynameDefinition(self, tyname: Sym, ty:Type?) {
 class SymbolMapping(self, key: Sym, ty: Type?) {
   self.key = key
   self.value = ty
+  // True only for the compiler-created parallelMap binding. A same-spelled
+  // user definition or local binding remains ordinary Rune code.
+  self.isParallelMapBuiltin = false
 
   func hash(self) -> u64 {
     return hashValue(self.key.name)
@@ -3723,6 +3726,30 @@ class TypeChecker(self) {
             self.newSymbol(fnchild.val.symVal!,
                 FN(TUPLE([STRING(), STRING(), STRING()]), STRING()))
           }
+          // Structured synchronous parallelMap is polymorphic at the call
+          // surface. A conservative validator below initially admits only
+          // scalar-by-value item/context/result types.
+          if fnchild.val.symVal.name == "parallelMap" && isnull(callee) {
+            pmLookup = SymbolMapping(fnchild.val.symVal!,
+                fnchild.val.symVal.typedValue)
+            pmMapping = self.findSymbolMapping(pmLookup)
+            if isnull(pmMapping) {
+              pmItem = V(1)
+              pmContext = V(2)
+              pmResult = V(3)
+              self.newSymbol(fnchild.val.symVal!, POLY([1, 2, 3],
+                  FN(TUPLE([ARRAY(pmItem), pmContext,
+                      FN(TUPLE([pmItem, pmContext]), pmResult), U(64)]),
+                     ARRAY(pmResult))))
+              pmMapping = self.findSymbolMapping(pmLookup)
+              if !isnull(pmMapping) {
+                pmMapping!.isParallelMapBuiltin = true
+              }
+            }
+            if !isnull(pmMapping) && pmMapping!.isParallelMapBuiltin {
+              expr.isParallelMapBuiltin = true
+            }
+          }
           // GMP-backed BigInt is an opt-in opaque runtime value.  Keep it
           // explicit and destination-taking: existing iN/uN arithmetic stays
           // fixed width, while callers can reuse GMP allocations in hot loops.
@@ -3936,6 +3963,9 @@ class TypeChecker(self) {
           return fn
         }
         result = self.apply(fn!, args!, expr.location)
+        if !isnull(result) && expr.isParallelMapBuiltin {
+          self.validateParallelMapCall(expr)
+        }
         if !isnull(result) && !isnull(callRec.viaExpr) {
           if callRec.viaExpr == fnchild {
             self.demandCallResult(callRec, fn!, result!)
@@ -5088,6 +5118,316 @@ class TypeChecker(self) {
       }
     }
     return null(db.Function)
+  }
+
+  // Stage-1 parallelMap transfer types are deliberately narrow. Arrays,
+  // strings, tuples, structs, classes, opaque runtime handles, SIMD values,
+  // and function values need an ownership/freeze or Send/Sync model first.
+  func isParallelMapScalar(self, ty: Type) -> bool {
+    t = self.resolve(ty)
+    if t.type == Type.TypeClass.Var {
+      if isnull(t.tyvar.constraint) {
+        return false
+      }
+      return self.isParallelMapScalar(t.tyvar.constraint!)
+    }
+    if (t.type == Type.TypeClass.Int || t.type == Type.TypeClass.AnyInt ||
+        t.type == Type.TypeClass.Float) {
+      return true
+    }
+    if t.type == Type.TypeClass.Choice {
+      // Generic scalar callback expressions can retain an all-scalar
+      // inference constraint until materialization.
+      for choice in t.choice.choices {
+        if !self.isParallelMapScalar(choice) {
+          return false
+        }
+      }
+      return true
+    }
+    if t.type == Type.TypeClass.Typename {
+      if t.tyname.name.name == "bool" {
+        return true
+      }
+      return !isnull(self.lookupEnum(t.tyname.name))
+    }
+    return false
+  }
+
+  func isParallelMapTransferScalar(self, ty: Type) -> bool {
+    t = self.resolve(ty)
+    // A choice is an inference constraint, not a concrete C ABI type.
+    // Even an all-scalar choice cannot cross the task boundary.
+    if t.type == Type.TypeClass.Choice {
+      return false
+    }
+    return self.isParallelMapScalar(t)
+  }
+
+  func parallelNamePresent(self, names: [string], name: string) -> bool {
+    for n in names {
+      if n == name {
+        return true
+      }
+    }
+    return false
+  }
+
+  func collectParallelModuleGlobals(self, fn: db.Function, var names: [string]) {
+    if fn.type == db.FuncType.Module || fn.type == db.FuncType.Package {
+      for statement in fn.subBlock.statements() {
+        if statement.type == db.StateType.Assign && !isnull(statement.expr) {
+          assign = statement.expr!
+          if assign.type == db.ExprType.Equals && !isnull(assign.firstChildExpr) {
+            lhs = assign.firstChildExpr!
+            if lhs.type == db.ExprType.Ident &&
+                !self.parallelNamePresent(names, lhs.val.symVal.name) {
+              names.append(lhs.val.symVal.name)
+            }
+          }
+        }
+      }
+      for child in fn.childFunctions() {
+        if child.type == db.FuncType.Module || child.type == db.FuncType.Package {
+          self.collectParallelModuleGlobals(child, names)
+        }
+      }
+    }
+  }
+
+  func collectParallelLocalsInExpr(self, expr: db.Expr, var names: [string]) {
+    if expr.type == db.ExprType.Equals && !isnull(expr.firstChildExpr) {
+      lhs = expr.firstChildExpr!
+      if lhs.type == db.ExprType.Ident &&
+          !self.parallelNamePresent(names, lhs.val.symVal.name) {
+        names.append(lhs.val.symVal.name)
+      }
+    }
+    for child in expr.childExprs() {
+      self.collectParallelLocalsInExpr(child, names)
+    }
+  }
+
+  func collectParallelLocals(self, block: db.Block, var names: [string]) {
+    for statement in block.statements() {
+      if !isnull(statement.expr) {
+        self.collectParallelLocalsInExpr(statement.expr!, names)
+      }
+      if !isnull(statement.subBlock) {
+        self.collectParallelLocals(statement.subBlock!, names)
+      }
+    }
+  }
+
+  func parallelCallForbidden(self, name: string) -> bool {
+    return name == "parallelMap" || name == "readByte" ||
+        name == "writeByte" || name == "readBytes" ||
+        name == "writeBytes" || name == "readln" || name == "readlnInto" ||
+        name == "appendBytes" || name == "writeReverseTranslated" ||
+        name == "writeReverseMasked5Translated" || name == "exit" ||
+        name == "regexCount" || name == "regexReplace" ||
+        name == "byteReaderNew" || name == "byteReaderPeekByte" ||
+        name == "byteReaderAppendUntilByteSkippingByteInto" ||
+        name == "byteReaderAppendlnInto" || name == "byteReaderReadlnInto" ||
+        name == "byteReaderFree"
+  }
+
+  func validateParallelExpr(self, expr: db.Expr, locals: [string],
+      globals: [string], var visited: [string]) -> bool {
+    if expr.type == db.ExprType.RandUint {
+      self.typeError(
+          "parallelMap callback cannot use process-global random state",
+          expr.location)
+      return false
+    }
+    if expr.type == db.ExprType.Cast || expr.type == db.ExprType.CastTrunc {
+      self.typeError("parallelMap stage 1 callbacks cannot use casts",
+                     expr.location)
+      return false
+    }
+    for operatorFn in self.operatorFns {
+      if operatorFn.opType == expr.type {
+        self.typeError(
+            "parallelMap stage 1 rejects expressions with a registered user operator",
+            expr.location)
+        return false
+      }
+    }
+    if expr.type == db.ExprType.Ident {
+      name = expr.val.symVal.name
+      if !self.parallelNamePresent(locals, name) {
+        self.typeError("parallelMap callback cannot access nonlocal '%s'" % name,
+                       expr.location)
+        return false
+      }
+      if !isnull(expr.typedValue) &&
+          !self.isParallelMapScalar(expr.typedValue!) {
+        self.typeError(
+            "parallelMap stage 1 callback locals must be scalar",
+            expr.location)
+        return false
+      }
+      return true
+    }
+    // Stage 1 permits scalar computation only, not merely scalar values at
+    // the task boundary. This keeps worker-local arrays, strings, classes,
+    // opaque handles, SIMD values, and aggregates away from runtime state
+    // that is not yet concurrency-safe. List/tuple argument containers and
+    // Call nodes are structural exceptions and are validated recursively.
+    if (expr.type != db.ExprType.List && expr.type != db.ExprType.Tuple &&
+        expr.type != db.ExprType.Call && !isnull(expr.typedValue)) {
+      if !self.isParallelMapScalar(expr.typedValue!) {
+        self.typeError(
+            "parallelMap stage 1 callback expressions must be scalar",
+            expr.location)
+        return false
+      }
+    }
+    if expr.type == db.ExprType.Call {
+      callee = expr.firstChildExpr!
+      if callee.type != db.ExprType.Ident {
+        self.typeError(
+            "parallelMap callback calls must target a direct named pure function",
+            expr.location)
+        return false
+      }
+      name = callee.val.symVal.name
+      if self.parallelCallForbidden(name) {
+        self.typeError("parallelMap callback cannot call '%s'" % name,
+                       expr.location)
+        return false
+      }
+      target = self.findPlainFunction(name)
+      if isnull(target) {
+        self.typeError(
+            "parallelMap callback calls unknown-effect function '%s'" % name,
+            expr.location)
+        return false
+      }
+      targetHasBody = false
+      for ignoredStatement in target!.subBlock.statements() {
+        targetHasBody = true
+      }
+      if target!.isExtern || !targetHasBody {
+        self.typeError(
+            "parallelMap callback cannot call extern or bodyless function '%s'" % name,
+            expr.location)
+        return false
+      }
+      if !self.validateParallelFunction(target!, globals, visited) {
+        return false
+      }
+      args = callee.nextExprChildExpr
+      if !isnull(args) {
+        return self.validateParallelExpr(args!, locals, globals, visited)
+      }
+      return true
+    }
+    for child in expr.childExprs() {
+      if !self.validateParallelExpr(child, locals, globals, visited) {
+        return false
+      }
+    }
+    return true
+  }
+
+  func validateParallelBlock(self, block: db.Block, locals: [string],
+      globals: [string], var visited: [string]) -> bool {
+    for statement in block.statements() {
+      if (statement.type == db.StateType.Print ||
+          statement.type == db.StateType.Println ||
+          statement.type == db.StateType.Raise ||
+          statement.type == db.StateType.Try ||
+          statement.type == db.StateType.Except ||
+          statement.type == db.StateType.Panic ||
+          statement.type == db.StateType.Assert) {
+        self.typeError("parallelMap callback cannot use '%s'" %
+            db.statementTypeGetKeyword(statement.type), statement.location)
+        return false
+      }
+      if !isnull(statement.expr) {
+        if !self.validateParallelExpr(statement.expr!, locals, globals, visited) {
+          return false
+        }
+      }
+      if !isnull(statement.subBlock) {
+        if !self.validateParallelBlock(statement.subBlock!, locals, globals,
+                                       visited) {
+          return false
+        }
+      }
+    }
+    return true
+  }
+
+  func validateParallelFunction(self, fn: db.Function, globals: [string],
+      var visited: [string]) -> bool {
+    if self.parallelNamePresent(visited, fn.sym.name) {
+      return true
+    }
+    visited.append(fn.sym.name)
+    locals = arrayof(string)
+    for variable in fn.variables() {
+      if !self.parallelNamePresent(locals, variable.sym.name) {
+        locals.append(variable.sym.name)
+      }
+    }
+    self.collectParallelLocals(fn.subBlock, locals)
+    return self.validateParallelBlock(fn.subBlock, locals, globals, visited)
+  }
+
+  func validateParallelMapCall(self, call: db.Expr) {
+    callee = call.firstChildExpr!
+    args = callee.nextExprChildExpr
+    if isnull(args) || (args.type != db.ExprType.Tuple &&
+        args.type != db.ExprType.List) {
+      self.typeError("parallelMap requires exactly four arguments", call.location)
+      return
+    }
+    if args.countChildExprs() != 4u64 {
+      self.typeError("parallelMap requires exactly four arguments", call.location)
+      return
+    }
+    items = args.indexChildExpr(0)
+    context = args.indexChildExpr(1)
+    worker = args.indexChildExpr(2)
+    itemsTy = self.resolve(items.typedValue!)
+    contextTy = self.resolve(context.typedValue!)
+    workerTy = self.resolve(worker.typedValue!)
+    if itemsTy.type != Type.TypeClass.Array ||
+        workerTy.type != Type.TypeClass.Function {
+      return
+    }
+    itemTy = self.resolve(itemsTy.array.elementType)
+    resultTy = self.resolve(workerTy.function.result!)
+    if !self.isParallelMapTransferScalar(itemTy) ||
+        !self.isParallelMapTransferScalar(contextTy) ||
+        !self.isParallelMapTransferScalar(resultTy) {
+      self.typeError(
+          "parallelMap stage 1 permits only scalar item, context, and result types",
+          call.location)
+      return
+    }
+    if worker.type != db.ExprType.Funcaddr {
+      self.typeError("parallelMap requires a direct named callback", worker.location)
+      return
+    }
+    sampleCall = worker.firstChildExpr!
+    sampleCallee = sampleCall.firstChildExpr!
+    if sampleCallee.type != db.ExprType.Ident {
+      self.typeError("parallelMap requires a direct named callback", worker.location)
+      return
+    }
+    workerFn = self.findPlainFunction(sampleCallee.val.symVal.name)
+    if isnull(workerFn) {
+      self.typeError("parallelMap callback must be a top-level plain function",
+                     worker.location)
+      return
+    }
+    globals = arrayof(string)
+    self.collectParallelModuleGlobals(db.getMainFunc(), globals)
+    visited = arrayof(string)
+    self.validateParallelFunction(workerFn!, globals, visited)
   }
 
   // Find a top-level plain function by name.  Used during desugaring (before

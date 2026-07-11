@@ -1,0 +1,81 @@
+// Structured parallelMap stage-1 canaries: deterministic input ordering,
+// empty/singleton work, serial 0/1 modes, cap clamping, repeated calls, and
+// two generic scalar specializations.
+
+enum ParallelColor {
+  Red
+  Green
+  Blue
+}
+
+func skewed(value, context) {
+  // Unequal work per item makes completion order differ from input order on
+  // a parallel run. Truncating arithmetic keeps this callback non-raising.
+  state = value
+  for i = 0u64, i < (8u64 - value) * 2000u64, i += 1u64 {
+    state = state !* 1664525u64
+    state = state !+ 1013904223u64
+  }
+  return value !+ context
+}
+
+func genericAdd(value, context) {
+  return value !+ context
+}
+
+func runSameCallSite(items: [u64], context: u64, maxWorkers: u64) -> [u64] {
+  return parallelMap(items, context, &genericAdd(items[0], context), maxWorkers)
+}
+
+func addSigned(value: i32, context: i32) -> i32 {
+  return value !+ context
+}
+
+func keepFloat(value: f64, context: f64) -> f64 {
+  return value
+}
+
+func xorBool(value: bool, context: bool) -> bool {
+  return value ^^ context
+}
+
+func enumIdentity(value: ParallelColor,
+    context: ParallelColor) -> ParallelColor {
+  return value
+}
+
+// Exercise nominal enum transfer before any generic builtin binding exists;
+// later calls below verify that subsequent specializations remain isolated.
+colorItems = [ParallelColor.Red, ParallelColor.Blue]
+println parallelMap(colorItems, ParallelColor.Green,
+    &enumIdentity(colorItems[0], ParallelColor.Green), 2u64)
+
+empty = arrayof(u64)
+println parallelMap(empty, 10u64, &skewed(0u64, 10u64), 4u64)
+
+single = [7u64]
+println parallelMap(single, 10u64, &skewed(single[0], 10u64), 0u64)
+
+items = [1u64, 2u64, 3u64, 4u64, 5u64, 6u64, 7u64]
+println parallelMap(items, 10u64, &skewed(items[0], 10u64), 1u64)
+println parallelMap(items, 10u64, &skewed(items[0], 10u64), 99u64)
+println parallelMap(items, 20u64, &skewed(items[0], 20u64), 4u64)
+
+small = [1u32, 2u32, 3u32]
+println parallelMap(small, 4u32, &genericAdd(small[0], 4u32), 2u64)
+
+same = [2u64, 4u64]
+println runSameCallSite(same, 3u64, 2u64)
+println runSameCallSite(same, 5u64, 4u64)
+
+signedItems = [-3i32, 4i32]
+println parallelMap(signedItems, 2i32,
+    &addSigned(signedItems[0], 2i32), 2u64)
+
+floatItems = [1.25f64, 2.5f64]
+println parallelMap(floatItems, 0.0f64,
+    &keepFloat(floatItems[0], 0.0f64), 2u64)
+
+boolItems = [true, false, true]
+println parallelMap(boolItems, true,
+    &xorBool(boolItems[0], true), 2u64)

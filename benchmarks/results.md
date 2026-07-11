@@ -1474,9 +1474,10 @@ operators but explicitly types its scoring helper, and the limitation remains
 documented for general compiler work.
 
 All three default workloads are byte-exact across Rune O0, Rune O3, their C
-oracles, and the committed goldens. The added regex semantics test raises the
-full bootstrap gate to `PASS=206 FAIL=0`. Informational canary timings were
-intentionally not collected while the development machine was busy.
+oracles, and the committed goldens. The added regex semantics test raised that
+checkpoint's bootstrap gate to `PASS=206 FAIL=0`; the structured-concurrency
+test below brings the current gate to `PASS=207 FAIL=0`. Informational canary
+timings were intentionally not collected while the development machine was busy.
 
 ## Stage 2 comparator closure: regex-redux Rust #7
 
@@ -1497,6 +1498,25 @@ Rayon workers all sharing CPU 0. A separately built one-worker source variant
 is attribution-only and is never labelled as the published entry. No timing is
 reported yet: recurring external load kept the fail-closed harness above its
 load threshold.
+
+Two quiet ten-pair attribution rungs are now valid. C1 uses bulk input, normal
+`pcre2_match` dispatch, and a manual literal replacement builder. C2 changes
+only replacement to Rune's `pcre2_substitute` path. C3 instead changes C1 to
+required direct `pcre2_jit_match` dispatch while retaining manual replacement.
+Every exact timed binary regenerated both the committed golden and full output
+before measurement.
+
+| Regex attribution | Left wins | Left/right best | Left/right mean | Left/right median |
+|---|---:|---:|---:|---:|
+| C1 manual replacement / C2 substitute | 7/10 | 1574.157 / 1576.467 ms | 1580.695 / 1584.847 ms | 1578.954 / 1582.069 ms |
+| C1 normal dispatch / C3 direct JIT | 0/10 | 1566.842 / 1530.971 ms | 1582.035 / 1548.017 ms | 1584.191 / 1544.266 ms |
+
+The manual builder's roughly 0.2--0.3% advantage is too small to justify a
+general replacement-engine rewrite. Direct JIT is material at roughly 2.2%,
+but C3 applies it to both counts and its manual replacement loop. A byte-exact
+C5 variant now isolates optional direct JIT for counts while leaving C2's
+substitute path unchanged; its quiet C2/C5 paired timing remains pending before
+the Rune runtime changes.
 
 ## Stage 2 comparator closure: binary-trees C++ #7
 
@@ -1573,6 +1593,36 @@ include ordered skewed jobs, exact-once execution, one-worker fallback, checked
 error propagation, worker-local allocation/destruction, and negative sharing
 diagnostics. Regions should follow with conservative no-escape rules before
 representation metadata is elided.
+
+## Stage 3 foundation: bounded scalar `parallelMap`
+
+Rune now has a deliberately conservative first structured-concurrency slice:
+`parallelMap(items, context, callback, maxWorkers)` synchronously maps a direct
+named callback, returns a fresh result array in input order, and uses at most a
+named per-call cap of four workers. Requests of zero or one take the serial
+path; the caller participates in larger calls, partial thread creation falls
+back safely, and every started pthread is joined before return. Pthread linkage
+is emitted only for programs using the builtin.
+
+This stage transfers only by-value scalar items, context, and results. The
+compiler transitively rejects nonlocal state, I/O, random state, explicit
+exceptions, nesting, extern/bodyless calls, casts, user-overloaded operators,
+and every aggregate or opaque intermediate. Exception frames are thread-local;
+the participating caller masks an enclosing try depth through all work and
+joins, so an implicit checked error aborts rather than longjmping past live
+workers. Unresolved choice types are rejected at the C ABI boundary.
+
+Positive tests cover empty/singleton work, serial and capped requests, ordered
+skewed work, repeated use of one call site, generic specialization, signed and
+unsigned integers, floats, booleans, and enums. Fail-closed compiler canaries
+cover transfer/effect violations, shadowing, function-address ordering, TLS,
+and checked overflow beneath a main-thread try. They are integrated into the
+full `PASS=207 FAIL=0` gate. The generality canaries remain exact.
+
+This is real infrastructure, not a FASTA-specific shortcut, but it is not yet
+the FASTA solution. Arrays/strings still lack frozen sharing and owned transfer;
+per-call threads need a persistent bounded pool; and competitive output needs
+an ordered fold/backpressure layer rather than an eager full-output array.
 
 ## Historical fixes retained in the current source
 

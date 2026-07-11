@@ -1,0 +1,9 @@
+func noisy(value: u64) -> u64 {
+  println value
+  return value
+}
+func bad(value: u64, context: u64) -> u64 {
+  return noisy(value) + context
+}
+items = [1u64]
+parallelMap(items, 0u64, &bad(items[0], 0u64), 2u64)

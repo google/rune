@@ -34,6 +34,9 @@ class Root(self) {
   // Set when generated C uses the optional GMP-backed arbitrary-precision
   // runtime. Keep the dependency opt-in for ordinary Rune programs.
   self.usesGmp = false
+  // Set when a program uses structured parallelMap. The driver then links
+  // pthreads; ordinary programs keep their existing dependency surface.
+  self.usesThreads = false
   self.generateC = false
   self.outputCFilename = ""
   self.indentDepth = 0u32

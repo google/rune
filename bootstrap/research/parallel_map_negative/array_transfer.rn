@@ -1,0 +1,6 @@
+func bad(value: u64, context: [u8]) -> u64 {
+  return value + context.length()
+}
+items = [1u64]
+context = [1u8, 2u8]
+parallelMap(items, context, &bad(items[0], context), 2u64)

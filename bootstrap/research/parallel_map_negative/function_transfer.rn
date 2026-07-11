@@ -1,0 +1,9 @@
+func add(value: u64, context: u64) -> u64 {
+  return value + context
+}
+func bad(value, context) {
+  return context(value, 1u64)
+}
+items = [1u64]
+callback = &add(items[0], 1u64)
+parallelMap(items, callback, &bad(items[0], callback), 2u64)

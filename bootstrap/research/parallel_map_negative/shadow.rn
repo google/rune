@@ -1,0 +1,26 @@
+class SameName(self) {
+  func add(self, value: u64, context: u64) -> u64 {
+    return value
+  }
+}
+
+// A user declaration named parallelMap is an ordinary function. In
+// particular, its callback may be indirect; builtin validation/lowering must
+// not claim this call.
+func parallelMap(items: [u64], context: u64, callback, maxWorkers: u64) -> u64 {
+  return callback(items[0], context)
+}
+
+// This wrapper is emitted before the top-level monomorphic callback below.
+// A same-named class method must not capture its function address.
+func invokeLater(items: [u64], context: u64) -> u64 {
+  callback = &add(items[0], context)
+  return parallelMap(items, context, callback, 99u64)
+}
+
+func add(value: u64, context: u64) -> u64 {
+  return value + context
+}
+
+items = [5u64]
+println invokeLater(items, 3u64)

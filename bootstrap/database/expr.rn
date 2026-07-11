@@ -553,6 +553,10 @@ class Expr(self, type: ExprType, location: Location) {
   // Call arguments already rewritten to full positional form; a second
   // typecheck pass (deferral retry) must not rebuild them.
   self.argsNormalized = false
+  // Set by the typechecker only when this Call resolved to the synthetic
+  // stage-1 parallelMap builtin. Spelling alone is insufficient because a
+  // user function may shadow the builtin.
+  self.isParallelMapBuiltin = false
   self.autocast = false  // Set on integer constants without a type suffix.
   self.width = 0u32
   // TODO: add datatype when ported to Rune.
@@ -907,6 +911,7 @@ class Expr(self, type: ExprType, location: Location) {
     newExpr.isConst = self.isConst
     newExpr.width = self.width
     newExpr.autocast = self.autocast
+    newExpr.isParallelMapBuiltin = self.isParallelMapBuiltin
     newExpr.val = self.val
     for child in self.childExprs() {
       newChild = child.copy()
@@ -3103,8 +3108,19 @@ class Expr(self, type: ExprType, location: Location) {
     // recovered argument types (the args exist exactly to select it).
     if faCallee.type == ExprType.Ident {
       gfArgsN = faCallee.nextExprChildExpr
-      gfFn = builder.findFunction(faCallee.val.symVal.name)
+      // Resolve the same top-level plain definition selected by the
+      // typechecker. A method with the same name must not steal the address.
+      gfFn = builder.typechecker.findPlainFunction(faCallee.val.symVal.name)
       if !isnull(gfArgsN) && !isnull(gfFn) {
+        gfDefTy = gfFn.typedValue
+        // A concrete function is emitted under its plain name. Only a
+        // polymorphic definition has a call-signature suffix.
+        if isnull(gfDefTy) ||
+            gfDefTy.type != types.Type.TypeClass.Polymorphic {
+          builder.noteDependency(gfFn.sym.name)
+          return c.CExpr(c.CIdentifier(gfFn.sym, null(c.CTypeExpr),
+              false, false, false))
+        }
         gfTypes = arrayof(types.Type)
         if gfArgsN.type == ExprType.List || gfArgsN.type == ExprType.Tuple {
           for gfA in gfArgsN.childExprs() {
@@ -3597,6 +3613,25 @@ class Expr(self, type: ExprType, location: Location) {
           inner = right.firstChildExpr!
         }
         return inner.genC(builder)
+      }
+      if self.isParallelMapBuiltin {
+        pmItems = right.indexChildExpr(0)
+        pmContext = right.indexChildExpr(1)
+        pmWorker = right.indexChildExpr(2)
+        pmItemsTy = builder.typechecker.resolve(pmItems.typedValue!)
+        pmContextTy = builder.typechecker.resolve(pmContext.typedValue!)
+        pmWorkerTy = builder.typechecker.resolve(pmWorker.typedValue!)
+        pmItemTy = builder.typechecker.resolve(pmItemsTy.array.elementType)
+        pmResultTy = builder.typechecker.resolve(pmWorkerTy.function.result!)
+        pmHelper = builder.ensureParallelMapDeclared(self.location, pmItemTy,
+            pmContextTy, pmResultTy)
+        getRoot().usesThreads = true
+        pmArgs = c.CExprList()
+        for pmArg in right.childExprs() {
+          pmArgs.appendCExpr(pmArg.genC(builder))
+        }
+        return builder.cCall(self.location, pmHelper, c.CExpr(pmArgs),
+                             self.typedValue)
       }
       if builtinName == "readln" && isnull(builder.findFunction("readln")) {
         return builder.cCall(self.location, c.CRuntimeFunction.ReadLn, null(c.CExpr))

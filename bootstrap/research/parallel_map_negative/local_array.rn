@@ -1,0 +1,6 @@
+func bad(value: u64, context: u64) -> u64 {
+  local = [value, context]
+  return local[0]
+}
+items = [1u64]
+parallelMap(items, 0u64, &bad(items[0], 0u64), 2u64)

@@ -57,8 +57,10 @@ func runCCompiler(cFileName: string, debugMode: bool, optimized: bool,
   regexLib = db.getRoot().usesRegex? " -lpcre2-8" : ""
   // The optional arbitrary-precision runtime is backed by GMP.
   gmpLib = db.getRoot().usesGmp? " -lgmp" : ""
-  command = "%s %s %s -Wno-main-return-type -fPIC -o %s %s -lm%s%s" %
-      (compilerPath, optFlag, nativeFlag, outFileName, cFileName, regexLib, gmpLib)
+  threadLib = db.getRoot().usesThreads? " -pthread" : ""
+  command = "%s %s %s -Wno-main-return-type -fPIC -o %s %s -lm%s%s%s" %
+      (compilerPath, optFlag, nativeFlag, outFileName, cFileName, regexLib, gmpLib,
+       threadLib)
   return  os.system(command) == 0
 }
 

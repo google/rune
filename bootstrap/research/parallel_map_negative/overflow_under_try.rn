@@ -1,0 +1,10 @@
+func overflow(value: u8, context: u8) -> u8 {
+  return value + context
+}
+items = [255u8]
+try {
+  parallelMap(items, 1u8, &overflow(items[0], 1u8), 1u64)
+  println "returned"
+} except e {
+  default => println "caught"
+}

@@ -2781,6 +2781,129 @@ class CVariableDeclaration(self, varName: string, ctype: CTypeExpr) {
 
 relation OneToOne CDeclaration CFunctionPtrDeclaration cascade
 
+// One call-site-specialized synchronous parallelMap helper. Stage 1 admits
+// scalar item/context/result types only, so every value crossing the worker
+// boundary is copied by value. Results are written to their original input
+// indices, making the returned array deterministic regardless of scheduling.
+class CParallelMapDeclaration(self, location: db.Location, name: string,
+    itemType: CTypeExpr, contextType: CTypeExpr, resultType: CTypeExpr,
+    itemsArrayType: CTypeExpr, resultsArrayType: CTypeExpr) {
+  self.location = location
+  self.name = name
+  self.itemType = itemType
+  self.contextType = contextType
+  self.resultType = resultType
+  self.itemsArrayType = itemsArrayType
+  self.resultsArrayType = resultsArrayType
+
+  func emitSignature(self, e: CEmitter) {
+    self.resultsArrayType.emit(e)
+    e.write(" %s(" % self.name)
+    self.itemsArrayType.emit(e)
+    e.write(" items, ")
+    self.contextType.emit(e)
+    e.write(" context, ")
+    self.resultType.emit(e)
+    e.write(" (*worker)(")
+    self.itemType.emit(e)
+    e.write(", ")
+    self.contextType.emit(e)
+    e.write("), uint64_t maxWorkers)")
+  }
+
+  func emit(self, e: CEmitter, proto: bool) {
+    e.needParallelMap()
+    if proto {
+      e.write("static ")
+      self.emitSignature(e)
+      e.writeln(";")
+      return
+    }
+
+    sharedName = self.name + "_shared"
+    threadName = self.name + "_thread"
+    e.writeln("typedef struct %s {" % sharedName)
+    e.indent()
+    e.newline()
+    self.itemsArrayType.emit(e)
+    e.writeln(" items;")
+    e.write("  ")
+    self.contextType.emit(e)
+    e.writeln(" context;")
+    e.write("  ")
+    self.resultType.emit(e)
+    e.writeln(" *results;")
+    e.write("  ")
+    self.resultType.emit(e)
+    e.write(" (*worker)(")
+    self.itemType.emit(e)
+    e.write(", ")
+    self.contextType.emit(e)
+    e.writeln(");")
+    e.writeln("  _Atomic size_t next;")
+    e.writeln("  size_t count;")
+    e.writecloseln("} %s;" % sharedName)
+    e.newline()
+
+    e.writeln("static void *%s(void *opaque) {" % threadName)
+    e.writeln("  %s *shared = (%s *)opaque;" % (sharedName, sharedName))
+    e.writeln("  for (;;) {")
+    e.writeln("    size_t index = atomic_fetch_add_explicit(&shared->next, 1u,")
+    e.writeln("        memory_order_relaxed);")
+    e.writeln("    if (index >= shared->count) break;")
+    e.writeln("    shared->results[index] =")
+    e.writeln("        shared->worker(shared->items[index], shared->context);")
+    e.writeln("  }")
+    e.writeln("  return NULL;")
+    e.writeln("}")
+    e.newline()
+
+    e.write("static ")
+    self.emitSignature(e)
+    e.writeln(" {")
+    e.writeln("  size_t count = array_length(items);")
+    e.write("  ")
+    self.resultType.emit(e)
+    e.write(" *results = (")
+    self.resultType.emit(e)
+    e.writeln(" *)array_alloc(sizeof(*results), count);")
+    e.writeln("  if (count == 0u) return results;")
+    e.writeln("  uint64_t workers = maxWorkers;")
+    e.writeln("  if (workers == 0u || workers == 1u) workers = 1u;")
+    e.writeln("  if (workers > RN_PARALLEL_MAP_MAX_WORKERS)")
+    e.writeln("    workers = RN_PARALLEL_MAP_MAX_WORKERS;")
+    e.writeln("  if (workers > count) workers = count;")
+    // The calling thread participates. Hide any lexically enclosing try
+    // frame until it has drained work and joined every child: an implicit
+    // checked callback error must abort, never longjmp past live workers and
+    // their stack-backed shared state.
+    e.writeln("  uint32_t savedTryDepth = rn_parallel_map_try_guard_enter();")
+    e.writeln("  if (workers == 1u) {")
+    e.writeln("    for (size_t i = 0; i < count; ++i)")
+    e.writeln("      results[i] = worker(items[i], context);")
+    e.writeln("    rn_parallel_map_try_guard_leave(savedTryDepth);")
+    e.writeln("    return results;")
+    e.writeln("  }")
+    e.writeln("  %s shared = {items, context, results, worker, 0u, count};" % sharedName)
+    e.writeln("  pthread_t threads[RN_PARALLEL_MAP_MAX_WORKERS - 1u];")
+    e.writeln("  size_t started = 0u;")
+    e.writeln("  for (size_t i = 1u; i < workers; ++i) {")
+    e.writeln("    if (pthread_create(&threads[started], NULL, %s, &shared) != 0)" % threadName)
+    e.writeln("      break;")
+    e.writeln("    ++started;")
+    e.writeln("  }")
+    e.writeln("  (void)%s(&shared);" % threadName)
+    e.writeln("  for (size_t i = 0u; i < started; ++i) {")
+    e.writeln("    if (pthread_join(threads[i], NULL) != 0) abort();")
+    e.writeln("  }")
+    e.writeln("  rn_parallel_map_try_guard_leave(savedTryDepth);")
+    e.writeln("  return results;")
+    e.writeln("}")
+  }
+}
+
+relation OneToOne CDeclaration CParallelMapDeclaration cascade
+
 // A function-pointer typedef: `typedef RET (*name)(PARAMS);`.  Emitted so a
 // parameter or variable whose Rune type is a function (e.g. a callback passed
 // by &func()) has a single nameable C type.  A none result emits as void; an
@@ -2818,7 +2941,7 @@ class CFunctionPtrDeclaration(self, location: db.Location, name: string,
   }
 }
 
-class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration | CArrayDeclaration | CClassDeclaration | CVariableDeclaration | CFunctionPtrDeclaration) {
+class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration | CArrayDeclaration | CClassDeclaration | CVariableDeclaration | CFunctionPtrDeclaration | CParallelMapDeclaration) {
   self.dependencies = arrayof(string)
 
   enum Type {
@@ -2828,6 +2951,7 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
     Class
     Variable
     FunctionPtr
+    ParallelMap
   }
 
   typeswitch declaration {
@@ -2855,6 +2979,10 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
       self.type = Type.FunctionPtr
       self.insertCFunctionPtrDeclaration(declaration)
     }
+    CParallelMapDeclaration => {
+      self.type = Type.ParallelMap
+      self.insertCParallelMapDeclaration(declaration)
+    }
   }
   // Don't emit the declaration or its prototype more than once.
   self.emitted = false
@@ -2869,6 +2997,7 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
       CDeclaration.Type.Class => return self.cClassDeclaration.name + "_class"
       CDeclaration.Type.Variable => return self.cVariableDeclaration.varName
       CDeclaration.Type.FunctionPtr => return self.cFunctionPtrDeclaration.name
+      CDeclaration.Type.ParallelMap => return self.cParallelMapDeclaration.name
     }
   }
 
@@ -2912,6 +3041,7 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
           self.cFunctionPtrDeclaration.emit(e)
           self.protoEmitted = true
         }
+        CDeclaration.Type.ParallelMap => self.cParallelMapDeclaration.emit(e, false)
       }
       self.emitted = true
     }
@@ -2936,6 +3066,7 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
           self.cFunctionPtrDeclaration.emit(e)
           self.emitted = true
         }
+        CDeclaration.Type.ParallelMap => self.cParallelMapDeclaration.emit(e, true)
       }
       self.protoEmitted = true
     }

@@ -249,6 +249,16 @@ class CRuntime(self) {
     return cf
   }
 
+  // Shared substrate for compiler-specialized synchronous parallelMap
+  // declarations. The typed worker/thunk itself is emitted as a C
+  // declaration because its ABI depends on the Rune call-site types.
+  func needParallelMap(self) -> CFragment {
+    self.needRaiseError()
+    cf = self.cFragment("parallel_map", "cbackend/cruntime/parallel_map.inc")
+    cf.addDependencies([self.needArrayAlloc(), self.needArrayLength()])
+    return cf
+  }
+
   // F64x4 uses a portable value representation with target-local AVX helpers.
   func needF64x4(self) -> CFragment {
     self.needRaiseError()
@@ -577,10 +587,23 @@ class CRuntime(self) {
       // prints the message and aborts when no try block is active.
       e.newline()
       e.writeln("#define RN_MAX_TRY_DEPTH 64")
-      e.writeln("static jmp_buf rn_try_stack[RN_MAX_TRY_DEPTH];")
-      e.writeln("static uint32_t rn_try_depth = 0;")
-      e.writeln("static char *rn_raised_code = \"\";")
-      e.writeln("static char *rn_raised_message = \"\";")
+      // A worker may still hit an implicit checked-arithmetic error even
+      // though explicit raise/try is rejected by parallelMap validation.
+      // Thread-local frames ensure it cannot longjmp through another thread's
+      // handler; with no worker-local frame, raise_with_code aborts.
+      e.writeln("static _Thread_local jmp_buf rn_try_stack[RN_MAX_TRY_DEPTH];")
+      e.writeln("static _Thread_local uint32_t rn_try_depth = 0;")
+      e.writeln("static _Thread_local char *rn_raised_code = \"\";")
+      e.writeln("static _Thread_local char *rn_raised_message = \"\";")
+      e.newline()
+      e.writeln("static inline uint32_t rn_parallel_map_try_guard_enter(void) {")
+      e.writeln("  uint32_t saved = rn_try_depth;")
+      e.writeln("  rn_try_depth = 0;")
+      e.writeln("  return saved;")
+      e.writeln("}")
+      e.writeln("static inline void rn_parallel_map_try_guard_leave(uint32_t saved) {")
+      e.writeln("  rn_try_depth = saved;")
+      e.writeln("}")
       e.newline()
       e.writeln("#define RN_TRY() (setjmp(rn_try_stack[rn_try_depth++]) == 0)")
       e.newline()
@@ -606,6 +629,14 @@ class CRuntime(self) {
       e.writeln("static inline void raise(const char *error) {")
       e.writeln("  printf(\"%s Exception Raised, aborting\\n\", error);")
       e.writeln("  abort();")
+      e.writeln("}")
+      // No try stack exists in this translation unit. Keep the specialized
+      // parallelMap helper independent of that compile-time distinction.
+      e.writeln("static inline uint32_t rn_parallel_map_try_guard_enter(void) {")
+      e.writeln("  return 0;")
+      e.writeln("}")
+      e.writeln("static inline void rn_parallel_map_try_guard_leave(uint32_t saved) {")
+      e.writeln("  (void)saved;")
       e.writeln("}")
     }
     for cfragment in self.cFragments() {

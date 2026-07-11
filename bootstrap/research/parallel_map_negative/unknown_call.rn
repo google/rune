@@ -1,0 +1,5 @@
+func bad(value: f64, context: f64) -> f64 {
+  return sqrt(value) + context
+}
+items = [1.0, 2.0]
+parallelMap(items, 0.0, &bad(items[0], 0.0), 2u64)

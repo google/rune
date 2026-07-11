@@ -1,0 +1,5 @@
+func bad(value: u64, context: string) -> u64 {
+  return value
+}
+items = [1u64]
+parallelMap(items, "shared", &bad(items[0], "shared"), 2u64)

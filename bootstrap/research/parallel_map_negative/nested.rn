@@ -1,0 +1,11 @@
+func inner(value: u64, context: u64) -> u64 {
+  return value + context
+}
+nestedItems = [1u64]
+func outer(value: u64, context: u64) -> u64 {
+  parallelMap(nestedItems, context,
+      &inner(nestedItems[0], context), 2u64)
+  return value
+}
+items = [1u64]
+parallelMap(items, 0u64, &outer(items[0], 0u64), 2u64)

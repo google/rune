@@ -8,7 +8,8 @@
 # FAILED list. Floor for the relations->desugar migration: 188/205, zero drops.
 #
 # NOTE: the top-level ./runtests.sh uses the LEGACY ./rune (259/3) — a DIFFERENT
-# metric. This harness measures ./bootstrap/rune (188/205). Do not conflate them.
+# metric. This harness currently measures 207 positive programs plus
+# fail-closed negative compiler canaries. Do not conflate them.
 ulimit -v 8388608
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT" || exit 1
@@ -41,6 +42,12 @@ for so in tests/*.stdout; do
     fail=$((fail+1)); failed="$failed $name"
   fi
 done
+# Negative compiler canaries are fail-closed but do not add to the positive
+# PASS count. A missing diagnostic, accidental executable, or shadowing
+# regression is one named gate failure.
+if ! bash bootstrap/research/parallel_map_negative.sh >/dev/null 2>&1; then
+  fail=$((fail+1)); failed="$failed parallel_map_negative"
+fi
 echo "PASS=$pass FAIL=$fail"
 printf 'FAILED:'
 for f in $(echo $failed | tr ' ' '\n' | sort); do printf ' %s' "$f"; done
