@@ -1021,6 +1021,11 @@ enum CRuntimeFunction {
    U64MapKeys
    U64MapFree
 
+   // Explicit buffered standard-input reader.
+   ByteReaderNew
+   ByteReaderReadLnInto
+   ByteReaderFree
+
    // Non-escaping four-lane f64 SIMD values.
    F64x4FromLanes
    F64x4Splat
@@ -1351,6 +1356,21 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.U64MapFree => {
         e.needU64Map()
         e.write("rn_u64map_free")
+      }
+
+      CRuntimeFunction.ByteReaderNew => {
+        e.needByteReader()
+        e.write("rn_byte_reader_new")
+      }
+
+      CRuntimeFunction.ByteReaderReadLnInto => {
+        e.needByteReader()
+        e.write("rn_byte_reader_readln_into")
+      }
+
+      CRuntimeFunction.ByteReaderFree => {
+        e.needByteReader()
+        e.write("rn_byte_reader_free")
       }
 
       CRuntimeFunction.F64x4FromLanes => {

@@ -258,6 +258,9 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
     if ty.name.name == "U64Map" {
       return CTypeExpr(CDefinedType("rn_u64map"))
     }
+    if ty.name.name == "ByteReader" {
+      return CTypeExpr(CDefinedType("rn_byte_reader"))
+    }
     // F64x4 is a portable by-value runtime struct. The typechecker confines it
     // to locals, so it never becomes part of a generated user-function ABI.
     if ty.name.name == "F64x4" {

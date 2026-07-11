@@ -339,6 +339,34 @@ from the committed path: best times were 29.497 and 29.504 ms, with 16/30 wins
 and a 0.119 ms mean paired advantage. It was reverted as noise-level. The
 remaining single-thread gap is not the table-selection instruction count.
 
+## Stage 3: explicit buffered reverse-complement reader
+
+The next measured input change adds an explicitly owned `ByteReader` backed by
+a 64 KiB `fread` buffer and native `memchr` line scanning. The legacy
+`readlnInto` API and its behavior remain unchanged; reverse-complement opts into
+the new reader and owns its lifetime. A temporary diagnostic covering a line
+longer than the buffer (70,000 bytes), a chunk-spanning delimiter, and a final
+unterminated line passed at O0 and O3. The existing test count and output remain
+unchanged, and the compiler gate is `PASS=205 FAIL=0`.
+
+The committed golden and full workload are byte-exact at O0 and O3. For the
+50,833,411-byte input, all Rune and reference variants produced the same output
+(SHA-256 beginning `e92b329f`). The fresh pre-change same-session baseline was
+Rune O0 61.468 ms, Rune O3 28.049 ms, naive C 73.829 ms, and constrained gcc #7
+17.684 ms, putting Rune at 1.586x the leader. With `ByteReader`, the pinned
+warmup-plus-best-of-five result is:
+
+| Benchmark (workload) | Rune flags | Rune O0 | Rune O3 | naive O3 | constrained gcc #7 | O3 / naive | O3 / constrained leader |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| reverse-complement (fasta 5M) | `-U` | 60.420 | 21.451 | 76.552 | 19.699 | **0.280x** | **1.089x** |
+
+In 15 alternating O3 pairs the new reader won 15/15: best times were 21.299 ms
+versus 27.987 ms (0.761x), and means were 21.887 ms versus 28.663 ms. This
+removes `getline` as the dominant single-thread gap. If reverse-complement is
+again the largest measured target, the remaining hypotheses are raw record
+layout or an output-side probe; otherwise prioritization returns to the largest
+validated global gap.
+
 ## Current analysis
 
 ### The optimization unlock

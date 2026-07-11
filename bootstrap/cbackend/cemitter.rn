@@ -108,6 +108,10 @@ class CEmitter(self, filename: string) {
     self.runtime.needU64Map()
   }
 
+  func needByteReader(self) {
+    self.runtime.needByteReader()
+  }
+
   // Request the opaque four-lane f64 runtime support used by explicit SIMD
   // builtins.  The runtime fragment supplies a scalar-safe fallback.
   func needF64x4(self) {

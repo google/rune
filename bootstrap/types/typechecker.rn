@@ -3603,6 +3603,24 @@ class TypeChecker(self) {
               self.newSymbol(fnchild.val.symVal!, FN(bigInt, STRING()))
             }
           }
+          // Explicit buffered stdin reader. The caller owns both the reader
+          // handle and the reusable byte array returned from each read.
+          if (isnull(callee) &&
+              isnull(self.findSymbolMapping(SymbolMapping(fnchild.val.symVal!,
+                  fnchild.val.symVal.typedValue)))) {
+            byteReader = BYTEREADER()
+            byteReaderName = fnchild.val.symVal.name
+            if byteReaderName == "byteReaderNew" {
+              byteReaderNoArgs = arrayof(Type)
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE(byteReaderNoArgs), byteReader))
+            } else if byteReaderName == "byteReaderReadlnInto" {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([byteReader, ARRAY(U(8))]), ARRAY(U(8))))
+            } else if byteReaderName == "byteReaderFree" {
+              self.newSymbol(fnchild.val.symVal!, FN(byteReader, NONETY()))
+            }
+          }
           // Runtime-backed open-addressed u64 map. Keep the ABI exact rather
           // than integer-polymorphic so every operation lowers to uint64_t.
           if (isnull(callee) &&

@@ -3847,6 +3847,31 @@ class Expr(self, type: ExprType, location: Location) {
         }
         return builder.cCall(self.location, u64MapFn, c.CExpr(u64MapArgs))
       }
+      if (builtinName == "byteReaderNew" ||
+          builtinName == "byteReaderReadlnInto" ||
+          builtinName == "byteReaderFree") &&
+          isnull(builder.findFunction(builtinName)) {
+        if builtinName == "byteReaderReadlnInto" {
+          // A builtin returning [u8] does not otherwise guarantee that the
+          // generated array pointer typedef has been requested.
+          builder.ensureArrayDeclared(self.location, types.U(8))
+        }
+        switch builtinName {
+          "byteReaderNew" => byteReaderFn = c.CRuntimeFunction.ByteReaderNew
+          "byteReaderReadlnInto" => byteReaderFn = c.CRuntimeFunction.ByteReaderReadLnInto
+          default => byteReaderFn = c.CRuntimeFunction.ByteReaderFree
+        }
+        byteReaderArgs = c.CExprList()
+        if right.typedValue.type == types.Type.TypeClass.Tuple {
+          for child in right.childExprs() {
+            byteReaderArgs.appendCExpr(child.genC(builder))
+          }
+        } else if !(right.type == ExprType.List && isnull(right.firstChildExpr)) {
+          byteReaderArgs.appendCExpr(right.genC(builder))
+        }
+        return builder.cCall(self.location, byteReaderFn,
+            c.CExpr(byteReaderArgs))
+      }
     }
 
     // Calls to extern "C" functions are emitted under an rn_ prefix and

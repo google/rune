@@ -240,6 +240,15 @@ class CRuntime(self) {
     return cf
   }
 
+  // Explicit buffered stdin reader. readlnInto() returns a headed Rune array
+  // and may grow its caller-owned storage.
+  func needByteReader(self) -> CFragment {
+    self.needRaiseError()
+    cf = self.cFragment("byte_reader", "cbackend/cruntime/byte_reader.inc")
+    cf.addDependencies([self.needArrayResize()])
+    return cf
+  }
+
   // F64x4 uses a portable value representation with target-local AVX helpers.
   func needF64x4(self) -> CFragment {
     self.needRaiseError()

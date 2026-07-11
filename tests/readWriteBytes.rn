@@ -18,6 +18,20 @@ result.resize(0u64)
 result = appendBytes(result, bytes)
 writeBytes(result)
 
+// The explicit reader takes over stdin at construction and retains prefetched
+// bytes in its own handle. It can continue after an earlier bounded read,
+// returns the final LF-terminated line without LF, then reports EOF as empty.
+reader = byteReaderNew()
+line = [0u8]
+line = byteReaderReadlnInto(reader, line)
+assert line.length() == 3u64
+assert line[0] == 105u8
+assert line[1] == 110u8
+assert line[2] == 103u8
+line = byteReaderReadlnInto(reader, line)
+assert line.length() == 0u64
+byteReaderFree(reader)
+
 TABLE_SIZE = 256u64
 table = [0u8]
 table.resize(TABLE_SIZE)

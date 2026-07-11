@@ -47,6 +47,11 @@ func U64MAP() -> Type {
   return Type(TypeName(Sym.new("U64Map")))
 }
 
+// An opaque, explicitly-owned buffered reader for standard input.
+func BYTEREADER() -> Type {
+  return Type(TypeName(Sym.new("ByteReader")))
+}
+
 // A non-escaping four-lane f64 value supplied by explicit SIMD builtins. It is
 // confined to function locals rather than exposed as a general aggregate or
 // user-function ABI type.
