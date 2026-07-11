@@ -169,13 +169,11 @@ RN_F64X4_VALUE_FN double f64x4Lane(rn_f64x4_t value, uint64_t lane) {
 }
 
 RN_F64X4_VALUE_FN double f64x4HorizontalSum(rn_f64x4_t value) {
-  // Keep a deterministic scalar addition order.  Clang can extract the lanes
-  // directly from the resident vector after the surrounding operations inline.
-  double sum = value.lane[0];
-  sum += value.lane[1];
-  sum += value.lane[2];
-  sum += value.lane[3];
-  return sum;
+  // Match the pairwise grouping used by the published n-body AVX reduction.
+  // Clang can extract these lanes from the resident vector after inlining.
+  const double low = value.lane[0] + value.lane[1];
+  const double high = value.lane[2] + value.lane[3];
+  return low + high;
 }
 
 /* Explicitly approximate: convert through float rsqrt and perform one
@@ -187,7 +185,9 @@ f64x4ApproxReciprocalSqrt(rn_f64x4_t source) {
 #if RN_F64X4_HAS_X86_AVX
   const __m256d squared = _mm256_loadu_pd(source.lane);
   __m256d estimate = _mm256_cvtps_pd(_mm_rsqrt_ps(_mm256_cvtpd_ps(squared)));
-  const __m256d y = _mm256_mul_pd(squared, _mm256_mul_pd(estimate, estimate));
+  // Preserve C's left-associated `s * x * x` from the published leader.
+  const __m256d squaredEstimate = _mm256_mul_pd(squared, estimate);
+  const __m256d y = _mm256_mul_pd(squaredEstimate, estimate);
   __m256d correction = _mm256_mul_pd(y, _mm256_set1_pd(0.375));
   correction = _mm256_mul_pd(correction, y);
   __m256d subtraction = _mm256_mul_pd(y, _mm256_set1_pd(1.25));
