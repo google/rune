@@ -216,6 +216,20 @@ that function while generated `main` remains baseline. N-body is still
 unchanged and unscored: the remaining work is local-only escape restrictions
 and the leader's padded four-pair layout. Scalar `sqrt` remains unchanged.
 
+### Rejected n-body opaque-handle port (2026-07-11)
+
+An exact, fully unrolled source port of gcc #9's padded 12-pair layout was
+implemented and verified byte-identical at N=1000 and N=5,000,000 against both
+the scalar oracle and gcc #9. Its generated AVX helper functions contained the
+expected instructions, but the design was a performance regression: Rune O0
+was 6129.444 ms and O3 321.913 ms, versus 174.029 ms naive C and 103.462 ms
+gcc #9 (best-of-five, CPU 0, warmup discarded). The prior scalar Rune path is
+about 169.476 ms. Every F64x4 value is an opaque heap pointer, so each apparent
+vector operation reloads/stores through memory rather than retaining vector
+state in registers. The uncommitted port and its temporary squared-length API
+were reverted. Do not repeat this source shape; the next SIMD design must make
+F64x4 a register-resident local value within AVX-targeted functions.
+
 ---
 
 ## LOOP PROMPT (this is what you paste into `/loop`)

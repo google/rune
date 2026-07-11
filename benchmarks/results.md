@@ -413,6 +413,19 @@ therefore explicit, opt-in SIMD vectors plus an explicitly named approximate
 reciprocal-square-root primitive and target dispatch. It must not silently
 change the semantics of scalar `sqrt`.
 
+## Rejected n-body opaque-handle vector port
+
+The first AVX experiment was intentionally kept out of the committed benchmark
+after it regressed. It exactly matched the golden and both scalar-C/gcc #9
+outputs at N=1000 and 5,000,000, but represented every four-lane value as a
+heap pointer. Even with AVX-targeted helper bodies, generated code reloaded and
+stored those handles on every operation rather than keeping a vector in a
+register. The pinned CPU-0 best-of-five series was 6129.444 ms O0 and 321.913
+ms O3, compared with 174.029 ms naive C and 103.462 ms gcc #9. The temporary
+source port was reverted. Future SIMD work needs a local register-resident
+value representation; it must not disguise this memory-traffic regression as
+a benchmark optimization.
+
 ## Stage 2: regex-redux current-workload alignment
 
 The former Rune and C-oracle regex-redux sources used an obsolete eleven-IUB
