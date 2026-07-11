@@ -20,14 +20,19 @@ import types
 import cbackend as c
 use sym
 
+gccOption = "--gcc"
+clangCompilerPath = "clang"
+gccCompilerPath = "gcc"
+
 // Print commandline help and exit.
 func usage() {
   println "Usage: ", argv[0], " [options...] <top level runeFile>\n" +
       "    -d|--debug:  Run in debug mode, which generates a lot of internal logging.\n" +
       "    -q:          Don't output trace information.\n" +
       "    -U|--unsafe: Omit fixed-width integer overflow checks (plain C +,-,* arithmetic).\n" +
-      "    -O|--optimize: Optimized build (clang -O3).\n" +
+      "    -O|--optimize: Optimized C build (-O3).\n" +
       "    -N|--native: Target the host CPU; disable FP contraction for reproducibility.\n" +
+      "    " + gccOption + ":       Compile generated C with gcc instead of clang.\n" +
       "    --parseTree: Print parse trees of parsed files.\n" +
       "    --funcTree:  Print the tree of functions.\n" +
       "    --hir:       Print HIR output.\n" +
@@ -38,22 +43,22 @@ func usage() {
   exit(1i32)
 }
 
-// Run the clang compiler on the C code we generated.
-func runClangCompiler(cFileName: string, debugMode: bool, optimized: bool,
-                      nativeTarget: bool) -> bool {
+// Run the selected C compiler on the C code we generated.
+func runCCompiler(cFileName: string, debugMode: bool, optimized: bool,
+                  nativeTarget: bool, useGcc: bool) -> bool {
   outFileName = stripSuffix(cFileName)
   optFlag = optimized? "-O3" : ""
   if debugMode {
     optFlag = "-g -O0";
   }
   nativeFlag = nativeTarget? "-march=native -ffp-contract=off" : ""
-  clangPath = "clang"
+  compilerPath = useGcc? gccCompilerPath : clangCompilerPath
   // Programs using the regex builtins pull in the PCRE2 shim; link -lpcre2-8.
   regexLib = db.getRoot().usesRegex? " -lpcre2-8" : ""
   // The optional arbitrary-precision runtime is backed by GMP.
   gmpLib = db.getRoot().usesGmp? " -lgmp" : ""
   command = "%s %s %s -Wno-main-return-type -fPIC -o %s %s -lm%s%s" %
-      (clangPath, optFlag, nativeFlag, outFileName, cFileName, regexLib, gmpLib)
+      (compilerPath, optFlag, nativeFlag, outFileName, cFileName, regexLib, gmpLib)
   return  os.system(command) == 0
 }
 
@@ -88,7 +93,8 @@ root.packageDir  = packageDir
 
 optimized = false
 nativeTarget = false
-runClang = true
+useGcc = false
+compileC = true
 root.generateC = true
 
 xArg = 1
@@ -104,6 +110,9 @@ while xArg < argv.length() && argv[xArg][0] == '-' {
     xArg += 1
   } else if argv[xArg] == "-N" || argv[xArg] == "--native" {
     nativeTarget = true
+    xArg += 1
+  } else if argv[xArg] == gccOption {
+    useGcc = true
     xArg += 1
   } else if argv[xArg] == "-U" || argv[xArg] == "--unsafe" {
     root.unsafeMode = true
@@ -140,7 +149,7 @@ while xArg < argv.length() && argv[xArg][0] == '-' {
     }
       xArg += 1
   } else if argv[xArg] == "-n" {
-    runClang = false
+    compileC = false
     xArg += 1
   } else {
     usage()
@@ -187,8 +196,8 @@ if numTypeErrors > 0 {
   program = c.CBuilder(tc).build(module)
   program.emit(emitter)
   emitter.close()
-  if runClang && !runClangCompiler(root.outputCFilename, root.debugMode, optimized,
-                                   nativeTarget) {
+  if compileC && !runCCompiler(root.outputCFilename, root.debugMode, optimized,
+                               nativeTarget, useGcc) {
     println "Could not compile ", fileName
     exit(1i32)
   }

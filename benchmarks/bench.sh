@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Correctness-checked benchmark harness for the self-hosted Rune compiler.
-# Builds Rune at generic clang -O0 and host-targeted clang -O3 -march=native.
-# The native O3 build matches published CLBG host targeting while disabling FP
-# contraction for reproducible output; O0 remains generic. Builds naive C/C++
+# Builds Rune at generic clang -O0 and host-targeted C -O3 -march=native. The
+# native O3 build matches published CLBG host targeting while disabling FP
+# contraction for reproducible output; selected benchmarks may use a documented
+# alternate C compiler, while O0 remains generic clang. Builds naive C/C++
 # references at -O3, verifies golden and timing-workload output, then measures
 # one process at a time on a pinned CPU (one discarded warmup plus best-of-five).
 set -euo pipefail
@@ -87,15 +88,23 @@ declare -Ar RUNE_FLAGS=(
   [pidigits]=""
 )
 
+declare -Ar OPTIMIZED_ONLY_RUNE_FLAGS=(
+  [mandelbrot]="--gcc"
+)
+
 build_rune() {
   local name=$1 mode=$2
-  local -a flags=()
+  local -a flags=() optimized_only_flags=()
   rm -f "$OUT/$name.$mode" "$OUT/$name.$mode.c"
   if [[ -n ${RUNE_FLAGS[$name]} ]]; then
     read -r -a flags <<< "${RUNE_FLAGS[$name]}"
   fi
   if [[ $mode == o3 ]]; then
-    bootstrap/rune -q "${OPTIMIZED_RUNE_FLAGS[@]}" "${flags[@]}" \
+    if [[ -n ${OPTIMIZED_ONLY_RUNE_FLAGS[$name]:-} ]]; then
+      read -r -a optimized_only_flags <<< "${OPTIMIZED_ONLY_RUNE_FLAGS[$name]}"
+    fi
+    bootstrap/rune -q "${OPTIMIZED_RUNE_FLAGS[@]}" \
+      "${optimized_only_flags[@]}" "${flags[@]}" \
       --oc "$OUT/$name.o3.c" "$B/$name.rn"
   else
     bootstrap/rune -q "${flags[@]}" --oc "$OUT/$name.o0.c" "$B/$name.rn"
@@ -268,6 +277,9 @@ for name in "${BENCHMARKS[@]}"; do
   input=$(timing_input "$name")
   workload=$(timing_workload "$name")
   reported_flags="${OPTIMIZED_RUNE_FLAGS[*]}"
+  if [[ -n ${OPTIMIZED_ONLY_RUNE_FLAGS[$name]:-} ]]; then
+    reported_flags+=" ${OPTIMIZED_ONLY_RUNE_FLAGS[$name]}"
+  fi
   if [[ -n ${RUNE_FLAGS[$name]} ]]; then
     reported_flags+=" ${RUNE_FLAGS[$name]}"
   fi

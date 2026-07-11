@@ -614,6 +614,41 @@ and n-body at 1.013x. The largest stable measured gaps are therefore only about
 still calls for widening narrow wins rather than declaring completion at
 parity.
 
+## Explicit GCC selection and Mandelbrot parity
+
+The bootstrap driver now accepts the fixed `--gcc` option to compile generated
+C with GCC; clang remains the default. Compiler selection is independent of
+`-O` and `-N`, preserves debug behavior, and retains automatic PCRE2/GMP link
+libraries. Initial constant names were corrected to the bootstrap codebase's
+camelCase convention before the compiler rebuilt successfully. The harness
+uses GCC only for optimized Mandelbrot and reports `-O -N --gcc -U`; its O0
+build remains generic clang.
+
+The clang and GCC driver paths emit byte-identical generated C. GCC-built
+Mandelbrot matches the N=200 golden and every reference at official N=16000,
+with output SHA-256 beginning `609262`. The compiler regression gate passed
+`PASS=205 FAIL=0`, and `bash -n benchmarks/bench.sh` passes.
+
+Ten manual pairs compiling the same C with clang/GCC favored GCC 10/10.
+Clang/GCC best times were 1204.999/1183.175 ms and means were
+1207.057/1186.230 ms. Ten manual GCC Rune/one-thread-leader pairs favored Rune
+10/10, with best times 1182.676/1187.422 ms and means 1186.002/1190.293 ms.
+An actual-driver repeat favored Rune 7/10; Rune/leader best times were
+1184.162/1188.954 ms and means were 1209.181/1210.052 ms.
+
+A fresh standard warmup-plus-best-of-five official-size series measured:
+
+| Benchmark (workload) | Rune mode | Rune O3 | naive O3 | g++ #4 one thread | O3 / naive | O3 / leader |
+|---|---:|---:|---:|---:|---:|---:|
+| Mandelbrot (official N=16000) | `-O -N --gcc -U` | 1185.776 | 4729.656 | 1188.876 | **0.251x** | **0.997x** |
+
+The N=4000 O0 value remains the previously measured 24930.940 ms; O0 was not
+rerun for this checkpoint. The result is narrow parity/a measured win, not a
+reason to make GCC the broad default: the earlier n-body GCC comparison
+regressed materially. N-body is now the largest stable remaining paired gap at
+about 1.0137x. Reverse-complement still has a rare 1.026x minimum ratio, but its
+standard and typical samples favor Rune; n-body is the next fresh target.
+
 ## Current analysis
 
 ### The optimization unlock
@@ -1062,11 +1097,12 @@ standard warmup-plus-best-of-five series measured Rune O0 7194.054 ms, Rune O3
 2209.640 ms, naive C 4353.842 ms, and constrained g++ #2 2039.065 ms. Rune is
 therefore **0.508x the naive oracle** and **1.084x the leader**.
 
-Filtered-span input gives reverse-complement a repeatable typical 0.955x win,
-although gcc #7's rare minimum leaves a 1.026x minimum-sample ratio.
-K-nucleotide remains at 0.973x; Mandelbrot and n-body are the largest stable
-measured gaps at 1.015x and 1.013x. Fresh global measurements should choose the
-next target, and parity remains a checkpoint rather than the final objective.
+GCC gives Mandelbrot narrow 0.997x parity while remaining an explicit opt-in,
+not Rune's default C compiler. Reverse-complement has a typical 0.955x win but
+a rare 1.026x minimum-sample ratio, and k-nucleotide remains at 0.973x. N-body
+is the largest stable remaining paired gap at about 1.0137x and is the next
+fresh measurement target; parity remains a checkpoint rather than the final
+objective.
 
 ## Stage 2: regex-redux current-workload alignment
 
