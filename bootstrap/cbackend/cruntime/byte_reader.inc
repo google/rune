@@ -98,6 +98,84 @@ static RN_BYTE_READER_HOT array_t *rn_byte_reader_require_array(
   return array;
 }
 
+// Append bytes from the current reader position until delimiter or EOF while
+// excluding every occurrence of skipped. The delimiter remains unconsumed so
+// peek/read operations can distinguish it from EOF and decide how to consume
+// it. Delimiter detection happens before filtering, so delimiter takes
+// precedence when delimiter == skipped. Existing contents and capacity are
+// retained, and embedded NUL bytes have ordinary byte semantics.
+static RN_BYTE_READER_HOT uint8_t *
+rn_byte_reader_append_until_byte_skipping_byte_into(
+    rn_byte_reader_t reader, uint8_t *bytes, uint8_t delimiter,
+    uint8_t skipped) {
+  rn_byte_reader_require(reader);
+  array_t *array = rn_byte_reader_require_array(bytes);
+
+  for (;;) {
+    if (!rn_byte_reader_refill(reader)) {
+      return bytes;
+    }
+
+    const uint8_t *start = reader->buffer + reader->position;
+    const size_t available = reader->available - reader->position;
+    const uint8_t *delimiter_position =
+        (const uint8_t *)memchr(start, delimiter, available);
+    const size_t segment = delimiter_position == NULL ?
+        available : (size_t)(delimiter_position - start);
+
+    // The unfiltered segment length is a safe upper bound for this buffer.
+    // Reserve it once before copying maximal retained runs, even when many
+    // skipped bytes make the eventual result shorter.
+    if (segment > SIZE_MAX - array->used) {
+      raise("ByteReaderSpanOverflow");
+    }
+    const size_t result_upper_bound = array->used + segment;
+    if (result_upper_bound > array->capacity) {
+      size_t checked_capacity = array->capacity;
+      while (checked_capacity < result_upper_bound) {
+        if (checked_capacity > (SIZE_MAX - sizeof(array_t)) / 2) {
+          raise("ByteReaderSpanOverflow");
+        }
+        checked_capacity *= 2;
+      }
+      array = array_resize(array, result_upper_bound);
+      bytes = (uint8_t *)(array + 1);
+    }
+
+    uint8_t *output = bytes + array->used;
+    const uint8_t *cursor = start;
+    const uint8_t *end = start + segment;
+    if (delimiter == skipped) {
+      // No skipped byte can occur before the first delimiter in this segment.
+      if (segment != 0) {
+        memcpy(output, cursor, segment);
+        output += segment;
+      }
+    } else {
+      while (cursor < end) {
+        const uint8_t *skipped_position =
+            (const uint8_t *)memchr(cursor, skipped, (size_t)(end - cursor));
+        const uint8_t *run_end = skipped_position == NULL ? end : skipped_position;
+        const size_t run = (size_t)(run_end - cursor);
+        if (run != 0) {
+          memcpy(output, cursor, run);
+          output += run;
+        }
+        if (skipped_position == NULL) {
+          break;
+        }
+        cursor = skipped_position + 1;
+      }
+    }
+    array->used = (size_t)(output - bytes);
+    reader->position += segment;
+
+    if (delimiter_position != NULL) {
+      return bytes;
+    }
+  }
+}
+
 // Append one line to caller-owned Rune storage, stripping only the terminating
 // LF. Existing contents and capacity are retained. The last unterminated line
 // is appended normally; a subsequent call at EOF leaves the array unchanged.

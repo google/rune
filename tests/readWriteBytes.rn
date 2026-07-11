@@ -19,20 +19,55 @@ result = appendBytes(result, bytes)
 writeBytes(result)
 
 // The explicit reader takes over stdin at construction and retains prefetched
-// bytes in its own handle. It can continue after an earlier bounded read,
-// returns the final LF-terminated line without LF, then reports EOF as empty.
+// bytes in its own handle. Its filtered span reader preserves an existing
+// prefix, leaves its delimiter unconsumed, gives delimiter precedence over an
+// equal skipped byte, and retains a final span through EOF.
 reader = byteReaderNew()
-line = [0u8]
-line.resize(0u64)
+line = [80u8]
 assert byteReaderPeekByte(reader) == 105u16
-line = byteReaderAppendlnInto(reader, line)
-assert line.length() == 3u64
-assert line[0] == 105u8
-assert line[1] == 110u8
-assert line[2] == 103u8
-assert byteReaderPeekByte(reader) == 256u16
+line = byteReaderAppendUntilByteSkippingByteInto(
+    reader, line, 62u8, 45u8)
+assert line.length() == 4u64
+assert line[0] == 80u8
+assert line[1] == 105u8
+assert line[2] == 120u8
+assert line[3] == 105u8
+assert byteReaderPeekByte(reader) == 62u16
 line = byteReaderReadlnInto(reader, line)
-assert line.length() == 0u64
+assert line.length() == 7u64
+assert line[0] == 62u8
+assert line[6] == 114u8
+
+tail = [81u8]
+tail = byteReaderAppendUntilByteSkippingByteInto(
+    reader, tail, 62u8, 45u8)
+assert tail.length() == 5u64
+assert tail[0] == 81u8
+assert tail[1] == 116u8
+assert tail[4] == 108u8
+assert byteReaderPeekByte(reader) == 62u16
+
+// A delimiter equal to the skipped byte is still left for the next read.
+sameByte = [82u8]
+sameByte = byteReaderAppendUntilByteSkippingByteInto(
+    reader, sameByte, 62u8, 62u8)
+assert sameByte.length() == 1u64
+assert sameByte[0] == 82u8
+assert byteReaderPeekByte(reader) == 62u16
+line = byteReaderReadlnInto(reader, line)
+assert line.length() == 4u64
+assert line[0] == 62u8
+assert line[3] == 100u8
+
+finalSpan = [83u8]
+finalSpan = byteReaderAppendUntilByteSkippingByteInto(
+    reader, finalSpan, 62u8, 45u8)
+assert finalSpan.length() == 4u64
+assert finalSpan[0] == 83u8
+assert finalSpan[1] == 122u8
+assert finalSpan[2] == 113u8
+assert finalSpan[3] == 10u8
+assert byteReaderPeekByte(reader) == 256u16
 byteReaderFree(reader)
 
 TABLE_SIZE = 256u64

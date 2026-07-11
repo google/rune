@@ -3618,6 +3618,10 @@ class TypeChecker(self) {
               // Every input byte fits in u16; 256 is the binary-safe EOF
               // sentinel and cannot collide with a byte from the stream.
               self.newSymbol(fnchild.val.symVal!, FN(byteReader, U(16)))
+            } else if byteReaderName == "byteReaderAppendUntilByteSkippingByteInto" {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([byteReader, ARRAY(U(8)), U(8), U(8)]),
+                      ARRAY(U(8))))
             } else if byteReaderName == "byteReaderAppendlnInto" {
               self.newSymbol(fnchild.val.symVal!,
                   FN(TUPLE([byteReader, ARRAY(U(8))]), ARRAY(U(8))))

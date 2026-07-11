@@ -5,18 +5,20 @@
 // Reads FASTA from stdin (as produced by fasta), prints reverse-complement
 // of each record wrapped at 60 columns with uppercase output.
 //
-// The explicit ByteReader buffers stdin and appends sequence lines directly
-// into a headed Rune byte array, avoiding both per-byte input calls and the
-// intermediate copy of each sequence line. A binary-safe peek distinguishes
-// all byte values from EOF.
+// The explicit ByteReader buffers stdin and scans each raw sequence span until
+// the next header marker. It copies maximal runs directly into a headed Rune
+// byte array while omitting line feeds, avoiding per-line dispatch and any
+// intermediate line copy. A binary-safe peek distinguishes all byte values
+// from EOF.
 // The sequence buffer starts from a 1-element literal, then retains its
-// capacity across records while direct line appends grow it as necessary.
+// capacity across records while filtered span appends grow it as necessary.
 
 // writeReverseMasked5Translated() indexes its 32-byte table with byte & 31.
 // Precondition: every sequence byte is an ASCII IUB base (case-insensitive).
 // The CLBG FASTA producer guarantees that alphabet, so its upper- and lower-
-// case representations share the exact mapping below. This explicit contract
-// must not replace generic 256-byte translation tables.
+// case representations share the exact mapping below and the '>' delimiter
+// cannot occur in sequence data. This explicit contract must not replace
+// generic byte-delimited input or 256-byte translation semantics.
 MASKED_IUB_COMPLEMENT_TABLE_SIZE = 32u64
 maskedIubComplementTable = [
   0u8, 84u8, 86u8, 71u8, 72u8, 0u8, 0u8, 67u8,
@@ -35,24 +37,30 @@ inRecord = false
 line = [0u8]
 reader = byteReaderNew()
 BYTE_READER_EOF = 256u16
+FASTA_HEADER_MARKER = 62u8
+FASTA_LINE_FEED = 10u8
+FASTA_OUTPUT_WIDTH = 60u64
 nextByte = byteReaderPeekByte(reader)
 while nextByte != BYTE_READER_EOF {
-  if nextByte == 62u16 {
+  if nextByte == <u16>FASTA_HEADER_MARKER {
     line = byteReaderReadlnInto(reader, line)
     if inRecord {
-      writeReverseMasked5Translated(seq, maskedIubComplementTable, 60u64, 10u8)
+      writeReverseMasked5Translated(
+          seq, maskedIubComplementTable, FASTA_OUTPUT_WIDTH, FASTA_LINE_FEED)
       seq.resize(0u64)
     }
     writeBytes(line)
-    writeByte(10u8)
+    writeByte(FASTA_LINE_FEED)
     inRecord = true
   } else {
-    seq = byteReaderAppendlnInto(reader, seq)
+    seq = byteReaderAppendUntilByteSkippingByteInto(
+        reader, seq, FASTA_HEADER_MARKER, FASTA_LINE_FEED)
   }
   nextByte = byteReaderPeekByte(reader)
 }
 byteReaderFree(reader)
 
 if inRecord {
-  writeReverseMasked5Translated(seq, maskedIubComplementTable, 60u64, 10u8)
+  writeReverseMasked5Translated(
+      seq, maskedIubComplementTable, FASTA_OUTPUT_WIDTH, FASTA_LINE_FEED)
 }

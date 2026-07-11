@@ -3853,11 +3853,13 @@ class Expr(self, type: ExprType, location: Location) {
       }
       if (builtinName == "byteReaderNew" ||
           builtinName == "byteReaderPeekByte" ||
+          builtinName == "byteReaderAppendUntilByteSkippingByteInto" ||
           builtinName == "byteReaderAppendlnInto" ||
           builtinName == "byteReaderReadlnInto" ||
           builtinName == "byteReaderFree") &&
           isnull(builder.findFunction(builtinName)) {
-        if (builtinName == "byteReaderAppendlnInto" ||
+        if (builtinName == "byteReaderAppendUntilByteSkippingByteInto" ||
+            builtinName == "byteReaderAppendlnInto" ||
             builtinName == "byteReaderReadlnInto") {
           // A builtin returning [u8] does not otherwise guarantee that the
           // generated array pointer typedef has been requested.
@@ -3866,6 +3868,7 @@ class Expr(self, type: ExprType, location: Location) {
         switch builtinName {
           "byteReaderNew" => byteReaderFn = c.CRuntimeFunction.ByteReaderNew
           "byteReaderPeekByte" => byteReaderFn = c.CRuntimeFunction.ByteReaderPeekByte
+          "byteReaderAppendUntilByteSkippingByteInto" => byteReaderFn = c.CRuntimeFunction.ByteReaderAppendUntilByteSkippingByteInto
           "byteReaderAppendlnInto" => byteReaderFn = c.CRuntimeFunction.ByteReaderAppendLnInto
           "byteReaderReadlnInto" => byteReaderFn = c.CRuntimeFunction.ByteReaderReadLnInto
           default => byteReaderFn = c.CRuntimeFunction.ByteReaderFree

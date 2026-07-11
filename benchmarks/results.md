@@ -572,6 +572,48 @@ by a cached map cursor or reusable `U32Map`. Global prioritization resumes after
 this checkpoint: reverse-complement remains the largest uncertain gap, at
 comparator parity to roughly 1.04x.
 
+## Reverse-complement filtered-span input
+
+The ByteReader runtime now exposes the general
+`byteReaderAppendUntilByteSkippingByteInto` operation. It appends bytes until a
+caller-selected delimiter, omits a caller-selected byte, and leaves the
+delimiter buffered for the caller. The operation is binary-safe, retains an
+existing output prefix and capacity, and appends final unterminated data before
+reporting EOF. Reverse-complement uses `>` as the delimiter and LF as the
+skipped byte under its existing IUB-sequence precondition, replacing roughly
+833,000 individual line operations with filtered spans.
+
+After rebuilding the compiler, focused `readWriteBytes` checks remained exact
+at O0/O3. Diagnostics cover a delimiter crossing the 64 KiB buffer boundary,
+the skipped byte, NUL as delimiter, a retained prefix, and final unterminated
+input. Reverse-complement's committed golden and full 50,833,411-byte output
+remain byte-identical at O0/O3 to the naive oracle and constrained gcc #7,
+with SHA-256 beginning `e92b329f`. Optimized native assembly fully inlines the
+new helper, and the compiler regression gate passed `PASS=205 FAIL=0`.
+
+In 100 alternating prior/new pairs, filtered spans won 100/100. Old/new best
+times were 18.264/17.641 ms and means were 18.886/18.195 ms, giving ratios of
+0.966x and 0.963x. A separate 100-pair candidate/leader series favored Rune
+93/100; Rune/gcc #7 best times were 17.752/17.299 ms and means were
+18.363/20.155 ms. Median five-run-block minima give a 0.963x ratio. A fresh
+standard warmup-plus-best-of-five series measured:
+
+| Benchmark (workload) | Rune mode | Rune O0 | Rune O3 | naive O3 | constrained gcc #7 | O3 / naive | O3 / constrained leader |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| reverse-complement (fasta 5M) | O0 `-U`; O3 `-O -N -U` | 54.940 | 17.726 | 73.159 | 18.562 | **0.242x** | **0.955x** |
+
+Rune therefore has a repeatable standard and typical-sample win. It is not a
+“by far” result: gcc #7 still produced the rare 17.299 ms minimum, making the
+candidate/leader minimum ratio 1.026x even though Rune wins the large majority
+of samples and blocks.
+
+Current direct comparisons are reverse-complement at roughly 0.955x typically
+with a rare 1.026x minimum ratio, k-nucleotide at 0.973x, Mandelbrot at 1.015x,
+and n-body at 1.013x. The largest stable measured gaps are therefore only about
+1.5% and 1.3%. Freshly remeasure before choosing the next target; the objective
+still calls for widening narrow wins rather than declaring completion at
+parity.
+
 ## Current analysis
 
 ### The optimization unlock
@@ -1020,12 +1062,11 @@ standard warmup-plus-best-of-five series measured Rune O0 7194.054 ms, Rune O3
 2209.640 ms, naive C 4353.842 ms, and constrained g++ #2 2039.065 ms. Rune is
 therefore **0.508x the naive oracle** and **1.084x the leader**.
 
-The branch-free steady loop gives k-nucleotide a repeatable 0.973x win over
-constrained g++ #2. Reverse-complement is the largest remaining
-stable/uncertain comparator gap, at parity to roughly 1.04x because gcc #7's
-bimodal samples do not support a durable win; Mandelbrot and n-body remain at
-1.015x and 1.013x. Further k-nucleotide specialization is scoped above, but the
-next target should be chosen from fresh global measurements.
+Filtered-span input gives reverse-complement a repeatable typical 0.955x win,
+although gcc #7's rare minimum leaves a 1.026x minimum-sample ratio.
+K-nucleotide remains at 0.973x; Mandelbrot and n-body are the largest stable
+measured gaps at 1.015x and 1.013x. Fresh global measurements should choose the
+next target, and parity remains a checkpoint rather than the final objective.
 
 ## Stage 2: regex-redux current-workload alignment
 
