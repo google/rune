@@ -2,8 +2,8 @@
 // https://benchmarksgame-team.pages.debian.net/benchmarksgame/
 //
 // Reads all of stdin as a raw byte sequence, strips FASTA descriptor lines and
-// newlines, counts nine variant-pattern families, applies eleven IUB
-// substitutions, and prints match counts followed by input/cleaned/expanded
+// newlines, counts nine variant-pattern families, applies the five current
+// CLBG substitutions, and prints match counts followed by input/cleaned/final
 // lengths.
 //
 // NOTE: uses readByte() instead of readln() because the legacy LLVM runtime
@@ -11,11 +11,6 @@
 // readByte() returns 0u8 at EOF in the bootstrap runtime and 255u8 in the
 // legacy runtime (getchar() returns -1 = 0xFF as uint8_t).
 //
-// DRAFT: depends on two builtins not yet implemented in the compiler:
-//   regexCount(pattern: string, text: string) -> u64
-//   regexReplace(pattern: string, repl: string, text: string) -> string
-// Do NOT compile this file until those builtins are wired in.
-
 func isEOF(b: u8) -> bool {
   if b == 0u8 {
     return true
@@ -52,23 +47,16 @@ println "agggt[cgt]aa|tt[acg]accct", " ", regexCount("agggt[cgt]aa|tt[acg]accct"
 println "agggta[cgt]a|t[acg]taccct", " ", regexCount("agggta[cgt]a|t[acg]taccct", seq)
 println "agggtaa[cgt]|[acg]ttaccct", " ", regexCount("agggtaa[cgt]|[acg]ttaccct", seq)
 
-// Apply IUB ambiguity-code substitutions in order, chaining the result.
-// These expand uppercase single-letter IUB codes (emitted by fasta's >TWO
-// section) into regex alternations.  slen may exceed clen due to expansion.
-s = regexReplace("B", "(c|g|t)",     seq)
-s = regexReplace("D", "(a|g|t)",     s)
-s = regexReplace("H", "(a|c|t)",     s)
-s = regexReplace("K", "(g|t)",       s)
-s = regexReplace("M", "(a|c)",       s)
-s = regexReplace("N", "(a|c|g|t)",   s)
-s = regexReplace("R", "(a|g)",       s)
-s = regexReplace("S", "(c|g)",       s)
-s = regexReplace("V", "(a|c|g)",     s)
-s = regexReplace("W", "(a|t)",       s)
-s = regexReplace("Y", "(c|t)",       s)
+// Apply the five current CLBG substitutions in order, chaining the result.
+// The final length can grow or shrink depending on matches.
+s = regexReplace("tHa[Nt]", "<4>", seq)
+s = regexReplace("aND|caN|Ha[DS]|WaS", "<3>", s)
+s = regexReplace("a[NSt]|BY", "<2>", s)
+s = regexReplace("<[^>]*>", "|", s)
+s = regexReplace("\\|[^|][^|]*\\|", "-", s)
 slen = s.length()
 
-// Print lengths: original input, cleaned (no headers/newlines), after IUB expansion.
+// Print lengths: original input, cleaned (no headers/newlines), after substitutions.
 println ""
 println ilen
 println clen

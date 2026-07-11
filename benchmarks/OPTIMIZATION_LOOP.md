@@ -143,6 +143,16 @@ At 10,000 digits Rune O3 is 351.701 ms versus 350.583 ms for that leader
 (1.003x) and 769.219 ms for the committed GMP oracle (0.457x). See
 `results.md` for flags, source provenance, and the full contract.
 
+### Stage 2 update: regex-redux semantic alignment (2026-07-10)
+
+The old Rune/C oracle performed obsolete eleven-IUB substitutions, whereas
+current CLBG uses five magic substitutions. Both implementations and the golden
+were migrated before measurement; Rune O0/O3 and the C oracle match at the
+small and full FASTA inputs. The current-workload baseline is Rune O3 7329.149
+ms versus 7286.571 ms naive PCRE2 C (1.006x). Do not use historical regex rows
+to compare current leaders. The next generic runtime change is PCRE2 JIT with a
+JIT-stack-limit fallback; only then build a constrained C gcc #5 leader.
+
 ### Stage 2 update: n-body (2026-07-10)
 
 The locally built current C gcc #9 leader is single-threaded and exact at the

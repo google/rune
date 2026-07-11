@@ -413,6 +413,33 @@ therefore explicit, opt-in SIMD vectors plus an explicitly named approximate
 reciprocal-square-root primitive and target dispatch. It must not silently
 change the semantics of scalar `sqrt`.
 
+## Stage 2: regex-redux current-workload alignment
+
+The former Rune and C-oracle regex-redux sources used an obsolete eleven-IUB
+substitution workload. It was therefore invalid to compare their output or
+timing to current CLBG entries, which use five substitutions:
+`tHa[Nt] -> <4>`, `aND|caN|Ha[DS]|WaS -> <3>`, `a[NSt]|BY -> <2>`,
+`<[^>]*> -> |`, and `\|[^|][^|]*\| -> -`. The nine variant count patterns,
+cleanup phase, raw-input length, and output order were already equivalent.
+
+Rune, its updated local PCRE2 oracle, and the revised golden now agree
+byte-for-byte on `fasta 1000` (final length `5262`) and the full 5M FASTA input.
+The aligned baseline below is measured before JIT work, pinned to CPU 0 with
+one warmup discarded and best-of-five at nice 15. It replaces the old
+semantic-mismatch regex row as the relevant local comparison.
+
+| Benchmark (workload) | Rune O0 | Rune O3 | naive PCRE2 C O3 | O3 / naive |
+|---|---:|---:|---:|---:|
+| regex-redux (fasta 5M, current CLBG substitutions) | 7514.058 | 7329.149 | 7286.571 | **1.006x** |
+
+Current fastest-published Rust #7 cannot yet be built locally because its
+published build depends on missing prebuilt Rayon and PCRE2 FFI artifacts. The
+current C gcc #5 source is the practical constrained reference after this
+alignment; it uses PCRE2 JIT plus OpenMP, so its one-CPU result must be labelled
+constrained. The next generic runtime experiment is safe PCRE2 JIT enablement
+with an explicit `PCRE2_ERROR_JIT_STACKLIMIT` fallback to `PCRE2_NO_JIT`; this
+must apply equally to the local C oracle before comparing timings.
+
 ## Historical fixes retained in the current source
 
 - A bare `sqrt(x)` lowers to hardware/libm sqrt, which is essential to n-body's

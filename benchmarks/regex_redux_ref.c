@@ -3,8 +3,8 @@
  * https://benchmarksgame-team.pages.debian.net/benchmarksgame/
  *
  * C reference using PCRE2.  Reads all of stdin, strips FASTA header/newline
- * lines, counts nine variant-pattern families, applies eleven IUB substitutions,
- * then prints lengths.
+ * lines, counts nine variant-pattern families, applies the five current CLBG
+ * magic substitutions, then prints lengths.
  *
  * Build:
  *   clang -O3 benchmarks/regex_redux_ref.c -lpcre2-8 -o /tmp/rr_ref
@@ -167,17 +167,23 @@ int main(void) {
         printf("%s %zu\n", patterns[i], cnt);
     }
 
-    /* 4. Apply IUB substitutions in order, chaining the result */
-    static const char *iub_pat[]  = { "B",   "D",   "H",   "K",  "M",  "N",      "R",  "S",  "V",    "W",  "Y"   };
-    static const char *iub_repl[] = { "(c|g|t)", "(a|g|t)", "(a|c|t)", "(g|t)", "(a|c)", "(a|c|g|t)", "(a|g)", "(c|g)", "(a|c|g)", "(a|t)", "(c|t)" };
-    int niub = (int)(sizeof(iub_pat) / sizeof(iub_pat[0]));
+    /* 4. Apply the five CLBG magic substitutions in order, chaining results. */
+    static const char *subst_pat[] = {
+        "tHa[Nt]",
+        "aND|caN|Ha[DS]|WaS",
+        "a[NSt]|BY",
+        "<[^>]*>",
+        "\\|[^|][^|]*\\|",
+    };
+    static const char *subst_repl[] = { "<4>", "<3>", "<2>", "|", "-" };
+    int nsubsts = (int)(sizeof(subst_pat) / sizeof(subst_pat[0]));
 
     char  *cur    = seq;
     size_t curlen = clen;
     int    first  = 1;
-    for (int i = 0; i < niub; i++) {
+    for (int i = 0; i < nsubsts; i++) {
         size_t newlen;
-        char *next = regex_replace(iub_pat[i], iub_repl[i], strlen(iub_repl[i]),
+        char *next = regex_replace(subst_pat[i], subst_repl[i], strlen(subst_repl[i]),
                                    cur, curlen, &newlen);
         if (!first) free(cur);
         first = 0;
