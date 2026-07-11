@@ -458,6 +458,38 @@ source port was reverted. Future SIMD work needs a local register-resident
 value representation; it must not disguise this memory-traffic regression as
 a benchmark optimization.
 
+## Stage 3: register-resident n-body SIMD port
+
+The replacement `F64x4` representation is a portable 32-byte value struct.
+Its explicitly AVX-targeted operations are always inlined, and the typechecker
+confines values to function locals rather than allowing them in user-function
+ABIs or stored aggregates. The n-body port keeps all positions, velocities,
+pair deltas, three padded reciprocal-square-root batches, both energy
+evaluations, and the complete advance loop in one guarded monomorphic
+`runAvx(n: u64)` function. Machines without AVX retain the prior scalar path.
+
+Before timing, Rune O0/O3, the rebuilt naive C oracle, and the pinned published
+gcc #9 binary were byte-identical at both the committed N=1000 golden and the
+full N=5,000,000 workload. The runtime's pairwise lane reduction and
+Goldschmidt refinement were also corrected to match the leader's exact
+floating-point parenthesization. Optimized assembly contains inline
+`vrsqrtps`, `vaddpd`, `vsubpd`, and `vmulpd` with no F64x4 helper calls or heap
+allocation. It still has 83 stack vector-traffic sites in the deliberately
+large function, which is the concrete remaining n-body optimization target.
+
+| n-body (5M) | Rune O0 | Rune O3 | naive C O3 | published C gcc #9 | O3 / naive | O3 / leader |
+|---|---:|---:|---:|---:|---:|---:|
+| register-resident F64x4 | 13426.275 | 117.353 | 172.681 | 101.840 | **0.680x** | **1.152x** |
+
+Each series was pinned to CPU 0 at nice 15/idle I/O priority, discarded one
+warmup, and used the best of five. O0 is intentionally poor because value
+struct copies are only scalar-replaced by optimization; the benchmark result
+is the checked O3 row. Compared with the validated 169.476/100.649 ms scalar
+session, the direct leader gap fell from 1.684x to 1.152x. This meets the
+roughly-1.15x feature target to measurement precision, but does not beat the
+leader; a general batched dot/reduction primitive or a less spill-heavy kernel
+shape is needed for that.
+
 ## Stage 2: regex-redux current-workload alignment
 
 The former Rune and C-oracle regex-redux sources used an obsolete eleven-IUB
@@ -578,9 +610,9 @@ nice-15/idle-I/O runs. The difference between the harness and the immediate
 series is normal powersave-state variation; it is not evidence that Rune beats
 the comparator. The reliable result is the large improvement from 67.404 ms to
 roughly 47–50 ms and practical single-thread parity with the dependency-free
-near-leader. The next raw leader gap is n-body (1.684x), which requires a
-deliberate explicit SIMD/approximate-rsqrt design rather than another generic
-output change.
+near-leader. N-body's later register-resident SIMD port reduces its raw leader
+gap from 1.684x to 1.152x; reverse-complement's validated 1.583x gap is now the
+largest direct current target.
 
 ## Historical fixes retained in the current source
 

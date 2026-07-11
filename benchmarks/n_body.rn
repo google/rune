@@ -55,6 +55,227 @@ func fmt9(v: f64) -> string {
   return s
 }
 
+// The published AVX implementation represents each body's xyz coordinates in
+// lanes 1..3 (lane 0 is zero), evaluates the ten pair distances in three
+// four-wide batches, and uses a float reciprocal-square-root estimate followed
+// by one Goldschmidt refinement. Keep every F64x4 value inside this one
+// monomorphic function: F64x4 is deliberately a local code-generation type and
+// is not part of Rune's function ABI.
+func runAvx(n: u64) {
+  m0 = solarMass
+  m1 = 0.000954791938424326609f64 * solarMass
+  m2 = 0.000285885980666130812f64 * solarMass
+  m3 = 0.0000436624404335156298f64 * solarMass
+  m4 = 0.0000515138902046611451f64 * solarMass
+
+  p0 = f64x4FromLanes(0.0f64, 0.0f64, 0.0f64, 0.0f64)
+  p1 = f64x4FromLanes(0.0f64, 4.84143144246472090f64,
+                      -1.16032004402742839f64, -0.103622044471123109f64)
+  p2 = f64x4FromLanes(0.0f64, 8.34336671824457987f64,
+                      4.12479856412430479f64, -0.403523417114321381f64)
+  p3 = f64x4FromLanes(0.0f64, 12.894369562139131f64,
+                      -15.111151401698631f64, -0.223307578892655734f64)
+  p4 = f64x4FromLanes(0.0f64, 15.379697114850917f64,
+                      -25.919314609987964f64, 0.179258772950371181f64)
+
+  v0 = f64x4Splat(0.0f64)
+  v1 = f64x4FromLanes(0.0f64,
+                      0.00166007664274403694f64 * daysPerYear,
+                      0.00769901118419740425f64 * daysPerYear,
+                      -0.0000690460016972063023f64 * daysPerYear)
+  v2 = f64x4FromLanes(0.0f64,
+                      -0.00276742510726862411f64 * daysPerYear,
+                      0.00499852801234917238f64 * daysPerYear,
+                      0.0000230417297573763929f64 * daysPerYear)
+  v3 = f64x4FromLanes(0.0f64,
+                      0.00296460137564761618f64 * daysPerYear,
+                      0.00237847173959480950f64 * daysPerYear,
+                      -0.0000296589568540237556f64 * daysPerYear)
+  v4 = f64x4FromLanes(0.0f64,
+                      0.00268067772490389322f64 * daysPerYear,
+                      0.00162824170038242295f64 * daysPerYear,
+                      -0.0000951592254519715870f64 * daysPerYear)
+
+  momentum = f64x4Mul(v0, f64x4Splat(m0))
+  momentum = f64x4Add(momentum, f64x4Mul(v1, f64x4Splat(m1)))
+  momentum = f64x4Add(momentum, f64x4Mul(v2, f64x4Splat(m2)))
+  momentum = f64x4Add(momentum, f64x4Mul(v3, f64x4Splat(m3)))
+  momentum = f64x4Add(momentum, f64x4Mul(v4, f64x4Splat(m4)))
+  v0 = f64x4Mul(momentum, f64x4Splat(-1.0f64 / solarMass))
+
+  // Initial energy. The two padding lanes in the final reciprocal-root batch
+  // are intentionally nonzero and ignored, matching the leader's padded batch.
+  r0 = f64x4Sub(p1, p0)
+  r1 = f64x4Sub(p2, p0)
+  r2 = f64x4Sub(p2, p1)
+  r3 = f64x4Sub(p3, p0)
+  r4 = f64x4Sub(p3, p1)
+  r5 = f64x4Sub(p3, p2)
+  r6 = f64x4Sub(p4, p0)
+  r7 = f64x4Sub(p4, p1)
+  r8 = f64x4Sub(p4, p2)
+  r9 = f64x4Sub(p4, p3)
+  d0 = f64x4HorizontalSum(f64x4Mul(r0, r0))
+  d1 = f64x4HorizontalSum(f64x4Mul(r1, r1))
+  d2 = f64x4HorizontalSum(f64x4Mul(r2, r2))
+  d3 = f64x4HorizontalSum(f64x4Mul(r3, r3))
+  d4 = f64x4HorizontalSum(f64x4Mul(r4, r4))
+  d5 = f64x4HorizontalSum(f64x4Mul(r5, r5))
+  d6 = f64x4HorizontalSum(f64x4Mul(r6, r6))
+  d7 = f64x4HorizontalSum(f64x4Mul(r7, r7))
+  d8 = f64x4HorizontalSum(f64x4Mul(r8, r8))
+  d9 = f64x4HorizontalSum(f64x4Mul(r9, r9))
+  inverse0 = f64x4ApproxReciprocalSqrt(f64x4FromLanes(d0, d1, d2, d3))
+  inverse1 = f64x4ApproxReciprocalSqrt(f64x4FromLanes(d4, d5, d6, d7))
+  inverse2 = f64x4ApproxReciprocalSqrt(f64x4FromLanes(d8, d9, 4.0f64, 4.0f64))
+
+  e = 0.0f64
+  e += 0.5f64 * m0 * f64x4HorizontalSum(f64x4Mul(v0, v0))
+  e += 0.5f64 * m1 * f64x4HorizontalSum(f64x4Mul(v1, v1))
+  e += 0.5f64 * m2 * f64x4HorizontalSum(f64x4Mul(v2, v2))
+  e += 0.5f64 * m3 * f64x4HorizontalSum(f64x4Mul(v3, v3))
+  e += 0.5f64 * m4 * f64x4HorizontalSum(f64x4Mul(v4, v4))
+  e -= m1 * m0 * f64x4Lane(inverse0, 0u64)
+  e -= m2 * m0 * f64x4Lane(inverse0, 1u64)
+  e -= m2 * m1 * f64x4Lane(inverse0, 2u64)
+  e -= m3 * m0 * f64x4Lane(inverse0, 3u64)
+  e -= m3 * m1 * f64x4Lane(inverse1, 0u64)
+  e -= m3 * m2 * f64x4Lane(inverse1, 1u64)
+  e -= m4 * m0 * f64x4Lane(inverse1, 2u64)
+  e -= m4 * m1 * f64x4Lane(inverse1, 3u64)
+  e -= m4 * m2 * f64x4Lane(inverse2, 0u64)
+  e -= m4 * m3 * f64x4Lane(inverse2, 1u64)
+  println fmt9(e)
+
+  time = f64x4Splat(0.01f64)
+  rm0 = f64x4Splat(m0)
+  rm1 = f64x4Splat(m1)
+  rm2 = f64x4Splat(m2)
+  rm3 = f64x4Splat(m3)
+  rm4 = f64x4Splat(m4)
+  for step = 0u64, step < n, step += 1 {
+    r0 = f64x4Sub(p1, p0)
+    r1 = f64x4Sub(p2, p0)
+    r2 = f64x4Sub(p2, p1)
+    r3 = f64x4Sub(p3, p0)
+    r4 = f64x4Sub(p3, p1)
+    r5 = f64x4Sub(p3, p2)
+    r6 = f64x4Sub(p4, p0)
+    r7 = f64x4Sub(p4, p1)
+    r8 = f64x4Sub(p4, p2)
+    r9 = f64x4Sub(p4, p3)
+    d0 = f64x4HorizontalSum(f64x4Mul(r0, r0))
+    d1 = f64x4HorizontalSum(f64x4Mul(r1, r1))
+    d2 = f64x4HorizontalSum(f64x4Mul(r2, r2))
+    d3 = f64x4HorizontalSum(f64x4Mul(r3, r3))
+    d4 = f64x4HorizontalSum(f64x4Mul(r4, r4))
+    d5 = f64x4HorizontalSum(f64x4Mul(r5, r5))
+    d6 = f64x4HorizontalSum(f64x4Mul(r6, r6))
+    d7 = f64x4HorizontalSum(f64x4Mul(r7, r7))
+    d8 = f64x4HorizontalSum(f64x4Mul(r8, r8))
+    d9 = f64x4HorizontalSum(f64x4Mul(r9, r9))
+    inverse0 = f64x4ApproxReciprocalSqrt(f64x4FromLanes(d0, d1, d2, d3))
+    inverse1 = f64x4ApproxReciprocalSqrt(f64x4FromLanes(d4, d5, d6, d7))
+    inverse2 = f64x4ApproxReciprocalSqrt(f64x4FromLanes(d8, d9, 4.0f64, 4.0f64))
+    magnitude0 = f64x4Mul(f64x4Mul(inverse0, inverse0),
+                          f64x4Mul(inverse0, time))
+    magnitude1 = f64x4Mul(f64x4Mul(inverse1, inverse1),
+                          f64x4Mul(inverse1, time))
+    magnitude2 = f64x4Mul(f64x4Mul(inverse2, inverse2),
+                          f64x4Mul(inverse2, time))
+
+    scale = f64x4Splat(f64x4Lane(magnitude0, 0u64))
+    delta = f64x4Mul(r0, scale)
+    v1 = f64x4Sub(v1, f64x4Mul(delta, rm0))
+    v0 = f64x4Add(v0, f64x4Mul(delta, rm1))
+    scale = f64x4Splat(f64x4Lane(magnitude0, 1u64))
+    delta = f64x4Mul(r1, scale)
+    v2 = f64x4Sub(v2, f64x4Mul(delta, rm0))
+    v0 = f64x4Add(v0, f64x4Mul(delta, rm2))
+    scale = f64x4Splat(f64x4Lane(magnitude0, 2u64))
+    delta = f64x4Mul(r2, scale)
+    v2 = f64x4Sub(v2, f64x4Mul(delta, rm1))
+    v1 = f64x4Add(v1, f64x4Mul(delta, rm2))
+    scale = f64x4Splat(f64x4Lane(magnitude0, 3u64))
+    delta = f64x4Mul(r3, scale)
+    v3 = f64x4Sub(v3, f64x4Mul(delta, rm0))
+    v0 = f64x4Add(v0, f64x4Mul(delta, rm3))
+    scale = f64x4Splat(f64x4Lane(magnitude1, 0u64))
+    delta = f64x4Mul(r4, scale)
+    v3 = f64x4Sub(v3, f64x4Mul(delta, rm1))
+    v1 = f64x4Add(v1, f64x4Mul(delta, rm3))
+    scale = f64x4Splat(f64x4Lane(magnitude1, 1u64))
+    delta = f64x4Mul(r5, scale)
+    v3 = f64x4Sub(v3, f64x4Mul(delta, rm2))
+    v2 = f64x4Add(v2, f64x4Mul(delta, rm3))
+    scale = f64x4Splat(f64x4Lane(magnitude1, 2u64))
+    delta = f64x4Mul(r6, scale)
+    v4 = f64x4Sub(v4, f64x4Mul(delta, rm0))
+    v0 = f64x4Add(v0, f64x4Mul(delta, rm4))
+    scale = f64x4Splat(f64x4Lane(magnitude1, 3u64))
+    delta = f64x4Mul(r7, scale)
+    v4 = f64x4Sub(v4, f64x4Mul(delta, rm1))
+    v1 = f64x4Add(v1, f64x4Mul(delta, rm4))
+    scale = f64x4Splat(f64x4Lane(magnitude2, 0u64))
+    delta = f64x4Mul(r8, scale)
+    v4 = f64x4Sub(v4, f64x4Mul(delta, rm2))
+    v2 = f64x4Add(v2, f64x4Mul(delta, rm4))
+    scale = f64x4Splat(f64x4Lane(magnitude2, 1u64))
+    delta = f64x4Mul(r9, scale)
+    v4 = f64x4Sub(v4, f64x4Mul(delta, rm3))
+    v3 = f64x4Add(v3, f64x4Mul(delta, rm4))
+
+    p0 = f64x4Add(p0, f64x4Mul(v0, time))
+    p1 = f64x4Add(p1, f64x4Mul(v1, time))
+    p2 = f64x4Add(p2, f64x4Mul(v2, time))
+    p3 = f64x4Add(p3, f64x4Mul(v3, time))
+    p4 = f64x4Add(p4, f64x4Mul(v4, time))
+  }
+
+  // Final energy, kept inline so no vector value crosses a function boundary.
+  r0 = f64x4Sub(p1, p0)
+  r1 = f64x4Sub(p2, p0)
+  r2 = f64x4Sub(p2, p1)
+  r3 = f64x4Sub(p3, p0)
+  r4 = f64x4Sub(p3, p1)
+  r5 = f64x4Sub(p3, p2)
+  r6 = f64x4Sub(p4, p0)
+  r7 = f64x4Sub(p4, p1)
+  r8 = f64x4Sub(p4, p2)
+  r9 = f64x4Sub(p4, p3)
+  d0 = f64x4HorizontalSum(f64x4Mul(r0, r0))
+  d1 = f64x4HorizontalSum(f64x4Mul(r1, r1))
+  d2 = f64x4HorizontalSum(f64x4Mul(r2, r2))
+  d3 = f64x4HorizontalSum(f64x4Mul(r3, r3))
+  d4 = f64x4HorizontalSum(f64x4Mul(r4, r4))
+  d5 = f64x4HorizontalSum(f64x4Mul(r5, r5))
+  d6 = f64x4HorizontalSum(f64x4Mul(r6, r6))
+  d7 = f64x4HorizontalSum(f64x4Mul(r7, r7))
+  d8 = f64x4HorizontalSum(f64x4Mul(r8, r8))
+  d9 = f64x4HorizontalSum(f64x4Mul(r9, r9))
+  inverse0 = f64x4ApproxReciprocalSqrt(f64x4FromLanes(d0, d1, d2, d3))
+  inverse1 = f64x4ApproxReciprocalSqrt(f64x4FromLanes(d4, d5, d6, d7))
+  inverse2 = f64x4ApproxReciprocalSqrt(f64x4FromLanes(d8, d9, 4.0f64, 4.0f64))
+
+  e = 0.0f64
+  e += 0.5f64 * m0 * f64x4HorizontalSum(f64x4Mul(v0, v0))
+  e += 0.5f64 * m1 * f64x4HorizontalSum(f64x4Mul(v1, v1))
+  e += 0.5f64 * m2 * f64x4HorizontalSum(f64x4Mul(v2, v2))
+  e += 0.5f64 * m3 * f64x4HorizontalSum(f64x4Mul(v3, v3))
+  e += 0.5f64 * m4 * f64x4HorizontalSum(f64x4Mul(v4, v4))
+  e -= m1 * m0 * f64x4Lane(inverse0, 0u64)
+  e -= m2 * m0 * f64x4Lane(inverse0, 1u64)
+  e -= m2 * m1 * f64x4Lane(inverse0, 2u64)
+  e -= m3 * m0 * f64x4Lane(inverse0, 3u64)
+  e -= m3 * m1 * f64x4Lane(inverse1, 0u64)
+  e -= m3 * m2 * f64x4Lane(inverse1, 1u64)
+  e -= m4 * m0 * f64x4Lane(inverse1, 2u64)
+  e -= m4 * m1 * f64x4Lane(inverse1, 3u64)
+  e -= m4 * m2 * f64x4Lane(inverse2, 0u64)
+  e -= m4 * m3 * f64x4Lane(inverse2, 1u64)
+  println fmt9(e)
+}
+
 func advance(dt: f64) {
   for i = 0u64, i < NBODIES, i += 1 {
     for j = i + 1u64, j < NBODIES, j += 1 {
@@ -116,17 +337,21 @@ if argv.length() > 1 {
   n = argv[1].toUint(u64, passed)
 }
 
-// Scale velocities to units of days/year and masses to solar masses.
-for i = 0u64, i < NBODIES, i += 1 {
-  vx[i] = vx[i] * daysPerYear
-  vy[i] = vy[i] * daysPerYear
-  vz[i] = vz[i] * daysPerYear
-  mass[i] = mass[i] * solarMass
-}
+if simdAvxAvailable() {
+  runAvx(n)
+} else {
+  // Scale velocities to units of days/year and masses to solar masses.
+  for i = 0u64, i < NBODIES, i += 1 {
+    vx[i] = vx[i] * daysPerYear
+    vy[i] = vy[i] * daysPerYear
+    vz[i] = vz[i] * daysPerYear
+    mass[i] = mass[i] * solarMass
+  }
 
-offsetMomentum()
-println fmt9(energy())
-for step = 0u64, step < n, step += 1 {
-  advance(0.01f64)
+  offsetMomentum()
+  println fmt9(energy())
+  for step = 0u64, step < n, step += 1 {
+    advance(0.01f64)
+  }
+  println fmt9(energy())
 }
-println fmt9(energy())
