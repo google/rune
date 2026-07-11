@@ -2,8 +2,7 @@
 // Matches output of benchmarks/mandelbrot.rn byte-for-byte.
 //
 // Outputs a binary PBM (P4) image to stdout.
-// Header: "P4\n<width> <height>\n\n"  (note: Rune's println adds a trailing
-// newline, so the format-string's trailing \n produces a double newline).
+// Header: "P4\n<width> <height>\n", matching the official CLBG PBM output.
 // Pixel encoding: 8 pixels per byte, MSB = leftmost pixel.
 //   bit 0 = in Mandelbrot set (black), bit 1 = escaped (white).
 // The Rune code tracks escaped pixels in `bits` (1=escaped), writes ~bits.
@@ -20,9 +19,8 @@ int main(int argc, char *argv[]) {
     unsigned maxIterations = 50;
     double limitSq = 4.0;
 
-    // Rune: println "P4\n%u %u\n" % (width, height)
-    // println appends one more \n, so header ends with \n\n.
-    printf("P4\n%u %u\n\n", width, height);
+    // Rune: print "P4\n%u %u\n" % (width, height)
+    printf("P4\n%u %u\n", width, height);
 
     double cr0[8], cr[8], ci[8];
 

@@ -23,7 +23,7 @@ maxX = (width + 7) / 8
 maxIterations = 50u32
 limit = 2.0
 limitSq = limit * limit
-println "P4\n%u %u\n" % (width, height)
+print "P4\n%u %u\n" % (width, height)
 cr0 = arrayof(f64).resize(8)
 cr = arrayof(f64).resize(8)
 ci = arrayof(f64).resize(8)

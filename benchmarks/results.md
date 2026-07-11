@@ -520,6 +520,40 @@ roughly-1.15x feature target to measurement precision, but does not beat the
 leader; a general batched dot/reduction primitive or a less spill-heavy kernel
 shape is needed for that.
 
+## Stage 2: Mandelbrot official-output alignment and leader gap
+
+The former Rune benchmark and naive C oracle emitted two newlines after the PBM
+dimensions because Rune used `println` around a format string that already
+ended in `\n`. The official CLBG N=200 output has one newline and is 5,011
+bytes, not the former 5,012. Rune now uses `print`, the oracle matches it, and
+the committed golden is the current official download (SHA-256
+`97610473750700638fc63d13cfa49d339b67c18e7f26b3f9c9acb61e746472d5`).
+
+The current wall-time leader is
+[C++ g++ #4](https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/mandelbrot-gpp-4.html),
+built from pinned Salsa commit `40296663ed350d5fe4a6ab5e367bab61cb77c219`
+with its published `-O3 -fomit-frame-pointer -march=ivybridge -std=c++17
+-mno-fma` flags and `-pthread`. It uses eight-pixel AVX vectors, five-iteration
+escape-check batches, previous-byte pruning, interlaced threads, and one bulk
+bitmap write. Since its `hardware_concurrency()` row rounding changes the N=200
+height on this machine, a source-identical comparator with only the thread
+count fixed to one supplied the golden check. At N=4000, both that comparator
+and the unmodified published binary preserve dimensions and are byte-identical
+to Rune O0/O3 and the rebuilt naive C oracle.
+
+| Mandelbrot (4000) | Rune flags | Rune O0 | Rune O3 | naive C O3 | g++ #4 one thread | g++ #4 default, CPU0 | O3 / naive | O3 / one-thread leader |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| official PBM output | `-U` | 1400.716 | 236.665 | 303.393 | 79.820 | 81.114 | **0.780x** | **2.965x** |
+
+All timing series were pinned to CPU 0 at nice 15/idle I/O priority, discarded
+one warmup, and used the best of five. The default leader's threads cannot run
+in parallel under that affinity and are slightly slower than its one-thread
+form, so the immediate 2.965x gap is SIMD/kernel structure rather than thread
+allocation. This supersedes reverse-complement as the largest validated
+single-core leader gap. The concrete Rune roadmap is an explicit packed-byte
+SIMD kernel (building on register-resident vector values), five-iteration
+escape batching, and buffered bitmap output; bounded tasks come afterward.
+
 ## Stage 2: regex-redux current-workload alignment
 
 The former Rune and C-oracle regex-redux sources used an obsolete eleven-IUB
