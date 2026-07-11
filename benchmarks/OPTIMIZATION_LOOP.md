@@ -164,6 +164,11 @@ outputs and `PASS=205 FAIL=0` passed. At the 5M workload Rune O3 falls from
 (Rune 1.050x); explore PCRE2 match context/JIT-stack or manual replace paths
 before treating OpenMP/Rayon as the next boundary.
 
+The explicit 16 KiB PCRE2 JIT-stack probe was exact but only 0.995x normal JIT
+matching (1602.528 versus 1611.087 ms), so it was rejected as noise-level. The
+remaining boundary is a general replacement-engine redesign or explicit
+parallelism, not a transparent stack toggle.
+
 ### Stage 2 update: n-body (2026-07-10)
 
 The locally built current C gcc #9 leader is single-threaded and exact at the

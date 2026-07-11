@@ -471,6 +471,14 @@ locally because its published Rayon/PCRE2 FFI artifacts are absent. The remainin
 single-thread attribution is PCRE2 match-context/JIT-stack and replacement-path
 engineering, not input or general Rune code generation.
 
+An explicit reusable 16 KiB PCRE2 JIT stack was also tested in the matched C
+path before adding persistent runtime state: it was exact but measured 1602.528
+ms versus 1611.087 ms for normal JIT matching (0.995x). That sub-percent delta
+is below useful session variance and does not explain the 5% constrained-leader
+gap, so the context experiment was rejected. Closing that gap would require a
+careful general replacement-engine redesign or explicit parallel work, not a
+transparent semantic change to Rune regex calls.
+
 ## Historical fixes retained in the current source
 
 - A bare `sqrt(x)` lowers to hardware/libm sqrt, which is essential to n-body's
