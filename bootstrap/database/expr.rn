@@ -3698,7 +3698,8 @@ class Expr(self, type: ExprType, location: Location) {
       if (builtinName == "exit" || builtinName == "readByte" ||
           builtinName == "writeByte" || builtinName == "readBytes" ||
           builtinName == "writeBytes" || builtinName == "readlnInto" ||
-          builtinName == "appendBytes" || builtinName == "writeReverseTranslated") {
+          builtinName == "appendBytes" || builtinName == "writeReverseTranslated" ||
+          builtinName == "writeReverseMasked5Translated") {
         switch builtinName {
           "exit" => iofn = c.CRuntimeFunction.Exit
           "readByte" => iofn = c.CRuntimeFunction.ReadByte
@@ -3707,6 +3708,7 @@ class Expr(self, type: ExprType, location: Location) {
           "readlnInto" => iofn = c.CRuntimeFunction.ReadLnInto
           "appendBytes" => iofn = c.CRuntimeFunction.AppendBytes
           "writeReverseTranslated" => iofn = c.CRuntimeFunction.WriteReverseTranslated
+          "writeReverseMasked5Translated" => iofn = c.CRuntimeFunction.WriteReverseMasked5Translated
           default => iofn = c.CRuntimeFunction.WriteBytes
         }
         ioparms = c.CExprList()

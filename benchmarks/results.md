@@ -277,6 +277,31 @@ ISA-specific code.
 |---|---:|---:|---:|---:|---:|---:|---:|
 | reverse-complement (fasta 5M) | `-U` | 65.824 | 30.897 | 76.618 | 17.434 | **0.403x** | **1.772x** |
 
+## Stage 3: explicit masked-IUB reverse translation
+
+The generic 256-byte `writeReverseTranslated` API remains unchanged. A new
+opt-in `writeReverseMasked5Translated(bytes, table, wrap, terminator)` instead
+defines its mapping as `table[input & 31]`, requires exactly 32 table bytes,
+and preserves arbitrary output bytes including NUL. Reverse-complement uses it
+under the explicit CLBG IUB-alphabet precondition; uppercase and lowercase ASCII
+bases share the same low five bits. The runtime selects a 16-byte SSSE3
+`pshufb` kernel only when the CPU supports it and retains the scalar fallback.
+
+The focused binary-NUL/wrapping test, compiler gate (`PASS=205 FAIL=0`),
+committed golden, full 50.8 MB scalar oracle, and freshly revalidated gcc #7
+output all match byte-for-byte. The table below is a same-session pinned
+warmup-plus-best-of-five series on the regenerated FASTA input.
+
+| Benchmark (workload) | Rune flags | Rune O0 | Rune O3 | naive O3 | constrained gcc #7 | O3 / naive | O3 / constrained leader |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| reverse-complement (fasta 5M) | `-U` | 57.165 | 30.170 | 78.786 | 19.063 | **0.383x** | **1.583x** |
+
+The pre-change current-input comparison was Rune 33.834 ms versus gcc #7
+20.052 ms, so the explicit masked kernel improves Rune by 10.8%. The remaining
+gap is no longer generic translation semantics; gcc #7 combines raw chunked
+I/O, vector translation, and a threaded pipeline. Any next step must expose one
+of those capabilities explicitly rather than weakening the arbitrary-table API.
+
 ## Current analysis
 
 ### The optimization unlock

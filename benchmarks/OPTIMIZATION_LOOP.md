@@ -230,6 +230,17 @@ state in registers. The uncommitted port and its temporary squared-length API
 were reverted. Do not repeat this source shape; the next SIMD design must make
 F64x4 a register-resident local value within AVX-targeted functions.
 
+### Stage 3 update: reverse-complement masked IUB writer (2026-07-11)
+
+An explicit 32-entry low-five-bit reverse-translation API now provides a
+CPU-checked SSSE3 `pshufb` path with a scalar fallback, while the generic
+256-entry writer remains unchanged. Binary-NUL/wrapping coverage, the 205-test
+gate, the golden, and full scalar/leader outputs all passed. On the regenerated
+50.8 MB FASTA input, Rune O3 improves from 33.834 to 30.170 ms; same-session
+naive C is 78.786 ms and constrained gcc #7 is 19.063 ms (Rune is 0.383x naive
+and 1.583x leader). The remaining leader features are raw chunked I/O and its
+threaded pipeline, not another transparent table substitution.
+
 ---
 
 ## LOOP PROMPT (this is what you paste into `/loop`)

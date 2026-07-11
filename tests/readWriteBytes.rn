@@ -29,3 +29,20 @@ while i < TABLE_SIZE {
 table[65u64] = 90u8
 data = [65u8, 66u8, 67u8]
 writeReverseTranslated(data, table, 2u64, 10u8)
+
+// The masked writer is a separate opt-in surface. Its table is binary-safe:
+// index 1 deliberately maps A/a to NUL, and wrapping must retain that byte.
+MASKED_TABLE_SIZE = 32u64
+maskedTable = [0u8]
+maskedTable.resize(MASKED_TABLE_SIZE)
+maskedIndex = 0u64
+while maskedIndex < MASKED_TABLE_SIZE {
+  maskedTable[maskedIndex] = <u8>maskedIndex
+  maskedIndex += 1u64
+}
+maskedTable[1u64] = 0u8
+maskedTable[2u64] = 66u8
+maskedTable[3u64] = 67u8
+maskedTable[5u64] = 69u8
+maskedData = [65u8, 66u8, 67u8, 65u8, 69u8]
+writeReverseMasked5Translated(maskedData, maskedTable, 2u64, 10u8)

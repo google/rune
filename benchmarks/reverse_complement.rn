@@ -12,47 +12,18 @@
 // The sequence buffer starts from a 1-element literal, then retains its
 // capacity across records while appendBytes() grows it as necessary.
 
-COMPLEMENT_TABLE_SIZE = 256u64
-complementTable = [0u8]
-complementTable.resize(COMPLEMENT_TABLE_SIZE)
-tableIndex = 0u64
-while tableIndex < COMPLEMENT_TABLE_SIZE {
-  complementTable[tableIndex] = <u8>tableIndex
-  tableIndex += 1u64
-}
-
-complementTable[65u64] = 84u8
-complementTable[97u64] = 84u8
-complementTable[67u64] = 71u8
-complementTable[99u64] = 71u8
-complementTable[71u64] = 67u8
-complementTable[103u64] = 67u8
-complementTable[84u64] = 65u8
-complementTable[116u64] = 65u8
-complementTable[85u64] = 65u8
-complementTable[117u64] = 65u8
-complementTable[77u64] = 75u8
-complementTable[109u64] = 75u8
-complementTable[82u64] = 89u8
-complementTable[114u64] = 89u8
-complementTable[87u64] = 87u8
-complementTable[119u64] = 87u8
-complementTable[83u64] = 83u8
-complementTable[115u64] = 83u8
-complementTable[89u64] = 82u8
-complementTable[121u64] = 82u8
-complementTable[75u64] = 77u8
-complementTable[107u64] = 77u8
-complementTable[86u64] = 66u8
-complementTable[118u64] = 66u8
-complementTable[72u64] = 68u8
-complementTable[104u64] = 68u8
-complementTable[68u64] = 72u8
-complementTable[100u64] = 72u8
-complementTable[66u64] = 86u8
-complementTable[98u64] = 86u8
-complementTable[78u64] = 78u8
-complementTable[110u64] = 78u8
+// writeReverseMasked5Translated() indexes its 32-byte table with byte & 31.
+// Precondition: every sequence byte is an ASCII IUB base (case-insensitive).
+// The CLBG FASTA producer guarantees that alphabet, so its upper- and lower-
+// case representations share the exact mapping below. This explicit contract
+// must not replace generic 256-byte translation tables.
+MASKED_IUB_COMPLEMENT_TABLE_SIZE = 32u64
+maskedIubComplementTable = [
+  0u8, 84u8, 86u8, 71u8, 72u8, 0u8, 0u8, 67u8,
+  68u8, 0u8, 0u8, 77u8, 0u8, 75u8, 78u8, 0u8,
+  0u8, 0u8, 89u8, 83u8, 65u8, 65u8, 66u8, 87u8,
+  0u8, 82u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8
+]
 
 
 // Sequence buffer: start with a 1-element literal (avoids the bootstrap
@@ -66,7 +37,7 @@ line = readlnInto(line)
 while line.length() > 0u64 {
   if line[0] == 62u8 {
     if inRecord {
-      writeReverseTranslated(seq, complementTable, 60u64, 10u8)
+      writeReverseMasked5Translated(seq, maskedIubComplementTable, 60u64, 10u8)
       seq.resize(0u64)
     }
     writeBytes(line)
@@ -79,5 +50,5 @@ while line.length() > 0u64 {
 }
 
 if inRecord {
-  writeReverseTranslated(seq, complementTable, 60u64, 10u8)
+  writeReverseMasked5Translated(seq, maskedIubComplementTable, 60u64, 10u8)
 }

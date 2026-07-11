@@ -2,8 +2,9 @@
  * Rune C backend byte-level stdin/stdout builtins.
  *
  * Implements the Rune builtins readByte(), writeByte(), readBytes(),
- * writeBytes(), readlnInto(), appendBytes() and writeReverseTranslated(). The
- * helper names match the Rune builtin names so calls can be emitted directly.
+ * writeBytes(), readlnInto(), appendBytes(), writeReverseTranslated() and
+ * writeReverseMasked5Translated(). The helper names match the Rune builtins so
+ * calls can be emitted directly.
  */
 
 #include <stdint.h>
@@ -87,6 +88,19 @@ static inline uint8_t *appendBytes(uint8_t *destination, const uint8_t *source) 
 
 #define REVERSE_TRANSLATE_OUTPUT_CAPACITY 65536u
 #define REVERSE_TRANSLATE_TABLE_SIZE 256u
+#define REVERSE_MASKED5_TRANSLATE_TABLE_SIZE 32u
+
+// The explicitly masked variant may use SSSE3 pshufb for 16 bytes at a time.
+// Keep the ISA-specific implementation behind runtime detection: generated
+// Rune programs must continue to run on CPUs without SSSE3.
+#if defined(__x86_64__) || defined(__i386__)
+#include <tmmintrin.h>
+#define RN_REVERSE_MASKED5_HAS_SSSE3 1
+#define RN_REVERSE_MASKED5_SSSE3_TARGET __attribute__((target("ssse3")))
+#else
+#define RN_REVERSE_MASKED5_HAS_SSSE3 0
+#define RN_REVERSE_MASKED5_SSSE3_TARGET
+#endif
 
 static inline void writeReverseTranslatedOutput(const uint8_t *bytes,
                                                  size_t count) {
@@ -99,6 +113,62 @@ static inline void writeReverseTranslatedOutput(const uint8_t *bytes,
     count -= wrote;
   }
 }
+
+static inline int rn_reverse_masked5_ssse3_available(void) {
+#if RN_REVERSE_MASKED5_HAS_SSSE3
+  static int available = -1;
+  if (available < 0) {
+    __builtin_cpu_init();
+    available = __builtin_cpu_supports("ssse3") ? 1 : 0;
+  }
+  return available;
+#else
+  return 0;
+#endif
+}
+
+// Encode one contiguous source interval in reverse order through an explicit
+// low-five-bit table. The caller owns the range contract; this API is not a
+// substitute for writeReverseTranslated's arbitrary 256-byte semantics.
+static inline void rn_reverse_masked5_translate_scalar(uint8_t *destination,
+                                                        const uint8_t *source,
+                                                        size_t count,
+                                                        const uint8_t *table) {
+  while (count > 0) {
+    destination[0] = table[source[--count] & 31u];
+    ++destination;
+  }
+}
+
+#if RN_REVERSE_MASKED5_HAS_SSSE3
+static RN_REVERSE_MASKED5_SSSE3_TARGET void
+rn_reverse_masked5_translate_ssse3(uint8_t *destination,
+                                   const uint8_t *source,
+                                   size_t count,
+                                   const uint8_t *table) {
+  const __m128i tableLow = _mm_loadu_si128((const __m128i *)table);
+  const __m128i tableHigh = _mm_loadu_si128((const __m128i *)(table + 16));
+  const __m128i reverse = _mm_set_epi8(0, 1, 2, 3, 4, 5, 6, 7,
+                                        8, 9, 10, 11, 12, 13, 14, 15);
+  const __m128i lowFiveBits = _mm_set1_epi8(31);
+  const __m128i fifteen = _mm_set1_epi8(15);
+
+  while (count >= 16) {
+    __m128i values = _mm_loadu_si128((const __m128i *)(source + count - 16));
+    values = _mm_shuffle_epi8(values, reverse);
+    values = _mm_and_si128(values, lowFiveBits);
+    const __m128i low = _mm_shuffle_epi8(tableLow, values);
+    const __m128i high = _mm_shuffle_epi8(tableHigh, values);
+    const __m128i selectHigh = _mm_cmpgt_epi8(values, fifteen);
+    values = _mm_or_si128(_mm_andnot_si128(selectHigh, low),
+                          _mm_and_si128(selectHigh, high));
+    _mm_storeu_si128((__m128i *)destination, values);
+    destination += 16;
+    count -= 16;
+  }
+  rn_reverse_masked5_translate_scalar(destination, source, count, table);
+}
+#endif
 
 // Reverse an array, translate each byte through an exact 256-byte table, and
 // write buffered output. A nonzero wrap terminates each output block and the
@@ -160,6 +230,72 @@ static inline void writeReverseTranslated(const uint8_t *bytes,
       output[outputLength++] = translation[bytes[--remaining]];
     }
     if (lineWidth != 0) {
+      output[outputLength++] = terminator;
+    }
+  }
+  if (outputLength > 0) {
+    writeReverseTranslatedOutput(output, outputLength);
+  }
+}
+
+// Reverse an array, map each input byte through translation[byte & 31], and
+// emit buffered wrapped output. This is intentionally a separate, opt-in API:
+// callers must establish that a low-five-bit table is semantically valid for
+// their input alphabet. Unlike writeReverseTranslated(), the table has exactly
+// 32 entries and may contain arbitrary output bytes, including NUL.
+static inline void writeReverseMasked5Translated(const uint8_t *bytes,
+                                                 const uint8_t *translation,
+                                                 uint64_t wrap,
+                                                 uint8_t terminator) {
+  const array_t *source = ((const array_t *)bytes) - 1;
+  const array_t *table = ((const array_t *)translation) - 1;
+  if (table->used != REVERSE_MASKED5_TRANSLATE_TABLE_SIZE) {
+    raise("Error: masked reverse translation table must have 32 bytes");
+  }
+  if (wrap > SIZE_MAX) {
+    raise("Error: reverse translation wrap exceeds array size");
+  }
+
+  const int useSsse3 = rn_reverse_masked5_ssse3_available();
+  uint8_t output[REVERSE_TRANSLATE_OUTPUT_CAPACITY];
+  size_t outputLength = 0;
+  size_t remaining = source->used;
+  const size_t lineWidth = (size_t)wrap;
+  while (remaining > 0) {
+    size_t lineRemaining = lineWidth == 0 || remaining < lineWidth ?
+        remaining : lineWidth;
+    while (lineRemaining > 0) {
+      if (outputLength == REVERSE_TRANSLATE_OUTPUT_CAPACITY) {
+        writeReverseTranslatedOutput(output, outputLength);
+        outputLength = 0;
+      }
+      size_t chunkLength = REVERSE_TRANSLATE_OUTPUT_CAPACITY - outputLength;
+      if (chunkLength > lineRemaining) {
+        chunkLength = lineRemaining;
+      }
+      const uint8_t *chunkSource = bytes + remaining - chunkLength;
+#if RN_REVERSE_MASKED5_HAS_SSSE3
+      if (useSsse3) {
+        rn_reverse_masked5_translate_ssse3(output + outputLength, chunkSource,
+                                           chunkLength, translation);
+      } else {
+        rn_reverse_masked5_translate_scalar(output + outputLength, chunkSource,
+                                            chunkLength, translation);
+      }
+#else
+      (void)useSsse3;
+      rn_reverse_masked5_translate_scalar(output + outputLength, chunkSource,
+                                          chunkLength, translation);
+#endif
+      outputLength += chunkLength;
+      remaining -= chunkLength;
+      lineRemaining -= chunkLength;
+    }
+    if (lineWidth != 0) {
+      if (outputLength == REVERSE_TRANSLATE_OUTPUT_CAPACITY) {
+        writeReverseTranslatedOutput(output, outputLength);
+        outputLength = 0;
+      }
       output[outputLength++] = terminator;
     }
   }
