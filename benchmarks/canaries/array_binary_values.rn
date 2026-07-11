@@ -1,0 +1,93 @@
+// Generality canary for ordinary binary-safe u8 array value semantics.
+// Keep this independent of benchmark I/O helpers and benchmark data shapes.
+
+DEFAULT_SCALE = 29u64
+MAX_SCALE = 1000u64
+MIX_MULTIPLIER = 0x9e3779b185ebca87u64
+INITIAL_CHECKSUM = 0xcbf29ce484222325u64
+BOUNDARY_LENGTHS = [15u64, 16u64, 17u64, 31u64, 32u64, 33u64,
+                    63u64, 64u64, 65u64]
+
+func makeBytes(length: u64, round: u64) -> [u8] {
+  bytes = arrayof(u8).resize(length)
+  for index = 0u64, index < length, index += 1u64 {
+    raw = (index * 29u64 + length * 7u64 + round * 3u64) % 251u64
+    bytes[index] = <u8>raw
+    // Put NULs in the middle of ordinary data, never only at an endpoint.
+    if (index + round) % 11u64 == 4u64 {
+      bytes[index] = 0u8
+    }
+  }
+  return bytes
+}
+
+func foldBytes(checksum: u64, bytes: [u8], tag: u64) -> u64 {
+  for index = 0u64, index < bytes.length(), index += 1u64 {
+    checksum = checksum !* MIX_MULTIPLIER
+    checksum = checksum ^ (<u64>bytes[index] !+ tag !+ index)
+  }
+  return checksum
+}
+
+func countZeros(bytes: [u8]) -> u64 {
+  count = 0u64
+  for byte in bytes {
+    if byte == 0u8 {
+      count += 1u64
+    }
+  }
+  return count
+}
+
+scale = DEFAULT_SCALE
+if argv.length() > 1 {
+  passed = false
+  scale = argv[1].toUint(u64, passed)
+  assert passed && scale >= 1u64 && scale <= MAX_SCALE,
+      "scale must be an integer in 1..1000"
+}
+
+checksum = INITIAL_CHECKSUM
+zeroCount = 0u64
+independentCopies = 0u64
+totalLength = 0u64
+
+for round = 0u64, round < scale, round += 1u64 {
+  for length in BOUNDARY_LENGTHS {
+    original = makeBytes(length, round)
+    changed = original
+
+    // Assignment must make an independent value. Mutate at a nonzero,
+    // round-dependent offset and verify the source byte is unchanged.
+    mutationIndex = 3u64 + round % (length - 6u64)
+    sourceByte = original[mutationIndex]
+    changed[mutationIndex] = changed[mutationIndex] ^ 0xa5u8
+    if original[mutationIndex] == sourceByte &&
+        changed[mutationIndex] != sourceByte {
+      independentCopies += 1u64
+    }
+
+    // Slice from and to nonzero offsets. The varying endpoints exercise both
+    // odd and even spans without aligning the data to allocator boundaries.
+    start = 2u64 + round % 3u64
+    finish = length - (2u64 + round % 2u64)
+    middle = changed[start:finish]
+
+    // Shrink, then append through the original logical length. Lengths around
+    // powers of two cover both in-capacity growth and reallocation edges.
+    changed.resize(length - 3u64)
+    changed.append(0u8)
+    changed.append(<u8>(round % 251u64))
+    changed.append(0xffu8)
+    changed.append(<u8>length)
+
+    checksum = foldBytes(checksum, original, length !+ round)
+    checksum = foldBytes(checksum, middle, start !+ finish !+ round)
+    checksum = foldBytes(checksum, changed, length !+ scale)
+    zeroCount += countZeros(original) + countZeros(middle) + countZeros(changed)
+    totalLength += original.length() + middle.length() + changed.length()
+  }
+}
+
+println scale, " ", independentCopies, " ", zeroCount, " ", totalLength,
+    " ", checksum

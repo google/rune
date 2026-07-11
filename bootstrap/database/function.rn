@@ -319,12 +319,29 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
         builder.ensureTupleDeclared(self.location, monoResultType)
         fundec.addDependencyName(
             builder.typeGenerator.genCTuple(monoResultType.tuple!).name)
+      } else if monoResultType.type == types.Type.TypeClass.Array {
+        monoResultArray = builder.ensureArrayDeclared(
+            self.location, monoResultType.array.elementType)
+        fundec.addDependencyName(monoResultArray.typeName)
       }
-      // Function-pointer parameters need their fnptr<N> typedef emitted first.
+      // Every named parameter type must precede the function prototype. Array
+      // parameters used to depend on the body happening to instantiate the
+      // same array first; a helper that only iterates an incoming [u8] could
+      // therefore emit `u8_array_t` before its typedef.
       for monoVar in self.variables() {
         if monoVar.isParam && !isnull(monoVar.typedValue) {
           monoPt = builder.typechecker.resolve(monoVar.typedValue!)
-          if monoPt.type == types.Type.TypeClass.Function {
+          if monoPt.type == types.Type.TypeClass.Array {
+            monoArray = builder.ensureArrayDeclared(
+                self.location, monoPt.array.elementType)
+            fundec.addDependencyName(monoArray.typeName)
+          } else if monoPt.type == types.Type.TypeClass.Tuple {
+            builder.ensureTupleDeclared(self.location, monoPt)
+            fundec.addDependencyName(
+                builder.typeGenerator.genCTuple(monoPt.tuple!).name)
+          } else if builder.isClassType(monoPt) {
+            fundec.addDependencyName(builder.classCName(monoPt) + "_class")
+          } else if monoPt.type == types.Type.TypeClass.Function {
             builder.ensureFunctionPtrDeclared(self.location, monoPt)
             monoFnptrCType = builder.typeGenerator.genCFunction(monoPt.function!)
             if !isnull(monoFnptrCType) {
@@ -941,6 +958,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
         builder.ensureTupleDeclared(self.location, polyResultType)
         fundec.addDependencyName(
             builder.typeGenerator.genCTuple(polyResultType.tuple!).name)
+      } else if polyResultType.type == types.Type.TypeClass.Array {
+        polyResultArray = builder.ensureArrayDeclared(
+            self.location, polyResultType.array.elementType)
+        fundec.addDependencyName(polyResultArray.typeName)
       }
     }
     // Class-typed parameters need the class struct typedef emitted first.
@@ -1618,6 +1639,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       builder.ensureTupleDeclared(self.location, resTy)
       fundec.addDependencyName(
           builder.typeGenerator.genCTuple(resTy.tuple!).name)
+    } else if resTy.type == types.Type.TypeClass.Array {
+      methodResultArray = builder.ensureArrayDeclared(
+          self.location, resTy.array.elementType)
+      fundec.addDependencyName(methodResultArray.typeName)
     }
     // The method's self parameter needs the class struct typedef.
     params2 = fnInstType.function.params

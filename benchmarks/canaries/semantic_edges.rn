@@ -1,0 +1,107 @@
+// Correctness-only canary for checked failures, nested exception state, and
+// ordinary function-pointer dispatch. This is not an optimization target.
+
+DEFAULT_SCALE = 64u64
+MAX_SCALE = 100000u64
+
+func addValue(value: u32, salt: u32) -> u32 {
+  return value + salt
+}
+
+func xorValue(value: u32, salt: u32) -> u32 {
+  return value ^ salt
+}
+
+func dispatch(value: u32, useAdd: bool) -> u32 {
+  if useAdd {
+    operation = &addValue(value, 7u32)
+  } else {
+    operation = &xorValue(value, 7u32)
+  }
+  return operation(value, 7u32)
+}
+
+scale = DEFAULT_SCALE
+if argv.length() > 2u64 {
+  exit(2i32)
+}
+if argv.length() > 1u64 {
+  passed = false
+  parsedScale = argv[1].toUint(u64, passed)
+  assert passed && parsedScale >= 1u64 && parsedScale <= MAX_SCALE,
+      "scale must be an integer in 1..100000"
+  scale = parsedScale
+}
+
+overflowCount = 0u64
+divisionCount = 0u64
+innerCount = 0u64
+outerCount = 0u64
+unexpectedCount = 0u64
+safeSum = 0u64
+dispatchSum = 0u64
+
+for iteration = 0u64, iteration < scale, iteration += 1u64 {
+  // Both failures are implicit runtime checks, caught by the surrounding try.
+  try {
+    maximum = 0xffu8
+    overflowed = maximum + 1u8
+    unexpectedCount += <u64>overflowed
+  } except e {
+    default => {
+      if e.errorMessage == "Overflow" {
+        overflowCount += 1u64
+      } else {
+        unexpectedCount += 1u64
+      }
+    }
+  }
+
+  try {
+    numerator = <u32>(iteration + 1u64)
+    zero = 0u32
+    quotient = numerator / zero
+    unexpectedCount += <u64>quotient
+  } except e {
+    default => {
+      if e.errorMessage == "DivByZero" {
+        divisionCount += 1u64
+      } else {
+        unexpectedCount += 1u64
+      }
+    }
+  }
+
+  // Repeated nested catches exercise frame push/pop and message restoration.
+  try {
+    try {
+      raise Status.Ok, "inner-edge"
+    } except inner {
+      default => {
+        if inner.errorMessage == "inner-edge" {
+          innerCount += 1u64
+        } else {
+          unexpectedCount += 1u64
+        }
+      }
+    }
+    raise Status.Ok, "outer-edge"
+  } except outer {
+    default => {
+      if outer.errorMessage == "outer-edge" {
+        outerCount += 1u64
+      } else {
+        unexpectedCount += 1u64
+      }
+    }
+  }
+
+  // A successful checked operation after the catches verifies normal state.
+  safeValue = 200u16 + <u16>(iteration % 50u64)
+  safeSum += <u64>safeValue
+  dispatchSum += <u64>dispatch(<u32>(iteration % 100u64),
+      iteration % 2u64 == 0u64)
+}
+
+println scale, " ", overflowCount, " ", divisionCount, " ", innerCount,
+    " ", outerCount, " ", unexpectedCount, " ", safeSum, " ", dispatchSum

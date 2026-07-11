@@ -1791,7 +1791,11 @@ class CBuilder(self, tc: types.TypeChecker) {
       if !isnull(rdep) {
         decl.addDependency(rdep!)
       }
+    } else if resTy.type == types.Type.TypeClass.Array {
+      rarr = self.ensureArrayDeclared(location, resTy.array.elementType)
+      decl.addDependencyName(rarr.typeName)
     }
+    paramIndex = 0u64
     for pc in paramCTypes {
       if pc.type == CTypeExpr.Type.Defined {
         pdep = self.findDeclaration(pc.cDefinedType.name)
@@ -1799,6 +1803,16 @@ class CBuilder(self, tc: types.TypeChecker) {
           decl.addDependency(pdep!)
         }
       }
+      if pTy.type == types.Type.TypeClass.Tuple {
+        runeParam = self.typechecker.resolve(pTy.tuple.elements[paramIndex])
+      } else {
+        runeParam = pTy
+      }
+      if runeParam.type == types.Type.TypeClass.Array {
+        parr = self.ensureArrayDeclared(location, runeParam.array.elementType)
+        decl.addDependencyName(parr.typeName)
+      }
+      paramIndex += 1u64
     }
     self.addDeclaration(decl)
     def.defined = true

@@ -128,6 +128,17 @@ LLVM.ps: llvm/LLVM.dd
 check: rune
 	./runtests.sh
 
+# Generality guards for benchmark-driven compiler/runtime work.  The quick
+# target is intentionally correctness-only and runs every canary at its
+# smallest supported scale; the full target uses the authoritative workloads.
+# Both are serialized and CPU-0/nice/idle-I/O constrained by the runner.
+.PHONY: canaries-quick canaries-full
+canaries-quick:
+	CANARY_SCALE=1 bash benchmarks/canaries/run.sh
+
+canaries-full:
+	bash benchmarks/canaries/run.sh
+
 install: rune
 	install -d $(PREFIX)/bin $(PREFIX)/lib/rune $(PREFIX)/lib/rune/runtime
 	install rune $(PREFIX)/bin

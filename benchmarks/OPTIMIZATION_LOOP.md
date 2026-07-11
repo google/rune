@@ -58,8 +58,13 @@ A speed number is only admissible if it is **correct, pinned, and reproducible.*
    size. Verify with `cmp -s`. A fast-but-wrong build is disqualified — remember
    the earlier revcomp bug where a fixed buffer silently truncated input and
    "beat" C by doing no work. **Never edit a benchmark to do less work.**
-2. **Regression gate (after any compiler change).** From the repo root,
-   `bash bootstrap/research/btest.sh` must print `PASS=205 FAIL=0`. No exceptions.
+2. **Regression and generality gates (after any compiler/runtime change).** From
+   the repo root, `bash bootstrap/research/btest.sh` must print
+   `PASS=207 FAIL=0`, then `make canaries-quick` must pass checked Rune O0 and
+   host-native O3 against independent C oracles. Before committing a benchmark
+   or runtime feature, also run `make canaries-full`. These programs are never
+   optimization targets: do not reshape them, recognize their paths/constants,
+   or weaken their checks to clear a regression.
 3. **CPU pinning.** The governor is `powersave` and P-cores are heterogeneous
    (5400 / 4500 / 2500 MHz). Always `taskset -c 0` (the 5400 MHz core). You cannot
    change the governor in this sandbox — reject throttled runs via min-of-N.
@@ -88,6 +93,12 @@ A speed number is only admissible if it is **correct, pinned, and reproducible.*
    arg, Rune −O0, Rune −O3, naive-C, fastest-published, Rune/naive, Rune/fastest,
    and which flags (`-U`, etc.). Append-only history so regressions are visible.
    Update `HANDOFF.md` with current target + debug state each iteration.
+9. **Generality review.** Prefer composable language/runtime operations over a
+   fused CLBG kernel. A new fused primitive needs at least two unrelated,
+   non-CLBG uses and canaries, or it remains explicitly internal/experimental.
+   If a change updates a benchmark, its reference, and its golden together,
+   validate against an independent upstream specification or output hash so
+   coordinated semantic drift cannot self-certify.
 
 ---
 

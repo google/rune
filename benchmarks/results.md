@@ -1448,14 +1448,19 @@ quiet paired timings before stronger leader claims.
 
 ## Generality canaries
 
-Three deliberately untuned programs now guard language/runtime paths outside
+Five deliberately untuned programs now guard language/runtime paths outside
 the CLBG hot loops. `collections_strings` exercises string-keyed dictionaries,
 membership, removal/reinsertion, iteration views, and string heaps;
 `object_graph` exercises ordinary classes, allocation, nullable cyclic links,
 mutation, shallow recursion, and iterative traversal; `checked_matrix`
 exercises generic classes, overloaded arithmetic, checked nested arrays,
-integer and floating-point work, and tuple assignment. Straightforward C
-programs are correctness-only oracles, never performance comparators.
+integer and floating-point work, and tuple assignment. `array_binary_values`
+checks binary-safe byte-array copy independence, embedded NULs, slices,
+resize/append behavior, nonzero offsets, and awkward allocation boundaries.
+`semantic_edges` repeatedly checks implicit overflow and division failures,
+nested exception-state restoration, post-catch checked work, and ordinary
+same-signature function-pointer dispatch. Straightforward C programs are
+correctness-only oracles, never performance comparators.
 
 The canary runner builds Rune O0 and host-native O3, requires exact agreement
 with both the oracle and committed default-workload golden, and optionally
@@ -1473,11 +1478,26 @@ compiler workaround was retained; the canary keeps the generic matrix and
 operators but explicitly types its scoring helper, and the limitation remains
 documented for general compiler work.
 
-All three default workloads are byte-exact across Rune O0, Rune O3, their C
+All default workloads are byte-exact across Rune O0, Rune O3, their C
 oracles, and the committed goldens. The added regex semantics test raised that
 checkpoint's bootstrap gate to `PASS=206 FAIL=0`; the structured-concurrency
 test below brings the current gate to `PASS=207 FAIL=0`. Informational canary
 timings were intentionally not collected while the development machine was busy.
+
+Adding `array_binary_values` exposed and fixed a general C declaration-order
+bug: a monomorphic function could name `[u8]` in its C parameter ABI before
+`u8_array_t` was declared. Function, method, polymorphic-result, and
+function-pointer array ABI dependencies are now explicit rather than relying
+on a body expression to instantiate the array typedef first. The full
+`PASS=207 FAIL=0` gate and both quick and default-scale canary suites pass after
+the repair.
+
+Two generality risks remain deliberately visible. The current `BigInt` surface
+does not yet provide owned destruction, so it is sufficient for the fixed
+pidigits process but not a complete leak-safe language facility. Several fused
+reverse-complement and n-body helpers are also CLBG-shaped; under the acceptance
+policy they remain experimental implementation primitives until each has two
+unrelated non-CLBG uses or is replaced by composable span/SIMD operations.
 
 ## Stage 2 comparator closure: regex-redux Rust #7
 

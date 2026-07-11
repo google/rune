@@ -5,6 +5,11 @@ regress while optimizing CLBG workloads. They are regression canaries, never
 optimization targets. Do not specialize Rune, weaken checks, reshape a canary,
 or tune its source to improve its score.
 
+The suite currently covers collections and strings, pointer-rich object
+graphs, checked generic matrices, binary-safe array value semantics, and
+checked failure/unwinding plus ordinary function-pointer dispatch. Compact
+normal-suite tests separately cover regex and bounded scalar concurrency.
+
 Each `NAME.rn` has a straightforward `NAME_ref.c` correctness-only oracle.
 The C programs and their compiler flags exist solely to validate output; they
 are never performance comparators. The runner builds checked Rune O0 and
@@ -37,6 +42,18 @@ N is an integer from 1 through 1000, as a quick-run override passed equally to
 every canary. Defaults remain each canary's authoritative workload. Committed
 default-scale goldens are skipped under an override while Rune/reference
 equality remains mandatory.
+
+## Acceptance policy
+
+Canaries are never optimization targets: compiler and runtime changes must not
+recognize their filenames, constants, or operation sequences, just as they
+must not recognize benchmark names or workloads. Every compiler/runtime
+performance commit must pass `make canaries-quick`; run `make canaries-full`
+before accepting the optimization. A new fused builtin needs at
+least two unrelated, non-benchmark uses or remains an internal experimental
+primitive. Any change that updates a benchmark, its reference, and its golden
+together requires independent specification or oracle evidence so coordinated
+semantic drift cannot validate itself.
 
 ## Known limitation found by checked-matrix
 
