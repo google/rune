@@ -3627,6 +3627,9 @@ class TypeChecker(self) {
                 f64x4Name == "f64x4Mul") {
               self.newSymbol(fnchild.val.symVal!,
                   FN(TUPLE([f64x4, f64x4]), f64x4))
+            } else if f64x4Name == "f64x4LessEqualMask" {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([f64x4, f64x4]), U(8)))
             } else if f64x4Name == "f64x4Lane" {
               self.newSymbol(fnchild.val.symVal!,
                   FN(TUPLE([f64x4, UINTEGER()]), F(64)))

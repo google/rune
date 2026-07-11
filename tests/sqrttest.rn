@@ -38,6 +38,8 @@ func f64x4TargetedSmoke() {
   result = f64x4Mul(result, two)
   f64x4Store(result, lanes, 0u64)
   println f64x4HorizontalSum(result)
+  comparison = f64x4FromLanes(1.0f64, 3.0f64, 2.0f64, 4.0f64)
+  println f64x4LessEqualMask(comparison, two)
 }
 
 if simdAvxAvailable() {

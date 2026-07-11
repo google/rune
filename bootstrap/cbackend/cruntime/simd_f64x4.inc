@@ -161,6 +161,26 @@ RN_F64X4_VALUE_FN rn_f64x4_t f64x4Mul(rn_f64x4_t left,
   return result;
 }
 
+// Return the ordered <= comparison result with lane 0 in bit 0. Upper bits
+// are always clear; in particular, NaN lanes compare false on every target.
+RN_F64X4_VALUE_FN uint8_t f64x4LessEqualMask(rn_f64x4_t left,
+                                              rn_f64x4_t right) {
+#if RN_F64X4_HAS_X86_AVX
+  const __m256d leftValue = _mm256_loadu_pd(left.lane);
+  const __m256d rightValue = _mm256_loadu_pd(right.lane);
+  const __m256d compared = _mm256_cmp_pd(leftValue, rightValue, _CMP_LE_OQ);
+  return (uint8_t)(_mm256_movemask_pd(compared) & 0x0f);
+#else
+  uint8_t result = 0;
+  for (uint64_t lane = 0; lane < RN_F64X4_LANES; lane++) {
+    if (left.lane[lane] <= right.lane[lane]) {
+      result |= (uint8_t)(1u << lane);
+    }
+  }
+  return result;
+#endif
+}
+
 RN_F64X4_VALUE_FN double f64x4Lane(rn_f64x4_t value, uint64_t lane) {
   if (lane >= RN_F64X4_LANES) {
     raise("F64x4LaneRange");
