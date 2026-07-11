@@ -351,11 +351,12 @@ fannkuch-redux is 1.026x, and regex-redux is 0.994x. The former claims of a
 general 4-9x code-generation band and missing cross-function inlining do not
 survive a real O3 build.
 
-Binary-trees and k-nucleotide beat their naive references at 0.516x and 0.571x,
-respectively. These are comparisons with the committed straightforward oracles,
-not claims of beating the published CLBG leaders. Binary-trees benefits from
-Rune's reusable object pool; k-nucleotide uses indexed base-4 counters while its
-naive C reference linearly searches small k-mer tables.
+Binary-trees and the historical k-nucleotide port beat their naive references
+at 0.516x and 0.571x, respectively. These are comparisons with the committed
+straightforward oracles, not claims of beating the published CLBG leaders.
+Binary-trees benefits from Rune's reusable object pool. The historical
+k-nucleotide shortcut used indexed base-4 counters; it is superseded below by
+the current specification-compliant all-hash-table workload.
 
 ### Correctness bugs exposed by the new contract
 
@@ -592,8 +593,44 @@ serialized CPU0 runs. The remaining 17–21% gap is now a bounded kernel/codegen
 question rather than missing vectorization: compare coordinate precompute,
 loop unrolling, previous-byte control flow, and the leader's native union
 layout before adding threads. Reverse-complement's roughly 1.5x gap again
-becomes the largest validated direct target, while k-nucleotide remains
-semantically blocked on its required hash-table migration.
+becomes the largest validated direct target. K-nucleotide's required hash-table
+migration is measured immediately below.
+
+## Stage 2: k-nucleotide hash-table compliance
+
+The current CLBG specification requires a built-in or library hash table for
+all seven k values and explicitly forbids optimizing away that work. The former
+Rune port used dense direct counters for k=1/2 and direct substring scans for
+the five requested sequences, so its fast row was not eligible for a leader
+claim even though its output was correct.
+
+The compliant port encodes bases once as two-bit digits and builds a full Rune
+`Dict(u64,u64)` for each of k=1,2,3,4,6,12,18 using rolling packed keys. It
+updates the relation-generated entry value in place after one lookup, sorts
+only the small k=1/2 outputs deterministically by count then numeric key, and
+queries the five large tables only after completing their full workload. The
+official N=1000 golden and the full local `fasta 1000000` output are
+byte-identical at O0/O3 to the naive C oracle and current published leader.
+
+The current leader is
+[C++ g++ #2](https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/knucleotide-gpp-2.html),
+from pinned Salsa commit `40296663ed350d5fe4a6ab5e367bab61cb77c219`, built
+with its published `-O3 -fomit-frame-pointer -march=ivybridge -std=c++17` and
+`-lpthread` flags. It uses four threads, two-bit rolling keys, and GNU PBDS
+chained hash tables. The locally extracted source SHA-256 is
+`4c4b112d384d589eaf10c38fb6a879289d646a8412fdec4cfebcdac009794657`.
+
+| k-nucleotide (fasta 1M) | Rune O0 | Rune O3 | naive C O3 | constrained g++ #2 | O3 / naive | O3 / leader |
+|---|---:|---:|---:|---:|---:|---:|
+| all seven k values through Dict | 701.556 | 173.220 | 180.937 | 148.233 | **0.957x** | **1.169x** |
+
+Every series was serialized on CPU 0 at nice 15/idle I/O priority, with one
+warmup discarded and best of five. The leader's four threads therefore share
+one CPU. The former noncompliant shortcut measured 95.868 ms in the same
+session, so honoring the mandated workload costs Rune 1.81x, but the compliant
+port still beats the naive oracle and lands within 16.9% of the optimized
+leader. The official 25M scaling run remains to be recorded before any
+published-size claim.
 
 ## Stage 2: regex-redux current-workload alignment
 
