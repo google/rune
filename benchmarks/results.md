@@ -758,8 +758,30 @@ warmup-plus-best-of-five series measured Rune O0 9683.787 ms, Rune O3
 therefore **0.547x the naive oracle** and **1.168x the leader**. This is a
 validated hash-kernel improvement, not a leader result.
 
-The largest current validated gap is now k-nucleotide at 1.168x, followed by
-n-body at 1.152x, reverse-complement at 1.089x, and Mandelbrot at 1.015x.
+The next hash-kernel checkpoint caches the capacity-derived Fibonacci shift in
+each map and updates it only when the table grows, removing a count-leading-
+zeros operation from every mixed-map lookup. The official golden and full 25M
+outputs remain byte-identical at O0/O3 to both references, and the compiler
+gate remains `PASS=205 FAIL=0`.
+
+In eight alternating-order checked O3 pairs, cached shifting won 8/8. Old/new
+best times were 2402.738/2379.994 ms (0.991x), and means were
+2411.267/2388.651 ms (about 0.94% faster). A fresh standard
+warmup-plus-best-of-five series measured Rune O0 9710.216 ms, Rune O3
+2354.425 ms, naive C 4405.715 ms, and constrained g++ #2 2039.866 ms. Rune is
+therefore **0.534x the naive oracle** and **1.154x the leader**. This modest
+checkpoint is exact and repeatable, but is not a leader result.
+
+A separate exact eight-pair probe found that compiling k-nucleotide with `-U`
+won 8/8 against checked mode: checked/unsafe best times were
+2372.789/2326.186 ms (0.980x), and means were 2377.817/2333.890 ms (about
+1.85% faster). This probe is not folded into the cached-shift checkpoint;
+the next step is to enable and document the benchmark's `-U` policy through
+the normal harness before publishing an unsafe-mode baseline.
+
+The largest current validated checked-mode gap is now k-nucleotide at 1.154x,
+followed by n-body at 1.152x, reverse-complement at 1.089x, and Mandelbrot at
+1.015x.
 
 ## Stage 2: regex-redux current-workload alignment
 

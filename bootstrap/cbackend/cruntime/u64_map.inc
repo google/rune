@@ -32,6 +32,8 @@ typedef struct rn_u64map {
   rn_u64map_slot *slots;
   size_t capacity;
   size_t count;
+  /* clz(capacity - 1), updated whenever the power-of-two capacity changes. */
+  unsigned hash_shift;
   uint8_t identity_hash;
 } rn_u64map;
 
@@ -45,16 +47,20 @@ static RN_U64MAP_HOT void rn_u64map_require(const rn_u64map *map) {
   }
 }
 
+static RN_U64MAP_COLD unsigned rn_u64map_hash_shift(size_t capacity) {
+  /* Every live table has capacity >= RN_U64MAP_INITIAL_CAPACITY, so the
+     capacity - 1 argument is nonzero. */
+  return (unsigned)__builtin_clzll((unsigned long long)(capacity - 1));
+}
+
 static RN_U64MAP_HOT uint64_t rn_u64map_hash(const rn_u64map *map, uint64_t key) {
   if (map->identity_hash) {
     return key;
   }
   // Power-of-two tables must select the high product bits: masking the low
   // bits would preserve the packed-key correlations that mixing is meant to
-  // remove. capacity >= 32 makes capacity - 1 nonzero for clz.
-  unsigned shift = (unsigned)__builtin_clzll(
-      (unsigned long long)(map->capacity - 1));
-  return (key * RN_U64MAP_FIBONACCI_MULTIPLIER) >> shift;
+  // remove. hash_shift caches clz(capacity - 1) across hot lookups.
+  return (key * RN_U64MAP_FIBONACCI_MULTIPLIER) >> map->hash_shift;
 }
 
 static RN_U64MAP_COLD void rn_u64map_allocate_arrays(
@@ -104,6 +110,7 @@ static RN_U64MAP_COLD void rn_u64map_grow(rn_u64map *map) {
   map->control = new_control;
   map->slots = new_slots;
   map->capacity = new_capacity;
+  map->hash_shift = rn_u64map_hash_shift(new_capacity);
 
   for (size_t old_slot = 0; old_slot < old_capacity; ++old_slot) {
     if (old_control[old_slot] == RN_U64MAP_OCCUPIED) {
@@ -132,6 +139,7 @@ static inline rn_u64map_t rn_u64map_new(uint8_t identity_hash) {
   map->control = control;
   map->slots = slots;
   map->capacity = RN_U64MAP_INITIAL_CAPACITY;
+  map->hash_shift = rn_u64map_hash_shift(RN_U64MAP_INITIAL_CAPACITY);
   map->identity_hash = identity_hash ? 1 : 0;
   map->magic = RN_U64MAP_MAGIC;
   return map;
