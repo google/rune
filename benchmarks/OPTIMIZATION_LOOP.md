@@ -206,10 +206,14 @@ explicit approximate-rsqrt path.
 The first compiler/runtime step is a deliberately scalar-safe `F64x4` opaque
 handle with destination-taking load/store, arithmetic, horizontal sum, and an
 explicit `f64x4ApproxReciprocalSqrt` surface. It has a focused smoke test and
-the full `PASS=205 FAIL=0` compiler gate, but does **not** yet emit AVX or
-change n-body, so it has no performance claim. This isolates the type/runtime
-plumbing before adding AVX-targeted helpers, local-only escape restrictions, and
-the leader's padded four-pair n-body layout. Scalar `sqrt` remains unchanged.
+the full `PASS=205 FAIL=0` compiler gate. It initially made no performance
+claim; the follow-on runtime update adds CPU-checked AVX helper bodies and the
+explicit float-rsqrt/Goldschmidt path while retaining a scalar fallback.
+Generated smoke-test assembly contains `vrsqrtps`, `vaddpd`, and `vmulpd`.
+N-body is still unchanged and unscored: the remaining work is local-only
+escape restrictions, per-generated-function targeting if vector values become
+register-resident, and the leader's padded four-pair layout. Scalar `sqrt`
+remains unchanged.
 
 ---
 
