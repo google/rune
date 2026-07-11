@@ -1535,8 +1535,31 @@ The manual builder's roughly 0.2--0.3% advantage is too small to justify a
 general replacement-engine rewrite. Direct JIT is material at roughly 2.2%,
 but C3 applies it to both counts and its manual replacement loop. A byte-exact
 C5 variant now isolates optional direct JIT for counts while leaving C2's
-substitute path unchanged; its quiet C2/C5 paired timing remains pending before
-the Rune runtime changes.
+substitute path unchanged.
+
+## Stage 3: optional direct JIT dispatch for regex counts
+
+The valid C1/C3 ten-pair series above established the direct-JIT path before
+the Rune change: C3 won 10/10, with mean and median improvements of about 2.2%.
+Rune's generic `regexCount` runtime now records whether PCRE2 produced actual
+JIT code and calls `pcre2_jit_match` directly only in that case. A successful
+compile request is not sufficient: `PCRE2_INFO_JITSIZE` must also be nonzero,
+which preserves interpreter semantics for patterns containing `(*NO_JIT)`.
+JIT-stack exhaustion still retries with normal `pcre2_match` and
+`PCRE2_NO_JIT`. The replacement path remains unchanged.
+
+Rune O0/O3 are byte-exact with the committed golden and the full 50.8 MB
+oracle. The normal regex suite covers ordinary, zero-width, embedded-NUL,
+literal-replacement, and `(*NO_JIT)` cases; generated-C structural guards
+require direct JIT, JIT-size readiness, stack-limit fallback, and conditional
+PCRE2 linkage. The full gate is `PASS=207 FAIL=0`, both generality-canary scales
+pass, GCC generated C is exact, and ASan/UBSan is clean with the runtime's
+pre-existing process-lifetime string leaks excluded.
+
+Quiet C2/C5 and old-Rune/new-Rune paired series remain pending because the
+development machine is busy. Therefore the implementation is justified by the
+already-valid C1/C3 attribution, but no new Rune speed ratio or leader claim is
+recorded yet.
 
 ## Stage 2 comparator closure: binary-trees C++ #7
 

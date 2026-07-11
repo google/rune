@@ -48,6 +48,9 @@ done
 if ! bash bootstrap/research/parallel_map_negative.sh >/dev/null 2>&1; then
   fail=$((fail+1)); failed="$failed parallel_map_negative"
 fi
+if ! bash bootstrap/research/runtime_codegen_canaries.sh >/dev/null 2>&1; then
+  fail=$((fail+1)); failed="$failed runtime_codegen_canaries"
+fi
 echo "PASS=$pass FAIL=$fail"
 printf 'FAILED:'
 for f in $(echo $failed | tr ' ' '\n' | sort); do printf ' %s' "$f"; done
