@@ -146,6 +146,7 @@ rn_reverse_masked5_translate_ssse3(uint8_t *destination,
                                    const uint8_t *source,
                                    size_t count,
                                    const uint8_t *table) {
+  const size_t originalCount = count;
   const __m128i tableLow = _mm_loadu_si128((const __m128i *)table);
   const __m128i tableHigh = _mm_loadu_si128((const __m128i *)(table + 16));
   const __m128i reverse = _mm_set_epi8(0, 1, 2, 3, 4, 5, 6, 7,
@@ -165,6 +166,29 @@ rn_reverse_masked5_translate_ssse3(uint8_t *destination,
     _mm_storeu_si128((__m128i *)destination, values);
     destination += 16;
     count -= 16;
+  }
+
+  // Wrapped FASTA output commonly leaves twelve bytes after one or more full
+  // vectors. In that case at least sixteen source bytes are known to exist, so
+  // load those bytes, select source[11] through source[0], and store only the
+  // twelve translated result bytes. Short inputs retain the scalar path below
+  // because a sixteen-byte load would extend beyond their source interval.
+  if (count == 12 && originalCount >= 16) {
+    const __m128i reverseTwelve = _mm_setr_epi8(
+        11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, -1, -1, -1, -1);
+    __m128i values = _mm_loadu_si128((const __m128i *)source);
+    values = _mm_shuffle_epi8(values, reverseTwelve);
+    values = _mm_and_si128(values, lowFiveBits);
+    const __m128i low = _mm_shuffle_epi8(tableLow, values);
+    const __m128i high = _mm_shuffle_epi8(tableHigh, values);
+    const __m128i selectHigh = _mm_cmpgt_epi8(values, fifteen);
+    values = _mm_or_si128(_mm_andnot_si128(selectHigh, low),
+                          _mm_and_si128(selectHigh, high));
+    _mm_storel_epi64((__m128i *)destination, values);
+    const uint32_t tail = (uint32_t)_mm_cvtsi128_si32(
+        _mm_srli_si128(values, 8));
+    memcpy(destination + 8, &tail, sizeof(tail));
+    return;
   }
   rn_reverse_masked5_translate_scalar(destination, source, count, table);
 }

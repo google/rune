@@ -309,6 +309,19 @@ measured the committed per-line form at 30.185 ms and the hoisted form at
 30.486 ms. The experiment was reverted; this call/table-loading hypothesis is
 not the remaining optimized-build bottleneck.
 
+The next measured experiment targeted the common 12-byte remainder left after
+three 16-byte vectors in every 60-base line. The SSSE3 helper now translates
+that remainder with one bounded `pshufb` and exact 8+4-byte stores; short or
+other-sized tails retain the scalar fallback, so arbitrary wrapping and binary
+table output remain unchanged. Golden and full 50.8 MB outputs match at O0/O3,
+and the compiler gate is `PASS=205 FAIL=0`. In a 15-pair alternating series the
+new path won 14 pairs: best times were 29.994 ms versus 30.589 ms (0.981x), and
+means were 30.421 ms versus 31.088 ms. A separate standard best-of-five series
+measured Rune O0 64.126 ms, Rune O3 30.054 ms, naive C 79.360 ms, and gcc #7
+19.019 ms. This is a real local improvement, but input remains the dominant
+gap. Increasing libc's stdin buffer with `stdbuf` to 64 KiB, 1 MiB, or 8 MiB
+was also measured and rejected; all three were slower than the default.
+
 ## Current analysis
 
 ### The optimization unlock
