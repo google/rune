@@ -241,6 +241,11 @@ naive C is 78.786 ms and constrained gcc #7 is 19.063 ms (Rune is 0.383x naive
 and 1.583x leader). The remaining leader features are raw chunked I/O and its
 threaded pipeline, not another transparent table substitution.
 
+A whole-record SSSE3 hoist was then tested and rejected. Although exact and
+gate-clean, its direct paired O3 result was 30.486 ms versus 30.185 ms for the
+committed per-line helper. Hoisting dispatch/table constants is therefore not
+the remaining O3 bottleneck; the uncommitted refactor was reverted.
+
 ---
 
 ## LOOP PROMPT (this is what you paste into `/loop`)

@@ -302,6 +302,13 @@ gap is no longer generic translation semantics; gcc #7 combines raw chunked
 I/O, vector translation, and a threaded pipeline. Any next step must expose one
 of those capabilities explicitly rather than weakening the arbitrary-table API.
 
+A follow-up whole-record SSSE3 experiment hoisted dispatch, table loads, and
+shuffle constants out of the per-line helper. It passed the binary test, gate,
+golden, and full scalar/leader comparisons, but a direct paired O3 series
+measured the committed per-line form at 30.185 ms and the hoisted form at
+30.486 ms. The experiment was reverted; this call/table-loading hypothesis is
+not the remaining optimized-build bottleneck.
+
 ## Current analysis
 
 ### The optimization unlock
