@@ -1,0 +1,113 @@
+// Generality canary: ordinary heap objects and pointer-rich graph traversal.
+//
+// This is deliberately not an optimization target. It exists to catch broad
+// regressions while other benchmarks receive specialized algorithm or codegen
+// work. Keep its object model and traversal straightforward; do not reshape it
+// into CLBG binary-trees or add benchmark-specific SIMD paths.
+
+DEFAULT_NODE_COUNT = 250000u64
+MAX_NODE_COUNT = 2000000u64
+CHAIN_LENGTH = 32u64
+MUTATION_ROUNDS = 3u64
+SKIP_MULTIPLIER = 17u64
+SKIP_OFFSET = 13u64
+NULL_SKIP_PERIOD = 97u64
+INITIAL_VALUE_MODULUS = 65521u64
+VALUE_MODULUS = 1000003u64
+CHECKSUM_MODULUS = 1000000007u64
+ITERATIVE_PASSES = 4u64
+
+class GraphNode(self: GraphNode, id: u64, value: u64,
+    next: GraphNode? = null(self), skip: GraphNode? = null(self)) {
+  self.id = id
+  self.value = value
+  self.next = next
+  self.skip = skip
+
+  // Recursive traversal is intentionally shallow: links terminate at each
+  // fixed-size chain boundary, so the default scale does not imply deep stack
+  // recursion.
+  func recursiveChecksum(self, remaining: u32) -> u64 {
+    total = self.value + self.id
+    nextNode = self.next
+    if remaining > 1u32 && !isnull(nextNode) {
+      total += nextNode.recursiveChecksum(remaining - 1u32)
+    }
+    return total % CHECKSUM_MODULUS
+  }
+
+  func update(self, round: u64) {
+    neighborValue = 0u64
+    nextNode = self.next
+    skipNode = self.skip
+    if !isnull(nextNode) {
+      neighborValue += nextNode.value
+    }
+    if !isnull(skipNode) {
+      neighborValue += skipNode.value
+    }
+    self.value = (self.value * 5u64 + neighborValue + self.id + round) %
+        VALUE_MODULUS
+  }
+}
+
+nodeCount = DEFAULT_NODE_COUNT
+passed = true
+if argv.length() > 1 {
+  passed = false
+  nodeCount = argv[1].toUint(u64, passed)
+}
+assert passed && nodeCount >= 1u64 && nodeCount <= MAX_NODE_COUNT,
+    "object_graph node count must be in 1..2000000"
+
+nodes = arrayof(GraphNode)
+for i = 0u64, i < nodeCount, i += 1u64 {
+  initialValue = (i * 37u64 + 11u64) % INITIAL_VALUE_MODULUS
+  nodes.append(GraphNode(i, initialValue))
+}
+
+// Form many short forward chains plus irregular skip links. The skip graph
+// contains cycles and null gaps, unlike the ownership shape in binary-trees.
+for i = 0u64, i < nodeCount, i += 1u64 {
+  if i + 1u64 < nodeCount && (i + 1u64) % CHAIN_LENGTH != 0u64 {
+    nodes[i].next = nodes[i + 1u64]
+  }
+  if i % NULL_SKIP_PERIOD != 0u64 {
+    skipIndex = (i * SKIP_MULTIPLIER + SKIP_OFFSET) % nodeCount
+    nodes[i].skip = nodes[skipIndex]
+  }
+}
+
+// Mutate through ordinary nullable object fields. Updates are intentionally
+// ordered, so the C oracle performs the same observable state transitions.
+for round = 0u64, round < MUTATION_ROUNDS, round += 1u64 {
+  for i = 0u64, i < nodeCount, i += 1u64 {
+    nodes[i].update(round)
+  }
+}
+
+checksum = 0u64
+
+// Recursive walks cover every forward chain exactly once.
+for i = 0u64, i < nodeCount, i += CHAIN_LENGTH {
+  checksum += nodes[i].recursiveChecksum(<u32>CHAIN_LENGTH)
+  checksum %= CHECKSUM_MODULUS
+}
+
+// Iterative traversal follows the cyclic skip graph for a fixed amount of
+// work, taking a deterministic fallback edge at each nullable gap.
+current = nodes[0u64]
+stepCount = nodeCount * ITERATIVE_PASSES
+for step = 0u64, step < stepCount, step += 1u64 {
+  checksum += current.value + current.id
+  checksum %= CHECKSUM_MODULUS
+  skipNode = current.skip
+  if !isnull(skipNode) {
+    current = skipNode
+  } else {
+    fallbackIndex = (current.id + step + 1u64) % nodeCount
+    current = nodes[fallbackIndex]
+  }
+}
+
+println nodeCount, " ", checksum

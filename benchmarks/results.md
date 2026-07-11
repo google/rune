@@ -1428,6 +1428,37 @@ a custom literal replacement builder, and reusable execution state. Fasta near
 reported gaps. The fastest published regex Rust entry and binary-trees
 comparator still require local dependency closure before stronger leader claims.
 
+## Generality canaries
+
+Three deliberately untuned programs now guard language/runtime paths outside
+the CLBG hot loops. `collections_strings` exercises string-keyed dictionaries,
+membership, removal/reinsertion, iteration views, and string heaps;
+`object_graph` exercises ordinary classes, allocation, nullable cyclic links,
+mutation, shallow recursion, and iterative traversal; `checked_matrix`
+exercises generic classes, overloaded arithmetic, checked nested arrays,
+integer and floating-point work, and tuple assignment. Straightforward C
+programs are correctness-only oracles, never performance comparators.
+
+The canary runner builds Rune O0 and host-native O3, requires exact agreement
+with both the oracle and committed default-workload golden, and optionally
+records alternating informational Rune O0/O3 timings. Timing has no leaderboard
+threshold and fails closed unless the one-minute load is at most 1.0 and CPU 0
+is idle. A small normal-suite regex test independently covers non-overlapping
+matches, literal and zero-width substitution, embedded-NUL explicit lengths,
+and the interpreter fallback when a pattern disables PCRE2 JIT.
+
+The matrix canary exposed a genuine existing limitation: constructor-field
+baking followed by overloaded-operator specialization behind another
+unconstrained outer generic is not currently schedulable. No benchmark-specific
+compiler workaround was retained; the canary keeps the generic matrix and
+operators but explicitly types its scoring helper, and the limitation remains
+documented for general compiler work.
+
+All three default workloads are byte-exact across Rune O0, Rune O3, their C
+oracles, and the committed goldens. The added regex semantics test raises the
+full bootstrap gate to `PASS=206 FAIL=0`. Informational canary timings were
+intentionally not collected while the development machine was busy.
+
 ## Historical fixes retained in the current source
 
 - A bare `sqrt(x)` lowers to hardware/libm sqrt, which is essential to n-body's

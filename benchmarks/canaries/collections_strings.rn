@@ -1,0 +1,109 @@
+// Copyright 2026 The Rune Authors.
+//
+// This is a generality canary, not a contest benchmark. Compiler and runtime
+// changes must not recognize this file, its constants, its key prefix, or its
+// operation sequence. Optimize the generic Dict, Heapq, string, and iterator
+// paths instead; unrelated workloads must receive the same benefit.
+
+DEFAULT_ITEMS = 30000u64
+MIN_ITEMS = 1u64
+MAX_ITEMS = 100000u64
+UPDATE_PERIOD = 3u64
+VALUE_SALT = 0x6a09e667f3bcc909u64
+
+func keyFor(i: u64) -> string {
+  return "key-" + i.toString()
+}
+
+func parseItems(text: string, var valid: bool) -> u64 {
+  valid = false
+  if text.length() == 0u64 {
+    return 0u64
+  }
+  for byte in text.values() {
+    if byte < 0x30u8 || byte > 0x39u8 {
+      return 0u64
+    }
+  }
+  passed = false
+  parsed = text.toUint(u64, passed)
+  if !passed || parsed < MIN_ITEMS || parsed > MAX_ITEMS {
+    return 0u64
+  }
+  valid = true
+  return parsed
+}
+
+items = DEFAULT_ITEMS
+if argv.length() > 2u64 {
+  exit(2i32)
+}
+if argv.length() == 2u64 {
+  validItems = false
+  items = parseItems(argv[1], validItems)
+  if !validItems {
+    exit(2i32)
+  }
+}
+
+dict = Dict(string, u64)
+heap = Heapq(string)
+
+// Insertion exercises string construction, hashing, equality, and heap
+// comparison without relying on a benchmark-specific data distribution.
+for i = 0u64, i < items, i += 1u64 {
+  key = keyFor(i)
+  value = hashValues(i, i ^ VALUE_SALT)
+  dict.insert(key, value)
+  heap.push(key)
+}
+
+// Probe all entries and replace a regular subset using only public Dict
+// operations. A second find observes the post-update value.
+probeChecksum = 0u64
+for i = 0u64, i < items, i += 1u64 {
+  key = keyFor(i)
+  if key in dict {
+    value = dict.find(key)
+    if i % UPDATE_PERIOD == 0u64 {
+      dict.remove(key)
+      dict.insert(key, hashValues(value, i))
+    }
+    probeChecksum = hashValues(probeChecksum,
+        hashValues(hashString(key), dict.find(key)))
+  }
+}
+
+// These reductions are deliberately commutative so dictionary iteration order
+// is not part of the language-to-C comparison. Each public iterator is used.
+keyChecksum = 0u64
+keyCount = 0u64
+for key in dict.keys() {
+  keyChecksum = keyChecksum !+ hashString(key)
+  keyCount += 1u64
+}
+
+valueChecksum = 0u64
+for value in dict.values() {
+  valueChecksum = valueChecksum !+ value
+}
+
+itemChecksum = 0u64
+for pair in dict.items() {
+  itemChecksum = itemChecksum !+
+      hashValues(hashString(pair[0]), pair[1])
+}
+
+// Heap draining is order-sensitive and therefore checks generic string
+// comparison as well as Heapq ordering.
+heapChecksum = 0u64
+while !heap.empty() {
+  heapChecksum = hashValues(heapChecksum, hashString(heap.pop()))
+}
+
+checksum = hashValues(probeChecksum, keyChecksum)
+checksum = hashValues(checksum, valueChecksum)
+checksum = hashValues(checksum, itemChecksum)
+checksum = hashValues(checksum, heapChecksum)
+checksum = hashValues(checksum, keyCount)
+println items, " ", keyCount, " ", checksum

@@ -1,0 +1,16 @@
+// General regex builtin semantics. Keep this small and independent of the
+// benchmark patterns so runtime/codegen changes get a fast regression signal.
+
+println regexCount("aa", "aaaaa")
+println regexReplace("(a)", "$1", "aba")
+
+println regexCount("a*", "bbb")
+println regexReplace("a*", "X", "bbb")
+
+nulSubject = "A\0B\0C"
+println regexCount(".", nulSubject)
+nulReplaced = regexReplace("\\x00", "Z", nulSubject)
+println nulReplaced.length(), " ", nulReplaced[0], " ", nulReplaced[1], " ", nulReplaced[3], " ", nulReplaced[4]
+
+println regexCount("(*NO_JIT)a+", "caaad")
+println regexReplace("(*NO_JIT)a+", "Q", "caaad")

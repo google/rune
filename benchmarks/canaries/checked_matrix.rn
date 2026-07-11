@@ -1,0 +1,94 @@
+// Regression canary for ordinary checked arrays and generic code paths.
+// The deliberately awkward 17x23x19 dimensions are not SIMD-friendly.
+
+ROWS = 17u64
+INNER = 23u64
+COLS = 19u64
+DEFAULT_SCALE = 200u64
+
+class Matrix(self, <values>) {
+  self.rows = values.length()
+  self.cols = values[0].length()
+  self.values = values
+
+  operator + (left: Matrix, right: typeof(left)) -> Matrix {
+    assert left.rows == right.rows && left.cols == right.cols
+    sumRows = arrayof([f64])
+    for row in range(left.rows) {
+      sumRow = arrayof(f64).resize(left.cols)
+      for col in range(left.cols) {
+        sumRow[col] = left.values[row][col] + right.values[row][col]
+      }
+      sumRows.append(sumRow)
+    }
+    return Matrix(sumRows)
+  }
+
+  operator * (left: Matrix, right: typeof(left)) -> Matrix {
+    assert left.cols == right.rows
+    productRows = arrayof([f64])
+    for row in range(left.rows) {
+      productRow = arrayof(f64).resize(right.cols)
+      for col in range(right.cols) {
+        value = 0.0f64
+        for inner in range(left.cols) {
+          value += left.values[row][inner] * right.values[inner][col]
+        }
+        productRow[col] = value
+      }
+      productRows.append(productRow)
+    }
+    return Matrix(productRows)
+  }
+}
+
+func makeMatrix(rows: u64, cols: u64, seed: i64) -> Matrix {
+  values = arrayof([f64])
+  for row in range(rows) {
+    valuesRow = arrayof(f64).resize(cols)
+    for col in range(cols) {
+      integerValue = seed + <i64>(row * 3u64 + col * 2u64 + 1u64)
+      valuesRow[col] = <f64>integerValue * 0.25f64
+    }
+    values.append(valuesRow)
+  }
+  return Matrix(values)
+}
+
+func scoreValues(values: [[f64]]) -> (i64, f64) {
+  integerScore = 0i64
+  floatScore = 0.0f64
+  for row in range(values.length()) {
+    for col in range(values[row].length()) {
+      value = values[row][col]
+      weight = <i64>((row + 1u64) * (col + 2u64))
+      integerScore += <i64>(value * 16.0f64) * weight
+      floatScore += value * <f64>weight
+    }
+  }
+  return (integerScore, floatScore)
+}
+
+scale = DEFAULT_SCALE
+if argv.length() > 1 {
+  passed = false
+  parsedScale = argv[1].toUint(u64, passed)
+  assert passed && parsedScale >= 1u64 && parsedScale <= 100000u64, "scale must be an integer in 1..100000"
+  scale = parsedScale
+}
+
+left = makeMatrix(ROWS, INNER, 1i64)
+right = makeMatrix(INNER, COLS, -2i64)
+bias = makeMatrix(ROWS, COLS, 3i64)
+integerTotal = 0i64
+floatTotal = 0.0f64
+for iteration in range(scale) {
+  result = left * right + bias
+  scores = scoreValues(result.values)
+  integerTotal += scores[0] + <i64>(iteration % 17u64)
+  floatTotal += scores[1] + <f64>(iteration % 13u64) * 0.5f64
+}
+
+// All source values are quarter-integers, making this compact conversion
+// exact and deterministic despite exercising mixed i64/f64 arithmetic.
+println integerTotal, " ", <i64>(floatTotal * 16.0f64)
