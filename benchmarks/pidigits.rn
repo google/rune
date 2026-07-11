@@ -1,9 +1,9 @@
 // pidigits — The Computer Language Benchmarks Game
 // https://benchmarksgame-team.pages.debian.net/benchmarksgame/
 //
-// Gibbons unbounded spigot algorithm for pi digits.
-// Uses i8192 signed wide integers; empirically correct for N <= 265.
-// Overflow occurs at N=266: state variables (q,r,t) exceed 8192 bits.
+// Unbounded pi spigot used by the current CLBG C gcc #2 entry.
+// GMP-backed BigInt values reuse their destination allocations; the scalar
+// counter remains far below u64 at the CLBG workload (N = 10000).
 
 DEFAULT_N = 27u32
 
@@ -13,21 +13,32 @@ if argv.length() > 1 {
   N = argv[1].toUint(u32, passed)
 }
 
-// Spigot state variables — all i8192 (signed 8192-bit)
-q = 1i8192
-r = 0i8192
-t = 1i8192
-k = 1i8192
-n = 3i8192
-l = 3i8192
+// Dynamic spigot state and three reusable GMP work values.
+n1 = bigIntNew(4u64)
+n2 = bigIntNew(3u64)
+d = bigIntNew(1u64)
+u = bigIntNew(0u64)
+v = bigIntNew(0u64)
+w = bigIntNew(0u64)
+zero = bigIntNew(0u64)
+
+// The producer counter is an ordinary bounded scalar. Keeping it out of GMP
+// lets the hot updates use GMP's specialized multiply-by-word operations.
+k = 1u64
 
 digitsProduced = 0u32
 col = 0u32
 
 while digitsProduced < N {
-  if 4i8192*q + r - t < n*t {
-    // Output digit n (value is 0-9)
-    writeByte(<u8>(<u32>n + 48u32))
+  bigIntDivTrunc(u, n1, d)
+  bigIntDivTrunc(v, n2, d)
+
+  // u == v means the next digit is stable. Equality is expressed as two
+  // strict comparisons so the initial minimal API remains table-free.
+  if !bigIntLess(u, v) && !bigIntLess(v, u) {
+    // The spigot invariant bounds u to a decimal digit.
+    digit = bigIntToU64(u)
+    writeByte(<u8>(digit + 48u64))
     col += 1
     digitsProduced += 1
     if col == 10u32 {
@@ -37,23 +48,28 @@ while digitsProduced < N {
       println suf
       col = 0u32
     }
-    // Update state for digit emission
-    newQ = 10i8192 * q
-    newR = 10i8192 * (r - n*t)
-    n = 10i8192 * (3i8192*q + r) / t - 10i8192*n
-    q = newQ
-    r = newR
+
+    if digitsProduced < N {
+      // Extract: u = -10*u; u *= d; n1/n2 = 10*n1/n2 + u.
+      bigIntMulU64(u, u, 10u64)
+      bigIntSub(u, zero, u)
+      bigIntMul(u, d, u)
+      bigIntMulU64(n1, n1, 10u64)
+      bigIntAdd(n1, n1, u)
+      bigIntMulU64(n2, n2, 10u64)
+      bigIntAdd(n2, n2, u)
+    }
   } else {
-    // Step (refine the interval)
-    newQ = q * k
-    newR = (2i8192*q + r) * l
-    newT = t * l
-    n = (q*(7i8192*k + 2i8192) + r*l) / (t*l)
-    l = l + 2i8192
-    k = k + 1i8192
-    q = newQ
-    r = newR
-    t = newT
+    // Produce the next interval using the six destination-reuse values.
+    k2 = k*2u64
+    bigIntMulU64(u, n1, k2 - 1u64)
+    bigIntAdd(v, n2, n2)
+    bigIntMulU64(w, n1, k - 1u64)
+    bigIntAdd(n1, u, v)
+    bigIntMulU64(u, n2, k + 2u64)
+    bigIntAdd(n2, w, u)
+    bigIntMulU64(d, d, k2 + 1u64)
+    k += 1u64
   }
 }
 

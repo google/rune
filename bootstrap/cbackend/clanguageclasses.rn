@@ -998,6 +998,21 @@ enum CRuntimeFunction {
    RegexCount
    RegexReplace
 
+   // GMP-backed opaque arbitrary-precision integer runtime. These are dormant
+   // until the typechecker/codegen gains the BigInt surface type.
+   BigIntNew
+   BigIntSet
+   BigIntAdd
+   BigIntSub
+   BigIntMul
+   BigIntMulU64
+   BigIntAddU64
+   BigIntSubU64
+   BigIntDivTrunc
+   BigIntLess
+   BigIntToU64
+   BigIntToString
+
    // String builtins
    StringAppend
    StringLength
@@ -1224,6 +1239,66 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.RegexReplace => {
         e.needRegex()
         e.write("rn_regex_replace")
+      }
+
+      CRuntimeFunction.BigIntNew => {
+        e.needGmp()
+        e.write("rn_bigint_new_u64")
+      }
+
+      CRuntimeFunction.BigIntSet => {
+        e.needGmp()
+        e.write("rn_bigint_set")
+      }
+
+      CRuntimeFunction.BigIntAdd => {
+        e.needGmp()
+        e.write("rn_bigint_add")
+      }
+
+      CRuntimeFunction.BigIntSub => {
+        e.needGmp()
+        e.write("rn_bigint_sub")
+      }
+
+      CRuntimeFunction.BigIntMul => {
+        e.needGmp()
+        e.write("rn_bigint_mul")
+      }
+
+      CRuntimeFunction.BigIntMulU64 => {
+        e.needGmp()
+        e.write("rn_bigint_mul_u64")
+      }
+
+      CRuntimeFunction.BigIntAddU64 => {
+        e.needGmp()
+        e.write("rn_bigint_add_u64")
+      }
+
+      CRuntimeFunction.BigIntSubU64 => {
+        e.needGmp()
+        e.write("rn_bigint_sub_u64")
+      }
+
+      CRuntimeFunction.BigIntDivTrunc => {
+        e.needGmp()
+        e.write("rn_bigint_div_trunc")
+      }
+
+      CRuntimeFunction.BigIntLess => {
+        e.needGmp()
+        e.write("rn_bigint_less")
+      }
+
+      CRuntimeFunction.BigIntToU64 => {
+        e.needGmp()
+        e.write("rn_bigint_to_u64")
+      }
+
+      CRuntimeFunction.BigIntToString => {
+        e.needGmp()
+        e.write("rn_bigint_to_string")
       }
 
       CRuntimeFunction.StringLength => {

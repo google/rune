@@ -3464,6 +3464,36 @@ class TypeChecker(self) {
             self.newSymbol(fnchild.val.symVal!,
                 FN(TUPLE([STRING(), STRING(), STRING()]), STRING()))
           }
+          // GMP-backed BigInt is an opt-in opaque runtime value.  Keep it
+          // explicit and destination-taking: existing iN/uN arithmetic stays
+          // fixed width, while callers can reuse GMP allocations in hot loops.
+          if (isnull(callee) &&
+              isnull(self.findSymbolMapping(SymbolMapping(fnchild.val.symVal!,
+                  fnchild.val.symVal.typedValue)))) {
+            bigInt = BIGINT()
+            bigIntName = fnchild.val.symVal.name
+            if bigIntName == "bigIntNew" {
+              self.newSymbol(fnchild.val.symVal!, FN(UINTEGER(), bigInt))
+            } else if bigIntName == "bigIntSet" {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([bigInt, bigInt]), NONETY()))
+            } else if (bigIntName == "bigIntAdd" || bigIntName == "bigIntSub" ||
+                bigIntName == "bigIntMul" || bigIntName == "bigIntDivTrunc") {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([bigInt, bigInt, bigInt]), NONETY()))
+            } else if (bigIntName == "bigIntMulU64" ||
+                bigIntName == "bigIntAddU64" || bigIntName == "bigIntSubU64") {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([bigInt, bigInt, UINTEGER()]), NONETY()))
+            } else if bigIntName == "bigIntLess" {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([bigInt, bigInt]), BOOLEAN()))
+            } else if bigIntName == "bigIntToU64" {
+              self.newSymbol(fnchild.val.symVal!, FN(bigInt, U(64)))
+            } else if bigIntName == "bigIntToString" {
+              self.newSymbol(fnchild.val.symVal!, FN(bigInt, STRING()))
+            }
+          }
         }
         fnchild = expr.firstChildExpr!
         argchild = fnchild.nextExprChildExpr

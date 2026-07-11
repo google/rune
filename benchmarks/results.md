@@ -340,8 +340,52 @@ input byte before taking that path restored generic semantics but measured
 dispatch was rejected. An explicit masked-table primitive would be a separate
 language-surface decision, not an invisible substitute for arbitrary byte
 translation.
-Pidigits still needs a true bignum facility rather than local code-generation
-tuning.
+The historical pidigits row demonstrates why a true bignum facility was needed;
+the subsequent GMP-backed `BigInt` work below replaces that fixed-width path.
+
+## Stage 2/3: pidigits GMP BigInt and published-leader parity
+
+On 2026-07-10, a fresh pinned check confirmed that the prior `i8192` port was
+303.622x slower than its GMP oracle at 265 digits (390.583 ms versus 1.286 ms),
+and it overflowed at 266 digits. This was structural: every fixed-width result
+allocated 128 limbs, multiplication was full 128-by-128 schoolbook arithmetic,
+and division scanned all 8192 bits. `-U` cannot remove those wide-runtime costs.
+
+The bootstrap backend now provides an opt-in opaque `BigInt` runtime backed by
+GMP. It deliberately does **not** alter `iN`/`uN`: their fixed-width overflow,
+cast, and bitwise semantics remain intact. `bigIntNew` creates a value and the
+explicit destination-taking `bigIntSet`, `bigIntAdd`, `bigIntSub`, `bigIntMul`,
+`bigIntMulU64`, `bigIntAddU64`, `bigIntSubU64`, and `bigIntDivTrunc` operations
+reuse GMP destination capacity. `bigIntLess`, `bigIntToU64`, and
+`bigIntToString` provide the small conversion surface needed by ordinary Rune
+programs. Programs that do not call a `bigInt*` builtin do not link GMP.
+
+Pidigits now uses the current official C gcc #2 algorithm with this generic
+runtime surface, rather than its former fixed-width Gibbons implementation. The
+official source was obtained from the pinned
+[Benchmark Game Salsa page](https://salsa.debian.org/benchmarksgame-team/benchmarksgame/-/raw/40296663ed350d5fe4a6ab5e367bab61cb77c219/public/program/pidigits-gcc-2.html)
+and built locally with its published `gcc -pipe -Wall -O3
+-fomit-frame-pointer -march=ivybridge -lgmp` flags. Rune O0/O3, the committed
+GMP oracle, and that exact leader source all matched the 27-digit golden and
+the full 265- and 10,000-digit outputs byte-for-byte. The compiler gate also
+passed `PASS=205 FAIL=0`.
+
+The harness workload is now the CLBG-standard 10,000 digits. Times below are
+milliseconds on pinned CPU 0, one warmup discarded, best of five, at nice 15
+and idle I/O priority. The first three values are from the final full harness;
+the constrained leader is a separate same-method local build because the
+harness intentionally builds only committed oracle sources.
+
+| Benchmark (workload) | Rune flags | Rune O0 | Rune O3 | committed GMP oracle | published C gcc #2 | O3 / oracle | O3 / leader |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| pidigits (10000) | checked | 352.979 | 351.701 | 769.219 | 350.583 | **0.457x** | **1.003x** |
+
+The remaining 0.3% is beneath the powersave/minimum-sample noise visible
+between individual same-method series; it is not a defensible claim that Rune
+beats the leader. It does prove the emitted C and reusable GMP API add no
+material overhead on this single-threaded benchmark. This closes pidigits as a
+language/runtime blocker and moves its direct leader gap from unbounded
+fixed-width failure to practical parity.
 
 ## Historical fixes retained in the current source
 

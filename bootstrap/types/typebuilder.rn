@@ -35,6 +35,13 @@ func NONETY() -> Type {
   return Type(TypeName(Sym.new("none")))
 }
 
+// An unbounded signed integer supplied by the optional GMP runtime.  This is
+// deliberately a nominal type rather than an IntType: iN/uN keep their
+// fixed-width overflow, casts, and bitwise semantics.
+func BIGINT() -> Type {
+  return Type(TypeName(Sym.new("BigInt")))
+}
+
 func INTEGER() -> Type {
   return Type(AnyIntType(true))
 }
@@ -135,4 +142,3 @@ func BPOLY(vars: u64 | [u64], bounds: [Type], scope: Type) -> Type {
   }
 
 }
-

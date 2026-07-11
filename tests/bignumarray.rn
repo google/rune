@@ -13,3 +13,24 @@
 // limitations under the License.
 
 println [12345u65]
+
+// GMP-backed BigInt is a separate opaque, destination-taking type.  Keep the
+// existing fixed-width u65 fixture above, then cover signed arithmetic,
+// truncating division, checked narrowing, formatting, and comparison.
+left = bigIntNew(23u64)
+right = bigIntNew(7u64)
+result = bigIntNew(0u64)
+negative = bigIntNew(0u64)
+
+bigIntMul(result, left, right)
+bigIntSubU64(result, result, 1u64)
+bigIntDivTrunc(result, result, right)
+println bigIntToString(result)
+
+bigIntSub(negative, negative, right)
+bigIntDivTrunc(result, negative, right)
+println bigIntToString(result)
+
+bigIntAddU64(result, result, 2u64)
+println bigIntToU64(result)
+println bigIntLess(negative, result)

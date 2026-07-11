@@ -130,6 +130,19 @@ A speed number is only admissible if it is **correct, pinned, and reproducible.*
   For the rest, land the gap analysis so the feature work is scoped. Report the
   honest scoreboard vs both references.
 
+### Stage 2/3 update: pidigits (2026-07-10)
+
+Pidigits was the largest validated non-reverse gap: the `i8192` port was about
+304x a GMP oracle at 265 digits and invalid above 265 digits. The bootstrap
+runtime now has an opt-in opaque GMP-backed `BigInt` with explicit
+destination-taking operations, preserving all existing fixed-width integer
+semantics. The benchmark was ported to the current C gcc #2 leader algorithm,
+then validated byte-for-byte at 27, 265, and the standard 10,000 digits against
+both the committed GMP oracle and a locally built, pinned exact leader source.
+At 10,000 digits Rune O3 is 351.701 ms versus 350.583 ms for that leader
+(1.003x) and 769.219 ms for the committed GMP oracle (0.457x). See
+`results.md` for flags, source provenance, and the full contract.
+
 ---
 
 ## LOOP PROMPT (this is what you paste into `/loop`)

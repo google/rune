@@ -3743,6 +3743,41 @@ class Expr(self, type: ExprType, location: Location) {
         }
         return builder.cCall(self.location, rxfn, c.CExpr(rxparms))
       }
+      if (builtinName == "bigIntNew" || builtinName == "bigIntSet" ||
+          builtinName == "bigIntAdd" || builtinName == "bigIntSub" ||
+          builtinName == "bigIntMul" || builtinName == "bigIntMulU64" ||
+          builtinName == "bigIntAddU64" || builtinName == "bigIntSubU64" ||
+          builtinName == "bigIntDivTrunc" || builtinName == "bigIntLess" ||
+          builtinName == "bigIntToU64" || builtinName == "bigIntToString") &&
+          isnull(builder.findFunction(builtinName)) {
+        // BigInt is a deliberately explicit GMP-backed opaque value.  Its
+        // operations take an output destination where applicable, so hot
+        // loops can reuse GMP capacity instead of allocating every result.
+        getRoot().usesGmp = true
+        switch builtinName {
+          "bigIntNew" => bigIntFn = c.CRuntimeFunction.BigIntNew
+          "bigIntSet" => bigIntFn = c.CRuntimeFunction.BigIntSet
+          "bigIntAdd" => bigIntFn = c.CRuntimeFunction.BigIntAdd
+          "bigIntSub" => bigIntFn = c.CRuntimeFunction.BigIntSub
+          "bigIntMul" => bigIntFn = c.CRuntimeFunction.BigIntMul
+          "bigIntMulU64" => bigIntFn = c.CRuntimeFunction.BigIntMulU64
+          "bigIntAddU64" => bigIntFn = c.CRuntimeFunction.BigIntAddU64
+          "bigIntSubU64" => bigIntFn = c.CRuntimeFunction.BigIntSubU64
+          "bigIntDivTrunc" => bigIntFn = c.CRuntimeFunction.BigIntDivTrunc
+          "bigIntLess" => bigIntFn = c.CRuntimeFunction.BigIntLess
+          "bigIntToU64" => bigIntFn = c.CRuntimeFunction.BigIntToU64
+          default => bigIntFn = c.CRuntimeFunction.BigIntToString
+        }
+        bigIntArgs = c.CExprList()
+        if right.typedValue.type == types.Type.TypeClass.Tuple {
+          for child in right.childExprs() {
+            bigIntArgs.appendCExpr(child.genC(builder))
+          }
+        } else {
+          bigIntArgs.appendCExpr(right.genC(builder))
+        }
+        return builder.cCall(self.location, bigIntFn, c.CExpr(bigIntArgs))
+      }
     }
 
     // Calls to extern "C" functions are emitted under an rn_ prefix and

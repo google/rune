@@ -22,14 +22,13 @@ used to exercise and measure the **self-hosted (bootstrap) Rune compiler**
 Each `NAME.stdout` is a golden for a fixed small argument. Every C reference is
 verified byte-identical to its Rune counterpart.
 
-**pidigits** uses the Gibbons streaming spigot over Rune's fixed-width wide
-integers (`i8192`) rather than true bignum, so at that width it is correct up to
-N=265 digits (the state overflows the 8192-bit type beyond that). Wider state
-types used to crash the compiler; that was a stack-buffer overflow in the CTTK
-dependency — see [`../patches/cttk-gendiv-stack2-buffer.patch`](../patches/README.md).
-With that patch applied, widening the state to e.g. `i15000` produces ~400
-correct digits. The committed `pidigits.rn` stays at `i8192` so it builds
-against an unpatched CTTK.
+**pidigits** uses Rune's opt-in, GMP-backed opaque `BigInt` runtime and a
+destination-taking API, so its mutable spigot state is unbounded while reusing
+GMP allocations. Its timing workload is the CLBG standard N=10000 digits.
+Fixed-width `iN`/`uN` integers remain unchanged; they retain their existing
+width, overflow, cast, and bitwise semantics. Building a program that calls a
+`bigInt*` builtin links `-lgmp`, so **GMP must be installed** (`libgmp-dev` /
+`gmp`); programs that do not use it gain no GMP dependency.
 
 **regex-redux** uses two regex builtins added to the bootstrap compiler —
 `regexCount(pattern, text) -> u64` and `regexReplace(pattern, repl, text) ->

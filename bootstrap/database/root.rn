@@ -31,6 +31,9 @@ class Root(self) {
   // clang link line then adds -lpcre2-8 for the regex.inc shim.  Off unless a
   // program actually calls regex, so non-regex binaries gain no PCRE2 dep.
   self.usesRegex = false
+  // Set when generated C uses the optional GMP-backed arbitrary-precision
+  // runtime. Keep the dependency opt-in for ordinary Rune programs.
+  self.usesGmp = false
   self.generateC = false
   self.outputCFilename = ""
   self.indentDepth = 0u32

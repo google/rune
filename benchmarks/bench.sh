@@ -67,7 +67,7 @@ declare -Ar TIMING_ARG=(
   [spectral_norm]=3000
   [n_body]=5000000
   [fasta]=2500000
-  [pidigits]=265
+  [pidigits]=10000
 )
 
 declare -Ar RUNE_FLAGS=(

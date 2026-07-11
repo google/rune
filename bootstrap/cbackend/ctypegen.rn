@@ -248,6 +248,13 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
   }
 
   func genCTypename(self, ty: types.TypeName) -> CTypeExpr? {
+    // BigInt is an opaque GMP-backed runtime value, requested by its direct
+    // builtins.  It is intentionally not an IntType: fixed-width integer
+    // semantics must remain unchanged.
+    if ty.name.name == "BigInt" {
+      // CDefinedType appends its conventional `_t` suffix at emission.
+      return CTypeExpr(CDefinedType("rn_bigint"))
+    }
     if !isnull(self.typechecker.lookupClass(ty.name)) {
       // The instance's struct collapses phantom parameters (see
       // TypeChecker.dropPhantomParams), so two instances differing only there
@@ -357,4 +364,3 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
   }
 
 }
-

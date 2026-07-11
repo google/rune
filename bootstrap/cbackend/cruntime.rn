@@ -223,6 +223,15 @@ class CRuntime(self) {
     return cf
   }
 
+  // GMP values format through Rune headed strings and report invalid
+  // arithmetic through raise(), so emit those runtime pieces first.
+  func needGmp(self) -> CFragment {
+    self.needRaiseError()
+    cf = self.cFragment("gmp", "cbackend/cruntime/gmp.inc")
+    cf.addDependencies([self.needStringMethods()])
+    return cf
+  }
+
   func needIntAdd(self, width: u32) -> string {
     self.needRaiseError()
     self.needIntAddFn = true
