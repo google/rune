@@ -179,6 +179,16 @@ respectively). The bounded roadmap item is opt-in SIMD vector support paired
 with an explicit approximate reciprocal-square-root primitive; scalar `sqrt`
 must keep its exact existing behavior.
 
+### Stage 2 update: FASTA semantic alignment (2026-07-11)
+
+The old FASTA ALU repeat and double cumulative selection were not current CLBG
+semantics. Rune and its scalar C oracle now use the 287-byte ALU and exact
+`f32` 139,968-entry LCG lookup construction from pinned C gcc #3; dependent
+goldens/inputs were regenerated and the full harness passed. At 2.5M, Rune O3
+is 67.404 ms versus aligned naive C 74.071 ms, but the exact single-thread
+gcc #3 comparator is 46.727 ms (1.443x). Next target: reusable preformatted
+byte-output blocks, with lookup/LCG semantics fixed.
+
 ---
 
 ## LOOP PROMPT (this is what you paste into `/loop`)

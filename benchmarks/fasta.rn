@@ -10,12 +10,28 @@ IC = 29573u32
 rngSeed = [42u32]
 WIDTH = 60u32
 
-// Homo sapiens alu repeat string (287 chars)
-ALU = "GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGGGAGGCCGAGGCGGGCGGATCACCTGAGGTCAGGAGTTCGAGACCAGCCTGGCCAACATGGTGAAACCCCGTCTCTACTAAAAATACAAAAATTAGCCGGGCGTGGTGGCGCGCGCCTGTAATCCCAGCTACTCGGGAGGCTGAGGCAGGAGAATCGCTTGAACCCGGGAGGCGGAGGTTGCAGTGAGCCGAGATCGCGCCACTGCACTCCAGCCTGGGCGACAGAGCGAGACTCCGTCTCAAAAAA"
+// Homo sapiens alu repeat string (287 chars).
+ALU = "GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGGGAGGCCGAGGCGGGCGGATCACCTGAGGTCAGGAGTTCGAGACCAGCCTGGCCAACATGGTGAAACCCCGTCTCTACTAAAAATACAAAAATTAGCCGGGCGTGGTGGCGCGCGCCTGTAATCCCAGCTACTCGGGAGGCTGAGGCAGGAGAATCGCTTGAACCCGGGAGGCGGAGGTTGCAGTGAGCCGAGATCGCGCCACTGCACTCCAGCCTGGGCGACAGAGCGAGACTCCGTCTCAAAAA"
 
-func genRandom(max: f64) -> f64 {
-  rngSeed[0] = (rngSeed[0] * IA + IC) % IM
-  return max * <f64>rngSeed[0] / <f64>IM
+// Map every possible LCG result directly to its symbol.  Keep the leader's
+// f32 cumulative sums and f32 r conversion: boundary choices are part of the
+// benchmark's deterministic output.
+func buildLookup(symbols: [u8], probabilities: [f32]) -> [u8] {
+  lookup = [0u8]
+  lookup.resize(<u64>IM)
+  sum = probabilities[0u64]
+  symbolIndex = 0u64
+  i = 0u64
+  while i < <u64>IM {
+    r = <f32>(1.0f64 * <f64>i / <f64>IM)
+    if r >= sum {
+      symbolIndex += 1u64
+      sum += probabilities[symbolIndex]
+    }
+    lookup[i] = symbols[symbolIndex]
+    i += 1u64
+  }
+  return lookup
 }
 
 func repeatFasta(s: string, count: u32) {
@@ -39,37 +55,11 @@ func repeatFasta(s: string, count: u32) {
   }
 }
 
-func randomFastaIUB(count: u32) {
+func randomFasta(lookup: [u8], count: u32) {
   col = 0u32
-  tableLen = iubSyms.length()
   for i = 0u32, i < count, i += 1 {
-    p = genRandom(1.0f64)
-    j = 0u64
-    while j + 1u64 < tableLen && iubProbs[j] < p {
-      j += 1
-    }
-    writeByte(iubSyms[j])
-    col += 1
-    if col == WIDTH {
-      writeByte(10u8)
-      col = 0u32
-    }
-  }
-  if col > 0u32 {
-    writeByte(10u8)
-  }
-}
-
-func randomFastaHS(count: u32) {
-  col = 0u32
-  tableLen = hsSyms.length()
-  for i = 0u32, i < count, i += 1 {
-    p = genRandom(1.0f64)
-    j = 0u64
-    while j + 1u64 < tableLen && hsProbs[j] < p {
-      j += 1
-    }
-    writeByte(hsSyms[j])
+    rngSeed[0] = (rngSeed[0] * IA + IC) % IM
+    writeByte(lookup[<u64>rngSeed[0]])
     col += 1
     if col == WIDTH {
       writeByte(10u8)
@@ -88,28 +78,24 @@ if argv.length() > 1 {
   n = argv[1].toUint(u32, passed)
 }
 
-// IUB ambiguity codes table (15 symbols, individual probabilities)
-iubSyms = ['a', 'c', 'g', 't', 'B', 'D', 'H', 'K', 'M', 'N', 'R', 'S', 'V', 'W', 'Y']
-iubProbs = [0.27f64, 0.12f64, 0.12f64, 0.27f64,
-            0.02f64, 0.02f64, 0.02f64, 0.02f64, 0.02f64,
-            0.02f64, 0.02f64, 0.02f64, 0.02f64, 0.02f64, 0.02f64]
-// Compute cumulative probabilities for IUB
-for k = 1u64, k < iubProbs.length(), k += 1 {
-  iubProbs[k] += iubProbs[k - 1u64]
-}
+// IUB ambiguity codes and Homo sapiens frequencies use the leader's symbol
+// order and f32 probabilities.  Build each full LCG lookup once.
+iubSyms = [97u8, 99u8, 103u8, 116u8, 66u8, 68u8, 72u8, 75u8,
+           77u8, 78u8, 82u8, 83u8, 86u8, 87u8, 89u8]
+iubProbs = [0.27f32, 0.12f32, 0.12f32, 0.27f32,
+            0.02f32, 0.02f32, 0.02f32, 0.02f32, 0.02f32,
+            0.02f32, 0.02f32, 0.02f32, 0.02f32, 0.02f32, 0.02f32]
+iubLookup = buildLookup(iubSyms, iubProbs)
 
-// Homo sapiens frequency table (4 symbols, individual probabilities)
-hsSyms = ['a', 'c', 'g', 't']
-hsProbs = [0.3029549426680f64, 0.1979883004921f64, 0.1975473066391f64, 0.3015094502008f64]
-// Compute cumulative probabilities for HomoSap
-for k = 1u64, k < hsProbs.length(), k += 1 {
-  hsProbs[k] += hsProbs[k - 1u64]
-}
+hsSyms = [97u8, 99u8, 103u8, 116u8]
+hsProbs = [0.3029549426680f32, 0.1979883004921f32,
+           0.1975473066391f32, 0.3015094502008f32]
+hsLookup = buildLookup(hsSyms, hsProbs)
 
 // Main sequence
 println ">ONE Homo sapiens alu"
 repeatFasta(ALU, n * 2u32)
 println ">TWO IUB ambiguity codes"
-randomFastaIUB(n * 3u32)
+randomFasta(iubLookup, n * 3u32)
 println ">THREE Homo sapiens frequency"
-randomFastaHS(n * 5u32)
+randomFasta(hsLookup, n * 5u32)

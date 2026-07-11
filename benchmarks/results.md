@@ -479,6 +479,34 @@ gap, so the context experiment was rejected. Closing that gap would require a
 careful general replacement-engine redesign or explicit parallel work, not a
 transparent semantic change to Rune regex calls.
 
+## Stage 2: FASTA current-workload alignment
+
+The old FASTA source was not the current CLBG workload: its ALU repeat contained
+one extra final byte, and its double cumulative-probability search did not match
+the current generator's `f32` 139,968-entry LCG lookup boundaries. Rune and the
+naive scalar C oracle now match the pinned single-thread C gcc #3 source exactly:
+the ALU literal is 287 bytes; each random record builds the same byte lookup
+table with the leader's `r >= sum` transition; every output base advances the
+same LCG once and indexes that table. Headers, record sizes, and 60-column
+formatting are unchanged.
+
+The revised FASTA golden and all derived reverse-complement, k-nucleotide, and
+regex-redux golden/timing paths were regenerated from verified references. The
+full serial harness passed every golden and timing-workload comparison after it
+regenerated its 1M/5M FASTA inputs. The scalar C gcc #3 entry is not the tied
+published #1 (which is a two-worker C++/Rust implementation), but is a
+dependency-free single-thread program only about 1% behind it in the official
+table, and it is exact at the local workload.
+
+| FASTA (2.5M) | Rune O0 | Rune O3 | aligned naive C | single-thread C gcc #3 | O3 / naive | O3 / gcc #3 |
+|---|---:|---:|---:|---:|---:|---:|
+| current CLBG generator | 212.574 | 67.404 | 74.071 | 46.727 | **0.910x** | **1.443x** |
+
+The remaining safe single-thread gap is output construction: gcc #3 preformats
+100 complete 60-byte lines per bulk write, whereas Rune still invokes the
+buffered `writeByte` helper for every emitted byte. The next source-level work
+is an exact reusable byte-output block; do not alter the lookup/LCG semantics.
+
 ## Historical fixes retained in the current source
 
 - A bare `sqrt(x)` lowers to hardware/libm sqrt, which is essential to n-body's
