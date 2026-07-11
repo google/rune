@@ -507,6 +507,36 @@ The remaining safe single-thread gap is output construction: gcc #3 preformats
 buffered `writeByte` helper for every emitted byte. The next source-level work
 is an exact reusable byte-output block; do not alter the lookup/LCG semantics.
 
+## Stage 3: FASTA reusable bulk output blocks
+
+FASTA now constructs output into reusable byte arrays and writes each completed
+array with the existing binary-safe `writeBytes` runtime builtin. The ALU block
+contains `lcm(60, 287) = 17,220` bases and 287 newlines, so it can be reused
+without changing either the 60-column boundary or the repeat phase. Random
+records refill a 100-line (6,000-base / 6,100-byte) buffer; this still advances
+the LCG exactly once for each base and uses the already validated lookup table.
+The final partial block is written with its exact used length.
+
+Focused comparisons at N=1, 1000, 2000 (random-block boundary), and 8610
+(ALU-block boundary) were byte-identical to the aligned C reference. The full
+serialized harness then passed every golden and timing-workload comparison. A
+fresh 2.5M Rune output was also byte-identical to the locally built gcc #3
+comparator before its timing series.
+
+| FASTA (2.5M) | Rune O0 | Rune O3 | aligned naive C | gcc #3 | O3 / naive | O3 / gcc #3 |
+|---|---:|---:|---:|---:|---:|---:|
+| full harness, scalar oracle comparison | 160.423 | 47.382 | 71.818 | — | **0.660x** | — |
+| immediate dedicated leader series | — | 49.845 | — | 48.240 | — | **1.033x** |
+
+Both series discarded one warmup and used the minimum of five CPU-0,
+nice-15/idle-I/O runs. The difference between the harness and the immediate
+series is normal powersave-state variation; it is not evidence that Rune beats
+the comparator. The reliable result is the large improvement from 67.404 ms to
+roughly 47–50 ms and practical single-thread parity with the dependency-free
+near-leader. The next raw leader gap is n-body (1.684x), which requires a
+deliberate explicit SIMD/approximate-rsqrt design rather than another generic
+output change.
+
 ## Historical fixes retained in the current source
 
 - A bare `sqrt(x)` lowers to hardware/libm sqrt, which is essential to n-body's

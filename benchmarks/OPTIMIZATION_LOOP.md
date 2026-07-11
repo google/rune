@@ -189,6 +189,18 @@ is 67.404 ms versus aligned naive C 74.071 ms, but the exact single-thread
 gcc #3 comparator is 46.727 ms (1.443x). Next target: reusable preformatted
 byte-output blocks, with lookup/LCG semantics fixed.
 
+### Stage 3 update: FASTA bulk output (2026-07-11)
+
+Reusable, exact byte-output blocks now replace per-byte FASTA writes: a
+17,220-base LCM repeat block and a refilled 100-line random block. Focused
+boundary checks, the full serialized harness, and a fresh 2.5M direct
+comparison to C gcc #3 all passed byte-identically. The harness measures Rune
+O3 47.382 ms versus aligned naive C 71.818 ms (0.660x); an immediate matching
+leader series is Rune 49.845 ms versus gcc #3 48.240 ms (1.033x). Treat this as
+near parity, not a leader win, because powersave-state variation spans those
+two O3 samples. The next feature-sized target is n-body's explicit SIMD plus
+explicit approximate-rsqrt path.
+
 ---
 
 ## LOOP PROMPT (this is what you paste into `/loop`)
