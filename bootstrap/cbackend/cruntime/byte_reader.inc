@@ -9,6 +9,12 @@
 #define RN_BYTE_READER_MAGIC UINT64_C(0x52554e4542524452)
 #define RN_BYTE_READER_BUFFER_CAPACITY ((size_t)65536)
 
+#if defined(__GNUC__) || defined(__clang__)
+#define RN_BYTE_READER_HOT inline __attribute__((always_inline))
+#else
+#define RN_BYTE_READER_HOT inline
+#endif
+
 typedef struct rn_byte_reader {
   uint64_t magic;
   FILE *stream;
@@ -20,7 +26,8 @@ typedef struct rn_byte_reader {
 
 typedef rn_byte_reader *rn_byte_reader_t;
 
-static inline void rn_byte_reader_require(const rn_byte_reader *reader) {
+static RN_BYTE_READER_HOT void rn_byte_reader_require(
+    const rn_byte_reader *reader) {
   if (reader == NULL || reader->magic != RN_BYTE_READER_MAGIC) {
     raise("ByteReaderInvalid");
   }
@@ -43,8 +50,8 @@ static inline rn_byte_reader_t rn_byte_reader_new(void) {
 // LF. The last unterminated line is returned normally; a subsequent call
 // returns the same allocation with used == 0. While a reader is live, its
 // stream must not be consumed through a second API because it owns prefetch.
-static inline uint8_t *rn_byte_reader_readln_into(rn_byte_reader_t reader,
-                                                  uint8_t *bytes) {
+static RN_BYTE_READER_HOT uint8_t *rn_byte_reader_readln_into(
+    rn_byte_reader_t reader, uint8_t *bytes) {
   rn_byte_reader_require(reader);
   if (bytes == NULL) {
     raise("ByteReaderInvalidArray");
@@ -126,4 +133,5 @@ static inline void rn_byte_reader_free(rn_byte_reader_t reader) {
 }
 
 #undef RN_BYTE_READER_BUFFER_CAPACITY
+#undef RN_BYTE_READER_HOT
 #undef RN_BYTE_READER_MAGIC

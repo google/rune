@@ -369,6 +369,31 @@ again the largest measured target, the remaining hypotheses are raw record
 layout or an output-side probe; otherwise prioritization returns to the largest
 validated global gap.
 
+### ByteReader forced-inline update
+
+The next runtime checkpoint marks both `rn_byte_reader_require` and
+`rn_byte_reader_readln_into` `always_inline` for GCC/Clang, with ordinary
+portable `inline` as the fallback. Optimized reverse-complement assembly has no
+`rn_byte_reader_readln_into` call. The committed golden and full
+50,833,411-byte workload remain byte-exact at O0/O3 against the naive oracle
+and constrained gcc #7 leader; every full output has the SHA-256 beginning
+`e92b329f`. The compiler regression gate remains `PASS=205 FAIL=0`.
+
+Thirty alternating-order O3 pairs favored the forced-inline path 30/30.
+Old/new best times were 20.610/19.740 ms (0.958x), and means were
+21.082/20.195 ms (about 4.2% faster). A fresh contemporaneous standard
+warmup-plus-best-of-five series measured:
+
+| Benchmark (workload) | Rune flags | Rune O0 | Rune O3 | naive O3 | constrained gcc #7 | O3 / naive | O3 / constrained leader |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| reverse-complement (fasta 5M) | `-U` | 59.284 | 19.683 | 72.738 | 16.942 | **0.271x** | **1.162x** |
+
+The earlier 1.089x ByteReader ratio was valid within its own session, but its
+leader comparator ran materially slower. Current cross-benchmark ranking uses
+the fresh four-way series above: reverse-complement is the largest validated
+gap at 1.162x, followed by n-body at 1.087x, k-nucleotide at 1.084x, and
+Mandelbrot at 1.015x.
+
 ## Current analysis
 
 ### The optimization unlock
@@ -817,8 +842,11 @@ standard warmup-plus-best-of-five series measured Rune O0 7194.054 ms, Rune O3
 2209.640 ms, naive C 4353.842 ms, and constrained g++ #2 2039.065 ms. Rune is
 therefore **0.508x the naive oracle** and **1.084x the leader**.
 
-The largest current validated gap is now reverse-complement at 1.089x,
-followed by n-body at 1.087x, k-nucleotide at 1.084x, and Mandelbrot at 1.015x.
+The largest current validated gap is reverse-complement at 1.162x, followed by
+n-body at 1.087x, k-nucleotide at 1.084x, and Mandelbrot at 1.015x. This ranking
+uses contemporaneous comparator measurements; the earlier 1.089x
+reverse-complement result remains a valid same-session checkpoint but is not
+the current four-way baseline.
 
 ## Stage 2: regex-redux current-workload alignment
 
