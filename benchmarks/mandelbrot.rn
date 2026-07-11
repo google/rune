@@ -12,6 +12,92 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Render eight pixels at a time using two reversed-lane vectors. Keeping the
+// complete renderer in this explicitly typed function lets the C backend mark
+// only this function for AVX while main remains safe for runtime dispatch.
+func renderAvx(width: u32, height: u32, var bitmap: [u8]) {
+  pixelsPerByte = 8u32
+  lanesPerVector = 4u64
+  iterationsPerBatch = 5u32
+  earlyCheckBatches = 8u32
+  totalBatches = 10u32
+  escapeLimitSquared = 4.0f64
+
+  bytesPerRow = width / pixelsPerByte
+  coordinateScale = 2.0f64 / <f64>width
+  imaginaryScale = 2.0f64 / <f64>height
+  realCoordinates = arrayof(f64).resize(<u64>width)
+  for x = 0u32, x < width, x += 1u32 {
+    realCoordinates[<u64>x] = coordinateScale * <f64>x - 1.5f64
+  }
+
+  escapeLimit = f64x4Splat(escapeLimitSquared)
+  for y = 0u32, y < height, y += 1u32 {
+    imaginaryCoordinate = imaginaryScale * <f64>y - 1.0f64
+    initialImaginary = f64x4Splat(imaginaryCoordinate)
+    lastPixels = 0u8
+
+    for byteX = 0u32, byteX < bytesPerRow, byteX += 1u32 {
+      pixelX = <u64>byteX * <u64>pixelsPerByte
+      initialReal0 = f64x4FromLanes(
+          realCoordinates[pixelX + 3u64], realCoordinates[pixelX + 2u64],
+          realCoordinates[pixelX + 1u64], realCoordinates[pixelX])
+      initialReal1 = f64x4FromLanes(
+          realCoordinates[pixelX + 7u64], realCoordinates[pixelX + 6u64],
+          realCoordinates[pixelX + 5u64],
+          realCoordinates[pixelX + lanesPerVector])
+      real0 = initialReal0
+      real1 = initialReal1
+      imaginary0 = initialImaginary
+      imaginary1 = initialImaginary
+      squaredMagnitude0 = f64x4Splat(0.0f64)
+      squaredMagnitude1 = f64x4Splat(0.0f64)
+      allEscaped = false
+
+      for batch = 0u32,
+          batch < totalBatches && !allEscaped, batch += 1u32 {
+        for iteration = 0u32,
+            iteration < iterationsPerBatch, iteration += 1u32 {
+          realSquared0 = f64x4Mul(real0, real0)
+          imaginarySquared0 = f64x4Mul(imaginary0, imaginary0)
+          realTimesImaginary0 = f64x4Mul(real0, imaginary0)
+          squaredMagnitude0 = f64x4Add(realSquared0, imaginarySquared0)
+          real0 = f64x4Add(f64x4Sub(realSquared0, imaginarySquared0),
+                           initialReal0)
+          imaginary0 = f64x4Add(
+              f64x4Add(realTimesImaginary0, realTimesImaginary0),
+              initialImaginary)
+
+          realSquared1 = f64x4Mul(real1, real1)
+          imaginarySquared1 = f64x4Mul(imaginary1, imaginary1)
+          realTimesImaginary1 = f64x4Mul(real1, imaginary1)
+          squaredMagnitude1 = f64x4Add(realSquared1, imaginarySquared1)
+          real1 = f64x4Add(f64x4Sub(realSquared1, imaginarySquared1),
+                           initialReal1)
+          imaginary1 = f64x4Add(
+              f64x4Add(realTimesImaginary1, realTimesImaginary1),
+              initialImaginary)
+        }
+
+        if lastPixels == 0u8 && batch < earlyCheckBatches {
+          active0 = f64x4LessEqualMask(squaredMagnitude0, escapeLimit)
+          active1 = f64x4LessEqualMask(squaredMagnitude1, escapeLimit)
+          allEscaped = (active0 | active1) == 0u8
+        }
+      }
+
+      pixels = 0u8
+      if !allEscaped {
+        mask0 = f64x4LessEqualMask(squaredMagnitude0, escapeLimit)
+        mask1 = f64x4LessEqualMask(squaredMagnitude1, escapeLimit)
+        pixels = (mask0 << 4u32) | mask1
+      }
+      bitmap[<u64>y * <u64>bytesPerRow + <u64>byteX] = pixels
+      lastPixels = pixels
+    }
+  }
+}
+
 N = 200u32
 if argv.length() > 1 {
   passed = false
@@ -26,37 +112,41 @@ limitSq = limit * limit
 print "P4\n%u %u\n" % (width, height)
 bitmapSize = <u64>height * <u64>maxX
 bitmap = arrayof(u8).resize(bitmapSize)
-cr0 = arrayof(f64).resize(8)
-cr = arrayof(f64).resize(8)
-ci = arrayof(f64).resize(8)
-for y = 0u32, y < height, y += 1 {
-    ci0 = 2.0 * <f64>y / <f64>height - 1.0
-    for x = 0u32, x < maxX, x += 1 {
-        for k = 0u32, k < 8u32, k += 1 {
-            cr0[k] = 2.0 * <f64>(8 * x + k) / <f64>width - 1.5;
-        }
-        for i = 0u32, i < 8, i += 1 {
-            cr[i] = cr0[i]
-            ci[i] = ci0
-        }
-        bits = 0u8
-        for i = 0u32, i < maxIterations && bits != 0xff, i += 1 {
-            for k = 0u32, k < 8, k += 1 {
-                mask = 1u8 << (7u32 - k)
-                if bits & mask == 0 {
-                    crk  = cr[k]
-                    cik  = ci[k]
-                    cr2k = crk * crk
-                    ci2k = cik * cik
-                    cr[k] = cr2k - ci2k + cr0[k]
-                    ci[k] = 2.0 * crk * cik + ci0
-                    if cr2k + ci2k > limitSq {
-                        bits |= mask
+if simdAvxAvailable() && width > 0u32 && width % 8u32 == 0u32 {
+    renderAvx(width, height, bitmap)
+} else {
+    cr0 = arrayof(f64).resize(8)
+    cr = arrayof(f64).resize(8)
+    ci = arrayof(f64).resize(8)
+    for y = 0u32, y < height, y += 1 {
+        ci0 = 2.0 * <f64>y / <f64>height - 1.0
+        for x = 0u32, x < maxX, x += 1 {
+            for k = 0u32, k < 8u32, k += 1 {
+                cr0[k] = 2.0 * <f64>(8 * x + k) / <f64>width - 1.5;
+            }
+            for i = 0u32, i < 8, i += 1 {
+                cr[i] = cr0[i]
+                ci[i] = ci0
+            }
+            bits = 0u8
+            for i = 0u32, i < maxIterations && bits != 0xff, i += 1 {
+                for k = 0u32, k < 8, k += 1 {
+                    mask = 1u8 << (7u32 - k)
+                    if bits & mask == 0 {
+                        crk  = cr[k]
+                        cik  = ci[k]
+                        cr2k = crk * crk
+                        ci2k = cik * cik
+                        cr[k] = cr2k - ci2k + cr0[k]
+                        ci[k] = 2.0 * crk * cik + ci0
+                        if cr2k + ci2k > limitSq {
+                            bits |= mask
+                        }
                     }
                 }
             }
+            bitmap[<u64>y * <u64>maxX + <u64>x] = ~bits
         }
-        bitmap[<u64>y * <u64>maxX + <u64>x] = ~bits
     }
 }
 writeBytes(bitmap, bitmapSize, 0u64)

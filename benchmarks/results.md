@@ -564,6 +564,37 @@ standard series measured Rune O0 1463.007 ms, Rune O3 245.288 ms, naive C
 session, so the paired series is the attribution evidence. The remaining gap
 is overwhelmingly the scalar kernel.
 
+The next step adds one general SIMD primitive,
+`f64x4LessEqualMask(F64x4,F64x4) -> u8`, with ordered AVX comparison and a
+portable lane-bit fallback. Its compiler/runtime foundation passed
+`PASS=205 FAIL=0`. Mandelbrot then renders each byte as two reversed-lane
+F64x4 streams inside one guarded monomorphic function, preserves the leader's
+separate multiply/subtract/add order, batches checks every five iterations,
+uses the previous byte to avoid unnecessary checks, and retains the exact
+scalar fallback. Optimized assembly has inline AVX comparisons/arithmetic, no
+F64x4 helper calls or FMA, no repeated vector spills, and one scalar spill.
+
+Rune O0/O3 are byte-identical to the official N=200 golden and N=4000 oracle;
+Rune O3 is additionally byte-identical to naive C and both g++ #4 variants at
+the official N=16000 workload. At N=4000, the SIMD O3 path measures 93.357 ms
+versus 303.235 ms naive C and 79.833 ms g++ #4 one-thread: **0.308x naive and
+1.169x the leader**. The prior bulk scalar path was 233.441 ms in the paired
+session, so SIMD improves Rune by 2.50x. O0 is 25018.278 ms because clang O0
+cannot scalar-replace the by-value vector structs; it is recorded for the
+contract, not as a production configuration.
+
+| official Mandelbrot (16000) | Rune O3 | naive C O3 | g++ #4 one thread | g++ #4 default, CPU0 | O3 / naive | O3 / one-thread leader |
+|---|---:|---:|---:|---:|---:|---:|
+| exact full workload | 1439.085 | 4724.742 | 1193.206 | 1197.778 | **0.305x** | **1.206x** |
+
+The official-size series also discarded one warmup and used the best of five
+serialized CPU0 runs. The remaining 17–21% gap is now a bounded kernel/codegen
+question rather than missing vectorization: compare coordinate precompute,
+loop unrolling, previous-byte control flow, and the leader's native union
+layout before adding threads. Reverse-complement's roughly 1.5x gap again
+becomes the largest validated direct target, while k-nucleotide remains
+semantically blocked on its required hash-table migration.
+
 ## Stage 2: regex-redux current-workload alignment
 
 The former Rune and C-oracle regex-redux sources used an obsolete eleven-IUB
