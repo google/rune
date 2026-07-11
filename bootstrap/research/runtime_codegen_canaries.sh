@@ -61,13 +61,11 @@ reject_needed() {
   fi
 }
 
-require_pattern "$REGEX_C" 'int jit_ready = rn_regex_prepare_count_jit(re);' 'regex generated C'
-require_pattern "$REGEX_C" 'if (jit_ready)' 'regex generated C'
-require_pattern "$REGEX_C" 'rc = pcre2_jit_match(' 'regex generated C'
-require_pattern "$REGEX_C" 'PCRE2_INFO_JITSIZE' 'regex generated C'
+require_pattern "$REGEX_C" 'pcre2_jit_compile' 'regex generated C'
+require_pattern "$REGEX_C" 'int rc = pcre2_match(' 'regex generated C'
 require_pattern "$REGEX_C" 'PCRE2_ERROR_JIT_STACKLIMIT' 'regex generated C'
 require_pattern "$REGEX_C" 'PCRE2_NO_JIT' 'regex generated C'
-require_pattern "$REGEX_C" 'jit_size != 0' 'regex generated C'
+reject_pattern "$REGEX_C" 'pcre2_jit_match(' 'regex generated C'
 
 require_pattern "$PARALLEL_C" 'pthread_create' 'parallelMap generated C'
 require_pattern "$PARALLEL_C" 'atomic_fetch_add_explicit' 'parallelMap generated C'

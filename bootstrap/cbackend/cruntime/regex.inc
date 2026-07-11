@@ -12,41 +12,20 @@
 #include <pcre2.h>
 
 /*
- * JIT is optional: compilation failure retains interpreter semantics. Count
- * matching uses pcre2_jit_match() directly when compilation succeeds, avoiding
- * the generic pcre2_match() dispatch overhead in repeated searches. A JIT
- * stack limit retries through the interpreter so acceleration stays
- * semantically transparent.
+ * pcre2_match() automatically dispatches to JIT code after a successful JIT
+ * compilation, and otherwise uses the interpreter.  A JIT stack limit is the
+ * one matching error that needs an explicit interpreter retry to keep that
+ * optional acceleration semantically transparent.
  */
-static void rn_regex_request_jit(pcre2_code *re) {
+static void rn_regex_enable_jit(pcre2_code *re) {
     (void)pcre2_jit_compile(re, PCRE2_JIT_COMPLETE);
 }
 
-static int rn_regex_prepare_count_jit(pcre2_code *re) {
-    if (pcre2_jit_compile(re, PCRE2_JIT_COMPLETE) != 0) {
-        return 0;
-    }
-    /* A pattern containing (*NO_JIT) may accept the compile request without
-     * producing executable code. Query the generated size before calling the
-     * direct JIT entry point; zero means interpreter-only. */
-    size_t jit_size = 0;
-    return pcre2_pattern_info(re, PCRE2_INFO_JITSIZE, &jit_size) == 0 &&
-           jit_size != 0;
-}
-
-static int rn_regex_count_match(const pcre2_code *re, int jit_ready,
-                                PCRE2_SPTR subject,
-                                PCRE2_SIZE subject_len,
-                                PCRE2_SIZE startoffset,
-                                pcre2_match_data *match_data) {
-    int rc;
-    if (jit_ready) {
-        rc = pcre2_jit_match(re, subject, subject_len, startoffset, 0,
-                             match_data, NULL);
-    } else {
-        rc = pcre2_match(re, subject, subject_len, startoffset, 0,
+static int rn_regex_match(const pcre2_code *re, PCRE2_SPTR subject,
+                          PCRE2_SIZE subject_len, PCRE2_SIZE startoffset,
+                          pcre2_match_data *match_data) {
+    int rc = pcre2_match(re, subject, subject_len, startoffset, 0,
                          match_data, NULL);
-    }
     if (rc == PCRE2_ERROR_JIT_STACKLIMIT) {
         rc = pcre2_match(re, subject, subject_len, startoffset, PCRE2_NO_JIT,
                          match_data, NULL);
@@ -106,7 +85,7 @@ static uint64_t rn_regex_count(const char *pattern, const char *text) {
                 (size_t)erroffset, (char *)errbuf);
         exit(1);
     }
-    int jit_ready = rn_regex_prepare_count_jit(re);
+    rn_regex_enable_jit(re);
 
     pcre2_match_data *md = pcre2_match_data_create_from_pattern(re, NULL);
     size_t text_len = (size_t)string_length(text);
@@ -114,8 +93,8 @@ static uint64_t rn_regex_count(const char *pattern, const char *text) {
     uint64_t count = 0;
 
     while (offset <= text_len) {
-        int rc = rn_regex_count_match(
-            re, jit_ready, (PCRE2_SPTR)text, (PCRE2_SIZE)text_len, offset, md);
+        int rc = rn_regex_match(re, (PCRE2_SPTR)text, (PCRE2_SIZE)text_len,
+                                offset, md);
         if (rc < 0) {
             /* PCRE2_ERROR_NOMATCH or end-of-subject — we're done. */
             break;
@@ -175,7 +154,7 @@ static char *rn_regex_replace(const char *pattern, const char *repl,
                 (size_t)erroffset, (char *)errbuf);
         exit(1);
     }
-    rn_regex_request_jit(re);
+    rn_regex_enable_jit(re);
 
     size_t text_len = (size_t)string_length(text);
     size_t repl_len = (size_t)string_length(repl);

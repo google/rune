@@ -1537,29 +1537,27 @@ but C3 applies it to both counts and its manual replacement loop. A byte-exact
 C5 variant now isolates optional direct JIT for counts while leaving C2's
 substitute path unchanged.
 
-## Stage 3: optional direct JIT dispatch for regex counts
+## Rejected Stage 3 probe: count-only direct JIT dispatch
 
-The valid C1/C3 ten-pair series above established the direct-JIT path before
-the Rune change: C3 won 10/10, with mean and median improvements of about 2.2%.
-Rune's generic `regexCount` runtime now records whether PCRE2 produced actual
-JIT code and calls `pcre2_jit_match` directly only in that case. A successful
-compile request is not sufficient: `PCRE2_INFO_JITSIZE` must also be nonzero,
-which preserves interpreter semantics for patterns containing `(*NO_JIT)`.
-JIT-stack exhaustion still retries with normal `pcre2_match` and
-`PCRE2_NO_JIT`. The replacement path remains unchanged.
+The C1/C3 result did not isolate Rune's intended change: C3 used direct JIT in
+both its nine count loops and its manual cleanup/replacement matcher. C5 changes
+only counts to optional direct `pcre2_jit_match`, retains C2's substitution
+path, and falls back when JIT code is unavailable. The exact quiet C2/C5 series
+favored C5 only 7/10, with best 1632.821/1630.002 ms, mean
+1637.092/1634.621 ms (0.99849x), and median 1635.955/1634.394 ms. The roughly
+0.1--0.15% effect is below the 1.5% acceptance threshold. TSV SHA-256:
+`cd33674ea07f065530a86ca61e930e297a79ff79f5d56b6446bd2c309c1116b2`.
 
-Rune O0/O3 are byte-exact with the committed golden and the full 50.8 MB
-oracle. The normal regex suite covers ordinary, zero-width, embedded-NUL,
-literal-replacement, and `(*NO_JIT)` cases; generated-C structural guards
-require direct JIT, JIT-size readiness, stack-limit fallback, and conditional
-PCRE2 linkage. The full gate is `PASS=207 FAIL=0`, both generality-canary scales
-pass, GCC generated C is exact, and ASan/UBSan is clean with the runtime's
-pre-existing process-lifetime string leaks excluded.
-
-Quiet C2/C5 and old-Rune/new-Rune paired series remain pending because the
-development machine is busy. Therefore the implementation is justified by the
-already-valid C1/C3 attribution, but no new Rune speed ratio or leader claim is
-recorded yet.
+The Rune implementation independently confirmed the rejection. Old generic
+dispatch and count-only direct JIT split 5/5; best was 1653.913/1653.730 ms,
+mean 1656.213/1658.131 ms (direct JIT 1.00116x), and median
+1655.294/1657.132 ms. TSV SHA-256:
+`36b1be98768baba69e8f13a819b09ae3c871c4733d8cad9f7659f5e56dafea56`.
+Both binaries regenerated the committed golden and full 50.8 MB output before
+timing. The direct-JIT runtime change was therefore reverted; Rune retains
+normal `pcre2_match` dispatch, optional JIT compilation, interpreter fallback,
+and the existing JIT-stack-limit retry. The general generated-C gate still
+checks those semantics and conditional PCRE2 linkage.
 
 ## Stage 2 comparator closure: binary-trees C++ #7
 
