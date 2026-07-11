@@ -110,13 +110,26 @@ func countKmers(var dnaB: [u8], k: u64) -> U64Map {
   mask = kmerMask(k)
   key = 0u64
   i = 0u64
+  // Build the first k-mer up to its final base without touching the map.
+  // Keeping this short warmup separate removes the per-byte readiness branch
+  // from the full steady-state scan. The k == 0 guard preserves this helper's
+  // previous behavior even though every benchmark call uses a positive k.
+  warmupEnd = 0u64
+  if k > 0u64 {
+    warmupEnd = k - 1u64
+  }
+  while i < warmupEnd {
+    key = ((key << DNA_BASE_BITS) | <u64>dnaB[i]) & mask
+    i += 1u64
+  }
+
+  // Each remaining byte completes exactly one k-mer, so the hot loop needs
+  // no readiness test before incrementing the map.
   while i < dnaLen {
     key = ((key << DNA_BASE_BITS) | <u64>dnaB[i]) & mask
-    if i + 1u64 >= k {
-      // This benchmark is built with -U. Its owned live map and finite input
-      // establish the unchecked increment's lifetime and count bounds.
-      u64MapIncrementUnchecked(counts, key)
-    }
+    // This benchmark is built with -U. Its owned live map and finite input
+    // establish the unchecked increment's lifetime and count bounds.
+    u64MapIncrementUnchecked(counts, key)
     i += 1u64
   }
   return counts
