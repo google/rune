@@ -12,6 +12,52 @@
 #include <pcre2.h>
 
 /*
+ * pcre2_match() automatically dispatches to JIT code after a successful JIT
+ * compilation, and otherwise uses the interpreter.  A JIT stack limit is the
+ * one matching error that needs an explicit interpreter retry to keep that
+ * optional acceleration semantically transparent.
+ */
+static void rn_regex_enable_jit(pcre2_code *re) {
+    (void)pcre2_jit_compile(re, PCRE2_JIT_COMPLETE);
+}
+
+static int rn_regex_match(const pcre2_code *re, PCRE2_SPTR subject,
+                          PCRE2_SIZE subject_len, PCRE2_SIZE startoffset,
+                          pcre2_match_data *match_data) {
+    int rc = pcre2_match(re, subject, subject_len, startoffset, 0,
+                         match_data, NULL);
+    if (rc == PCRE2_ERROR_JIT_STACKLIMIT) {
+        rc = pcre2_match(re, subject, subject_len, startoffset, PCRE2_NO_JIT,
+                         match_data, NULL);
+    }
+    return rc;
+}
+
+static int rn_regex_substitute(const pcre2_code *re, PCRE2_SPTR subject,
+                               PCRE2_SIZE subject_len, PCRE2_SPTR replacement,
+                               PCRE2_SIZE replacement_len,
+                               PCRE2_UCHAR8 *output,
+                               PCRE2_SIZE *output_len) {
+    PCRE2_SIZE output_capacity = *output_len;
+    int rc = pcre2_substitute(
+        re, subject, subject_len,
+        /*startoffset=*/0,
+        PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_LITERAL,
+        /*match_data=*/NULL, /*mcontext=*/NULL,
+        replacement, replacement_len, output, output_len);
+    if (rc == PCRE2_ERROR_JIT_STACKLIMIT) {
+        *output_len = output_capacity;
+        rc = pcre2_substitute(
+            re, subject, subject_len,
+            /*startoffset=*/0,
+            PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_LITERAL | PCRE2_NO_JIT,
+            /*match_data=*/NULL, /*mcontext=*/NULL,
+            replacement, replacement_len, output, output_len);
+    }
+    return rc;
+}
+
+/*
  * rn_regex_count(pattern, text)
  *
  * Compile `pattern` and count the number of non-overlapping matches in
@@ -39,6 +85,7 @@ static uint64_t rn_regex_count(const char *pattern, const char *text) {
                 (size_t)erroffset, (char *)errbuf);
         exit(1);
     }
+    rn_regex_enable_jit(re);
 
     pcre2_match_data *md = pcre2_match_data_create_from_pattern(re, NULL);
     size_t text_len = (size_t)string_length(text);
@@ -46,8 +93,8 @@ static uint64_t rn_regex_count(const char *pattern, const char *text) {
     uint64_t count = 0;
 
     while (offset <= text_len) {
-        int rc = pcre2_match(re, (PCRE2_SPTR)text, (PCRE2_SIZE)text_len,
-                             offset, 0, md, NULL);
+        int rc = rn_regex_match(re, (PCRE2_SPTR)text, (PCRE2_SIZE)text_len,
+                                offset, md);
         if (rc < 0) {
             /* PCRE2_ERROR_NOMATCH or end-of-subject — we're done. */
             break;
@@ -107,6 +154,7 @@ static char *rn_regex_replace(const char *pattern, const char *repl,
                 (size_t)erroffset, (char *)errbuf);
         exit(1);
     }
+    rn_regex_enable_jit(re);
 
     size_t text_len = (size_t)string_length(text);
     size_t repl_len = (size_t)string_length(repl);
@@ -118,12 +166,8 @@ static char *rn_regex_replace(const char *pattern, const char *repl,
     char *out = rn_stralloc(outlen);
 
     PCRE2_SIZE pcre_outlen = (PCRE2_SIZE)outlen;
-    int rc = pcre2_substitute(
-        re,
-        (PCRE2_SPTR)text, (PCRE2_SIZE)text_len,
-        /*startoffset=*/0,
-        PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_LITERAL,
-        /*match_data=*/NULL, /*mcontext=*/NULL,
+    int rc = rn_regex_substitute(
+        re, (PCRE2_SPTR)text, (PCRE2_SIZE)text_len,
         (PCRE2_SPTR)repl, (PCRE2_SIZE)repl_len,
         (PCRE2_UCHAR8 *)out, &pcre_outlen);
 
@@ -135,12 +179,8 @@ static char *rn_regex_replace(const char *pattern, const char *repl,
         outlen = (size_t)pcre_outlen;
         out = rn_stralloc(outlen);
         pcre_outlen = (PCRE2_SIZE)outlen;
-        rc = pcre2_substitute(
-            re,
-            (PCRE2_SPTR)text, (PCRE2_SIZE)text_len,
-            /*startoffset=*/0,
-            PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_LITERAL,
-            /*match_data=*/NULL, /*mcontext=*/NULL,
+        rc = rn_regex_substitute(
+            re, (PCRE2_SPTR)text, (PCRE2_SIZE)text_len,
             (PCRE2_SPTR)repl, (PCRE2_SIZE)repl_len,
             (PCRE2_UCHAR8 *)out, &pcre_outlen);
     }

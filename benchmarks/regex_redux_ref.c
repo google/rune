@@ -40,12 +40,7 @@ static char *buf_read_stdin(size_t *out_len) {
     return buf;
 }
 
-/* Replace all non-overlapping matches of pattern in src (length srclen) with
- * repl (length repllen).  Returns a newly-malloc'd string; sets *outlen. */
-static char *regex_replace(const char *pattern,
-                           const char *repl, size_t repllen,
-                           const char *src,  size_t srclen,
-                           size_t *outlen) {
+static pcre2_code *regex_compile(const char *pattern) {
     int errcode;
     PCRE2_SIZE erroffset;
     pcre2_code *re = pcre2_compile((PCRE2_SPTR)pattern, PCRE2_ZERO_TERMINATED,
@@ -57,6 +52,30 @@ static char *regex_replace(const char *pattern,
                 erroffset, (char *)errbuf);
         exit(1);
     }
+
+    /* Request PCRE2 JIT, while retaining PCRE2's regular-match fallback. */
+    (void)pcre2_jit_compile(re, PCRE2_JIT_COMPLETE);
+    return re;
+}
+
+static int regex_match(pcre2_code *re, const char *src, size_t srclen,
+                       size_t srcpos, pcre2_match_data *md) {
+    int rc = pcre2_match(re, (PCRE2_SPTR)src, (PCRE2_SIZE)srclen,
+                         (PCRE2_SIZE)srcpos, 0, md, NULL);
+    if (rc == PCRE2_ERROR_JIT_STACKLIMIT) {
+        rc = pcre2_match(re, (PCRE2_SPTR)src, (PCRE2_SIZE)srclen,
+                         (PCRE2_SIZE)srcpos, PCRE2_NO_JIT, md, NULL);
+    }
+    return rc;
+}
+
+/* Replace all non-overlapping matches of pattern in src (length srclen) with
+ * repl (length repllen).  Returns a newly-malloc'd string; sets *outlen. */
+static char *regex_replace(const char *pattern,
+                           const char *repl, size_t repllen,
+                           const char *src,  size_t srclen,
+                           size_t *outlen) {
+    pcre2_code *re = regex_compile(pattern);
     pcre2_match_data *md = pcre2_match_data_create_from_pattern(re, NULL);
 
     size_t outcap = srclen + 64;
@@ -65,7 +84,7 @@ static char *regex_replace(const char *pattern,
     size_t srcpos = 0;
 
     while (srcpos <= srclen) {
-        int rc = pcre2_match(re, (PCRE2_SPTR)src, srclen, srcpos, 0, md, NULL);
+        int rc = regex_match(re, src, srclen, srcpos, md);
         if (rc < 0) break;  /* no match */
 
         PCRE2_SIZE *ov = pcre2_get_ovector_pointer(md);
@@ -108,23 +127,13 @@ static char *regex_replace(const char *pattern,
 
 /* Count non-overlapping matches of pattern in src (length srclen). */
 static size_t regex_count(const char *pattern, const char *src, size_t srclen) {
-    int errcode;
-    PCRE2_SIZE erroffset;
-    pcre2_code *re = pcre2_compile((PCRE2_SPTR)pattern, PCRE2_ZERO_TERMINATED,
-                                   0, &errcode, &erroffset, NULL);
-    if (!re) {
-        PCRE2_UCHAR errbuf[256];
-        pcre2_get_error_message(errcode, errbuf, sizeof(errbuf));
-        fprintf(stderr, "PCRE2 compile error at %zu: %s\n",
-                erroffset, (char *)errbuf);
-        exit(1);
-    }
+    pcre2_code *re = regex_compile(pattern);
     pcre2_match_data *md = pcre2_match_data_create_from_pattern(re, NULL);
 
     size_t count  = 0;
     size_t srcpos = 0;
     while (srcpos <= srclen) {
-        int rc = pcre2_match(re, (PCRE2_SPTR)src, srclen, srcpos, 0, md, NULL);
+        int rc = regex_match(re, src, srclen, srcpos, md);
         if (rc < 0) break;
         PCRE2_SIZE *ov = pcre2_get_ovector_pointer(md);
         count++;

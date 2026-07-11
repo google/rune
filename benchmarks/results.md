@@ -440,6 +440,37 @@ constrained. The next generic runtime experiment is safe PCRE2 JIT enablement
 with an explicit `PCRE2_ERROR_JIT_STACKLIMIT` fallback to `PCRE2_NO_JIT`; this
 must apply equally to the local C oracle before comparing timings.
 
+## Stage 2: regex-redux PCRE2 JIT and bulk input
+
+PCRE2 JIT is now requested by the generic Rune regex runtime and by the local
+C oracle after every successful pattern compile. The runtime still calls normal
+`pcre2_match`/`pcre2_substitute`, so unsupported JIT patterns use PCRE2's normal
+fallback. `PCRE2_ERROR_JIT_STACKLIMIT` is handled explicitly by retrying the
+same operation with `PCRE2_NO_JIT`; this avoids treating a JIT-specific error as
+an absent match. Rune O0/O3 and the C oracle remain byte-identical at the
+revised golden and full 5M workload, and the compiler gate passed `PASS=205
+FAIL=0`.
+
+After JIT, the regex-redux port replaces its byte-at-a-time stdin loop with the
+existing binary-safe `readBytes` and `appendBytes` primitives. It reads until
+an empty exact-length byte array signals EOF, then makes only bulk `memcpy`
+appends; no FASTA/regex work is skipped. The matched JIT C oracle retains its
+own implementation, so it is a fair local code-generation/runtime comparison.
+
+| Benchmark (fasta 5M, current CLBG substitutions) | Rune O0 | Rune O3 | matched JIT PCRE2 C | O3 / C |
+|---|---:|---:|---:|---:|
+| aligned baseline (no JIT, byte input) | 7514.058 | 7329.149 | 7286.571 | 1.006x |
+| JIT, byte input | 1875.484 | 1713.221 | 1655.060 | 1.035x |
+| JIT, bulk input | 1655.488 | 1633.824 | 1646.232 | **0.992x** |
+
+The locally built current C gcc #5 leader source also matches both outputs.
+With `OMP_NUM_THREADS=1` and CPU-0 affinity it measures 1556.601 ms, so Rune
+O3 is 1.050x behind this **constrained** leader. This is not a reproduction of
+its published OpenMP result; the fastest Rust #7 source remains unavailable
+locally because its published Rayon/PCRE2 FFI artifacts are absent. The remaining
+single-thread attribution is PCRE2 match-context/JIT-stack and replacement-path
+engineering, not input or general Rune code generation.
+
 ## Historical fixes retained in the current source
 
 - A bare `sqrt(x)` lowers to hardware/libm sqrt, which is essential to n-body's

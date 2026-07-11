@@ -6,27 +6,18 @@
 // CLBG substitutions, and prints match counts followed by input/cleaned/final
 // lengths.
 //
-// NOTE: uses readByte() instead of readln() because the legacy LLVM runtime
-// has a heap-corruption bug in readln() for lines longer than ~16 chars.
-// readByte() returns 0u8 at EOF in the bootstrap runtime and 255u8 in the
-// legacy runtime (getchar() returns -1 = 0xFF as uint8_t).
-//
-func isEOF(b: u8) -> bool {
-  if b == 0u8 {
-    return true
-  }
-  if b == 255u8 {
-    return true
-  }
-  return false
-}
-
-// Read all of stdin byte-by-byte into a string.
+// Read all of stdin into byte chunks. The runtime records each short read's
+// true length, and appendBytes performs one exact memcpy into reusable storage.
+// EOF is an empty headed byte array, not a sentinel byte, so binary inputs are
+// preserved too.
+READ_CHUNK_BYTES = 65536u64
 rawBytes = arrayof(u8)
-b = readByte()
-while !isEOF(b) {
-  rawBytes.append(b)
-  b = readByte()
+while true {
+  chunk = <[u8]>readBytes(READ_CHUNK_BYTES)
+  if chunk.length() == 0u64 {
+    break
+  }
+  rawBytes = appendBytes(rawBytes, chunk)
 }
 // Convert to string for regex operations.
 input = <string>rawBytes

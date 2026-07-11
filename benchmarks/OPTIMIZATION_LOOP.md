@@ -153,6 +153,17 @@ ms versus 7286.571 ms naive PCRE2 C (1.006x). Do not use historical regex rows
 to compare current leaders. The next generic runtime change is PCRE2 JIT with a
 JIT-stack-limit fallback; only then build a constrained C gcc #5 leader.
 
+### Stage 2 update: regex-redux JIT and bulk input (2026-07-10)
+
+Generic PCRE2 JIT now has an interpreter retry on `PCRE2_ERROR_JIT_STACKLIMIT`,
+and the matched C oracle uses the same JIT request. Exact bulk `readBytes` plus
+`appendBytes` replaces the port's per-byte input loop. All revised golden/full
+outputs and `PASS=205 FAIL=0` passed. At the 5M workload Rune O3 falls from
+7329.149 ms aligned baseline to 1633.824 ms, beating the matched JIT C oracle
+(1646.232 ms, 0.992x). The constrained one-CPU C gcc #5 leader is 1556.601 ms
+(Rune 1.050x); explore PCRE2 match context/JIT-stack or manual replace paths
+before treating OpenMP/Rayon as the next boundary.
+
 ### Stage 2 update: n-body (2026-07-10)
 
 The locally built current C gcc #9 leader is single-threaded and exact at the
