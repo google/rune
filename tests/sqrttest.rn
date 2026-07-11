@@ -15,3 +15,27 @@
 import math
 
 println math.sqrt(4.0)
+
+// Portable F64x4 builtin smoke coverage.  The runtime is deliberately scalar
+// at this stage; this exercises its opaque handle, array traffic, arithmetic,
+// reciprocal-sqrt surface, and availability query without making a performance
+// assertion.
+lanes = [1.0f64, 4.0f64, 9.0f64, 16.0f64]
+source = f64x4New()
+scratch = f64x4New()
+result = f64x4New()
+f64x4Load(source, lanes, 0u64)
+f64x4ApproxReciprocalSqrt(scratch, source)
+available = simdAvxAvailable()
+if available {
+  f64x4Set(result, scratch)
+} else {
+  f64x4Set(result, scratch)
+}
+f64x4Splat(scratch, 2.0f64)
+f64x4Add(result, source, scratch)
+f64x4Sub(result, result, scratch)
+f64x4Mul(result, result, scratch)
+f64x4Set(scratch, result)
+f64x4Store(scratch, lanes, 0u64)
+println f64x4HorizontalSum(scratch)

@@ -1013,6 +1013,20 @@ enum CRuntimeFunction {
    BigIntToU64
    BigIntToString
 
+   // Opaque four-lane f64 SIMD foundation.  The portable implementation is
+   // scalar; AVX-targeted helpers can be substituted behind this ABI later.
+   F64x4New
+   F64x4Set
+   F64x4Splat
+   F64x4Load
+   F64x4Store
+   F64x4Add
+   F64x4Sub
+   F64x4Mul
+   F64x4HorizontalSum
+   F64x4ApproxReciprocalSqrt
+   SimdAvxAvailable
+
    // String builtins
    StringAppend
    StringLength
@@ -1299,6 +1313,61 @@ relevantType: CTypeExpr?) {
       CRuntimeFunction.BigIntToString => {
         e.needGmp()
         e.write("rn_bigint_to_string")
+      }
+
+      CRuntimeFunction.F64x4New => {
+        e.needF64x4()
+        e.write("f64x4New")
+      }
+
+      CRuntimeFunction.F64x4Set => {
+        e.needF64x4()
+        e.write("f64x4Set")
+      }
+
+      CRuntimeFunction.F64x4Splat => {
+        e.needF64x4()
+        e.write("f64x4Splat")
+      }
+
+      CRuntimeFunction.F64x4Load => {
+        e.needF64x4()
+        e.write("f64x4Load")
+      }
+
+      CRuntimeFunction.F64x4Store => {
+        e.needF64x4()
+        e.write("f64x4Store")
+      }
+
+      CRuntimeFunction.F64x4Add => {
+        e.needF64x4()
+        e.write("f64x4Add")
+      }
+
+      CRuntimeFunction.F64x4Sub => {
+        e.needF64x4()
+        e.write("f64x4Sub")
+      }
+
+      CRuntimeFunction.F64x4Mul => {
+        e.needF64x4()
+        e.write("f64x4Mul")
+      }
+
+      CRuntimeFunction.F64x4HorizontalSum => {
+        e.needF64x4()
+        e.write("f64x4HorizontalSum")
+      }
+
+      CRuntimeFunction.F64x4ApproxReciprocalSqrt => {
+        e.needF64x4()
+        e.write("f64x4ApproxReciprocalSqrt")
+      }
+
+      CRuntimeFunction.SimdAvxAvailable => {
+        e.needF64x4()
+        e.write("simdAvxAvailable")
       }
 
       CRuntimeFunction.StringLength => {

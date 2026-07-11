@@ -104,6 +104,12 @@ class CEmitter(self, filename: string) {
     self.runtime.needGmp()
   }
 
+  // Request the opaque four-lane f64 runtime support used by explicit SIMD
+  // builtins.  The runtime fragment supplies a scalar-safe fallback.
+  func needF64x4(self) {
+    self.runtime.needF64x4()
+  }
+
   func needModular(self) {
     self.include("<stdint.h>")
     self.runtime.cFragment("modular", "cbackend/cruntime/modular.inc")

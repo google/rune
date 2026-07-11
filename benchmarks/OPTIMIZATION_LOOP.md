@@ -201,6 +201,16 @@ near parity, not a leader win, because powersave-state variation spans those
 two O3 samples. The next feature-sized target is n-body's explicit SIMD plus
 explicit approximate-rsqrt path.
 
+### N-body foundation update: opaque F64x4 surface (2026-07-11)
+
+The first compiler/runtime step is a deliberately scalar-safe `F64x4` opaque
+handle with destination-taking load/store, arithmetic, horizontal sum, and an
+explicit `f64x4ApproxReciprocalSqrt` surface. It has a focused smoke test and
+the full `PASS=205 FAIL=0` compiler gate, but does **not** yet emit AVX or
+change n-body, so it has no performance claim. This isolates the type/runtime
+plumbing before adding AVX-targeted helpers, local-only escape restrictions, and
+the leader's padded four-pair n-body layout. Scalar `sqrt` remains unchanged.
+
 ---
 
 ## LOOP PROMPT (this is what you paste into `/loop`)

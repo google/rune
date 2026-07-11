@@ -232,6 +232,16 @@ class CRuntime(self) {
     return cf
   }
 
+  // The initial F64x4 implementation stores lanes in ordinary scalar memory.
+  // Future AVX helpers can use the same opaque handle without changing the
+  // generated-function ABI.
+  func needF64x4(self) -> CFragment {
+    self.needRaiseError()
+    cf = self.cFragment("simd_f64x4", "cbackend/cruntime/simd_f64x4.inc")
+    cf.addDependencies([self.needArrayType()])
+    return cf
+  }
+
   func needIntAdd(self, width: u32) -> string {
     self.needRaiseError()
     self.needIntAddFn = true

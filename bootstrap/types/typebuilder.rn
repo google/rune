@@ -42,6 +42,13 @@ func BIGINT() -> Type {
   return Type(TypeName(Sym.new("BigInt")))
 }
 
+// An opaque four-lane f64 value supplied by the SIMD runtime builtins.  The
+// first implementation deliberately exposes only destination-taking helpers;
+// it is not a general-purpose vector language type.
+func F64X4() -> Type {
+  return Type(TypeName(Sym.new("F64x4")))
+}
+
 func INTEGER() -> Type {
   return Type(AnyIntType(true))
 }

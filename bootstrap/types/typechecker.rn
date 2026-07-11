@@ -3494,6 +3494,41 @@ class TypeChecker(self) {
               self.newSymbol(fnchild.val.symVal!, FN(bigInt, STRING()))
             }
           }
+          // F64x4 is a small, opaque SIMD-runtime handle.  All mutating
+          // operations take a destination first so callers can allocate a
+          // fixed set of handles outside a hot loop.
+          if (isnull(callee) &&
+              isnull(self.findSymbolMapping(SymbolMapping(fnchild.val.symVal!,
+                  fnchild.val.symVal.typedValue)))) {
+            f64x4 = F64X4()
+            f64x4Array = ARRAY(F(64))
+            f64x4Name = fnchild.val.symVal.name
+            if f64x4Name == "f64x4New" {
+              f64x4NoArgs = arrayof(Type)
+              self.newSymbol(fnchild.val.symVal!, FN(TUPLE(f64x4NoArgs), f64x4))
+            } else if f64x4Name == "f64x4Set" {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([f64x4, f64x4]), NONETY()))
+            } else if f64x4Name == "f64x4Splat" {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([f64x4, F(64)]), NONETY()))
+            } else if f64x4Name == "f64x4Load" || f64x4Name == "f64x4Store" {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([f64x4, f64x4Array, UINTEGER()]), NONETY()))
+            } else if (f64x4Name == "f64x4Add" || f64x4Name == "f64x4Sub" ||
+                f64x4Name == "f64x4Mul") {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([f64x4, f64x4, f64x4]), NONETY()))
+            } else if f64x4Name == "f64x4HorizontalSum" {
+              self.newSymbol(fnchild.val.symVal!, FN(f64x4, F(64)))
+            } else if f64x4Name == "f64x4ApproxReciprocalSqrt" {
+              self.newSymbol(fnchild.val.symVal!,
+                  FN(TUPLE([f64x4, f64x4]), NONETY()))
+            } else if f64x4Name == "simdAvxAvailable" {
+              f64x4NoArgs2 = arrayof(Type)
+              self.newSymbol(fnchild.val.symVal!, FN(TUPLE(f64x4NoArgs2), BOOLEAN()))
+            }
+          }
         }
         fnchild = expr.firstChildExpr!
         argchild = fnchild.nextExprChildExpr

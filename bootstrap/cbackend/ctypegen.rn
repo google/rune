@@ -255,6 +255,13 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
       // CDefinedType appends its conventional `_t` suffix at emission.
       return CTypeExpr(CDefinedType("rn_bigint"))
     }
+    // F64x4 values are opaque runtime handles.  The runtime typedef itself is
+    // a pointer to scalar lane storage, so do not add another C pointer here;
+    // this keeps generated Rune functions out of any vector-register ABI even
+    // before the runtime grows AVX-targeted helpers.
+    if ty.name.name == "F64x4" {
+      return CTypeExpr(CDefinedType("rn_f64x4"))
+    }
     if !isnull(self.typechecker.lookupClass(ty.name)) {
       // The instance's struct collapses phantom parameters (see
       // TypeChecker.dropPhantomParams), so two instances differing only there
