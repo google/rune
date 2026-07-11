@@ -649,6 +649,48 @@ regressed materially. N-body is now the largest stable remaining paired gap at
 about 1.0137x. Reverse-complement still has a rare 1.026x minimum ratio, but its
 standard and typical samples favor Rune; n-body is the next fresh target.
 
+## Direct x86 F64x4 representation
+
+The general x86 runtime representation of `rn_f64x4_t` is now direct
+`__m256d`. The existing typechecker restriction confines `F64x4` values to
+locals and excludes them from user-function ABIs. Non-x86 builds retain the
+exact struct/scalar representation, while external arrays continue to use
+unaligned vector loads and stores at their boundary.
+
+`sqrttest` remains exact at O0/O3. N-body matches at N=1000 at both levels and
+at the full N=5M workload; the full-output SHA-256 still begins `a209`.
+GCC-built Mandelbrot also remains exact at N=200 and N=16000 (SHA-256
+`609262...`); direct vectors won 8/10 against its prior GCC build, with
+old/new best times 1184.668/1183.340 ms and means 1189.297/1185.497 ms.
+Optimized assembly does not show fewer spills: vector stack moves remain 33 and
+spill annotations increase from 45 to 49. The improvement is therefore an
+empirical compiler-scheduling result, not evidence for reduced stack traffic.
+The compiler regression gate passed `PASS=205 FAIL=0`.
+
+In the first 50 alternating struct/direct pairs, direct vectors won 39. Best
+times were 101.004/100.496 ms and means were 102.278/102.136 ms. An independent
+100-pair series favored direct vectors 85/100, with best times
+101.078/100.567 ms and means 102.329/101.969 ms. In 50 Rune/gcc #9 pairs Rune
+won 5; Rune/leader best times were 100.704/99.820 ms and means were
+101.528/100.421 ms.
+
+A fresh standard warmup-plus-best-of-five series measured:
+
+| Benchmark (workload) | Rune mode | Rune O0 | Rune O3 | naive O3 | published gcc #9 | O3 / naive | O3 / leader |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| n-body (5M) | O0 checked; O3 `-O -N` | 10704.558 | 100.760 | 169.872 | 99.880 | **0.593x** | **1.009x** |
+
+O0 improves from the prior 12718.625 ms. Two exact representation probes were
+rejected and fully reverted: explicit alignment won 24/50 and raised mean time
+0.09%, while a union layout also won 24/50 and raised mean time 0.13%. Neither
+reduced spills.
+
+N-body's roughly 0.9% is the only remaining stable measured gap. Mandelbrot is
+at 0.997x and k-nucleotide at 0.973x; reverse-complement wins standard and
+typical samples but retains a rare leader minimum. These narrow results must be
+widened through further measured, directly attributed work rather than treated
+as completion.
+
 ## Current analysis
 
 ### The optimization unlock
@@ -1097,12 +1139,11 @@ standard warmup-plus-best-of-five series measured Rune O0 7194.054 ms, Rune O3
 2209.640 ms, naive C 4353.842 ms, and constrained g++ #2 2039.065 ms. Rune is
 therefore **0.508x the naive oracle** and **1.084x the leader**.
 
-GCC gives Mandelbrot narrow 0.997x parity while remaining an explicit opt-in,
-not Rune's default C compiler. Reverse-complement has a typical 0.955x win but
-a rare 1.026x minimum-sample ratio, and k-nucleotide remains at 0.973x. N-body
-is the largest stable remaining paired gap at about 1.0137x and is the next
-fresh measurement target; parity remains a checkpoint rather than the final
-objective.
+Direct x86 vectors reduce n-body's remaining stable gap to roughly 0.9%, at
+1.009x gcc #9. Mandelbrot is at 0.997x and k-nucleotide at 0.973x;
+reverse-complement has a typical 0.955x win but a rare leader minimum. Continue
+fresh, attributed measurements to widen these narrow results—parity remains a
+checkpoint rather than the final objective.
 
 ## Stage 2: regex-redux current-workload alignment
 
