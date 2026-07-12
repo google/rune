@@ -1,6 +1,6 @@
 # Bootstrap compiler — known limitations
 
-Status: suite 205/205 — the relations->desugar migration is COMPLETE
+Status: bootstrap suite 210/210 — the relations->desugar migration is COMPLETE
 (every test green, no documented-red carve-outs remain).  This file is
 now a HISTORY of the representation-model gaps that were closed to get
 there; nothing below is an open limitation.  If a future change reopens
@@ -97,6 +97,23 @@ now fixed and gf2 matches the golden exactly (suite 198/205):
 - Nested print in a print argument (`d23514e`): non-wide CALL arguments
   are hoisted into temporaries before the shared writer is reset, so a
   call whose body prints no longer clobbers the enclosing line.
+
+## 3. `withRegion` stage 1 — intentionally conservative
+
+The lexical region builtin accepts concrete by-value scalar context/results
+(integers through 64 bits, f32/f64, bool, and enums) and a
+direct top-level callback. Its complete reachable callback graph must
+currently be monomorphic. Generic callback ASTs share type slots across C
+specializations, so accepting them would require specialization-keyed effect
+validation and ABI recovery; stage 1 rejects them explicitly instead of
+guessing from the first materialization.
+
+Region-local objects are likewise limited to monomorphic plain classes with
+the same scalar/plain-class fields and no relations, final/destroy behavior, explicit
+reference width, user operators, or custom `toString`. These are safety
+boundaries, not benchmark recognizers. Nested regions and validated regions
+inside scalar `parallelMap` callbacks are supported; `parallelMap` inside an
+active region is rejected.
 
 ## Not limitations (open fix work, tracked in HANDOFF.md)
 

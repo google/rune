@@ -1,0 +1,11 @@
+func tryInsideRegion(value: u64) -> u64 {
+  result = value
+  try {
+    result = value !+ 1u64
+  } except e {
+    default => result = 0u64
+  }
+  return result
+}
+
+println withRegion(1u64, &tryInsideRegion(1u64), 0u64)

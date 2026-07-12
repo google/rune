@@ -1,0 +1,6 @@
+func assertInsideRegion(value: u64) -> u64 {
+  assert value != 0u64
+  return value
+}
+
+println withRegion(1u64, &assertInsideRegion(1u64), 0u64)

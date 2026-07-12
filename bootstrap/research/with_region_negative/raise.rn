@@ -1,0 +1,6 @@
+func raiseInRegion(value: u64) -> u64 {
+  raise Exception.Internal, "no"
+  return value
+}
+
+println withRegion(1u64, &raiseInRegion(1u64), 0u64)

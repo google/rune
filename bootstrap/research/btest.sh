@@ -8,7 +8,7 @@
 # FAILED list. Floor for the relations->desugar migration: 188/205, zero drops.
 #
 # NOTE: the top-level ./runtests.sh uses the LEGACY ./rune (259/3) — a DIFFERENT
-# metric. This harness currently measures 209 positive programs plus
+# metric. This harness currently measures 210 positive programs plus
 # fail-closed negative compiler canaries. Do not conflate them.
 # Keep ordinary test children below 8 GiB, but do not lower the hard limit:
 # the dedicated ASan canary restores its soft limit to reserve sparse shadow
@@ -68,6 +68,12 @@ if ! bash bootstrap/research/string_header_sanitizer.sh >/dev/null 2>&1; then
 fi
 if ! bash bootstrap/research/array_overflow_sanitizer.sh >/dev/null 2>&1; then
   fail=$((fail+1)); failed="$failed array_overflow_sanitizer"
+fi
+if ! bash bootstrap/research/with_region_negative.sh >/dev/null 2>&1; then
+  fail=$((fail+1)); failed="$failed with_region_negative"
+fi
+if ! bash bootstrap/research/region_runtime_sanitizer.sh >/dev/null 2>&1; then
+  fail=$((fail+1)); failed="$failed region_runtime_sanitizer"
 fi
 echo "PASS=$pass FAIL=$fail"
 printf 'FAILED:'

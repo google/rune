@@ -1645,7 +1645,9 @@ path; the caller participates in larger calls, partial thread creation falls
 back safely, and every started pthread is joined before return. Pthread linkage
 is emitted only for programs using the builtin.
 
-This stage transfers only by-value scalar items, context, and results. The
+This stage transfers only by-value scalar items, context, and results
+(integers through 64 bits, f32/f64, bool, and enums). Wider integers are
+heap-backed handles and are rejected rather than mislabeled as scalar. The
 compiler transitively rejects nonlocal state, I/O, random state, explicit
 exceptions, nesting, extern/bodyless calls, casts, user-overloaded operators,
 and every aggregate or opaque intermediate. Exception frames are thread-local;
@@ -1709,6 +1711,48 @@ reallocation failure. The final isolated bootstrap gate is `PASS=209 FAIL=0`;
 the Clang/GCC O0/O3, ASan/UBSan, forced-overflow, layout, and held-out-canary
 validation is recorded at
 `/tmp/rune-bench/array-alignment-validation/h32-run.1706127/PASS.txt`.
+
+## Stage 3 foundation: validated lexical regions
+
+Rune now has an opt-in synchronous lifetime primitive:
+`withRegion(context, &callback(context), initialBytes)`. It enters a lexical
+thread-local bump region, calls a direct callback, bulk-reclaims every object
+before returning its scalar result, and restores any enclosing region. The
+initial byte count is a lazy capacity hint, not a fixed limit.
+
+The runtime uses checked, max-aligned malloc tails with per-object alignment,
+a named 1 KiB minimum block, and one largest eligible TLS cache block capped at
+256 KiB. Oversized blocks are valid but never cached. Every allocation is
+zeroed, nested active/cache lists are disjoint, child pthreads drain only their
+own cache, and generated main drains the main-thread cache. A sanitizer canary
+specifically proves that consecutive 24-byte, 8-aligned class objects have a
+24-byte stride rather than being silently padded to 32 bytes.
+
+Only compiler-approved monomorphic plain classes take the region allocation
+path while a region is active; the same class outside a region and every
+unapproved class retain the ordinary pool path. The validator transitively
+permits only by-value scalars (integers through 64 bits, f32/f64, bool, enums)
+and approved class references internal to the callback graph. It rejects
+globals, I/O, random state, exceptions, casts, aggregates, opaque/SIMD/wide
+values, externs, relations, final or destroy behavior, explicit refwidth,
+user operators, custom `toString`, and escaping results. Nested regions are
+allowed. A validated region may run inside scalar `parallelMap`; starting
+parallel work inside an active region is rejected. Polymorphic callback graphs
+remain fail-closed until effect validation is keyed by concrete specialization.
+
+The general positive test covers nesting, lazy/default/oversized hints, cache
+reuse, two concrete scalar ABIs, a region inside a real two-worker
+`parallelMap`, an ordinary object surviving region resets, and an unapproved
+class in the same translation unit. Negative diagnostics and runtime
+ASan/UBSan are mandatory gates. Generated C is exact under Clang native,
+Clang ASan/UBSan, and GCC O3; the standalone runtime also passes strict-aliasing
+Clang/GCC O3. All five held-out non-CLBG canaries remain byte-exact, and the
+bootstrap gate is `PASS=210 FAIL=0`.
+
+No benchmark source or timing changed in this checkpoint. Binary-trees is the
+next measured target: migrate only its short-lived plain trees to regions,
+leave the long-lived tree on the ordinary path, prove exact N=10/N=21 output,
+then remeasure the current roughly 4.65x one-core leader gap.
 
 ## Historical fixes retained in the current source
 

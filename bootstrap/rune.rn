@@ -186,6 +186,9 @@ tc = types.TypeChecker()
 desugar = types.Desugar(tc)
 desugar.desugarModule(module)
 tc.function(module)
+// Region callbacks may refer to functions declared later in the module, so
+// validate their transitive effects only after the complete root is typed.
+tc.validatePendingWithRegionCalls()
 numTypeErrors = tc.countTypeErrors()
 if numTypeErrors > 0 {
   println "Found %u type error%s." % (numTypeErrors, numTypeErrors > 1 ? "s" : "")
@@ -196,6 +199,10 @@ if numTypeErrors > 0 {
     root.outputCFilename = moduleName + ".c"
   }
   program = c.CBuilder(tc).build(module)
+  // Demand materialization can discover withRegion calls in concrete generic
+  // bodies.  Most are validated in their retypecheck frame; drain any calls
+  // discovered by non-deferred codegen before the fail-closed error gate.
+  tc.validatePendingWithRegionCalls()
   // Demand-driven specialization can make a previously free cast concrete.
   // CBuilder records those representation errors in the shared typechecker;
   // fail closed before emitting even placeholder C.

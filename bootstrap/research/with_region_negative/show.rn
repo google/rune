@@ -1,0 +1,10 @@
+class ShowRegionNode(self: ShowRegionNode, allocationTag: u8) {
+}
+
+func showInsideRegion(value: u64) -> u64 {
+  node = ShowRegionNode(0u8)
+  node.show()
+  return value
+}
+
+println withRegion(1u64, &showInsideRegion(1u64), 0u64)

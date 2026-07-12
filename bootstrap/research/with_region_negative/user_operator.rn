@@ -1,0 +1,14 @@
+class OperatorNode(self: OperatorNode) {
+  operator + (left: OperatorNode, right: OperatorNode) -> OperatorNode {
+    return OperatorNode()
+  }
+}
+
+func useOperator(value: u64) -> u64 {
+  left = OperatorNode()
+  right = OperatorNode()
+  combined = left + right
+  return value
+}
+
+println withRegion(1u64, &useOperator(1u64), 0u64)

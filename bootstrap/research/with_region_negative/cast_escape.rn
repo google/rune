@@ -1,0 +1,9 @@
+class CastNode(self: CastNode) {
+}
+
+func castNode(value: u64) -> u64 {
+  node = CastNode()
+  return <u64>node
+}
+
+println withRegion(1u64, &castNode(1u64), 0u64)

@@ -1198,7 +1198,7 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       }
     }
     classDec = builder.cClassDeclaration(self.location, className, fields,
-        toStringMethod, refWidth, self.sym.name)
+        toStringMethod, refWidth, self.sym.name, info)
     for depName in fieldDeps {
       classDec.addDependencyName(depName)
     }

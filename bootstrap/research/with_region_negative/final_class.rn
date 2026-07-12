@@ -1,0 +1,12 @@
+class FinalNode(self: FinalNode) {
+  final(self) {
+    println "final"
+  }
+}
+
+func allocateFinal(value: u64) -> u64 {
+  node = FinalNode()
+  return value
+}
+
+println withRegion(1u64, &allocateFinal(1u64), 0u64)

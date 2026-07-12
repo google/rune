@@ -1,0 +1,6 @@
+func addWide(value: u128, context: u128) -> u128 {
+  return value + context
+}
+
+items = [1u128, 2u128]
+parallelMap(items, 3u128, &addWide(items[0], 3u128), 2u64)

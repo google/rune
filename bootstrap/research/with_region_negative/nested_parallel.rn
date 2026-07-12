@@ -1,0 +1,11 @@
+func regionParallelIdentity(value: u64, context: u64) -> u64 {
+  return value !+ context
+}
+
+func callParallelInsideRegion(value: u64) -> u64 {
+  parallelMap([value], 0u64,
+      &regionParallelIdentity(value, 0u64), 1u64)
+  return value
+}
+
+println withRegion(1u64, &callParallelInsideRegion(1u64), 0u64)

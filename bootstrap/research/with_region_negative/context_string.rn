@@ -1,0 +1,5 @@
+func lengthInRegion(value: string) -> u64 {
+  return value.length()
+}
+
+println withRegion("not scalar", &lengthInRegion("not scalar"), 0u64)

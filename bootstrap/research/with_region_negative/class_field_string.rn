@@ -1,0 +1,10 @@
+class StringNode(self: StringNode, text: string) {
+  self.text = text
+}
+
+func allocateStringNode(value: u64) -> u64 {
+  node = StringNode("heap allocation")
+  return value
+}
+
+println withRegion(1u64, &allocateStringNode(1u64), 0u64)

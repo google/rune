@@ -2567,7 +2567,8 @@ relation OneToOne CClassDeclaration CParamList cascade
 // Class instances are heap allocated and passed by pointer; the constructor
 // function itself is emitted separately as a CFunctionDeclaration.
 class CClassDeclaration(self, location: db.Location, name: string, fields: CParamList,
-                        toStringMethod: string, refWidth: u32, runeName: string = "") {
+                        toStringMethod: string, refWidth: u32, runeName: string = "",
+                        classInfo: types.ClassInfo? = null(types.ClassInfo)) {
   self.location = location
   self.name = name
   // The Rune class name (unspecialized, e.g. "Foo" not "Foo_u64"), used
@@ -2578,6 +2579,10 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
   // Nonzero when the class declared an explicit reference width; instances
   // then print as <rn_id>u<refWidth> and null prints as 0u<refWidth>.
   self.refWidth = refWidth
+  // Keep the live typechecker record: a concrete deferred specialization may
+  // prove eligibility after this declaration object is built but before the
+  // final C text is emitted.
+  self.classInfo = classInfo
   self.insertCParamList(fields)
   self.protoEmitted = false
 
@@ -2585,6 +2590,10 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
     e.include("<stdlib.h>")
     e.include("<stdio.h>")
     e.needStringWriter()
+    regionEligible = !isnull(self.classInfo) && self.classInfo!.regionEligible
+    if regionEligible {
+      e.needRegion()
+    }
 
     if proto {
       if !self.protoEmitted {
@@ -2623,6 +2632,10 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
     } else {
       e.writecloseln("} %s_t;" % self.name)
     }
+    if regionEligible {
+      e.writeln("_Static_assert(_Alignof(%s_t) <= _Alignof(max_align_t)," % self.name)
+      e.writeln("               \"Rune region class alignment exceeds max_align_t\");")
+    }
     // Per-class object-id FREE-LIST (pool slot ids).  rn_id is a slot
     // taken from the free-list, reused after the object is destroyed —
     // so ids stay low and repeat (matching the legacy pool), rather than
@@ -2653,6 +2666,12 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
     e.writecloseln("}")
     e.write("static void %s_free_id(uint32_t object)" % self.name)
     e.writeopenln(" {")
+    if regionEligible {
+      // Region objects never own a pool id. This is defensive—validated
+      // callbacks cannot call destroy/ref/unref—but prevents sentinel
+      // corruption if a future cleanup path reaches free_id.
+      e.writeln("if (object == RN_REGION_OBJECT_ID) return;")
+    }
     e.writeopenln("if (object != 0) {")
     e.writeln("%s_nextFree[object] = %s_firstFree;" % (self.name, self.name))
     e.writeln("%s_firstFree = object;" % self.name)
@@ -2670,8 +2689,17 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
     e.writeln("static uint32_t %s_slotcount = 0;" % self.name)
     e.write("static %s_t *%s_alloc_obj(void)" % (self.name, self.name))
     e.writeopenln(" {")
-    e.writeln("uint32_t id = %s_alloc_id();" % self.name)
     e.writeln("%s_t *self;" % self.name)
+    if regionEligible {
+      e.writeopenln("if (rn_region_is_active()) {")
+      e.writeln("self = (%s_t *)rn_region_alloc_zeroed(sizeof(%s_t), _Alignof(%s_t));" %
+          (self.name, self.name, self.name))
+      e.writeln("self->rn_id = RN_REGION_OBJECT_ID;")
+      e.writeln("self->refCount = 1u;")
+      e.writeln("return self;")
+      e.writecloseln("}")
+    }
+    e.writeln("uint32_t id = %s_alloc_id();" % self.name)
     e.writeopenln("if (id < %s_slotcount && %s_slots[id]) {" % (self.name, self.name))
     e.writeln("self = %s_slots[id];" % self.name)
     e.writeln("memset(self, 0, sizeof(%s_t));" % self.name)
@@ -2845,6 +2873,55 @@ class CVariableDeclaration(self, varName: string, ctype: CTypeExpr) {
 
 relation OneToOne CDeclaration CFunctionPtrDeclaration cascade
 
+// One call-site-specialized scoped-region wrapper. Context and result are
+// copied scalars; all references allocated by the callback remain internal to
+// the region and are reclaimed synchronously before the result is returned.
+class CWithRegionDeclaration(self, location: db.Location, name: string,
+    contextType: CTypeExpr, resultType: CTypeExpr) {
+  self.location = location
+  self.name = name
+  self.contextType = contextType
+  self.resultType = resultType
+
+  func emitSignature(self, e: CEmitter) {
+    self.resultType.emit(e)
+    e.write(" %s(" % self.name)
+    self.contextType.emit(e)
+    e.write(" context, ")
+    self.resultType.emit(e)
+    e.write(" (*worker)(")
+    self.contextType.emit(e)
+    e.write("), uint64_t blockBytes)")
+  }
+
+  func emit(self, e: CEmitter, proto: bool) {
+    e.needRegion()
+    if proto {
+      e.write("static ")
+      self.emitSignature(e)
+      e.writeln(";")
+      return
+    }
+    e.write("static ")
+    self.emitSignature(e)
+    e.writeln(" {")
+    e.writeln("  rn_region_scope region;")
+    // Mask an enclosing handler before the region becomes active. Checked
+    // callback failures must abort rather than longjmp past region cleanup.
+    e.writeln("  uint32_t savedTryDepth = rn_try_guard_enter();")
+    e.writeln("  rn_region_enter(&region, blockBytes);")
+    e.write("  ")
+    self.resultType.emit(e)
+    e.writeln(" result = worker(context);")
+    e.writeln("  rn_region_leave(&region);")
+    e.writeln("  rn_try_guard_leave(savedTryDepth);")
+    e.writeln("  return result;")
+    e.writeln("}")
+  }
+}
+
+relation OneToOne CDeclaration CWithRegionDeclaration cascade
+
 // One call-site-specialized synchronous parallelMap helper. Stage 1 admits
 // scalar item/context/result types only, so every value crossing the worker
 // boundary is copied by value. Results are written to their original input
@@ -2877,6 +2954,10 @@ class CParallelMapDeclaration(self, location: db.Location, name: string,
 
   func emit(self, e: CEmitter, proto: bool) {
     e.needParallelMap()
+    regionsUsed = db.getRoot().usesRegions
+    if regionsUsed {
+      e.needRegion()
+    }
     if proto {
       e.write("static ")
       self.emitSignature(e)
@@ -2886,6 +2967,7 @@ class CParallelMapDeclaration(self, location: db.Location, name: string,
 
     sharedName = self.name + "_shared"
     threadName = self.name + "_thread"
+    drainName = self.name + "_drain"
     e.writeln("typedef struct %s {" % sharedName)
     e.indent()
     e.newline()
@@ -2909,17 +2991,37 @@ class CParallelMapDeclaration(self, location: db.Location, name: string,
     e.writecloseln("} %s;" % sharedName)
     e.newline()
 
-    e.writeln("static void *%s(void *opaque) {" % threadName)
-    e.writeln("  %s *shared = (%s *)opaque;" % (sharedName, sharedName))
-    e.writeln("  for (;;) {")
-    e.writeln("    size_t index = atomic_fetch_add_explicit(&shared->next, 1u,")
-    e.writeln("        memory_order_relaxed);")
-    e.writeln("    if (index >= shared->count) break;")
-    e.writeln("    shared->results[index] =")
-    e.writeln("        shared->worker(shared->items[index], shared->context);")
-    e.writeln("  }")
-    e.writeln("  return NULL;")
-    e.writeln("}")
+    if regionsUsed {
+      // Keep the caller's TLS cache alive. Only actual pthread entry points
+      // clean their own cache after draining the shared work queue.
+      e.writeln("static void %s(%s *shared) {" % (drainName, sharedName))
+      e.writeln("  for (;;) {")
+      e.writeln("    size_t index = atomic_fetch_add_explicit(&shared->next, 1u,")
+      e.writeln("        memory_order_relaxed);")
+      e.writeln("    if (index >= shared->count) break;")
+      e.writeln("    shared->results[index] =")
+      e.writeln("        shared->worker(shared->items[index], shared->context);")
+      e.writeln("  }")
+      e.writeln("}")
+      e.writeln("static void *%s(void *opaque) {" % threadName)
+      e.writeln("  %s *shared = (%s *)opaque;" % (sharedName, sharedName))
+      e.writeln("  %s(shared);" % drainName)
+      e.writeln("  rn_region_thread_cleanup();")
+      e.writeln("  return NULL;")
+      e.writeln("}")
+    } else {
+      e.writeln("static void *%s(void *opaque) {" % threadName)
+      e.writeln("  %s *shared = (%s *)opaque;" % (sharedName, sharedName))
+      e.writeln("  for (;;) {")
+      e.writeln("    size_t index = atomic_fetch_add_explicit(&shared->next, 1u,")
+      e.writeln("        memory_order_relaxed);")
+      e.writeln("    if (index >= shared->count) break;")
+      e.writeln("    shared->results[index] =")
+      e.writeln("        shared->worker(shared->items[index], shared->context);")
+      e.writeln("  }")
+      e.writeln("  return NULL;")
+      e.writeln("}")
+    }
     e.newline()
 
     e.write("static ")
@@ -2941,11 +3043,11 @@ class CParallelMapDeclaration(self, location: db.Location, name: string,
     // frame until it has drained work and joined every child: an implicit
     // checked callback error must abort, never longjmp past live workers and
     // their stack-backed shared state.
-    e.writeln("  uint32_t savedTryDepth = rn_parallel_map_try_guard_enter();")
+    e.writeln("  uint32_t savedTryDepth = rn_try_guard_enter();")
     e.writeln("  if (workers == 1u) {")
     e.writeln("    for (size_t i = 0; i < count; ++i)")
     e.writeln("      results[i] = worker(items[i], context);")
-    e.writeln("    rn_parallel_map_try_guard_leave(savedTryDepth);")
+    e.writeln("    rn_try_guard_leave(savedTryDepth);")
     e.writeln("    return results;")
     e.writeln("  }")
     e.writeln("  %s shared = {items, context, results, worker, 0u, count};" % sharedName)
@@ -2956,11 +3058,15 @@ class CParallelMapDeclaration(self, location: db.Location, name: string,
     e.writeln("      break;")
     e.writeln("    ++started;")
     e.writeln("  }")
-    e.writeln("  (void)%s(&shared);" % threadName)
+    if regionsUsed {
+      e.writeln("  %s(&shared);" % drainName)
+    } else {
+      e.writeln("  (void)%s(&shared);" % threadName)
+    }
     e.writeln("  for (size_t i = 0u; i < started; ++i) {")
     e.writeln("    if (pthread_join(threads[i], NULL) != 0) abort();")
     e.writeln("  }")
-    e.writeln("  rn_parallel_map_try_guard_leave(savedTryDepth);")
+    e.writeln("  rn_try_guard_leave(savedTryDepth);")
     e.writeln("  return results;")
     e.writeln("}")
   }
@@ -3005,7 +3111,7 @@ class CFunctionPtrDeclaration(self, location: db.Location, name: string,
   }
 }
 
-class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration | CArrayDeclaration | CClassDeclaration | CVariableDeclaration | CFunctionPtrDeclaration | CParallelMapDeclaration) {
+class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration | CArrayDeclaration | CClassDeclaration | CVariableDeclaration | CFunctionPtrDeclaration | CParallelMapDeclaration | CWithRegionDeclaration) {
   self.dependencies = arrayof(string)
 
   enum Type {
@@ -3016,6 +3122,7 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
     Variable
     FunctionPtr
     ParallelMap
+    WithRegion
   }
 
   typeswitch declaration {
@@ -3047,6 +3154,10 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
       self.type = Type.ParallelMap
       self.insertCParallelMapDeclaration(declaration)
     }
+    CWithRegionDeclaration => {
+      self.type = Type.WithRegion
+      self.insertCWithRegionDeclaration(declaration)
+    }
   }
   // Don't emit the declaration or its prototype more than once.
   self.emitted = false
@@ -3062,6 +3173,7 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
       CDeclaration.Type.Variable => return self.cVariableDeclaration.varName
       CDeclaration.Type.FunctionPtr => return self.cFunctionPtrDeclaration.name
       CDeclaration.Type.ParallelMap => return self.cParallelMapDeclaration.name
+      CDeclaration.Type.WithRegion => return self.cWithRegionDeclaration.name
     }
   }
 
@@ -3106,6 +3218,7 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
           self.protoEmitted = true
         }
         CDeclaration.Type.ParallelMap => self.cParallelMapDeclaration.emit(e, false)
+        CDeclaration.Type.WithRegion => self.cWithRegionDeclaration.emit(e, false)
       }
       self.emitted = true
     }
@@ -3131,6 +3244,7 @@ class CDeclaration(self, declaration: CFunctionDeclaration | CStructDeclaration 
           self.emitted = true
         }
         CDeclaration.Type.ParallelMap => self.cParallelMapDeclaration.emit(e, true)
+        CDeclaration.Type.WithRegion => self.cWithRegionDeclaration.emit(e, true)
       }
       self.protoEmitted = true
     }
@@ -3253,6 +3367,11 @@ class CProgram(self) {
     e.indent()
     e.newline()
     self.mainCBlock.emit(e)
+    if db.getRoot().usesRegions {
+      e.needRegion()
+      e.newline()
+      e.writeln("rn_region_thread_cleanup();")
+    }
     e.deindent()
     e.newline()
     e.writeln("  return 0;\n}")

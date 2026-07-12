@@ -557,6 +557,9 @@ class Expr(self, type: ExprType, location: Location) {
   // stage-1 parallelMap builtin. Spelling alone is insufficient because a
   // user function may shadow the builtin.
   self.isParallelMapBuiltin = false
+  // Likewise, only a call resolved against the compiler-created withRegion
+  // binding may activate region validation and lowering.
+  self.isWithRegionBuiltin = false
   self.autocast = false  // Set on integer constants without a type suffix.
   self.width = 0u32
   // TODO: add datatype when ported to Rune.
@@ -912,6 +915,7 @@ class Expr(self, type: ExprType, location: Location) {
     newExpr.width = self.width
     newExpr.autocast = self.autocast
     newExpr.isParallelMapBuiltin = self.isParallelMapBuiltin
+    newExpr.isWithRegionBuiltin = self.isWithRegionBuiltin
     newExpr.val = self.val
     for child in self.childExprs() {
       newChild = child.copy()
@@ -3757,6 +3761,27 @@ class Expr(self, type: ExprType, location: Location) {
           inner = right.firstChildExpr!
         }
         return inner.genC(builder)
+      }
+      if self.isWithRegionBuiltin {
+        // A non-deferred polymorphic body is not re-typechecked for every C
+        // specialization. Validate once more here, while its ground emission
+        // bindings are active; any diagnostic is caught by the driver's
+        // post-builder fail-closed gate.
+        builder.typechecker.validateWithRegionCall(self, false)
+        wrContext = right.indexChildExpr(0)
+        wrWorker = right.indexChildExpr(1)
+        wrContextTy = builder.typechecker.resolve(wrContext.typedValue!)
+        wrWorkerTy = builder.typechecker.resolve(wrWorker.typedValue!)
+        wrResultTy = builder.typechecker.resolve(wrWorkerTy.function.result!)
+        wrHelper = builder.ensureWithRegionDeclared(self.location, wrContextTy,
+            wrResultTy)
+        getRoot().usesRegions = true
+        wrArgs = c.CExprList()
+        for wrArg in right.childExprs() {
+          wrArgs.appendCExpr(wrArg.genC(builder))
+        }
+        return builder.cCall(self.location, wrHelper, c.CExpr(wrArgs),
+                             self.typedValue)
       }
       if self.isParallelMapBuiltin {
         pmItems = right.indexChildExpr(0)

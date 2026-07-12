@@ -1,0 +1,11 @@
+func genericRegionIdentity(value) {
+  return value
+}
+
+func genericRegionCall(value) {
+  return withRegion(
+      value, &genericRegionIdentity(value), 0u64)
+}
+
+println genericRegionCall(9u8)
+println genericRegionCall(900u64)

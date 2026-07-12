@@ -1,0 +1,6 @@
+func addOne(value: u64) -> u64 {
+  return value !+ 1u64
+}
+
+callback = &addOne(1u64)
+println withRegion(1u64, callback, 0u64)

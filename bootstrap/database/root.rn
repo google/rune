@@ -37,6 +37,10 @@ class Root(self) {
   // Set when a program uses structured parallelMap. The driver then links
   // pthreads; ordinary programs keep their existing dependency surface.
   self.usesThreads = false
+  // Set only when a call resolves to the compiler-created withRegion
+  // builtin.  Generated declarations use this to add arena cleanup without
+  // changing ordinary programs or same-spelled user functions.
+  self.usesRegions = false
   self.generateC = false
   self.outputCFilename = ""
   self.indentDepth = 0u32

@@ -269,6 +269,14 @@ class CRuntime(self) {
     return cf
   }
 
+  // Thread-local, stack-nestable bump regions. Typed call wrappers and the
+  // approved class allocation path are emitted separately because their C
+  // types depend on the source program.
+  func needRegion(self) -> CFragment {
+    self.needRaiseError()
+    return self.cFragment("region", "cbackend/cruntime/region.inc")
+  }
+
   // F64x4 uses a portable value representation with target-local AVX helpers.
   func needF64x4(self) -> CFragment {
     self.needRaiseError()
@@ -623,12 +631,12 @@ class CRuntime(self) {
       e.writeln("static _Thread_local char *rn_raised_message = \"\";")
       e.writeln("static _Thread_local uint8_t rn_raised_message_headed = 0;")
       e.newline()
-      e.writeln("static inline uint32_t rn_parallel_map_try_guard_enter(void) {")
+      e.writeln("static inline uint32_t rn_try_guard_enter(void) {")
       e.writeln("  uint32_t saved = rn_try_depth;")
       e.writeln("  rn_try_depth = 0;")
       e.writeln("  return saved;")
       e.writeln("}")
-      e.writeln("static inline void rn_parallel_map_try_guard_leave(uint32_t saved) {")
+      e.writeln("static inline void rn_try_guard_leave(uint32_t saved) {")
       e.writeln("  rn_try_depth = saved;")
       e.writeln("}")
       e.newline()
@@ -665,10 +673,10 @@ class CRuntime(self) {
       e.writeln("}")
       // No try stack exists in this translation unit. Keep the specialized
       // parallelMap helper independent of that compile-time distinction.
-      e.writeln("static inline uint32_t rn_parallel_map_try_guard_enter(void) {")
+      e.writeln("static inline uint32_t rn_try_guard_enter(void) {")
       e.writeln("  return 0;")
       e.writeln("}")
-      e.writeln("static inline void rn_parallel_map_try_guard_leave(uint32_t saved) {")
+      e.writeln("static inline void rn_try_guard_leave(uint32_t saved) {")
       e.writeln("  (void)saved;")
       e.writeln("}")
     }

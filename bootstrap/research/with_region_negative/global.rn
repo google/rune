@@ -1,0 +1,7 @@
+regionOffset = 7u64
+
+func readGlobal(value: u64) -> u64 {
+  return value !+ regionOffset
+}
+
+println withRegion(1u64, &readGlobal(1u64), 0u64)

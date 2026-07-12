@@ -171,6 +171,9 @@ class SymbolMapping(self, key: Sym, ty: Type?) {
   // True only for the compiler-created parallelMap binding. A same-spelled
   // user definition or local binding remains ordinary Rune code.
   self.isParallelMapBuiltin = false
+  // True only for the compiler-created withRegion binding.  Keep builtin
+  // identity on the binding rather than inferring it from spelling.
+  self.isWithRegionBuiltin = false
 
   func hash(self) -> u64 {
     return hashValue(self.key.name)
@@ -273,6 +276,10 @@ class ClassInfo(self, sym: Sym) {
   // fields): kept in the struct but skipped by the print helper, which
   // would otherwise recurse through the relation cycle.
   self.generatedFieldNames = arrayof(string)
+  // Set only after the transitive withRegion validator has proved that this
+  // concrete class is safe for region allocation.  C declarations retain a
+  // live ClassInfo reference so deferred validation cannot be missed.
+  self.regionEligible = false
 
   func hash(self) -> u64 {
     return hashValue(self.sym.name)
@@ -413,6 +420,10 @@ class TypeChecker(self) {
   // (recursion with differing signatures) are parked here and drained
   // when the outermost demand completes.
   self.pendingDemands = arrayof(CalleeRecord)
+  // Calls are queued while expressions typecheck, then validated only after
+  // their enclosing graph is fully typed.  Deferred retypechecks validate a
+  // framed tail while their concrete bindings are still active.
+  self.pendingWithRegionCalls = arrayof(db.Expr)
   // Var ids currently bound by an ACTIVE instantiate() frame: a
   // pre-existing binding on one of these belongs to an enclosing frame
   // and must be kept; a pre-existing binding on a NON-active var is a
@@ -766,6 +777,10 @@ class TypeChecker(self) {
   // instantiation's bindings.  Runs BEFORE emission so any statement
   // rewriting (iterator inlining) completes first.
   func retypecheckDeferred(self, fn: db.Function) {
+    // Nested materialization may occur while this body is walking.  Preserve
+    // calls queued by an outer/root frame and validate only this frame's tail
+    // before its concrete type bindings are restored.
+    withRegionPendingBase = self.pendingWithRegionCalls.length()
     self.retypecheckNesting += 1u32
     self.u8x16GeneratedBodyDepth += 1u32
     prevRoundIsCtor = self.roundIsCtor
@@ -875,6 +890,7 @@ class TypeChecker(self) {
         }
       }
     }
+    self.validatePendingWithRegionCallsFrom(withRegionPendingBase)
     self.closeScope()
     // closeScope leaves sym.typedValue at its last-bound value; for the
     // parameters that means the TEMPLATE variables this round just
@@ -3799,6 +3815,28 @@ class TypeChecker(self) {
               expr.isParallelMapBuiltin = true
             }
           }
+          // Scoped region allocation is polymorphic at the call surface.
+          // Validation is deliberately deferred until the surrounding root
+          // (or concrete deferred-specialization frame) has finished typing.
+          if fnchild.val.symVal.name == "withRegion" && isnull(callee) {
+            wrLookup = SymbolMapping(fnchild.val.symVal!,
+                fnchild.val.symVal.typedValue)
+            wrMapping = self.findSymbolMapping(wrLookup)
+            if isnull(wrMapping) {
+              wrContext = V(1)
+              wrResult = V(2)
+              self.newSymbol(fnchild.val.symVal!, POLY([1, 2],
+                  FN(TUPLE([wrContext, FN(wrContext, wrResult), U(64)]),
+                     wrResult)))
+              wrMapping = self.findSymbolMapping(wrLookup)
+              if !isnull(wrMapping) {
+                wrMapping!.isWithRegionBuiltin = true
+              }
+            }
+            if !isnull(wrMapping) && wrMapping!.isWithRegionBuiltin {
+              expr.isWithRegionBuiltin = true
+            }
+          }
           // GMP-backed BigInt is an opt-in opaque runtime value.  Keep it
           // explicit and destination-taking: existing iN/uN arithmetic stays
           // fixed width, while callers can reuse GMP allocations in hot loops.
@@ -4014,6 +4052,9 @@ class TypeChecker(self) {
         result = self.apply(fn!, args!, expr.location)
         if !isnull(result) && expr.isParallelMapBuiltin {
           self.validateParallelMapCall(expr)
+        }
+        if !isnull(result) && expr.isWithRegionBuiltin {
+          self.pendingWithRegionCalls.append(expr!)
         }
         if !isnull(result) && !isnull(callRec.viaExpr) {
           if callRec.viaExpr == fnchild {
@@ -5180,9 +5221,14 @@ class TypeChecker(self) {
       }
       return self.isParallelMapScalar(t.tyvar.constraint!)
     }
-    if (t.type == Type.TypeClass.Int || t.type == Type.TypeClass.AnyInt ||
-        t.type == Type.TypeClass.Float) {
+    if t.type == Type.TypeClass.Int {
+      return t.int.width <= 64u32
+    }
+    if t.type == Type.TypeClass.AnyInt {
       return true
+    }
+    if t.type == Type.TypeClass.Float {
+      return t.float.width == 32u32 || t.float.width == 64u32
     }
     if t.type == Type.TypeClass.Choice {
       // Generic scalar callback expressions can retain an all-scalar
@@ -5334,6 +5380,25 @@ class TypeChecker(self) {
     }
     if expr.type == db.ExprType.Call {
       callee = expr.firstChildExpr!
+      // A validated withRegion is TLS-local and returns a scalar, so it is
+      // safe inside a parallel worker.  Only its context and byte hint are
+      // evaluated in this callback; the Funcaddr sample and transitive region
+      // callback are owned by the region validator.
+      if expr.isWithRegionBuiltin {
+        wrParallelArgs = callee.nextExprChildExpr
+        if !isnull(wrParallelArgs) &&
+            (wrParallelArgs!.type == db.ExprType.Tuple ||
+             wrParallelArgs!.type == db.ExprType.List) &&
+            wrParallelArgs!.countChildExprs() == 3u64 {
+          if !self.validateParallelExpr(wrParallelArgs!.indexChildExpr(0),
+              locals, globals, visited) {
+            return false
+          }
+          return self.validateParallelExpr(wrParallelArgs!.indexChildExpr(2),
+              locals, globals, visited)
+        }
+        return false
+      }
       if callee.type != db.ExprType.Ident {
         self.typeError(
             "parallelMap callback calls must target a direct named pure function",
@@ -5477,6 +5542,582 @@ class TypeChecker(self) {
     self.collectParallelModuleGlobals(db.getMainFunc(), globals)
     visited = arrayof(string)
     self.validateParallelFunction(workerFn!, globals, visited)
+  }
+
+  // Scoped regions intentionally expose only scalar values at their public
+  // boundary.  Class references may exist inside a validated callback graph,
+  // but cannot be returned, captured through globals, stored in aggregates,
+  // or converted into an externally observable representation.
+  func regionFunctionPresent(self, functions: [db.Function],
+      fn: db.Function) -> bool {
+    for present in functions {
+      if present == fn {
+        return true
+      }
+    }
+    return false
+  }
+
+  func regionClassPresent(self, classes: [ClassInfo], info: ClassInfo) -> bool {
+    for present in classes {
+      if present == info {
+        return true
+      }
+    }
+    return false
+  }
+
+  func regionCallForbidden(self, name: string) -> bool {
+    return name == "readByte" || name == "writeByte" ||
+        name == "readBytes" || name == "writeBytes" ||
+        name == "readln" || name == "readlnInto" ||
+        name == "appendBytes" || name == "writeReverseTranslated" ||
+        name == "writeReverseMasked5Translated" || name == "exit" ||
+        name == "regexCount" || name == "regexReplace" ||
+        name == "randRange" || name == "randString" ||
+        name == "byteReaderNew" || name == "byteReaderPeekByte" ||
+        name == "byteReaderAppendUntilByteSkippingByteInto" ||
+        name == "byteReaderAppendlnInto" ||
+        name == "byteReaderReadlnInto" || name == "byteReaderFree"
+  }
+
+  // Unlike the parallelMap predicate, region scalars must have a genuinely
+  // by-value C representation. Integers wider than 64 bits are rn_wide heap
+  // handles and therefore need ownership/cleanup semantics before they can
+  // cross or live inside an O(1)-reset region.
+  func isRegionScalar(self, ty: Type) -> bool {
+    t = self.resolve(ty)
+    if t.type == Type.TypeClass.Int {
+      return t.int.width <= 64u32
+    }
+    if t.type == Type.TypeClass.AnyInt {
+      return true
+    }
+    if t.type == Type.TypeClass.Float {
+      return t.float.width == 32u32 || t.float.width == 64u32
+    }
+    if t.type == Type.TypeClass.Typename {
+      if t.tyname.name.name == "bool" {
+        return true
+      }
+      return !isnull(self.lookupEnum(t.tyname.name))
+    }
+    return false
+  }
+
+  func validateRegionValueType(self, ty: Type, location: db.Location,
+      var visitedFunctions: [db.Function], var visitingClasses: [ClassInfo],
+      var candidateClasses: [ClassInfo], fieldClassName: string = "") -> bool {
+    t = self.resolve(ty)
+    if t.type == Type.TypeClass.Var || t.type == Type.TypeClass.Choice ||
+        self.hasFreeVars(t) {
+      if fieldClassName != "" {
+        self.typeErrorOnce("withRegion class '%s' fields must be scalar or region-local classes" %
+                           fieldClassName, location)
+      } else {
+        self.typeErrorOnce(
+            "withRegion callback values must be scalar or region-local classes",
+            location)
+      }
+      return false
+    }
+    if self.isRegionScalar(t) {
+      return true
+    }
+    if t.type == Type.TypeClass.Typename {
+      info = self.lookupClass(t.tyname.name)
+      if !isnull(info) {
+        return self.validateRegionClass(info!, location, visitedFunctions,
+            visitingClasses, candidateClasses)
+      }
+    }
+    if fieldClassName != "" {
+      self.typeErrorOnce("withRegion class '%s' fields must be scalar or region-local classes" %
+                         fieldClassName, location)
+    } else {
+      self.typeErrorOnce(
+          "withRegion callback values must be scalar or region-local classes",
+          location)
+    }
+    return false
+  }
+
+  func validateRegionClass(self, info: ClassInfo, location: db.Location,
+      var visitedFunctions: [db.Function], var visitingClasses: [ClassInfo],
+      var candidateClasses: [ClassInfo]) -> bool {
+    if info.regionEligible {
+      return true
+    }
+    // A recursive nullable field points back to an ancestor currently being
+    // proved.  Eligibility is published only after the whole root graph
+    // succeeds, so this provisional edge cannot leak a partial approval.
+    if self.regionClassPresent(visitingClasses, info) {
+      return true
+    }
+    if isnull(info.fn) || isnull(info.selfType) ||
+        self.hasFreeVars(self.resolve(info.selfType!)) {
+      self.typeErrorOnce("withRegion requires monomorphic concrete classes",
+                         location)
+      return false
+    }
+    classFn = info.fn!
+    if isnull(classFn.typedValue) ||
+        classFn.typedValue!.type == Type.TypeClass.Polymorphic ||
+        classFn.deferredTypecheck {
+      self.typeErrorOnce("withRegion requires monomorphic concrete classes",
+                         location)
+      return false
+    }
+    if !isnull(classFn.template) && classFn.template.explicitWidth {
+      self.typeErrorOnce(
+          "withRegion cannot allocate class '%s' with explicit reference width" %
+          info.sym.name, location)
+      return false
+    }
+    if info.generatedFieldNames.length() > 0u64 {
+      self.typeErrorOnce("withRegion cannot allocate relational class '%s'" %
+                         info.sym.name, location)
+      return false
+    }
+    for child in classFn.childFunctions() {
+      if child.type == db.FuncType.Final {
+        self.typeErrorOnce("withRegion cannot allocate class '%s' with final behavior" %
+                           info.sym.name, child.location)
+        return false
+      }
+      if child.type == db.FuncType.Operator {
+        self.typeErrorOnce("withRegion cannot allocate class '%s' with user operators" %
+                           info.sym.name, child.location)
+        return false
+      }
+      if child.type == db.FuncType.Plain && child.sym.name == "destroy" &&
+          !isnull(child.subBlock.firstStatement) {
+        self.typeErrorOnce("withRegion cannot allocate class '%s' with destroy behavior" %
+                           info.sym.name, child.location)
+        return false
+      }
+      if child.sym.name == "toString" {
+        self.typeErrorOnce("withRegion classes cannot override toString",
+                           child.location)
+        return false
+      }
+    }
+
+    visitingClasses.append(info)
+    if !self.regionClassPresent(candidateClasses, info) {
+      candidateClasses.append(info)
+    }
+    for fieldType in info.strct.fieldtypes {
+      if !self.validateRegionValueType(fieldType, location, visitedFunctions,
+          visitingClasses, candidateClasses, info.sym.name) {
+        visitingClasses.resize(visitingClasses.length() - 1u64)
+        return false
+      }
+    }
+    if !self.validateRegionFunction(classFn, visitedFunctions,
+        visitingClasses, candidateClasses) {
+      visitingClasses.resize(visitingClasses.length() - 1u64)
+      return false
+    }
+    visitingClasses.resize(visitingClasses.length() - 1u64)
+    return true
+  }
+
+  func validateRegionExpr(self, expr: db.Expr, locals: [string],
+      var visitedFunctions: [db.Function], var visitingClasses: [ClassInfo],
+      var candidateClasses: [ClassInfo]) -> bool {
+    if expr.type == db.ExprType.RandUint {
+      self.typeErrorOnce(
+          "withRegion callback cannot use process-global random state",
+          expr.location)
+      return false
+    }
+    if expr.type == db.ExprType.Cast || expr.type == db.ExprType.CastTrunc {
+      self.typeErrorOnce("withRegion callbacks cannot use casts", expr.location)
+      return false
+    }
+    for operatorFn in self.operatorFns {
+      if operatorFn.opType == expr.type {
+        self.typeErrorOnce("withRegion callback cannot use a registered user operator",
+                           expr.location)
+        return false
+      }
+    }
+
+    if expr.type == db.ExprType.Ident {
+      name = expr.val.symVal.name
+      if !self.parallelNamePresent(locals, name) {
+        self.typeErrorOnce("withRegion callback cannot access nonlocal '%s'" % name,
+                           expr.location)
+        return false
+      }
+      if isnull(expr.typedValue) {
+        self.typeErrorOnce("withRegion callback local has no concrete type",
+                           expr.location)
+        return false
+      }
+      return self.validateRegionValueType(expr.typedValue!, expr.location,
+          visitedFunctions, visitingClasses, candidateClasses)
+    }
+
+    if expr.type == db.ExprType.Funcaddr {
+      self.typeErrorOnce("withRegion callbacks cannot store function values",
+                         expr.location)
+      return false
+    }
+
+    // A Dot's member-name child is not a variable.  Validate the receiver and
+    // selected value only; method calls are handled by the Call arm below.
+    if expr.type == db.ExprType.Dot {
+      base = expr.firstChildExpr!
+      member = base.nextExprChildExpr!
+      if base.type == db.ExprType.Ident &&
+          !isnull(self.lookupEnum(base.val.symVal!)) {
+        if isnull(expr.typedValue) {
+          return false
+        }
+        return self.validateRegionValueType(expr.typedValue!, expr.location,
+            visitedFunctions, visitingClasses, candidateClasses)
+      }
+      if !self.validateRegionExpr(base, locals, visitedFunctions,
+          visitingClasses, candidateClasses) {
+        return false
+      }
+      if isnull(expr.typedValue) {
+        self.typeErrorOnce("withRegion field has no concrete type", member.location)
+        return false
+      }
+      return self.validateRegionValueType(expr.typedValue!, expr.location,
+          visitedFunctions, visitingClasses, candidateClasses)
+    }
+
+    if expr.type == db.ExprType.Call {
+      callee = expr.firstChildExpr!
+      args = callee.nextExprChildExpr
+
+      if expr.isParallelMapBuiltin {
+        self.typeErrorOnce("withRegion callback cannot call 'parallelMap'",
+                           expr.location)
+        return false
+      }
+      if expr.isWithRegionBuiltin {
+        if isnull(args) ||
+            (args!.type != db.ExprType.Tuple && args!.type != db.ExprType.List) ||
+            args!.countChildExprs() != 3u64 {
+          self.typeErrorOnce("withRegion requires exactly three arguments",
+                             expr.location)
+          return false
+        }
+        // The Funcaddr sample selects a callback but is not executed.  Every
+        // withRegion call is independently queued for transitive validation.
+        if !self.validateRegionExpr(args!.indexChildExpr(0), locals,
+            visitedFunctions, visitingClasses, candidateClasses) {
+          return false
+        }
+        return self.validateRegionExpr(args!.indexChildExpr(2), locals,
+            visitedFunctions, visitingClasses, candidateClasses)
+      }
+
+      if callee.type == db.ExprType.Ident {
+        name = callee.val.symVal.name
+        if self.regionCallForbidden(name) {
+          self.typeErrorOnce("withRegion callback cannot call '%s'" % name,
+                             expr.location)
+          return false
+        }
+        classInfo = self.lookupClass(callee.val.symVal!)
+        if !isnull(classInfo) {
+          if !self.validateRegionClass(classInfo!, expr.location,
+              visitedFunctions, visitingClasses, candidateClasses) {
+            return false
+          }
+        } else {
+          target = self.findPlainFunction(name)
+          if isnull(target) {
+            self.typeErrorOnce(
+                "withRegion callback calls unknown-effect function '%s'" % name,
+                expr.location)
+            return false
+          }
+          targetHasBody = false
+          for ignoredStatement in target!.subBlock.statements() {
+            targetHasBody = true
+          }
+          if target!.isExtern || !targetHasBody {
+            self.typeErrorOnce(
+                "withRegion callback cannot call extern or bodyless function '%s'" % name,
+                expr.location)
+            return false
+          }
+          if !self.validateRegionFunction(target!, visitedFunctions,
+              visitingClasses, candidateClasses) {
+            return false
+          }
+        }
+      } else if callee.type == db.ExprType.Dot {
+        receiver = callee.firstChildExpr!
+        methodExpr = receiver.nextExprChildExpr!
+        methodName = methodExpr.toString()
+        if methodName == "destroy" || methodName == "show" ||
+            methodName == "toString" {
+          self.typeErrorOnce("withRegion callback cannot call '%s'" % methodName,
+                             expr.location)
+          return false
+        }
+        if isnull(receiver.typedValue) {
+          self.typeErrorOnce("withRegion method receiver has no concrete type",
+                             receiver.location)
+          return false
+        }
+        receiverType = self.resolve(receiver.typedValue!)
+        if receiverType.type != Type.TypeClass.Typename {
+          self.typeErrorOnce("withRegion callbacks require direct class methods",
+                             expr.location)
+          return false
+        }
+        methodInfo = self.lookupClass(receiverType.tyname.name)
+        if isnull(methodInfo) {
+          self.typeErrorOnce("withRegion callbacks require direct class methods",
+                             expr.location)
+          return false
+        }
+        if !self.validateRegionExpr(receiver, locals, visitedFunctions,
+            visitingClasses, candidateClasses) {
+          return false
+        }
+        method = self.findMethod(methodInfo!, methodName)
+        if isnull(method) || method!.isExtern {
+          self.typeErrorOnce("withRegion callback calls unknown-effect method '%s'" %
+                             methodName, expr.location)
+          return false
+        }
+        methodHasBody = false
+        for ignoredMethodStatement in method!.subBlock.statements() {
+          methodHasBody = true
+        }
+        if !methodHasBody {
+          self.typeErrorOnce("withRegion callback calls bodyless method '%s'" %
+                             methodName, expr.location)
+          return false
+        }
+        if !self.validateRegionFunction(method!, visitedFunctions,
+            visitingClasses, candidateClasses) {
+          return false
+        }
+      } else {
+        self.typeErrorOnce("withRegion callbacks require direct named calls",
+                           expr.location)
+        return false
+      }
+
+      if !isnull(args) {
+        if args!.type == db.ExprType.Tuple || args!.type == db.ExprType.List {
+          for arg in args!.childExprs() {
+            if !self.validateRegionExpr(arg, locals, visitedFunctions,
+                visitingClasses, candidateClasses) {
+              return false
+            }
+          }
+        } else if !self.validateRegionExpr(args!, locals, visitedFunctions,
+            visitingClasses, candidateClasses) {
+          return false
+        }
+      }
+      if !isnull(expr.typedValue) {
+        return self.validateRegionValueType(expr.typedValue!, expr.location,
+            visitedFunctions, visitingClasses, candidateClasses)
+      }
+      return true
+    }
+
+    // List/Tuple nodes are normal call-argument containers.  A real local
+    // aggregate is rejected when its assignment target/reference is checked.
+    if expr.type != db.ExprType.List && expr.type != db.ExprType.Tuple &&
+        !isnull(expr.typedValue) {
+      if !self.validateRegionValueType(expr.typedValue!, expr.location,
+          visitedFunctions, visitingClasses, candidateClasses) {
+        return false
+      }
+    }
+    for child in expr.childExprs() {
+      if !self.validateRegionExpr(child, locals, visitedFunctions,
+          visitingClasses, candidateClasses) {
+        return false
+      }
+    }
+    return true
+  }
+
+  func validateRegionBlock(self, block: db.Block, locals: [string],
+      var visitedFunctions: [db.Function], var visitingClasses: [ClassInfo],
+      var candidateClasses: [ClassInfo]) -> bool {
+    for statement in block.statements() {
+      if (statement.type == db.StateType.Print ||
+          statement.type == db.StateType.Println ||
+          statement.type == db.StateType.Raise ||
+          statement.type == db.StateType.Try ||
+          statement.type == db.StateType.Except ||
+          statement.type == db.StateType.Panic ||
+          statement.type == db.StateType.Assert ||
+          statement.type == db.StateType.Ref ||
+          statement.type == db.StateType.Unref ||
+          statement.type == db.StateType.Relation ||
+          statement.type == db.StateType.Transform ||
+          statement.type == db.StateType.Appendcode ||
+          statement.type == db.StateType.Prependcode) {
+        self.typeErrorOnce("withRegion callback cannot use '%s'" %
+            db.statementTypeGetKeyword(statement.type), statement.location)
+        return false
+      }
+      if !isnull(statement.expr) {
+        if !self.validateRegionExpr(statement.expr!, locals, visitedFunctions,
+            visitingClasses, candidateClasses) {
+          return false
+        }
+      }
+      if !isnull(statement.subBlock) {
+        if !self.validateRegionBlock(statement.subBlock!, locals,
+            visitedFunctions, visitingClasses, candidateClasses) {
+          return false
+        }
+      }
+    }
+    return true
+  }
+
+  func validateRegionFunction(self, fn: db.Function,
+      var visitedFunctions: [db.Function], var visitingClasses: [ClassInfo],
+      var candidateClasses: [ClassInfo]) -> bool {
+    if self.regionFunctionPresent(visitedFunctions, fn) {
+      return true
+    }
+    visitedFunctions.append(fn)
+    if isnull(fn.typedValue) ||
+        fn.typedValue!.type == Type.TypeClass.Polymorphic ||
+        fn.deferredTypecheck {
+      self.typeErrorOnce("withRegion callback graphs must be monomorphic",
+                         fn.location)
+      return false
+    }
+    if fn.isExtern {
+      self.typeErrorOnce("withRegion callbacks cannot call extern functions",
+                         fn.location)
+      return false
+    }
+    locals = arrayof(string)
+    if fn.type == db.FuncType.Constructor ||
+        (!isnull(fn.parentFunction) &&
+         fn.parentFunction.type == db.FuncType.Constructor) {
+      locals.append("self")
+    }
+    for variable in fn.variables() {
+      if !self.parallelNamePresent(locals, variable.sym.name) {
+        locals.append(variable.sym.name)
+      }
+    }
+    self.collectParallelLocals(fn.subBlock, locals)
+    return self.validateRegionBlock(fn.subBlock, locals, visitedFunctions,
+                                    visitingClasses, candidateClasses)
+  }
+
+  func validateWithRegionCall(self, call: db.Expr,
+      allowDeferredBoundary: bool = true) {
+    callee = call.firstChildExpr!
+    args = callee.nextExprChildExpr
+    if isnull(args) ||
+        (args!.type != db.ExprType.Tuple && args!.type != db.ExprType.List) ||
+        args!.countChildExprs() != 3u64 {
+      self.typeErrorOnce("withRegion requires exactly three arguments", call.location)
+      return
+    }
+    context = args!.indexChildExpr(0)
+    worker = args!.indexChildExpr(1)
+    if isnull(context.typedValue) || isnull(worker.typedValue) {
+      // A template body can queue this call before deferral clears its
+      // expression types. Its concrete retypecheck queues it again and owns
+      // the actual validation.
+      return
+    }
+    contextTy = self.resolve(context.typedValue!)
+    workerTy = self.resolve(worker.typedValue!)
+    if workerTy.type != Type.TypeClass.Function {
+      self.typeErrorOnce("withRegion requires a direct named callback",
+                         worker.location)
+      return
+    }
+    resultTy = self.resolve(workerTy.function.result!)
+    if contextTy.type == Type.TypeClass.Var ||
+        contextTy.type == Type.TypeClass.Choice ||
+        resultTy.type == Type.TypeClass.Var ||
+        resultTy.type == Type.TypeClass.Choice ||
+        self.hasFreeVars(contextTy) || self.hasFreeVars(resultTy) {
+      // Defer generic boundary approval until a ground materialization frame.
+      if !allowDeferredBoundary {
+        self.typeErrorOnce("withRegion requires concrete scalar context and result types",
+                           call.location)
+      }
+      return
+    }
+    if !self.isRegionScalar(contextTy) || !self.isRegionScalar(resultTy) {
+      self.typeErrorOnce(
+          "withRegion stage 1 permits only scalar context and result types",
+          call.location)
+      return
+    }
+    if worker.type != db.ExprType.Funcaddr {
+      self.typeErrorOnce("withRegion requires a direct named callback",
+                         worker.location)
+      return
+    }
+    sampleCall = worker.firstChildExpr!
+    sampleCallee = sampleCall.firstChildExpr!
+    if sampleCallee.type != db.ExprType.Ident {
+      self.typeErrorOnce("withRegion requires a direct named callback",
+                         worker.location)
+      return
+    }
+    workerFn = self.findPlainFunction(sampleCallee.val.symVal.name)
+    if isnull(workerFn) {
+      self.typeErrorOnce("withRegion callback must be a top-level plain function",
+                         worker.location)
+      return
+    }
+    visitedFunctions = arrayof(db.Function)
+    visitingClasses = arrayof(ClassInfo)
+    candidateClasses = arrayof(ClassInfo)
+    if self.validateRegionFunction(workerFn!, visitedFunctions,
+        visitingClasses, candidateClasses) {
+      for info in candidateClasses {
+        info.regionEligible = true
+      }
+    }
+  }
+
+  // Validate and remove only [base, end).  A nested deferred retypecheck uses
+  // its own base, leaving its caller's not-yet-complete prefix untouched.
+  func validatePendingWithRegionCallsFrom(self, base: u64) {
+    end = self.pendingWithRegionCalls.length()
+    pos = base
+    while pos < end {
+      call = self.pendingWithRegionCalls[pos]
+      duplicate = false
+      prior = base
+      while prior < pos {
+        if self.pendingWithRegionCalls[prior] == call {
+          duplicate = true
+        }
+        prior += 1u64
+      }
+      if !duplicate {
+        self.validateWithRegionCall(call)
+      }
+      pos += 1u64
+    }
+    self.pendingWithRegionCalls.resize(base)
+  }
+
+  func validatePendingWithRegionCalls(self) {
+    self.validatePendingWithRegionCallsFrom(0u64)
   }
 
   // Find a top-level plain function by name.  Used during desugaring (before

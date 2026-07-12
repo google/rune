@@ -223,6 +223,8 @@ class CBuilder(self, tc: types.TypeChecker) {
   self.printTempCounter = 0u64
   // Unique names for call-site-specialized parallelMap helpers.
   self.parallelMapCounter = 0u64
+  // Unique names for call-site-specialized withRegion helpers.
+  self.withRegionCounter = 0u64
   self.insertDependencyStack(DependencyStack())
 
   // Re-run the round for the spec currently being emitted.  Nested
@@ -1097,9 +1099,10 @@ class CBuilder(self, tc: types.TypeChecker) {
 
   func cClassDeclaration(self, location: db.Location, name: string,
                          fields: CParamList, toStringMethod: string,
-                         refWidth: u32 = 0u32, runeName: string = "") -> CDeclaration {
+                         refWidth: u32 = 0u32, runeName: string = "",
+                         classInfo: types.ClassInfo? = null(types.ClassInfo)) -> CDeclaration {
     return CDeclaration(CClassDeclaration(location, name, fields, toStringMethod,
-                                          refWidth, runeName))
+                                          refWidth, runeName, classInfo))
   }
 
   // Create a function definition whose return type is given directly as a C
@@ -1842,6 +1845,19 @@ class CBuilder(self, tc: types.TypeChecker) {
       dec.addDependency(resultArray.dec!)
     }
     self.addDeclaration(dec)
+    return name
+  }
+
+  // Declare one typed synchronous withRegion helper. The typechecker admits
+  // only concrete scalar context/result values at this ABI boundary.
+  func ensureWithRegionDeclared(self, location: db.Location,
+      contextType: types.Type, resultType: types.Type) -> string {
+    contextCType = self.genCType(contextType)!
+    resultCType = self.genCType(resultType)!
+    name = "rn_with_region_%u64" % self.withRegionCounter
+    self.withRegionCounter += 1u64
+    self.addDeclaration(CDeclaration(CWithRegionDeclaration(location, name,
+        contextCType, resultCType)))
     return name
   }
 

@@ -1,0 +1,8 @@
+class EscapingNode(self: EscapingNode) {
+}
+
+func escapeNode(value: u32) -> EscapingNode {
+  return EscapingNode()
+}
+
+println withRegion(1u32, &escapeNode(1u32), 0u64)

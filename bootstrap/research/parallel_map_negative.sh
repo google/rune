@@ -4,6 +4,7 @@ set -euo pipefail
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 compiler="$repo/bootstrap/rune"
 fixtures="$repo/bootstrap/research/parallel_map_negative"
+readonly cpu=15
 
 check_rejected() {
   local name=$1
@@ -14,7 +15,7 @@ check_rejected() {
   log=$(mktemp)
   trap 'rm -f "$log"' RETURN
   status=0
-  nice -n 15 ionice -c 3 taskset -c 0 \
+  nice -n 15 ionice -c 3 taskset -c "$cpu" \
     "$compiler" -q "$base.rn" >"$log" 2>&1 || status=$?
   test "$status" -ne 0
   grep -Fx "Found 1 type error." "$log" >/dev/null
@@ -46,6 +47,8 @@ check_rejected extern "cannot call extern or bodyless function 'scalarExtern'"
 check_rejected argv "cannot access nonlocal 'argv'"
 check_rejected cast "callbacks cannot use casts"
 check_rejected user_operator "registered user operator"
+check_rejected wide_transfer \
+  "permits only scalar item, context, and result types"
 
 # Rune ChoiceType is an inference constraint and cannot currently be
 # materialized as an array element/runtime argument, so no source fixture can
@@ -63,10 +66,10 @@ shadow_base="$fixtures/shadow"
 rm -f "$shadow_base" "$shadow_base.c"
 shadow_log=$(mktemp)
 trap 'rm -f "$shadow_log"' EXIT
-nice -n 15 ionice -c 3 taskset -c 0 \
+nice -n 15 ionice -c 3 taskset -c "$cpu" \
   "$compiler" -q "$shadow_base.rn" >"$shadow_log" 2>&1
 test -x "$shadow_base"
-test "$(nice -n 15 ionice -c 3 taskset -c 0 "$shadow_base")" = "8"
+test "$(nice -n 15 ionice -c 3 taskset -c "$cpu" "$shadow_base")" = "8"
 rm -f "$shadow_log" "$shadow_base" "$shadow_base.c"
 trap - EXIT
 
@@ -76,13 +79,13 @@ tls_base="$fixtures/tls_try"
 rm -f "$tls_base" "$tls_base.c"
 tls_log=$(mktemp)
 trap 'rm -f "$tls_log"' EXIT
-nice -n 15 ionice -c 3 taskset -c 0 \
+nice -n 15 ionice -c 3 taskset -c "$cpu" \
   "$compiler" -q "$tls_base.rn" >"$tls_log" 2>&1
 test -x "$tls_base"
-test "$(nice -n 15 ionice -c 3 taskset -c 0 "$tls_base")" = \
+test "$(nice -n 15 ionice -c 3 taskset -c "$cpu" "$tls_base")" = \
   "[4u64, 5u64]"
 grep -F "static _Thread_local jmp_buf rn_try_stack" "$tls_base.c" >/dev/null
-grep -F "rn_parallel_map_try_guard_enter" "$tls_base.c" >/dev/null
+grep -F "rn_try_guard_enter" "$tls_base.c" >/dev/null
 rm -f "$tls_log" "$tls_base" "$tls_base.c"
 trap - EXIT
 
@@ -93,16 +96,16 @@ rm -f "$overflow_base" "$overflow_base.c"
 overflow_compile_log=$(mktemp)
 overflow_run_log=$(mktemp)
 trap 'rm -f "$overflow_compile_log" "$overflow_run_log"' EXIT
-nice -n 15 ionice -c 3 taskset -c 0 \
+nice -n 15 ionice -c 3 taskset -c "$cpu" \
   "$compiler" -q "$overflow_base.rn" >"$overflow_compile_log" 2>&1
 test -x "$overflow_base"
-grep -F "uint32_t savedTryDepth = rn_parallel_map_try_guard_enter();" \
+grep -F "uint32_t savedTryDepth = rn_try_guard_enter();" \
   "$overflow_base.c" >/dev/null
-grep -F "rn_parallel_map_try_guard_leave(savedTryDepth);" \
+grep -F "rn_try_guard_leave(savedTryDepth);" \
   "$overflow_base.c" >/dev/null
 set +e
-timeout 5s nice -n 15 ionice -c 3 taskset -c 0 \
-  "$overflow_base" >"$overflow_run_log" 2>&1
+{ timeout 5s nice -n 15 ionice -c 3 taskset -c "$cpu" \
+    "$overflow_base" >"$overflow_run_log" 2>&1; } 2>/dev/null
 overflow_status=$?
 set -e
 test "$overflow_status" -ne 0

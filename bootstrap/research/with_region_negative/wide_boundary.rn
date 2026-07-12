@@ -1,0 +1,5 @@
+func wideRegionIdentity(value: u128) -> u128 {
+  return value
+}
+
+println withRegion(1u128, &wideRegionIdentity(1u128), 0u64)

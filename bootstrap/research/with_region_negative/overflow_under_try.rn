@@ -1,0 +1,10 @@
+func overflowInRegion(value: u8) -> u8 {
+  return value + 1u8
+}
+
+try {
+  println withRegion(255u8, &overflowInRegion(255u8), 0u64)
+  println "returned"
+} except e {
+  default => println "caught"
+}

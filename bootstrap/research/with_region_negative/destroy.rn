@@ -1,0 +1,10 @@
+class DestroyNode(self: DestroyNode) {
+}
+
+func destroyNode(value: u64) -> u64 {
+  node = DestroyNode()
+  node.destroy()
+  return value
+}
+
+println withRegion(1u64, &destroyNode(1u64), 0u64)

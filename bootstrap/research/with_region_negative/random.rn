@@ -1,0 +1,5 @@
+func randomInsideRegion(value: u63) -> u63 {
+  return value !+ reveal(rand63)
+}
+
+println withRegion(1u63, &randomInsideRegion(1u63), 0u64)

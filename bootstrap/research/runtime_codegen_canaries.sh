@@ -6,7 +6,9 @@ set -euo pipefail
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly REGEX_C="$ROOT/tests/regexBuiltins.c"
 readonly PARALLEL_C="$ROOT/tests/parallelMap.c"
+readonly REGION_C="$ROOT/tests/withRegion.c"
 readonly PLAIN_C="$ROOT/tests/helloworld.c"
+readonly CLASS_ONLY_C="$ROOT/tests/human.c"
 readonly REGEX_EXE="$ROOT/tests/regexBuiltins"
 readonly PLAIN_EXE="$ROOT/tests/helloworld"
 readonly ESCAPES_C="$ROOT/tests/escapes.c"
@@ -97,6 +99,8 @@ reject_pattern "$REGEX_C" 'pcre2_jit_match(' 'regex generated C'
 require_pattern "$PARALLEL_C" 'pthread_create' 'parallelMap generated C'
 require_pattern "$PARALLEL_C" 'atomic_fetch_add_explicit' 'parallelMap generated C'
 require_pattern "$PARALLEL_C" 'pthread_join' 'parallelMap generated C'
+require_pattern "$PARALLEL_C" 'rn_try_guard_enter();' \
+  'parallelMap generated C'
 require_pattern "$PARALLEL_C" '#define ARRAY_MAGIC UINT64_C(0xA99A73A656658C59)' \
   'parallelMap generated C'
 require_pattern "$PARALLEL_C" 'uint64_t magic;' 'parallelMap generated C'
@@ -116,6 +120,58 @@ reject_pattern "$ARRAY_RESIZE_INC" 'a->capacity = new_capacity;' \
 require_pattern "$ARRAY_CONCAT_INC" 'const int self_concat = dest == source;' \
   'array concat runtime'
 require_pattern "$ARRAY_CONCAT_INC" 'source = dest;' 'array concat runtime'
+
+# withRegion is an opt-in, stack-nestable TLS arena. The positive canary also
+# exercises a validated region inside parallelMap, so child and main cache
+# cleanup must both be present while ordinary programs remain runtime-free.
+require_pattern "$REGION_C" \
+  '#define RN_REGION_MIN_BLOCK_BYTES ((size_t)1024u)' \
+  'withRegion generated C'
+require_pattern "$REGION_C" \
+  '#define RN_REGION_MAX_CACHED_BLOCK_BYTES ((size_t)(256u * 1024u))' \
+  'withRegion generated C'
+require_pattern "$REGION_C" \
+  'static _Thread_local rn_region_scope *rn_region_current = NULL;' \
+  'withRegion generated C'
+require_pattern "$REGION_C" \
+  'static _Thread_local rn_region_block *rn_region_cached = NULL;' \
+  'withRegion generated C'
+require_pattern "$REGION_C" 'static inline size_t rn_region_checked_add(' \
+  'withRegion generated C'
+require_pattern "$REGION_C" 'static inline void *rn_region_alloc_zeroed(' \
+  'withRegion generated C'
+require_pattern "$REGION_C" 'memset(result, 0, allocation_size);' \
+  'withRegion generated C'
+require_pattern "$REGION_C" 'rn_region_scope region;' \
+  'withRegion generated C'
+require_pattern "$REGION_C" \
+  'uint32_t savedTryDepth = rn_try_guard_enter();' \
+  'withRegion generated C'
+require_pattern "$REGION_C" 'rn_region_enter(&region, blockBytes);' \
+  'withRegion generated C'
+require_pattern "$REGION_C" 'rn_region_leave(&region);' \
+  'withRegion generated C'
+require_pattern "$REGION_C" 'rn_try_guard_leave(savedTryDepth);' \
+  'withRegion generated C'
+require_pattern "$REGION_C" \
+  '_Static_assert(_Alignof(RegionNode_u8_t) <= _Alignof(max_align_t),' \
+  'withRegion generated C'
+require_pattern "$REGION_C" 'if (object == RN_REGION_OBJECT_ID) return;' \
+  'withRegion generated C'
+require_pattern "$REGION_C" 'if (rn_region_is_active()) {' \
+  'withRegion generated C'
+require_count "$REGION_C" 'if (rn_region_is_active()) {' 1 \
+  'withRegion generated C'
+require_pattern "$REGION_C" \
+  'self = (RegionNode_u8_t *)rn_region_alloc_zeroed(sizeof(RegionNode_u8_t), _Alignof(RegionNode_u8_t));' \
+  'withRegion generated C'
+require_pattern "$REGION_C" \
+  'static OrdinaryOnly_u64_t *OrdinaryOnly_u64_alloc_obj(void)' \
+  'withRegion generated C'
+require_count "$REGION_C" 'rn_region_thread_cleanup();' 2 \
+  'withRegion generated C'
+reject_pattern "$PLAIN_C" 'rn_region_' 'plain generated C'
+reject_pattern "$CLASS_ONLY_C" 'rn_region_' 'ordinary class generated C'
 require_pattern "$ESCAPES_C" 'string_from_u8_array(' 'escapes generated C'
 require_pattern "$ESCAPES_C" 'u8_array_from_string(' 'escapes generated C'
 reject_pattern "$ESCAPES_C" '(string_t)(escapeStrings)' 'escapes generated C'

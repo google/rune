@@ -1,0 +1,10 @@
+class WideRegionNode(self: WideRegionNode, value: u128) {
+  self.value = value
+}
+
+func allocateWideField(value: u64) -> u64 {
+  node = WideRegionNode(1u128)
+  return value
+}
+
+println withRegion(1u64, &allocateWideField(1u64), 0u64)

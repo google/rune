@@ -1,0 +1,12 @@
+// A user declaration with the builtin's spelling must remain an ordinary
+// function, including support for an indirect callback value.
+func withRegion(context: u64, callback, initialBytes: u64) -> u64 {
+  return callback(context) !+ initialBytes
+}
+
+func addThree(value: u64) -> u64 {
+  return value !+ 3u64
+}
+
+callback = &addThree(5u64)
+println withRegion(5u64, callback, 0u64)

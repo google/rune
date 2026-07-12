@@ -1,0 +1,12 @@
+class RelatedNode(self: RelatedNode) {
+}
+
+relation OneToOne RelatedNode:"Parent" RelatedNode:"Child" cascade
+
+func allocateRelated(value: u64) -> u64 {
+  parent = RelatedNode()
+  child = RelatedNode()
+  return value
+}
+
+println withRegion(1u64, &allocateRelated(1u64), 0u64)

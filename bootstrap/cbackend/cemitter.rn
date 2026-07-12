@@ -165,6 +165,10 @@ class CEmitter(self, filename: string) {
     self.runtime.needParallelMap()
   }
 
+  func needRegion(self) {
+    self.runtime.needRegion()
+  }
+
   // Request the opaque four-lane f64 runtime support used by explicit SIMD
   // builtins.  The runtime fragment supplies a scalar-safe fallback.
   func needF64x4(self) {

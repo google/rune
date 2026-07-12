@@ -1,0 +1,96 @@
+// General region-lifetime canary. This deliberately exercises ordinary
+// recursive classes and scalar callback boundaries rather than recognizing a
+// benchmark shape.
+
+class RegionNode(self: RegionNode, allocationTag: u8) {
+  self.left = null(self)
+  self.right = null(self)
+
+  func check(self) -> u64 {
+    total = 1u64
+    leftNode = self.left
+    rightNode = self.right
+    if !isnull(leftNode) {
+      total = total !+ leftNode.check()
+    }
+    if !isnull(rightNode) {
+      total = total !+ rightNode.check()
+    }
+    return total
+  }
+}
+
+// This equally ordinary class is never reachable from a region callback. Its
+// generated allocator must remain the unmodified class-pool path even though
+// the same translation unit contains withRegion.
+class OrdinaryOnly(self: OrdinaryOnly, value: u64) {
+  self.value = value
+
+  func read(self) -> u64 {
+    return self.value
+  }
+}
+
+func makeRegionTree(depth: u32) -> RegionNode {
+  node = RegionNode(0u8)
+  if depth == 0u32 {
+    return node
+  }
+  childDepth = depth !- 1u32
+  node.left = makeRegionTree(childDepth)
+  node.right = makeRegionTree(childDepth)
+  return node
+}
+
+func regionTreeCheck(depth: u32) -> u64 {
+  return makeRegionTree(depth).check()
+}
+
+func nestedRegionCheck(depth: u32) -> u64 {
+  // This node belongs to the outer region and must remain valid after the
+  // nested region has released all of its own objects.
+  outerNode = RegionNode(0u8)
+  inner = withRegion(depth, &regionTreeCheck(depth), 1536u64)
+  return outerNode.check() !+ inner
+}
+
+func invertRegionBool(value: bool) -> bool {
+  return !value
+}
+
+// A parallel worker may create and drain its own lexical region because all
+// values crossing both boundaries are scalars. This also exercises child-
+// thread TLS cache cleanup without granting regions nested parallelism.
+func parallelRegionCheck(depth: u32, context: u32) -> u64 {
+  actualDepth = depth !+ context
+  return withRegion(
+      actualDepth, &regionTreeCheck(actualDepth), 0u64)
+}
+
+// This object takes the ordinary class-pool path. It must remain valid across
+// every region entry/leave below even though RegionNode is region-eligible.
+ordinaryNode = RegionNode(0u8)
+ordinaryOnly = OrdinaryOnly(77u64)
+
+// Zero requests the runtime default, a tiny hint is rounded to the named
+// minimum, and 300000 exceeds the bounded TLS-cache ceiling while remaining a
+// valid one-shot region allocation.
+println withRegion(3u32, &regionTreeCheck(3u32), 0u64)
+println withRegion(5u32, &regionTreeCheck(5u32), 128u64)
+println withRegion(2u32, &regionTreeCheck(2u32), 300000u64)
+println withRegion(3u32, &nestedRegionCheck(3u32), 0u64)
+println withRegion(true, &invertRegionBool(true), 0u64)
+
+// Repetition exercises cache reuse without exposing allocation identity.
+repeated = 0u64
+for iteration in range(16u64) {
+  repeated = repeated !+ withRegion(
+      4u32, &regionTreeCheck(4u32), 0u64)
+}
+println repeated
+
+parallelDepths = [1u32, 2u32, 3u32]
+println parallelMap(parallelDepths, 1u32,
+    &parallelRegionCheck(parallelDepths[0], 1u32), 2u64)
+println ordinaryNode.check()
+println ordinaryOnly.read()

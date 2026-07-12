@@ -1,0 +1,10 @@
+func noisyHelper(value: u64) -> u64 {
+  println value
+  return value
+}
+
+func callNoisy(value: u64) -> u64 {
+  return noisyHelper(value)
+}
+
+println withRegion(1u64, &callNoisy(1u64), 0u64)

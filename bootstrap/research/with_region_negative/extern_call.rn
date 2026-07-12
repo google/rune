@@ -1,0 +1,7 @@
+extern "C" func regionExternal(value: u64) -> u64
+
+func callExternal(value: u64) -> u64 {
+  return regionExternal(value)
+}
+
+println withRegion(1u64, &callExternal(1u64), 0u64)
