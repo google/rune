@@ -1964,6 +1964,27 @@ bytes. A safe path-sensitive fresh-object DSE would need a substantially
 stronger escape and definite-initialization proof, so it is not treated as the
 next low-risk optimization.
 
+Post-change GCC gprof still assigns 63.18% of sampled time to compact
+`makeTree` and 24.27% to compact `Node.check`; allocation is fully inlined into
+the construction bucket. The exact profile contains 609,572,191 compact
+constructor entries. Its report SHA-256 is
+`69ecb6956e881c36faeaf0d18fc20775d2536c793c5ed21f1f8ba49737685a86`
+under
+`/tmp/rune-bench/binary-trees-one-branch-profile-065d9d0b-4f2f8ab5/`.
+
+A generated-C code-shape probe was also rejected. It outlined
+`rn_region_add_block` as `noinline,cold` and declared only compact recursive
+`makeTree` `static inline`. GCC produced the intended depth-three, seven-node
+recursive peel, but the candidate lost 7/10 strict pairs: candidate/current
+medians were 1.301/1.271 seconds (1.0236x), and the paired-ratio median was
+1.0254x. ELF `.text` grew from 9,812 to 16,852 bytes (+71.7%), including hot
+`makeTree` growth from 505 to 1,165 bytes and substantial caller cold-code
+duplication. Matching the leader's peel shape therefore did not preserve code
+locality or improve elapsed time. The TSV SHA-256 is
+`3d75f1ed7451ad8bb0b06aa3e31185b6e7a47ca2ed3285d9de13fb111665ac18`;
+frozen evidence is under
+`/tmp/rune-bench/binary-trees-outlined-inline-diagnostic-065d9d0/`.
+
 ## Historical fixes retained in the current source
 
 - A bare `sqrt(x)` lowers to hardware/libm sqrt, which is essential to n-body's
