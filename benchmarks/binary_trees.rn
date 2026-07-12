@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-class Node(self) {
+class Node(self: Node, allocationTag: u8) {
+  self.left = null(self)
+  self.right = null(self)
+
   func check(self) -> u32 {
-    if false {
-      return 0u32
-    }
     sum = 1u32
-    left = self.leftNode
-    right = self.rightNode
+    left = self.left
+    right = self.right
     if !isnull(left) {
       sum += left.check()
     }
@@ -30,18 +30,17 @@ class Node(self) {
   }
 }
 
-relation OneToOne Node:"ParentLeft" Node:"Left" cascade
-relation OneToOne Node:"ParentRight" Node:"Right" cascade
-
-func makeTree(depth) {
-  node = Node()
-  if depth != 0 {
-    left = makeTree(depth - 1)
-    right = makeTree(depth - 1)
-    node.insertLeftNode(left)
-    node.insertRightNode(right)
+func makeTree(depth: u32) -> Node {
+  node = Node(0u8)
+  if depth != 0u32 {
+    node.left = makeTree(depth - 1u32)
+    node.right = makeTree(depth - 1u32)
   }
   return node
+}
+
+func checkRegionTree(depth: u32) -> u32 {
+  return makeTree(depth).check()
 }
 
 minDepth = 4u32
@@ -51,17 +50,16 @@ if argv.length() > 1 {
   maxDepth = argv[1].toUint(u32, passed)
 }
 stretchDepth = maxDepth + 1
-tree = makeTree(stretchDepth)
-println "stretch tree of depth %u\t check: " % stretchDepth, tree.check()
-tree.destroy()
+stretchCheck = withRegion(
+    stretchDepth, &checkRegionTree(stretchDepth), 0u64)
+println "stretch tree of depth %u\t check: " % stretchDepth, stretchCheck
 longLivedTree = makeTree(maxDepth)
 iterations = 1u32 << maxDepth
 for depth in range(minDepth, stretchDepth, 2u32) {
     checkTotal = 0u32
     for i = 1u32, i < iterations + 1u32, i += 1 {
-        tree = makeTree(depth)
-        checkTotal += tree.check()
-        tree.destroy()
+        checkTotal += withRegion(
+            depth, &checkRegionTree(depth), 0u64)
     }
     println "%u\t trees of depth %u\t check: " % (iterations, depth), checkTotal
     iterations >>= 2
