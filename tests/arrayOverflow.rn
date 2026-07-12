@@ -1,0 +1,22 @@
+// Array size arithmetic must fail before capacity doubling or allocation can
+// wrap. A failed growth leaves the original array valid and unchanged.
+values = arrayof(u8)
+caught = false
+try {
+  values.resize(0xffffffffffffffffu64)
+} except e {
+  default => {
+    assert e.errorMessage == "Error: array size exceeds representable memory"
+    caught = true
+  }
+}
+assert caught
+assert values.length() == 0u64
+
+// Self-concatenation may move the destination. The source must be rebound to
+// the new payload before memmove rather than retaining a stale pre-realloc
+// pointer.
+values = [1u8, 2u8]
+values.concat(values)
+assert values == [1u8, 2u8, 1u8, 2u8]
+println "array overflow guards pass"

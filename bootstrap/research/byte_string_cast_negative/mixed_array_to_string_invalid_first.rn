@@ -1,0 +1,8 @@
+// Check the opposite discovery order: rejecting the first specialization must
+// neither poison nor hide the later valid byte-array specialization.
+func castBytes(values, context) -> string {
+  return <string>values
+}
+
+println castBytes([65u16, 66u16], 0u16)
+println castBytes([65u8, 66u8], 0u8)

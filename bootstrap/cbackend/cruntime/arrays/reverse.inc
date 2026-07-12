@@ -47,8 +47,7 @@ static inline void reverseWords (size_t *data, size_t numElements, size_t elemen
 static inline void array_reverse (void *ad, ...) {
   array_t *a = ((array_t *)ad) - 1;
 
-  assert(a->magic_hdr == ARRAY_MAGIC);
-  assert(a->magic_ftr == ARRAY_MAGIC);
+  assert(a->magic == ARRAY_MAGIC);
 
   if (a->used <= 1) return;
 
@@ -58,4 +57,3 @@ static inline void array_reverse (void *ad, ...) {
     reverseWords(ad, a->used, a->element_size >> RN_SIZET_SHIFT);
   }
 }
-

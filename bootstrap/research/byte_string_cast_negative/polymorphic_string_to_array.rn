@@ -1,0 +1,8 @@
+// value is a free variable on the first typechecking pass. The concrete call
+// specialization must still reject string -> [u16] rather than reaching a raw
+// backend pointer cast.
+func invalidCast(value, context) -> [u16] {
+  return <[u16]>value
+}
+
+println invalidCast("ab", 0u8)

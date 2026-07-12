@@ -190,17 +190,28 @@ numTypeErrors = tc.countTypeErrors()
 if numTypeErrors > 0 {
   println "Found %u type error%s." % (numTypeErrors, numTypeErrors > 1 ? "s" : "")
   tc.dumpTypeErrors()
+  exit(1i32)
 } else if root.generateC {
   if root.outputCFilename.length() == 0 {
     root.outputCFilename = moduleName + ".c"
   }
-  emitter = c.CEmitter(root.outputCFilename)
   program = c.CBuilder(tc).build(module)
-  program.emit(emitter)
-  emitter.close()
-  if compileC && !runCCompiler(root.outputCFilename, root.debugMode, optimized,
-                               nativeTarget, useGcc) {
-    println "Could not compile ", fileName
+  // Demand-driven specialization can make a previously free cast concrete.
+  // CBuilder records those representation errors in the shared typechecker;
+  // fail closed before emitting even placeholder C.
+  numTypeErrors = tc.countTypeErrors()
+  if numTypeErrors > 0 {
+    println "Found %u type error%s." % (numTypeErrors, numTypeErrors > 1 ? "s" : "")
+    tc.dumpTypeErrors()
     exit(1i32)
+  } else {
+    emitter = c.CEmitter(root.outputCFilename)
+    program.emit(emitter)
+    emitter.close()
+    if compileC && !runCCompiler(root.outputCFilename, root.debugMode, optimized,
+                                 nativeTarget, useGcc) {
+      println "Could not compile ", fileName
+      exit(1i32)
+    }
   }
 }

@@ -10,13 +10,13 @@
 static inline void *array_append (void *ad, void *element) {
   array_t *a = ((array_t *)ad) - 1;
 
-  assert(a->magic_hdr == ARRAY_MAGIC);
-  assert(a->magic_ftr == ARRAY_MAGIC);
+  assert(a->magic == ARRAY_MAGIC);
 
-  a = array_resize(a, a->used + 1);
+  size_t new_used = array_checked_add(a->used, 1u);
+  a = array_resize(a, new_used);
+  ad = (void *)(a + 1);
   void *ptr = (void*)((uintptr_t)ad + a->used * a->element_size);
   memmove(ptr, element, a->element_size);
-  a->used += 1;
+  a->used = new_used;
   return (void*)(a+1);
 }
-

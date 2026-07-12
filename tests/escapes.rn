@@ -12,6 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Generic bodies are shared, but each emitted specialization must recover
+// both sides of a cast rather than reuse the first call's frozen type slots.
+func castToStringArrayFirst(value, context) -> string {
+  return <string>value
+}
+
+func castToStringStringFirst(value, context) -> string {
+  return <string>value
+}
+
+func castStringArrayTargetFirst(value: string, target, context) {
+  return <target>value
+}
+
+func castStringStringTargetFirst(value: string, target, context) {
+  return <target>value
+}
+
 printable = [
   ' ', '!', '"', '#', '$', '%', '&', ''', '(', ')', '*', '+', ',', '-', '.',
   '/', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ':', ';', '<', '=',
@@ -26,3 +44,43 @@ println <string>printable
 println escapeStrings
 str = "\a\b\e\f\n\r\t\v"
 println str == <string>escapeStrings
+
+binary = [65u8, 0u8, 66u8]
+binaryString = <string>binary
+println binaryString.length()
+println binaryString[0], " ", binaryString[1], " ", binaryString[2]
+binary[0] = 90u8
+println binaryString[0] == 65u8
+differentTail = <string>[65u8, 0u8, 67u8]
+println binaryString != differentTail
+
+roundTrip = <[u8]>binaryString
+println roundTrip.length()
+println roundTrip[0], " ", roundTrip[1], " ", roundTrip[2]
+binaryString[2] = 67u8
+println roundTrip[2] == 66u8
+println binary[2] == 66u8
+
+emptyBytes = arrayof(u8)
+emptyString = <string>emptyBytes
+println emptyString.length()
+println (<[u8]>emptyString).length()
+
+// Cover both discovery orders for a changing source and a changing target.
+println castToStringArrayFirst([65u8, 66u8], 0u8)
+println castToStringArrayFirst("CD", 0u16)
+println castToStringStringFirst("EF", 0u8)
+println castToStringStringFirst([71u8, 72u8], 0u16)
+println castStringArrayTargetFirst("IJ", [0u8], 0u8)
+println castStringArrayTargetFirst("KL", "", 0u16)
+println castStringStringTargetFirst("MN", "", 0u8)
+println castStringStringTargetFirst("OP", [0u8], 0u16)
+
+orderedLow = <string>[65u8, 0u8, 66u8]
+orderedHigh = <string>[65u8, 0u8, 67u8]
+orderedPrefix = <string>[65u8]
+println orderedLow < orderedHigh
+println orderedHigh > orderedLow
+println orderedLow <= orderedLow
+println orderedHigh >= orderedLow
+println orderedPrefix < orderedLow

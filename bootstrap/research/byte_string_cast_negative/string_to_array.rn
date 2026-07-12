@@ -1,0 +1,2 @@
+values = <[u16]>"ab"
+println values

@@ -1,16 +1,16 @@
 /*
  * Rune C backend string method builtins.
  *
- * Strings are length-headed heap buffers with value semantics: a hidden
+ * Strings are length-headed byte buffers with value semantics: a hidden
  * rn_strhdr (magic + byte length) sits immediately before the char data,
  * exactly like the array_t "struct hack".  string_t stays `char *`
  * pointing at the data, so C library calls and %s still work for
- * NUL-free content (the buffer is also NUL-terminated).  string_length
- * reads the header so embedded NUL bytes are counted (binary-safe);
- * static string literals have no header, so string_length falls back to
- * strlen for them (see the magic check).  Mutating methods (append,
- * concat, resize, reverse) return a fresh buffer and the call site
- * assigns it back to the receiver.
+ * NUL-free content (the buffer is also NUL-terminated).  Every nonnull
+ * Rune-visible string has this header; raw C strings must cross the ABI
+ * through rn_strfromc().  This invariant lets string_length read the true
+ * binary length without probing before an arbitrary borrowed pointer.
+ * Mutating methods (append, concat, resize, reverse) return a fresh buffer
+ * and the call site assigns it back to the receiver.
  *
  * find/rfind are ported from the original compiler's runtime
  * (runtime/io.c) so offsets and the not-found result (the string length)
@@ -18,25 +18,39 @@
  */
 
 #include <stdarg.h>
+#include <assert.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-// Length header placed immediately before a string's char data.  The
-// magic distinguishes a headed heap string from a bare static literal
-// (whose "header" is unrelated preceding .rodata and will not match).
-#define RN_STR_MAGIC (0x726E537472486472ull)  /* "rnStrHdr" */
+// Length header placed immediately before a string's char data.  The magic
+// diagnoses violations of the headed Rune-string invariant; it is not used
+// to guess whether an arbitrary pointer happens to have a header.
+#define RN_STR_MAGIC UINT64_C(0x726E537472486472)         /* "rnStrHdr" */
+#define RN_STATIC_STR_MAGIC UINT64_C(0x726E537472537461)  /* "rnStrSta" */
 
 typedef struct {
-  size_t magic;
+  uint64_t magic;
   size_t len;
 } rn_strhdr;
+
+#if defined(__x86_64__)
+_Static_assert(sizeof(rn_strhdr) == 16u,
+               "x86-64 Rune strings require a 16-byte header");
+#endif
 
 // Allocate a headed, NUL-terminated string buffer of |len| bytes and
 // return a pointer to its data.  Callers fill data[0..len) themselves.
 static inline char *rn_stralloc(size_t len) {
+  if (len > SIZE_MAX - sizeof(rn_strhdr) - 1u) {
+    raise("StringSizeOverflow");
+  }
   rn_strhdr *h = (rn_strhdr *)malloc(sizeof(rn_strhdr) + len + 1);
+  if (h == NULL) {
+    raise("OutOfMemory");
+  }
   h->magic = RN_STR_MAGIC;
   h->len = len;
   char *data = (char *)(h + 1);
@@ -44,29 +58,65 @@ static inline char *rn_stralloc(size_t len) {
   return data;
 }
 
+static inline const rn_strhdr *rn_strheader(const char *s) {
+  // Byte arithmetic is valid for both heap allocations and the data member
+  // of an emitted static literal object. Typed pointer subtraction would
+  // incorrectly require data to be one-past an rn_strhdr array.
+  const rn_strhdr *h = (const rn_strhdr *)(
+      (const unsigned char *)s - sizeof(rn_strhdr));
+  assert(h->magic == RN_STR_MAGIC || h->magic == RN_STATIC_STR_MAGIC);
+  return h;
+}
+
+// Copy a conventional NUL-terminated C string across the Rune ABI boundary.
+// strlen is intentionally confined to the raw pointer before the headed Rune
+// value exists; Rune operations never inspect memory before that raw pointer.
+static inline char *rn_strfromc(const char *s) {
+  size_t len = s == NULL ? 0u : strlen(s);
+  char *r = rn_stralloc(len);
+  if (len > 0u) {
+    memcpy(r, s, len);
+  }
+  return r;
+}
+
+// Release a known-owned headed temporary.  General Rune string values still
+// follow the existing process-lifetime ownership model.
+static inline void rn_strfree(char *s) {
+  if (s != NULL) {
+    const rn_strhdr *h = rn_strheader(s);
+    assert(h->magic == RN_STR_MAGIC);
+    free((void *)h);
+  }
+}
+
 static inline uint64_t string_length(const char *s) {
   if (s == NULL) {
     return 0;
   }
-  const rn_strhdr *h = ((const rn_strhdr *)s) - 1;
-  if (h->magic == RN_STR_MAGIC) {
-    return h->len;
-  }
-  return (uint64_t)strlen(s);
+  return (uint64_t)rn_strheader(s)->len;
 }
 
-// Materialize a string LITERAL into a headed heap buffer of exactly
-// |len| bytes (the literal's true byte length, known at emit time),
-// copying all |len| bytes including any embedded NULs.  A bare C string
-// literal has no header and strlen-truncates at an embedded NUL; this
-// gives value literals the same length-carrying header as other
-// producers so string_length is binary-safe for them too.
-static inline char *rn_strlit(const char *lit, size_t len) {
-  char *r = rn_stralloc(len);
-  if (len > 0) {
-    memcpy(r, lit, len);
+// Binary-safe lexicographic comparison.  Keep null distinct from the empty
+// headed string, matching isequal_string_t's historical null semantics.
+static inline int string_compare(const char *a, const char *b) {
+  if (a == b) {
+    return 0;
   }
-  return r;
+  if (a == NULL) {
+    return -1;
+  }
+  if (b == NULL) {
+    return 1;
+  }
+  size_t a_len = (size_t)string_length(a);
+  size_t b_len = (size_t)string_length(b);
+  size_t common = a_len < b_len ? a_len : b_len;
+  int compared = common == 0u ? 0 : memcmp(a, b, common);
+  if (compared != 0) {
+    return compared;
+  }
+  return a_len < b_len ? -1 : (a_len > b_len ? 1 : 0);
 }
 
 static inline char *string_append_char(const char *s, uint8_t c) {
@@ -89,6 +139,30 @@ static inline char *string_dup(const char *s) {
     memcpy(r, s, len);
   }
   return r;
+}
+
+// Set one byte through an assignable string slot. Static literal storage is
+// immutable and shared, so only that case adopts a fresh heap duplicate;
+// ordinary heap strings retain their existing in-place mutation semantics.
+static inline uint8_t string_set_index(char **receiver, uint64_t index,
+                                       uint8_t value) {
+  if (receiver == NULL || *receiver == NULL ||
+      index >= string_length(*receiver)) {
+    raise("IndexOutOfBounds");
+  }
+  if (rn_strheader(*receiver)->magic == RN_STATIC_STR_MAGIC) {
+    *receiver = string_dup(*receiver);
+  }
+  (*receiver)[index] = (char)value;
+  return value;
+}
+
+// An rvalue receiver has no caller-owned slot that can adopt a COW duplicate.
+// Heap pointers still mutate in place. A static value is copied, written, and
+// discarded, matching the old per-evaluation literal's unobservable write.
+static inline uint8_t string_set_index_value(char *receiver, uint64_t index,
+                                             uint8_t value) {
+  return string_set_index(&receiver, index, value);
 }
 
 static inline char *string_concat(const char *a, const char *b) {
@@ -196,7 +270,11 @@ static inline char *string_xor(const char *a, const char *b) {
 }
 
 static inline char *bool_tostring(int b) {
-  return string_concat(b ? "true" : "false", "");
+  const char *word = b ? "true" : "false";
+  size_t len = b ? 4u : 5u;
+  char *result = rn_stralloc(len);
+  memcpy(result, word, len);
+  return result;
 }
 
 static inline char *uint_tostring(uint64_t v, uint64_t base) {
@@ -221,11 +299,15 @@ static inline char *int_tostring(int64_t v, uint64_t base) {
   if (v >= 0) {
     return uint_tostring((uint64_t)v, base);
   }
-  // digits is a headed string; concat reads its header length.  It is not
-  // freed (the string model leaks; freeing the data pointer would be the
-  // wrong address for a headed buffer).
   char *digits = uint_tostring(-(uint64_t)v, base);
-  return string_concat("-", digits);
+  size_t digit_count = (size_t)string_length(digits);
+  char *result = rn_stralloc(digit_count + 1u);
+  result[0] = '-';
+  if (digit_count > 0u) {
+    memcpy(result + 1, digits, digit_count);
+  }
+  rn_strfree(digits);
+  return result;
 }
 
 // sprintf into a freshly allocated string.

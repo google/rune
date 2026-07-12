@@ -63,7 +63,7 @@ static inline void rn_f64x4_require_range(const double *values,
     raise("F64x4ArrayNull");
   }
   const array_t *array = ((const array_t *)values) - 1;
-  if (array->magic_hdr != ARRAY_MAGIC || array->magic_ftr != ARRAY_MAGIC ||
+  if (array->magic != ARRAY_MAGIC ||
       array->element_size != sizeof(double) || offset > array->used ||
       array->used - offset < RN_F64X4_LANES) {
     raise("F64x4ArrayRange");

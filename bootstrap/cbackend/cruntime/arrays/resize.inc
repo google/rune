@@ -10,25 +10,33 @@
  * that array extension operations are amortized linear time.
  */
 static inline array_t *array_resize (array_t *a, size_t count) {
+  array_validate_header(a);
+  size_t max_capacity = array_max_capacity(a->element_size);
+  if (count > max_capacity) {
+    raise(ARRAY_SIZE_OVERFLOW_ERROR);
+    return a;
+  }
   if (count == 0) {
     a->used = 0;
     return a;
   }
-  if (count < a->capacity) {
+  if (count <= a->capacity) {
     return a;
   }
 
-  /* Double the array size until we have enough. */
-  size_t new_capacity = a->capacity;
-  while (new_capacity < count) {
-    new_capacity *= 2;
-  }
+  size_t new_capacity =
+      array_grown_capacity(a->element_size, a->capacity, count);
+  size_t allocation_size =
+      array_allocation_size(a->element_size, new_capacity);
 
-  a->capacity = new_capacity;
-  void *newmem = realloc(a, new_capacity * a->element_size + sizeof(array_t));
-  if (newmem == NULL) {
-    raise("Error: could not reallocate array");
+  array_t *resized = (array_t *)realloc(a, allocation_size);
+  if (resized == NULL) {
+    raise(ARRAY_REALLOCATION_ERROR);
+    return a;
   }
+  /* realloc failure preserves the original object. Do not publish the new
+   * capacity until allocation has succeeded. */
+  resized->capacity = new_capacity;
 
-  return (array_t*)newmem;
+  return resized;
 }

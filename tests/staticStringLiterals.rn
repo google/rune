@@ -1,0 +1,62 @@
+// Repeated value literals in a hot loop must reference immutable, deduplicated
+// headed objects rather than allocating once per evaluation. Include empty and
+// embedded-NUL values so the compile-time header length is exercised too.
+
+func literalScore(value: string) -> u64 {
+  result = value.length()
+  for i in range(value.length()) {
+    result += <u64>value[i]
+  }
+  return result
+}
+
+func returnedLiteral() -> string {
+  return "A\0B"
+}
+
+class StaticLiteralBox(self, value: string) {
+  self.value = value
+}
+
+struct StaticLiteralStruct {
+  value: string
+}
+
+func returnedStruct() -> StaticLiteralStruct {
+  return StaticLiteralStruct(returnedLiteral())
+}
+
+total = 0u64
+for iteration in range(100000u64) {
+  total += literalScore("hot")
+  total += literalScore("hot")
+  total += literalScore("")
+  total += literalScore("A\0B")
+}
+
+// Calls return the shared static object. Mutating one assignable result must
+// COW its slot, leaving another result and every future call unchanged.
+returnedFirst = returnedLiteral()
+returnedSecond = returnedLiteral()
+returnedFirst[0u64] = 90u8
+assert literalScore(returnedFirst) == 159u64
+assert literalScore(returnedSecond) == 134u64
+assert literalScore(returnedLiteral()) == 134u64
+
+// Field and array-element slots are addressable too and must adopt their own
+// heap duplicate without changing another slot that shares the static value.
+returnedBox = StaticLiteralBox(returnedLiteral())
+returnedBox.value[0u64] = 88u8
+assert literalScore(returnedBox.value) == 157u64
+returnedArray = [returnedLiteral(), returnedLiteral()]
+returnedArray[0u64][2u64] = 67u8
+assert literalScore(returnedArray[0u64]) == 135u64
+assert literalScore(returnedArray[1u64]) == 134u64
+assert literalScore(returnedLiteral()) == 134u64
+
+// An rvalue has no slot to adopt a duplicate. The write is unobservable, but
+// it must neither fault on read-only storage nor alter the shared literal.
+returnedLiteral()[2u64] = 67u8
+returnedStruct().value[2u64] = 67u8
+assert literalScore(returnedLiteral()) == 134u64
+println total

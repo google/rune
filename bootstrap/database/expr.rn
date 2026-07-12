@@ -1330,21 +1330,72 @@ class Expr(self, type: ExprType, location: Location) {
     valueChild = typeChild.nextExprChildExpr!
     v = valueChild.genC(builder)
     target = builder.typechecker.resolve(self.typedValue!)
+    // A deferred generic body keeps typedValue snapshots from its first
+    // concrete instantiation. Bound exemplars (<target>value) and dynamic
+    // typeof/signedness syntax therefore need live recovery even when that
+    // snapshot looks ground. Fixed explicit syntax (<[u8]>value) is different:
+    // its nested type tokens are not value expressions and can have no slots,
+    // so rebuilding their shared Array AST would turn [u8] into [none]. Keep
+    // the old soft-slot fallback for any explicit syntax still under-resolved.
+    recoverTarget = !typeChild.isType || typeChild.castTypeSyntaxIsDynamic()
     if (argTypeUnderResolved(builder, target) ||
         builder.typechecker.containsAdaptableType(target) ||
         target.type == types.Type.TypeClass.Polymorphic) {
-      // The cast's slot holds one round's binding (or the callee's
-      // whole poly): <t>0 with t = typeof(distancefunc(array[0])) —
-      // recover the target from the TYPE child's declaration chain.
-      tgtRec = typeChild.resolvedArgType(builder)
+      recoverTarget = true
+    }
+    if recoverTarget {
+      tgtRec = builder.typechecker.resolve(typeChild.resolvedArgType(builder))
       if (!builder.typechecker.hasFreeVars(tgtRec) &&
-          tgtRec.type != types.Type.TypeClass.Polymorphic) {
+          tgtRec.type != types.Type.TypeClass.Polymorphic &&
+          !builder.typechecker.containsAdaptableType(tgtRec)) {
         target = tgtRec
       }
     }
+    source = builder.typechecker.resolve(valueChild.typedValue!)
+    srcRec = builder.typechecker.resolve(valueChild.resolvedArgType(builder))
+    if (!builder.typechecker.hasFreeVars(srcRec) &&
+        srcRec.type != types.Type.TypeClass.Polymorphic &&
+        !builder.typechecker.containsAdaptableType(srcRec)) {
+      source = srcRec
+    }
     // Casting a string to string is the identity; strings are char buffers.
-    if (builder.typechecker.isStringType(self.typedValue) &&
-        builder.typechecker.isStringType(valueChild.typedValue)) {
+    if (builder.typechecker.isStringType(target) &&
+        builder.typechecker.isStringType(source)) {
+      return v
+    }
+    // A byte array is headed but not NUL-terminated. Materialize an
+    // independent headed string so the cast is bounds-safe and preserves
+    // embedded NUL bytes instead of letting strlen read beyond the payload.
+    if (builder.typechecker.isStringType(target) &&
+        builder.typechecker.isByteArrayType(source)) {
+      castArgs = c.CExprList()
+      castArgs.appendCExpr(v)
+      return builder.cCall(self.location,
+          c.CRuntimeFunction.StringFromByteArray, c.CExpr(castArgs), target)
+    }
+    if (builder.typechecker.isByteArrayType(target) &&
+        builder.typechecker.isStringType(source)) {
+      builder.ensureArrayDeclared(self.location, target.array.elementType!)
+      castArgs = c.CExprList()
+      castArgs.appendCExpr(v)
+      return builder.cCall(self.location,
+          c.CRuntimeFunction.ByteArrayFromString, c.CExpr(castArgs), target)
+    }
+    deferredCastError = ""
+    if (builder.typechecker.isStringType(target) &&
+        source.type == types.Type.TypeClass.Array) {
+      deferredCastError = "Only [u8] arrays can be cast to string"
+    } else if (target.type == types.Type.TypeClass.Array &&
+        builder.typechecker.isStringType(source)) {
+      deferredCastError = "Strings can only be cast to [u8]"
+    }
+    if deferredCastError != "" {
+      // A generic template can acquire its concrete invalid [u16]/string
+      // representation crossing only during CBuilder materialization. Record
+      // the same user-facing type error as the initial checker and keep
+      // building with a harmless placeholder; rune.rn's post-build gate will
+      // suppress C emission entirely.
+      builder.typechecker.typeErrorOnce(deferredCastError, self.location)
       return v
     }
     // A tuple-typed cast (<arow>x, a typeof-cast) is the identity at the
@@ -1353,14 +1404,8 @@ class Expr(self, type: ExprType, location: Location) {
     if target.type == types.Type.TypeClass.Tuple {
       return v
     }
-    wTo = builder.wideWidth(self.typedValue)
-    if wTo == 0u32 {
-      // The slot renders adaptable AnyInt as 64-bit; the recovered
-      // target above knows the true width (<typeof(avec[0])>1 in a u65
-      // spec must build a wide value, not C-cast to rn_wide_t).
-      wTo = builder.wideWidth(target)
-    }
-    wFrom = builder.wideWidth(valueChild.typedValue)
+    wTo = builder.wideWidth(target)
+    wFrom = builder.wideWidth(source)
     if wFrom == 0u32 && valueChild.emittedWide(builder) {
       wFrom = wTo
     }
@@ -1371,7 +1416,7 @@ class Expr(self, type: ExprType, location: Location) {
         castArgs.appendCExpr(v)
         castArgs.appendCExpr(c.CExpr(c.CLiteral(Bigint(<u64>wTo), false)))
         castArgs.appendCExpr(c.CExpr(c.CLiteral(
-            Bigint(builder.wideSigned(self.typedValue) ? 1u64 : 0u64), false)))
+            Bigint(builder.wideSigned(target) ? 1u64 : 0u64), false)))
         castArgs.appendCExpr(c.CExpr(c.CLiteral(
             Bigint(isTruncCast ? 1u64 : 0u64), false)))
         return builder.cWideCall(self.location, "wide_cast", castArgs)
@@ -1380,7 +1425,7 @@ class Expr(self, type: ExprType, location: Location) {
         // A 64-bit-or-narrower value widening: extend by the source's sign,
         // then adopt the target signedness.
         srcSigned = false
-        srcTy = builder.typechecker.resolve(valueChild.typedValue!)
+        srcTy = source
         if srcTy.type == types.Type.TypeClass.Int {
           srcSigned = srcTy.int.isSigned
         } else if srcTy.type == types.Type.TypeClass.AnyInt {
@@ -1391,7 +1436,7 @@ class Expr(self, type: ExprType, location: Location) {
         adoptArgs.appendCExpr(widened)
         adoptArgs.appendCExpr(c.CExpr(c.CLiteral(Bigint(<u64>wTo), false)))
         adoptArgs.appendCExpr(c.CExpr(c.CLiteral(
-            Bigint(builder.wideSigned(self.typedValue) ? 1u64 : 0u64), false)))
+            Bigint(builder.wideSigned(target) ? 1u64 : 0u64), false)))
         adoptArgs.appendCExpr(c.CExpr(c.CLiteral(Bigint(1u64), false)))
         return builder.cWideCall(self.location, "wide_cast", adoptArgs)
       }
@@ -1413,7 +1458,7 @@ class Expr(self, type: ExprType, location: Location) {
     if isnull(ctype) {
       raise Status.Unimplemented, "Cast target type not supported by C backend"
     }
-    if (builder.isClassType(valueChild.typedValue) &&
+    if (builder.isClassType(source) &&
         (target.type == types.Type.TypeClass.Int ||
          target.type == types.Type.TypeClass.AnyInt)) {
       // Casting an object reference to an integer yields its 1-based id.
@@ -1423,14 +1468,32 @@ class Expr(self, type: ExprType, location: Location) {
     // Casting TO a class type that defines a `<>` conversion operator invokes
     // that operator (e.g. <Foo>1 builds Foo(1)); a plain C pointer cast would
     // reinterpret the integer as a Foo* and crash.
-    if builder.isClassType(self.typedValue) &&
-        !builder.isClassType(valueChild.typedValue) {
-      castOp = self.genCCastOperator(builder, target, valueChild, v, ctype!)
+    if builder.isClassType(target) && !builder.isClassType(source) {
+      castOp = self.genCCastOperator(builder, target, source, v, ctype!)
       if !isnull(castOp) {
         return castOp!
       }
     }
     return c.CExpr(c.CCastExpr(self.location, ctype!, v))
+  }
+
+  // True when otherwise-explicit cast syntax derives any part of its type
+  // from a live value. The outer typechecker marks fixed explicit syntax with
+  // isType; this recursive exception preserves <typeof(x)> and compound forms
+  // such as <[typeof(x)]> across generic specializations.
+  func castTypeSyntaxIsDynamic(self) -> bool {
+    if self.type == ExprType.Typeof {
+      return true
+    }
+    if (self.type == ExprType.Array || self.type == ExprType.Tuple ||
+        self.type == ExprType.List) {
+      for typePart in self.childExprs() {
+        if typePart.castTypeSyntaxIsDynamic() {
+          return true
+        }
+      }
+    }
+    return false
   }
 
   // Emit a call to a user-defined `<>` cast operator for `<Class>value`.  The
@@ -1439,9 +1502,10 @@ class Expr(self, type: ExprType, location: Location) {
   // The operator is not dispatched at typecheck, so its instantiation is
   // synthesized here.  Returns null if no matching `<>` operator exists.
   func genCCastOperator(self, builder: c.CBuilder, target: types.Type,
-                        valueChild: Expr, v: c.CExpr, ctype: c.CTypeExpr) -> c.CExpr? {
+                        source: types.Type, v: c.CExpr,
+                        ctype: c.CTypeExpr) -> c.CExpr? {
     tc = builder.typechecker
-    vtype = tc.resolve(valueChild.typedValue!)
+    vtype = tc.resolve(source)
     for i in range(tc.operatorFns.length()) {
       opfn = tc.operatorFns[i]
       if opfn.opType == ExprType.Cast {
@@ -1660,6 +1724,33 @@ class Expr(self, type: ExprType, location: Location) {
         }
       }
     }
+
+    // A string byte assignment may target a shared static literal returned by
+    // a function. Route it through the runtime's static-only copy-on-write
+    // setter instead of emitting a raw `receiver[index] = value` store.
+    if self.type == ExprType.Equals && left.type == ExprType.Index {
+      stringReceiver = left.firstChildExpr!
+      stringIndex = stringReceiver.nextExprChildExpr!
+      stringReceiverTy = stringReceiver.resolvedArgType(builder)
+      if builder.typechecker.isStringType(stringReceiverTy) {
+        stringSetArgs = c.CExprList()
+        stringReceiverC = stringReceiver.genC(builder)
+        stringSetFn = c.CRuntimeFunction.StringSetIndexValue
+        if stringReceiver.cStringReceiverIsAddressable(builder) {
+          stringSetArgs.appendCExpr(c.CExpr(c.CPrefixOperator(self.location,
+              c.CPrefixOperator.Type.AddressOf, stringReceiverC)))
+          stringSetFn = c.CRuntimeFunction.StringSetIndex
+        } else {
+          // Calls and other rvalues have no slot to update. The by-value
+          // helper preserves heap alias writes and privately copies statics.
+          stringSetArgs.appendCExpr(stringReceiverC)
+        }
+        stringSetArgs.appendCExpr(stringIndex.genC(builder))
+        stringSetArgs.appendCExpr(right.genC(builder))
+        self.bindingInstance = false
+        return builder.cCall(self.location, stringSetFn, c.CExpr(stringSetArgs))
+      }
+    }
     rPre = null(c.CExpr)
     if self.type == ExprType.Equals && (right.type == ExprType.Funcaddr ||
         right.type == ExprType.Cast || right.type == ExprType.CastTrunc) {
@@ -1731,9 +1822,9 @@ class Expr(self, type: ExprType, location: Location) {
       return self.genCWideBinaryOp(builder, l, r, left, right, wideW)
     }
 
-    // String ordering comparisons are lexicographic, not the char* pointer
-    // comparison C's <, <=, > and >= would give (== and != already route
-    // through isequal_string_t).  Emit strcmp(l, r) <op> 0.
+    // String ordering comparisons are binary-safe lexicographic comparisons,
+    // not char* pointer comparisons or NUL-truncating strcmp calls. == and !=
+    // route through isequal_string_t, which uses the same helper.
     isStrOrder = false
     if builder.typechecker.isStringType(left.typedValue) {
       if self.type == ExprType.Lt {
@@ -1759,8 +1850,9 @@ class Expr(self, type: ExprType, location: Location) {
       strCmpArgs = c.CExprList()
       strCmpArgs.appendCExpr(l)
       strCmpArgs.appendCExpr(r)
-      strCmpCall = builder.cCall(self.location, "strcmp", c.CExpr(strCmpArgs))
-      // strcmp returns a signed int; compare against a signed 0 so a negative
+      strCmpCall = builder.cCall(self.location, c.CRuntimeFunction.StringCompare,
+          c.CExpr(strCmpArgs))
+      // string_compare returns a signed int; compare against a signed 0 so a negative
       // result is not converted to a large unsigned value (0i32 emits "0").
       return c.CExpr(c.CBinaryOperator(self.location, strCmpOp,
           null(c.CTypeExpr), strCmpCall, c.CExpr(c.CLiteral(Bigint(0i32), false))))
@@ -1888,12 +1980,15 @@ class Expr(self, type: ExprType, location: Location) {
         switch self.type {
           ExprType.Add => {
             if left.typedValue == types.STRING() {
-              // s1 + s2 concatenates into a fresh heap string.
+              // s1 + s2 concatenates by headed lengths, so embedded NULs in
+              // either value are preserved.  Use the value-form runtime call:
+              // StringConcat is reserved for mutating s1.concat(s2), while
+              // `+` must leave both operands unchanged.
               catArgs = c.CExprList()
-              catArgs.appendCExpr(builder.cStringLiteral("%s%s", printf=true))
               catArgs.appendCExpr(l)
               catArgs.appendCExpr(r)
-              return builder.cCall(self.location, c.CRuntimeFunction.StringSprintf,
+              return builder.cCall(self.location,
+                  c.CRuntimeFunction.StringConcatValue,
                   c.CExpr(catArgs))
             } else if left.typedValue.type == types.Type.TypeClass.Array {
               fn = c.CRuntimeFunction.ArrayConcat
@@ -2087,18 +2182,16 @@ class Expr(self, type: ExprType, location: Location) {
     for child in self.childExprs() {
       elements.append(child.genC(builder))
     }
-    // The element C type comes from the FIRST element's slot; an
-    // adaptable AnyInt rendering (a spec's round left it u64) would build
-    // a uint64 array holding narrower values.  Recover the concrete
-    // per-spec element type ([a0,a1,a2] of u17 in gf2ModVect's u17 spec).
-    elemTy = left.typedValue!
-    if builder.typechecker.containsAdaptableType(
-        builder.typechecker.resolve(elemTy)) {
-      elemRec = left.resolvedArgType(builder)
-      if (!builder.typechecker.hasFreeVars(elemRec) &&
-          !builder.typechecker.containsAdaptableType(elemRec)) {
-        elemTy = elemRec
-      }
+    // The literal grammar guarantees a first element. Its slot belongs to
+    // the generic body's first materialized specialization, so recover the
+    // live ground element type unconditionally -- a stale u8/u16 is just as
+    // concrete-looking (and dangerous) as an adaptable AnyInt rendering.
+    elemTy = builder.typechecker.resolve(left.typedValue!)
+    elemRec = builder.typechecker.resolve(left.resolvedArgType(builder))
+    if (!builder.typechecker.hasFreeVars(elemRec) &&
+        elemRec.type != types.Type.TypeClass.Polymorphic &&
+        !builder.typechecker.containsAdaptableType(elemRec)) {
+      elemTy = elemRec
     }
     return builder.cArray(self.location, elemTy, elements)
   }
@@ -2276,29 +2369,33 @@ class Expr(self, type: ExprType, location: Location) {
         }
       }
     } else if self.type == ExprType.Cast || self.type == ExprType.CastTrunc {
-      // <T>value: the TYPE child carries the result type.  Its SLOT is
-      // right for ordinary casts (<u32>x); only chase the declaration
-      // (a typeof-typed local) when the slot is under-resolved —
-      // recovering a type IDENT like u32 as a variable poisons
-      // everything.
+      // <T>value: fixed explicit syntax trusts its outer slot, but a bound
+      // exemplar or typeof/signedness syntax must rebuild T under EVERY
+      // specialization even when the first slot already looks ground.
       castTC = self.firstChildExpr!
+      castRecover = !castTC.isType || castTC.castTypeSyntaxIsDynamic()
       if !isnull(castTC.typedValue) {
         castTy = builder.typechecker.resolve(castTC.typedValue!)
-        // An ADAPTABLE slot falls through to the Ident chase like the
-        // general Ident arm: a typeof-cast's type child (<arow>x) can
-        // wear a stale walk round's AnyInt rendering.
-        if (!argTypeUnderResolved(builder, castTy) &&
-            !builder.typechecker.containsAdaptableType(castTy) &&
-            castTy.type != types.Type.TypeClass.Polymorphic) {
-          return castTy
+        if (argTypeUnderResolved(builder, castTy) ||
+            builder.typechecker.containsAdaptableType(castTy) ||
+            castTy.type == types.Type.TypeClass.Polymorphic) {
+          castRecover = true
         }
       }
-      if ((castTC.type == ExprType.Ident || castTC.type == ExprType.Typeof) &&
-          !isnull(castTC.typedValue)) {
+      if castRecover {
         castRec = castTC.resolvedArgType(builder, depth + 1u32, scopeBlock)
         if (!builder.typechecker.hasFreeVars(castRec) &&
-            castRec.type != types.Type.TypeClass.Polymorphic) {
+            castRec.type != types.Type.TypeClass.Polymorphic &&
+            !builder.typechecker.containsAdaptableType(castRec)) {
           return castRec
+        }
+      }
+      if !isnull(castTC.typedValue) {
+        castTy2 = builder.typechecker.resolve(castTC.typedValue!)
+        if (!argTypeUnderResolved(builder, castTy2) &&
+            !builder.typechecker.containsAdaptableType(castTy2) &&
+            castTy2.type != types.Type.TypeClass.Polymorphic) {
+          return castTy2
         }
       }
     } else if self.type == ExprType.Typeof {
@@ -2337,6 +2434,20 @@ class Expr(self, type: ExprType, location: Location) {
             }
             return types.Type(types.FunctionType(faParams, faRes))
           }
+        }
+      }
+    } else if self.type == ExprType.Array {
+      // Array literals cannot be empty (exprList has at least one item), so
+      // their per-specialization type is the live type of the first element.
+      // Typechecking already guarantees that every remaining item unifies.
+      ratArrayFirst = self.firstChildExpr
+      if !isnull(ratArrayFirst) {
+        ratArrayElem = builder.typechecker.resolve(
+            ratArrayFirst!.resolvedArgType(builder, depth + 1u32, scopeBlock))
+        if (!builder.typechecker.hasFreeVars(ratArrayElem) &&
+            ratArrayElem.type != types.Type.TypeClass.Polymorphic &&
+            !builder.typechecker.containsAdaptableType(ratArrayElem)) {
+          return types.ARRAY(ratArrayElem)
         }
       }
     } else if self.type == ExprType.Tuple {
@@ -2791,6 +2902,39 @@ class Expr(self, type: ExprType, location: Location) {
     assert index.type == ExprType.Constant && index.val.type == DatatypeType.Uint
     i = index.val.intVal.uint64()
     return builder.cIndex(self.location, rIndexeeTy, left, i)
+  }
+
+  // Whether a string-valued expression denotes a C slot whose address can be
+  // passed to string_set_index. Locals/parameters and class fields are
+  // lvalues. An element of a headed Rune array is also a stable pointer slot,
+  // even when the array expression itself is returned by a call. Other
+  // rvalues use string_set_index_value and cannot adopt a COW duplicate.
+  func cStringReceiverIsAddressable(self, builder: c.CBuilder) -> bool {
+    if self.type == ExprType.Ident {
+      return true
+    }
+    if self.type == ExprType.Dot {
+      base = self.firstChildExpr!
+      baseTy = builder.typechecker.resolve(base.resolvedArgType(builder))
+      // A class value is a pointer in C, so even a call result's `->field`
+      // denotes stable storage. A tuple/struct is returned by value: its
+      // `.field` is addressable only when the base expression itself is an
+      // lvalue (not `makeTuple().field`).
+      if builder.isClassType(baseTy) {
+        return true
+      }
+      return base.cStringReceiverIsAddressable(builder)
+    }
+    if self.type == ExprType.Notnull {
+      return self.firstChildExpr.cStringReceiverIsAddressable(builder)
+    }
+    if self.type == ExprType.Index {
+      container = self.firstChildExpr!
+      containerTy = container.resolvedArgType(builder)
+      return builder.typechecker.resolve(containerTy).type ==
+          types.Type.TypeClass.Array
+    }
+    return false
   }
 
   // <left> mod <m>: emit the left expression tree with every arithmetic
@@ -3985,8 +4129,18 @@ class Expr(self, type: ExprType, location: Location) {
         } else {
           externArgs = right.genC(builder)
         }
-        return c.CExpr(c.CCall(self.location, c.CRuntimeFunction.ExternC,
+        externCall = c.CExpr(c.CCall(self.location, c.CRuntimeFunction.ExternC,
             externArgs, externFn, null(c.CTypeExpr)))
+        // extern "C" string results obey the conventional NUL-terminated C
+        // ABI. Copy them immediately so no Rune operation probes before a
+        // borrowed/static/foreign-allocation pointer.
+        if builder.typechecker.isStringType(self.typedValue) {
+          fromCArgs = c.CExprList()
+          fromCArgs.appendCExpr(externCall)
+          return builder.cCall(self.location, c.CRuntimeFunction.StringFromC,
+              c.CExpr(fromCArgs), self.typedValue)
+        }
+        return externCall
       }
     }
 

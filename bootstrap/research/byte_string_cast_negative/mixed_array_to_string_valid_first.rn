@@ -1,0 +1,8 @@
+// The generic body's source slot freezes at its first specialization. A later
+// invalid element type must still be recovered and rejected during emission.
+func castBytes(values, context) -> string {
+  return <string>values
+}
+
+println castBytes([65u8, 66u8], 0u8)
+println castBytes([65u16, 66u16], 0u16)

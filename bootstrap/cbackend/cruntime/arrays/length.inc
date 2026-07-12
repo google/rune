@@ -12,8 +12,7 @@
 static inline size_t array_length (void *a, ...) {
   array_t *array = ((array_t *)a) - 1;
 
-  assert(array->magic_hdr == ARRAY_MAGIC);
-  assert(array->magic_ftr == ARRAY_MAGIC);
+  assert(array->magic == ARRAY_MAGIC);
 
   return array->used;
 }

@@ -8,9 +8,12 @@
 # FAILED list. Floor for the relations->desugar migration: 188/205, zero drops.
 #
 # NOTE: the top-level ./runtests.sh uses the LEGACY ./rune (259/3) — a DIFFERENT
-# metric. This harness currently measures 207 positive programs plus
+# metric. This harness currently measures 209 positive programs plus
 # fail-closed negative compiler canaries. Do not conflate them.
-ulimit -v 8388608
+# Keep ordinary test children below 8 GiB, but do not lower the hard limit:
+# the dedicated ASan canary restores its soft limit to reserve sparse shadow
+# memory without increasing its physical-memory use.
+ulimit -S -v 8388608
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT" || exit 1
 RUNE=bootstrap/rune
@@ -32,9 +35,15 @@ for so in tests/*.stdout; do
   # Invoke via "./tests/<name>" so argv[0] matches the goldens (printargv's
   # golden is exactly "./tests/printargv"); a bare relative path fails it.
   if [ -f "$base.stdin" ]; then
-    "./$base" < "$base.stdin" > "$base.result" 2>/dev/null
+    if ! "./$base" < "$base.stdin" > "$base.result" 2>/dev/null; then
+      fail=$((fail+1)); failed="$failed $name"
+      continue
+    fi
   else
-    "./$base" > "$base.result" 2>/dev/null
+    if ! "./$base" > "$base.result" 2>/dev/null; then
+      fail=$((fail+1)); failed="$failed $name"
+      continue
+    fi
   fi
   if cmp -s "$base.result" "$so"; then
     pass=$((pass+1))
@@ -51,7 +60,19 @@ fi
 if ! bash bootstrap/research/runtime_codegen_canaries.sh >/dev/null 2>&1; then
   fail=$((fail+1)); failed="$failed runtime_codegen_canaries"
 fi
+if ! bash bootstrap/research/byte_string_cast_negative.sh >/dev/null 2>&1; then
+  fail=$((fail+1)); failed="$failed byte_string_cast_negative"
+fi
+if ! bash bootstrap/research/string_header_sanitizer.sh >/dev/null 2>&1; then
+  fail=$((fail+1)); failed="$failed string_header_sanitizer"
+fi
+if ! bash bootstrap/research/array_overflow_sanitizer.sh >/dev/null 2>&1; then
+  fail=$((fail+1)); failed="$failed array_overflow_sanitizer"
+fi
 echo "PASS=$pass FAIL=$fail"
 printf 'FAILED:'
 for f in $(echo $failed | tr ' ' '\n' | sort); do printf ' %s' "$f"; done
 echo
+if ((fail > 0)); then
+  exit 1
+fi

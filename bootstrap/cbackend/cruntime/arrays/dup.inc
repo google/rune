@@ -8,8 +8,7 @@
  */
 static inline void *array_dup(void *arr) {
   array_t *a = ((array_t *)arr) - 1;
-  assert(a->magic_hdr == ARRAY_MAGIC);
-  assert(a->magic_ftr == ARRAY_MAGIC);
+  assert(a->magic == ARRAY_MAGIC);
   void *r = array_alloc(a->element_size, a->used);
   memcpy(r, arr, a->used * a->element_size);
   return r;

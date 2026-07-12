@@ -15,7 +15,7 @@ static inline bool_t isequal_bool_t(bool_t a, bool_t b) {
 }
 
 static inline bool_t isequal_string_t(string_t a, string_t b) {
-   return !strcmp(a, b);
+   return string_compare(a, b) == 0;
 }
 
 static inline bool_t isequal_int8_t(int8_t a, int8_t b) {

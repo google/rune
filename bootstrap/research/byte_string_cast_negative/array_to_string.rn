@@ -1,0 +1,2 @@
+values = [1u16, 2u16]
+println <string>values

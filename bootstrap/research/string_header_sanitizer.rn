@@ -1,0 +1,144 @@
+// One fail-closed producer matrix for the headed Rune-string invariant.
+// The companion script rebuilds this generated C with ASan+UBSan.
+
+import io
+import runtime
+
+func float2string(value: f32|f64) -> string {
+  result = ""
+  typeswitch value {
+    f32 => runtime.f32tostring(result, value)
+    f64 => runtime.f64tostring(result, value)
+  }
+  return result
+}
+
+func assertBytes(value: string, expected: [u8]) {
+  bytes = <[u8]>value
+  assert bytes.length() == expected.length()
+  for i in range(expected.length()) {
+    assert bytes[i] == expected[i]
+  }
+  assert (<string>bytes) == value
+}
+
+func assertNonempty(value: string) {
+  bytes = <[u8]>value
+  assert bytes.length() > 0u64
+}
+
+func staticBinaryLiteral() -> string {
+  return "A\0B"
+}
+
+class HeaderCanary(self, value: u64) {
+  self.value = value
+}
+
+// Borrowed/static/foreign C ingress.
+assertNonempty(argv[0])
+assertBytes(io.getenv("RUNE_STRING_HEADER_CANARY"),
+    [104u8, 101u8, 97u8, 100u8, 101u8, 100u8])
+assertBytes(io.getenv("RUNE_STRING_HEADER_CANARY_MISSING_7E0A01D8"), arrayof(u8))
+assertNonempty(io.getcwd())
+
+// Returned value literals share immutable static storage. Index assignment
+// must COW only the mutated slot; another alias and future calls stay intact.
+staticFirst = staticBinaryLiteral()
+staticSecond = staticBinaryLiteral()
+staticFirst[0u64] = 90u8
+assertBytes(staticFirst, [90u8, 0u8, 66u8])
+assertBytes(staticSecond, [65u8, 0u8, 66u8])
+assertBytes(staticBinaryLiteral(), [65u8, 0u8, 66u8])
+
+// A direct rvalue write has no receiver slot to update. It must be harmless
+// under ASan/UBSan and must not modify the shared static object.
+staticBinaryLiteral()[2u64] = 67u8
+assertBytes(staticBinaryLiteral(), [65u8, 0u8, 66u8])
+
+// Runtime producers that historically returned unheaded malloc pointers.
+assertBytes(float2string(2.5f32), [50u8, 46u8, 53u8])
+assertBytes(float2string(2.5f64), [50u8, 46u8, 53u8])
+truth = true
+assertBytes(truth.toString(), [116u8, 114u8, 117u8, 101u8])
+negative = -12i64
+assertBytes(negative.toString(), [45u8, 49u8, 50u8])
+wide = 12345u65
+assertBytes(wide.toString(), [49u8, 50u8, 51u8, 52u8, 53u8])
+
+arrayText = [1u8, 2u8].toString()
+tupleText = ("x", 7u64).toString()
+object = HeaderCanary(7u64)
+objectText = object.toString()
+assertNonempty(arrayText)
+assertNonempty(tupleText)
+assertNonempty(objectText)
+assertBytes("%s:%u" % ("ok", 7u64), [111u8, 107u8, 58u8, 55u8])
+
+// Explicit language messages are headed before longjmp; implicit runtime
+// messages remain raw internally and are normalized before field exposure.
+caughtExplicit = false
+try {
+  raise Status.Ok, "A\0B"
+} except e {
+  default => {
+    assertBytes(e.errorMessage, [65u8, 0u8, 66u8])
+    caughtExplicit = true
+  }
+}
+assert caughtExplicit
+
+caughtImplicit = false
+overflow = 255u8
+try {
+  overflow += 1u8
+} except e {
+  default => {
+    assertBytes(e.errorMessage,
+        [79u8, 118u8, 101u8, 114u8, 102u8, 108u8, 111u8, 119u8])
+    caughtImplicit = true
+  }
+}
+assert caughtImplicit
+
+// Binary value semantics and all comparison operators must use header lengths.
+binaryLow = "A\0B"
+binaryHigh = "A\0C"
+binaryPrefix = "A"
+assertBytes(binaryLow, [65u8, 0u8, 66u8])
+assert binaryLow != binaryHigh
+assert binaryLow < binaryHigh
+assert binaryHigh > binaryLow
+assert binaryLow <= binaryLow
+assert binaryHigh >= binaryLow
+assert binaryPrefix < binaryLow
+
+// Concatenation is length-based on both sides and retains value semantics.
+// Checking the operands again catches the mutating receiver form used by the
+// distinct s.concat(t) method accidentally leaking into s + t lowering.
+concatLeft = "L\0M"
+concatRight = "N\0R"
+assertBytes(concatLeft + "X", [76u8, 0u8, 77u8, 88u8])
+assertBytes("Y" + concatRight, [89u8, 78u8, 0u8, 82u8])
+assertBytes(concatLeft + concatRight,
+    [76u8, 0u8, 77u8, 78u8, 0u8, 82u8])
+assertBytes(concatLeft, [76u8, 0u8, 77u8])
+assertBytes(concatRight, [78u8, 0u8, 82u8])
+
+// Generated collection tostring helpers must also write string values by
+// headed length rather than embedding them in a printf "%s" directive.
+assertBytes([binaryLow].toString(),
+    [91u8, 34u8, 65u8, 0u8, 66u8, 34u8, 93u8])
+assertBytes((binaryLow, 7u64).toString(),
+    [40u8, 34u8, 65u8, 0u8, 66u8, 34u8, 44u8, 32u8,
+     55u8, 117u8, 54u8, 52u8, 41u8])
+
+// Optional-library producers are headed too.
+regexText = regexReplace("\\x00", "Z", binaryLow)
+assertBytes(regexText, [65u8, 90u8, 66u8])
+big = bigIntNew(123u64)
+assertBytes(bigIntToString(big), [49u8, 50u8, 51u8])
+
+// The script supplies A, NUL, B, newline on stdin.
+line = readln()
+assertBytes(line, [65u8, 0u8, 66u8])

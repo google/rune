@@ -497,7 +497,8 @@ static inline char *wide_tostring_base(rn_wide v, uint64_t base) {
     int d = (int)rem;
     buf[pos++] = (char)(d < 10 ? '0' + d : 'a' + d - 10);
   }
-  char *out = (char *)malloc((size_t)pos + 2);
+  size_t outlen = (size_t)pos + (neg ? 1u : 0u);
+  char *out = rn_stralloc(outlen);
   int o = 0;
   if (neg) {
     out[o++] = '-';
@@ -505,7 +506,7 @@ static inline char *wide_tostring_base(rn_wide v, uint64_t base) {
   for (int i = pos - 1; i >= 0; i--) {
     out[o++] = buf[i];
   }
-  out[o] = '\0';
+  assert((size_t)o == outlen);
   free(buf);
   free(cur);
   return out;
@@ -674,7 +675,7 @@ static inline void tostring_rn_wide_t(rn_wide v) {
   // type, so only the digits print here.
   char *s = wide_tostring(v);
   GlobalStringWriter_write("%s", s);
-  free(s);
+  rn_strfree(s);
 }
 
 static inline uint8_t isequal_rn_wide_t(rn_wide a, rn_wide b) {

@@ -14,8 +14,10 @@ magic + byte length before the char data; `string_t` stays `char*`),
 landed in three stages, all ZERO-regression:
  - Stage A (`5db6801`): PRODUCERS allocate headed via `rn_stralloc` and
    size sources via `string_length` (reads header, else `strlen`).
- - Stage C (`d5f85cc`): VALUE LITERALS materialize via `rn_strlit(lit,
-   len)` (only CLiteral.Type.String; PrintfString stays bare).
+ - Stage C (`d5f85cc`, later compacted): VALUE LITERALS carry their exact
+   length in deduplicated, headed file-scope objects (only
+   CLiteral.Type.String; PrintfString stays bare), so evaluating a literal
+   does not allocate.
  - Stage B (`b895d38`): length-aware PRINTING — the writer gained
    `write_bytes`/`write_string` (write a value by `string_length`) and
    `flush` (fwrite the accumulated bytes by length, not `printf %s`);

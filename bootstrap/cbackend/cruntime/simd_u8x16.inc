@@ -57,7 +57,7 @@ rn_u8x16_require_range(const uint8_t *values, uint64_t offset) {
     raise("U8x16ArrayNull");
   }
   const array_t *array = ((const array_t *)values) - 1;
-  if (array->magic_hdr != ARRAY_MAGIC || array->magic_ftr != ARRAY_MAGIC) {
+  if (array->magic != ARRAY_MAGIC) {
     raise("U8x16ArrayHeader");
   }
   if (array->element_size != sizeof(uint8_t)) {

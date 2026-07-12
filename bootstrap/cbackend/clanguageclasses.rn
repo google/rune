@@ -463,15 +463,12 @@ class CLiteral(self, value: string | bool | db.Bigint | f64, printf: bool) {
         e.write("\"" + escapeString(e, self.stringValue, true) + "\"")
       }
       CLiteral.Type.String => {
-        // A string VALUE literal is materialized into a length-headed
-        // heap buffer so string_length is binary-safe for it (a bare C
-        // literal strlen-truncates at an embedded NUL).  The true byte
-        // length is known here; embedded NULs in the escaped literal are
-        // copied by rn_strlit up to that length.  (Printf FORMAT strings
-        // are CLiteral.Type.PrintfString above and stay bare.)
-        e.needStringMethods()
-        e.write("rn_strlit(\"%s\", %u)" % (escapeString(e, self.stringValue, false),
-            self.stringValue.length()))
+        // A Rune string VALUE literal references one deduplicated, immutable,
+        // length-headed file-scope object. A bare C literal has no header and
+        // would strlen-truncate at an embedded NUL. Printf FORMAT strings are
+        // CLiteral.Type.PrintfString above and intentionally remain bare.
+        e.write(e.registerStringLiteral(self.stringValue,
+            escapeString(e, self.stringValue, false)))
       }
       CLiteral.Type.Bool => {
         if e.printfArg {
@@ -1066,7 +1063,13 @@ enum CRuntimeFunction {
    // String builtins
    StringAppend
    StringLength
+   StringCompare
+   StringSetIndex
+   StringSetIndexValue
    StringAppendChar
+   // Value-form concat used by `+`; unlike StringConcat it does not assign
+   // the fresh result back to its first argument.
+   StringConcatValue
    StringConcat
    StringFind
    StringRfind
@@ -1085,11 +1088,16 @@ enum CRuntimeFunction {
    IntToStringBE
    StringSprintf
    StringDup
+   StringFromC
+   StringFromByteArray
+   ByteArrayFromString
 
    // To-string builtins
    GlobalStringWriterReset
    GlobalStringWriterWrite
+   GlobalStringWriterWriteString
    GlobalStringWriterString
+   GlobalStringWriterTakeString
 
    // Array builtins
    ArrayAlloc
@@ -1566,6 +1574,21 @@ relevantType: CTypeExpr?) {
         e.write("string_length")
       }
 
+      CRuntimeFunction.StringCompare => {
+        e.needStringMethods()
+        e.write("string_compare")
+      }
+
+      CRuntimeFunction.StringSetIndex => {
+        e.needStringMethods()
+        e.write("string_set_index")
+      }
+
+      CRuntimeFunction.StringSetIndexValue => {
+        e.needStringMethods()
+        e.write("string_set_index_value")
+      }
+
       // Mutating string methods return a fresh buffer; assign it back to
       // the receiver, mirroring the array append pattern above.
       CRuntimeFunction.StringAppendChar => {
@@ -1584,6 +1607,11 @@ relevantType: CTypeExpr?) {
           receiver.emit(e)
           e.write(" = ")
         }
+        e.needStringMethods()
+        e.write("string_concat")
+      }
+
+      CRuntimeFunction.StringConcatValue => {
         e.needStringMethods()
         e.write("string_concat")
       }
@@ -1723,6 +1751,21 @@ relevantType: CTypeExpr?) {
         e.write("string_dup")
       }
 
+      CRuntimeFunction.StringFromC => {
+        e.needStringMethods()
+        e.write("rn_strfromc")
+      }
+
+      CRuntimeFunction.StringFromByteArray => {
+        e.needByteStringCasts()
+        e.write("string_from_u8_array")
+      }
+
+      CRuntimeFunction.ByteArrayFromString => {
+        e.needByteStringCasts()
+        e.write("u8_array_from_string")
+      }
+
       CRuntimeFunction.TryEnter => {
         e.needTryExcept()
         e.write("RN_TRY")
@@ -1768,9 +1811,17 @@ relevantType: CTypeExpr?) {
         e.needStringWriter()
         e.write("GlobalStringWriter_write")
       }
+      CRuntimeFunction.GlobalStringWriterWriteString => {
+        e.needStringWriter()
+        e.write("GlobalStringWriter_write_string")
+      }
       CRuntimeFunction.GlobalStringWriterString => {
         e.needStringWriter()
         e.write("GlobalStringWriter_string")
+      }
+      CRuntimeFunction.GlobalStringWriterTakeString => {
+        e.needStringWriter()
+        e.write("rn_dup_writer")
       }
 
       CRuntimeFunction.ArrayAlloc => {
@@ -2316,7 +2367,12 @@ class CArrayDeclaration(self, location: db.Location, typeName: string, elementTy
 
       if (self.elementType.type == CTypeExpr.Type.Defined
           && self.elementType.cDefinedType.name == "string") {
-         e.write("tostring_string_t(\"\\\"%s\\\"\", a[i]);")
+         // String elements are headed byte strings: write the quotes as raw
+         // literals and the value by its true length so an embedded NUL does
+         // not truncate the rest of the element.
+         e.writeln("tostring_string_t(\"\\\"\");")
+         e.writeln("GlobalStringWriter_write_string(a[i]);")
+         e.write("tostring_string_t(\"\\\"\");")
       } else if self.elementType.runeSuffix != "" {
          e.write("tostring_%s_t(a[i]);" % elementTypeString)
          e.newline()
@@ -2363,10 +2419,11 @@ class CArrayDeclaration(self, location: db.Location, typeName: string, elementTy
     } else {
       e.writeopenln(" {")
       e.writeln("array_t *array = ((array_t*)a) - 1;")
-      e.writeln("array = array_resize(array, array->used + 1);")
+      e.writeln("size_t new_used = array_checked_add(array->used, 1u);")
+      e.writeln("array = array_resize(array, new_used);")
       e.writeln("a = (%s *)(array + 1);" % elemCType)
       e.writeln("a[array->used] = e;")
-      e.writeln("array->used += 1;")
+      e.writeln("array->used = new_used;")
       e.write("return a;")
       e.writecloseln("}")
     }
@@ -2454,13 +2511,20 @@ class CStructDeclaration(self, location: db.Location, name: string, fields: CPar
         first = false
         if (field.type.type == CTypeExpr.Type.Defined
             && field.type.cDefinedType.name == "string") {
-          e.write("tostring_string_t(\"\\\"%s\\\"\", ")
+          // Preserve the complete headed string payload, including embedded
+          // NULs, between the tuple's raw quote delimiters.
+          e.writeln("tostring_string_t(\"\\\"\");")
+          e.write("GlobalStringWriter_write_string(")
         } else {
           e.write("tostring_")
           field.type.emit(e)
           e.write("(")
         }
         e.writeln("str.%s);" % field.name)
+        if (field.type.type == CTypeExpr.Type.Defined
+            && field.type.cDefinedType.name == "string") {
+          e.writeln("tostring_string_t(\"\\\"\");")
+        }
         if field.type.runeSuffix != "" {
           e.writeln("tostring_string_t(\"%s\");" % field.type.runeSuffix)
         }

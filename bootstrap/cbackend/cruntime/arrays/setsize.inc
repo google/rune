@@ -4,13 +4,18 @@
  */
 static inline void *array_setsize(void *arr, uint64_t n) {
   array_t *a = ((array_t *)arr) - 1;
-  assert(a->magic_hdr == ARRAY_MAGIC);
-  size_t old = a->used;
-  a = array_resize(a, n);
-  if (n > old) {
-    memset((char *)(a + 1) + old * a->element_size, 0,
-           ((size_t)n - old) * a->element_size);
+  assert(a->magic == ARRAY_MAGIC);
+  if (n > (uint64_t)SIZE_MAX) {
+    raise(ARRAY_SIZE_OVERFLOW_ERROR);
+    return arr;
   }
-  a->used = n;
+  size_t count = (size_t)n;
+  size_t old = a->used;
+  a = array_resize(a, count);
+  if (count > old) {
+    memset((char *)(a + 1) + old * a->element_size, 0,
+           (count - old) * a->element_size);
+  }
+  a->used = count;
   return a + 1;
 }

@@ -2,14 +2,20 @@
 // Extern calls are emitted with an rn_ prefix so these definitions never
 // collide with the C library's own declarations.
 
+#define RN_GETCWD_BUFFER_SIZE 4096u
+
 static char* rn_getenv(const char *name) {
   char *value = getenv(name);
   return value == NULL ? "" : value;
 }
 
 static char* rn_getcwd(void) {
-  char *buf = calloc(1, 4096);
-  if (getcwd(buf, 4096) == NULL) {
+  /* The generic extern-string boundary immediately copies this borrowed
+   * result into a headed Rune string. Thread-local storage avoids leaking a
+   * separately allocated raw buffer on every call while remaining reentrant
+   * across Rune worker threads. */
+  static _Thread_local char buf[RN_GETCWD_BUFFER_SIZE];
+  if (getcwd(buf, RN_GETCWD_BUFFER_SIZE) == NULL) {
     buf[0] = '\0';
   }
   return buf;
@@ -51,17 +57,11 @@ static uint8_t rn_ferrorInternal(uint64_t ptr) {
 // Float formatting (legacy runtime/float.c semantics, %.Ng round-trip).
 static inline char *rn_f32tostring_ret(float v) {
   char tmp[64];
-  char *s;
   snprintf(tmp, sizeof(tmp), "%.9g", v);
-  s = (char *)malloc(strlen(tmp) + 1);
-  strcpy(s, tmp);
-  return s;
+  return rn_strfromc(tmp);
 }
 static inline char *rn_f64tostring_ret(double v) {
   char tmp[64];
-  char *s;
   snprintf(tmp, sizeof(tmp), "%.17g", v);
-  s = (char *)malloc(strlen(tmp) + 1);
-  strcpy(s, tmp);
-  return s;
+  return rn_strfromc(tmp);
 }

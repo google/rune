@@ -347,9 +347,11 @@ static inline void tostring_double_t(double d) {
 // Auto-generated <obj>.toString(): capture a tostring_<class> print into
 // a fresh heap string.
 static inline char *rn_dup_writer(void) {
-  const char *s = GlobalStringWriter_string();
-  char *r = (char *)malloc(strlen(s) + 1);
-  strcpy(r, s);
+  size_t len = GlobalStringWriter_length();
+  char *r = rn_stralloc(len);
+  if (len > 0u) {
+    memcpy(r, GlobalStringWriter_string(), len);
+  }
   GlobalStringWriter_reset();
   return r;
 }

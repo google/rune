@@ -1,0 +1,8 @@
+// Reverse discovery order catches a frozen concrete-looking u16 literal slot
+// hiding the later valid [u8] specialization (or vice versa).
+func castElement(value, context) -> string {
+  return <string>[value]
+}
+
+println castElement(65u16, 0u16)
+println castElement(65u8, 0u8)

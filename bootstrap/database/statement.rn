@@ -515,9 +515,10 @@ class Statement(self, block: Block, type: StateType, location: Location) {
           // Type values have no runtime representation; print the type's
           // Rune spelling (e.g. "u32" or "(u32, string)") as a literal.
           typeArgs = c.CExprList()
-          typeArgs.append(builder.cStringLiteral("%s"))
+          // Both arguments are internal C printf inputs, not Rune values.
+          typeArgs.append(builder.cStringLiteral("%s", printf=true))
           typeArgs.append(builder.cStringLiteral(
-              builder.typechecker.resolve(expr.typedValue!).runeString()))
+              builder.typechecker.resolve(expr.typedValue!).runeString(), printf=true))
           cexpr = c.CExpr(typeArgs)
           typeCall = builder.cCall(self.location, "tostring_string_t", cexpr!)
           builder.addStatement(self.location, typeCall)
@@ -556,8 +557,9 @@ class Statement(self, block: Block, type: StateType, location: Location) {
           if fmtIsArr {
             if fmtPrefix.length() > 0u64 {
               pfxArgs = c.CExprList()
-              pfxArgs.append(builder.cStringLiteral("%s"))
-              pfxArgs.append(builder.cStringLiteral(fmtPrefix))
+              // The writer consumes a conventional format and raw %s input.
+              pfxArgs.append(builder.cStringLiteral("%s", printf=true))
+              pfxArgs.append(builder.cStringLiteral(fmtPrefix, printf=true))
               builder.addStatement(self.location,
                   builder.cCall(self.location, "tostring_string_t", c.CExpr(pfxArgs)))
             }
@@ -566,22 +568,15 @@ class Statement(self, block: Block, type: StateType, location: Location) {
               fmtArr = right.firstChildExpr!
             }
             arrCExpr = fmtArr.genC(builder)
-            // Recover the array's element type when its slot rendered an
-            // adaptable AnyInt default, so the tostring helper name
-            // matches genCArray's recovered init type (u17, not u64).
-            // genCArray recovers from the FIRST element; mirror that here
-            // (recovering the array node itself does not re-derive its
-            // elements) so the init and tostring types agree.
+            // Select the tostring helper from the same live array type that
+            // genCArray/genCArrayOf use. A frozen u8/u16 slot is already
+            // ground, so limiting recovery to adaptable AnyInt is unsafe.
             arrTy = fmtArr.typedValue
-            if (!isnull(arrTy) && fmtArr.type == ExprType.Array &&
-                !isnull(fmtArr.firstChildExpr) &&
-                builder.typechecker.containsAdaptableType(
-                    builder.typechecker.resolve(arrTy!))) {
-              arrElemRec = fmtArr.firstChildExpr.resolvedArgType(builder)
-              if (!builder.typechecker.hasFreeVars(arrElemRec) &&
-                  !builder.typechecker.containsAdaptableType(arrElemRec)) {
-                arrTy = types.ARRAY(arrElemRec)
-              }
+            arrRec = builder.typechecker.resolve(fmtArr.resolvedArgType(builder))
+            if (!builder.typechecker.hasFreeVars(arrRec) &&
+                arrRec.type != types.Type.TypeClass.Polymorphic &&
+                !builder.typechecker.containsAdaptableType(arrRec)) {
+              arrTy = arrRec
             }
             arrCType = builder.genCType(arrTy)
             if !isnull(arrCType) {
@@ -651,7 +646,7 @@ class Statement(self, block: Block, type: StateType, location: Location) {
           wideArgs.appendCExpr(expr.genC(builder))
           wideStr = builder.cWideCall(self.location, "wide_tostring", wideArgs)
           widePrintArgs = c.CExprList()
-          widePrintArgs.append(builder.cStringLiteral("%s"))
+          widePrintArgs.append(builder.cStringLiteral("%s", printf=true))
           widePrintArgs.append(wideStr)
           builder.addStatement(self.location,
               builder.cCall(self.location, "tostring_string_t", c.CExpr(widePrintArgs)))
@@ -732,7 +727,7 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     }
     if newline {
       self.genCCall(builder, c.CRuntimeFunction.GlobalStringWriterWrite,
-                    builder.cStringLiteral("\n"))
+                    builder.cStringLiteral("\n", printf=true))
     }
     // Flush the accumulated bytes to stdout BY LENGTH (embedded NULs
     // included), not printf("%s", ...) which would stop at the first NUL.
@@ -765,9 +760,12 @@ class Statement(self, block: Block, type: StateType, location: Location) {
           ctypename = ctype.toString()
           if ctypename == "string" {
             sArgs = c.CExprList()
-            sArgs.append(builder.cStringLiteral("%s"))
             sArgs.append(cexpr!)
-            call = builder.cCall(self.location, "tostring_string_t", c.CExpr(sArgs))
+            // Preserve embedded NUL bytes in raised string values; the global
+            // writer tracks their exact headed length whereas printf("%s")
+            // would truncate them.
+            call = builder.cCall(self.location,
+                c.CRuntimeFunction.GlobalStringWriterWriteString, c.CExpr(sArgs))
           } else {
             call = builder.cCall(self.location, "tostring_%s_t" % ctypename, cexpr)
           }
@@ -777,10 +775,13 @@ class Statement(self, block: Block, type: StateType, location: Location) {
       rfirst = false
     }
     raiseArgs = c.CExprList()
-    raiseArgs.append(builder.cStringLiteral(codeText))
-    raiseArgs.append(
-        builder.cCall(self.location, c.CRuntimeFunction.GlobalStringWriterString,
-                      null(c.CExpr)))
+    // Exception codes remain raw C strings: they are stored and compared with
+    // strcmp, never exposed as Rune string values.
+    raiseArgs.append(builder.cStringLiteral(codeText, printf=true))
+    // Take a headed copy by the writer's exact byte length before longjmp
+    // exposes it as e.errorMessage; rn_strfromc/strlen would NUL-truncate it.
+    raiseArgs.append(builder.cCall(self.location,
+        c.CRuntimeFunction.GlobalStringWriterTakeString, null(c.CExpr)))
     self.genCCall(builder, c.CRuntimeFunction.RaiseWithCode, c.CExpr(raiseArgs))
   }
 
@@ -841,20 +842,27 @@ class Statement(self, block: Block, type: StateType, location: Location) {
     assert !isnull(self.expr)
     assert !isnull(self.subBlock)
     builder.openBlock(self.location)
-    // Copy the message out of the global string writer before the handler's
-    // own tostring calls clobber it.  Nested handlers reusing the same
-    // variable name shadow correctly: each declaration lands in its own
-    // C block.
+    // Explicit raises already moved the writer's bytes into a fresh headed
+    // allocation, so transfer that stable pointer directly. Implicit runtime
+    // diagnostics are borrowed raw C strings and still need normalization.
+    // Nested handlers reusing the same variable name shadow correctly: each
+    // declaration lands in its own C block.
     eName = self.expr.val.symVal.name
     msgSym = Sym.new(eName + "_errorMessage")
     strType = c.CTypeExpr(c.CDefinedType("string"))
     msgRef = builder.declareLocal(msgSym, strType)
-    dupArgs = c.CExprList()
-    dupArgs.append(c.CExpr(c.CIdentifier(Sym.new("rn_raised_message"),
+    headedCopy = c.CExpr(c.CIdentifier(Sym.new("rn_raised_message"),
+        null(c.CTypeExpr), false, false, false))
+    rawArgs = c.CExprList()
+    rawArgs.append(c.CExpr(c.CIdentifier(Sym.new("rn_raised_message"),
                                          null(c.CTypeExpr), false, false, false)))
-    dupCall = builder.cCall(self.location, c.CRuntimeFunction.StringDup, c.CExpr(dupArgs))
+    rawCopy = builder.cCall(self.location, c.CRuntimeFunction.StringFromC,
+        c.CExpr(rawArgs))
+    messageKind = c.CExpr(c.CIdentifier(Sym.new("rn_raised_message_headed"),
+        null(c.CTypeExpr), false, false, false))
+    boundMessage = c.CExpr(c.CSelectExpr(self.location, messageKind, headedCopy, rawCopy))
     msgAssign = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,
-                                          null(c.CTypeExpr), msgRef, dupCall))
+                                          null(c.CTypeExpr), msgRef, boundMessage))
     builder.addStatement(self.location,
         c.CStatement(self.location, c.CStatementType.Assignment, msgAssign))
     // Case dispatch, like genCSwitch: each case lists raise code paths
@@ -867,7 +875,7 @@ class Statement(self, block: Block, type: StateType, location: Location) {
         cond = null(c.CExpr)
         for valExpr in caseStatement.expr.childExprs() {
           mArgs = c.CExprList()
-          mArgs.append(builder.cStringLiteral(valExpr.toString() + " "))
+          mArgs.append(builder.cStringLiteral(valExpr.toString() + " ", printf=true))
           cmp = builder.cCall(valExpr.location, "rn_code_matches", c.CExpr(mArgs))
           if isnull(cond) {
             cond = cmp
@@ -1282,7 +1290,10 @@ class Statement(self, block: Block, type: StateType, location: Location) {
         c.CPrefixOperator.Type.LogNot, ccond))
     builder.openBlock(self.location)
     args = c.CExprList()
-    args.appendCExpr(builder.cStringLiteral("Assertion failed"))
+    // raise() classifies runtime diagnostics as borrowed raw C strings. Emit
+    // this fixed diagnostic in that representation rather than allocating a
+    // headed Rune literal that the handler would then classify as raw.
+    args.appendCExpr(builder.cStringLiteral("Assertion failed", printf=true))
     raiseCall = builder.cCall(self.location, c.CRuntimeFunction.Raise, c.CExpr(args))
     builder.addStatement(self.location, raiseCall)
     body = builder.closeBlock()

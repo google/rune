@@ -212,7 +212,17 @@ class CRuntime(self) {
   }
 
   func needStringMethods(self) -> CFragment {
+    self.needRaiseError()
     return self.cFragment("string_methods", "cbackend/cruntime/string_methods.inc")
+  }
+
+  func needByteStringCasts(self) -> CFragment {
+    self.include("<assert.h>")
+    self.include("<stdint.h>")
+    self.include("<string.h>")
+    cf = self.cFragment("byte_string_casts", "cbackend/cruntime/byte_string_casts.inc")
+    cf.addDependencies([self.needStringMethods(), self.needArrayAlloc()])
+    return cf
   }
 
   // The regex shim (regex.inc) calls rn_stralloc/string_length, so string
@@ -337,11 +347,22 @@ class CRuntime(self) {
   }
 
   func needPrimitiveEqualities(self) -> CFragment {
-    return self.cFragment("primtive_equalities", "cbackend/cruntime/primitive_type_equalities.inc")
+    cf = self.cFragment("primtive_equalities", "cbackend/cruntime/primitive_type_equalities.inc")
+    cf.addDependencies([self.needStringMethods()])
+    return cf
   }
 
   func needArrayType(self) -> CFragment {
+    self.include("<stddef.h>")
+    self.include("<stdint.h>")
     return self.cFragment("array_t", "cbackend/cruntime/arrays/type.inc")
+  }
+
+  func needArraySize(self) -> CFragment {
+    self.needRaiseError()
+    cf = self.cFragment("array_size", "cbackend/cruntime/arrays/size.inc")
+    cf.addDependencies([self.needArrayType()])
+    return cf
   }
 
   func needArrayAlloc(self) -> CFragment {
@@ -349,7 +370,7 @@ class CRuntime(self) {
     self.include("<stdlib.h>")
     self.needRaiseError()
     cf = self.cFragment("array_alloc", "cbackend/cruntime/arrays/alloc.inc")
-    cf.addDependencies([self.needArrayType()])
+    cf.addDependencies([self.needArraySize()])
     return cf
   }
 
@@ -357,7 +378,7 @@ class CRuntime(self) {
     self.include("<stdlib.h>")
     self.needRaiseError()
     cf = self.cFragment("array_resize", "cbackend/cruntime/arrays/resize.inc")
-    cf.addDependencies([self.needArrayType()])
+    cf.addDependencies([self.needArraySize()])
     return cf
   }
 
@@ -428,6 +449,9 @@ class CRuntime(self) {
     self.include("<string.h>")
     self.include("<inttypes.h>")
     self.needRaiseError()
+    // The wide print helper uses the global writer; request it through the
+    // normal path so string methods precede the writer's length/copy calls.
+    self.needStringWriter()
     cf = self.cFragment("wide_ints", "cbackend/cruntime/wide_ints.inc")
     cf.addDependencies([self.cFragment("global_string_writer",
         "cbackend/cruntime/global_string_writer.inc")])
@@ -437,7 +461,9 @@ class CRuntime(self) {
 
   func needArgvArray(self) -> CFragment {
     cf = self.cFragment("argv_array", "cbackend/cruntime/argv.inc")
-    cf.addDependencies([self.needArrayAlloc()])
+    // argv is borrowed C storage; copy every element across the headed Rune
+    // string boundary rather than exposing the process-owned raw pointers.
+    cf.addDependencies([self.needArrayAlloc(), self.needStringMethods()])
     return cf
   }
 
@@ -595,6 +621,7 @@ class CRuntime(self) {
       e.writeln("static _Thread_local uint32_t rn_try_depth = 0;")
       e.writeln("static _Thread_local char *rn_raised_code = \"\";")
       e.writeln("static _Thread_local char *rn_raised_message = \"\";")
+      e.writeln("static _Thread_local uint8_t rn_raised_message_headed = 0;")
       e.newline()
       e.writeln("static inline uint32_t rn_parallel_map_try_guard_enter(void) {")
       e.writeln("  uint32_t saved = rn_try_depth;")
@@ -607,9 +634,11 @@ class CRuntime(self) {
       e.newline()
       e.writeln("#define RN_TRY() (setjmp(rn_try_stack[rn_try_depth++]) == 0)")
       e.newline()
-      e.writeln("static void raise_with_code(const char *code, const char *message) {")
+      e.writeln("static void rn_raise_with_message_kind(const char *code, const char *message,")
+      e.writeln("                                       uint8_t message_headed) {")
       e.writeln("  rn_raised_code = (char *)code;")
       e.writeln("  rn_raised_message = (char *)message;")
+      e.writeln("  rn_raised_message_headed = message_headed;")
       e.writeln("  if (rn_try_depth > 0) {")
       e.writeln("    longjmp(rn_try_stack[--rn_try_depth], 1);")
       e.writeln("  }")
@@ -617,8 +646,12 @@ class CRuntime(self) {
       e.writeln("  abort();")
       e.writeln("}")
       e.newline()
+      e.writeln("static void raise_with_code(const char *code, const char *message) {")
+      e.writeln("  rn_raise_with_message_kind(code, message, 1u);")
+      e.writeln("}")
+      e.newline()
       e.writeln("static void raise(const char *error) {")
-      e.writeln("  raise_with_code(\"\", error);")
+      e.writeln("  rn_raise_with_message_kind(\"\", error, 0u);")
       e.writeln("}")
       e.newline()
       e.writeln("static inline int rn_code_matches(const char *code) {")

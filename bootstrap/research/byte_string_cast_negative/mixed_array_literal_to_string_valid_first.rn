@@ -1,0 +1,8 @@
+// Unlike a parameter that is already an array, [value] must re-derive its
+// array element type under each specialization before the cast is checked.
+func castElement(value, context) -> string {
+  return <string>[value]
+}
+
+println castElement(65u8, 0u8)
+println castElement(65u16, 0u16)

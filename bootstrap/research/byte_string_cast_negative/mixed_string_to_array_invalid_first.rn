@@ -1,0 +1,8 @@
+// Exercise the same changing-target cast with invalid/valid discovery order
+// reversed; exactly the u16 target must be diagnosed.
+func castString(value, target, context) {
+  return <target>value
+}
+
+println castString("AB", [0u16], 0u16)
+println castString("AB", [0u8], 0u8)

@@ -90,7 +90,7 @@ static RN_BYTE_READER_HOT array_t *rn_byte_reader_require_array(
     raise("ByteReaderInvalidArray");
   }
   array_t *array = ((array_t *)bytes) - 1;
-  if (array->magic_hdr != ARRAY_MAGIC || array->magic_ftr != ARRAY_MAGIC ||
+  if (array->magic != ARRAY_MAGIC ||
       array->element_size != sizeof(uint8_t) || array->capacity == 0 ||
       array->used > array->capacity) {
     raise("ByteReaderInvalidArray");

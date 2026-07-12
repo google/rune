@@ -26,6 +26,13 @@ class CEmitter(self, filename: string) {
   self.sw = utils.StringWriter()
   self.printfArg = false
   self.runtime = CRuntime()
+  // String VALUE literals are discovered while the program body emits, but
+  // their headed objects must live in the generated header after rn_strhdr is
+  // defined.  Keep raw values for binary-safe deduplication and their already
+  // C-escaped spellings in parallel (cemitter intentionally does not depend
+  // on escapestring, whose Escaper itself depends on CEmitter).
+  self.stringLiteralValues = arrayof(string)
+  self.stringLiteralEscapes = arrayof(string)
 
   /* context functions *******************************************************/
 
@@ -96,6 +103,48 @@ class CEmitter(self, filename: string) {
     self.runtime.needStringMethods()
   }
 
+  // Register one immutable, length-headed file-scope object for a Rune string
+  // value literal. Repeated source literals share the same data pointer; the
+  // existing assignment lowering duplicates that data before mutation.
+  func registerStringLiteral(self, value: string, escaped: string) -> string {
+    for i in range(self.stringLiteralValues.length()) {
+      if self.stringLiteralValues[i] == value {
+        return "((char *)rn_string_literal_%u.data)" % i
+      }
+    }
+    index = self.stringLiteralValues.length()
+    self.stringLiteralValues.append(value)
+    self.stringLiteralEscapes.append(escaped)
+    self.needStringMethods()
+    return "((char *)rn_string_literal_%u.data)" % index
+  }
+
+  // rn_strhdr is supplied by string_methods.inc, so call this only after the
+  // runtime fragments have emitted. The fixed data extent includes exactly
+  // one trailing C NUL even when the Rune bytes contain embedded NULs.
+  func emitStringLiterals(self) {
+    for i in range(self.stringLiteralValues.length()) {
+      value = self.stringLiteralValues[i]
+      escaped = self.stringLiteralEscapes[i]
+      eLength = value.length()
+      self.writeln("typedef struct {")
+      self.writeln("  rn_strhdr header;")
+      self.writeln("  char data[%u];" % (eLength + 1u64))
+      self.writeln("} rn_string_literal_%u_t;" % i)
+      self.writeln("_Static_assert(offsetof(rn_string_literal_%u_t, data) == sizeof(rn_strhdr)," % i)
+      self.writeln("               \"Rune static string header must be adjacent to data\");")
+      self.writeln("static const rn_string_literal_%u_t rn_string_literal_%u = {" % (i, i))
+      self.writeln("  {RN_STATIC_STR_MAGIC, %u}," % eLength)
+      self.writeln("  \"%s\"" % escaped)
+      self.writeln("};")
+      self.newline()
+    }
+  }
+
+  func needByteStringCasts(self) {
+    self.runtime.needByteStringCasts()
+  }
+
   func needRegex(self) {
     self.runtime.needRegex()
   }
@@ -139,7 +188,10 @@ class CEmitter(self, filename: string) {
     self.include("<string.h>")
     self.include("<stdint.h>")
     self.include("<unistd.h>")
-    self.runtime.cFragment("extern_io", "cbackend/cruntime/extern_io.inc")
+    cf = self.runtime.cFragment("extern_io", "cbackend/cruntime/extern_io.inc")
+    // Float helpers return headed Rune strings, and generic string-returning
+    // extern calls normalize their raw C result through rn_strfromc().
+    cf.addDependencies([self.runtime.needStringMethods()])
   }
 
   func needFloatPrintfMacros(self) {
@@ -295,6 +347,7 @@ class CEmitter(self, filename: string) {
     self.sw = utils.StringWriter()
     self.runtime.emit(self)
     self.newline()
+    self.emitStringLiterals()
     headerText = self.sw.close()
     self.sw = bodyWriter
     return headerText

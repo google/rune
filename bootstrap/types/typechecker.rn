@@ -457,6 +457,20 @@ class TypeChecker(self) {
     self.appendTypeError(TypeError(msg, location))
   }
 
+  // Code generation can discover a concrete invalid specialization after the
+  // template typecheck succeeded with free variables. The same body may be
+  // materialized more than once, so record that deferred diagnostic once per
+  // source location/message pair.
+  func typeErrorOnce(self, msg: string, location: db.Location?) {
+    for pos in range(self.countTypeErrors()) {
+      existing = self.indexTypeError(pos)
+      if existing.msg == msg && existing.location == location {
+        return
+      }
+    }
+    self.typeError(msg, location)
+  }
+
   func popTypeError(self) {
     if !isnull(self.lastTypeError) {
       self.removeTypeError(self.lastTypeError!)
@@ -1463,6 +1477,21 @@ class TypeChecker(self) {
       return false
     }
     return t.tyname.name.name == "string"
+  }
+
+  // True only for the concrete builtin byte-array representation that may
+  // cross the string boundary through an explicit value-producing cast.
+  func isByteArrayType(self, ty: Type?) -> bool {
+    if isnull(ty) {
+      return false
+    }
+    t = self.resolve(ty!)
+    if t.type != Type.TypeClass.Array {
+      return false
+    }
+    element = self.resolve(t.array.elementType!)
+    return element.type == Type.TypeClass.Int && !element.int.isSigned &&
+        element.int.width == 8u32
   }
 
   // The function type of a builtin string method.
@@ -3106,7 +3135,7 @@ class TypeChecker(self) {
       db.ExprType.Cast, db.ExprType.CastTrunc => {
         castTypeChild = expr.firstChildExpr!
         castValueChild = castTypeChild.nextExprChildExpr!
-        self.expr(castValueChild)
+        castSourceType = self.expr(castValueChild)
         castTarget = null(Type)
         if castTypeChild.type == db.ExprType.Ident {
           // <x>v where x is a variable casts v to the type of x.
@@ -3120,10 +3149,30 @@ class TypeChecker(self) {
         }
         if isnull(castTarget) {
           castTarget = self.tryExplicitType(castTypeChild)
+          if !isnull(castTarget) {
+            // Record WHY this target resolved. The C backend must live-recover
+            // a bound exemplar (<target>value), but fixed syntax such as
+            // <[u8]>value is authoritative as a whole: its nested type tokens
+            // are not value expressions and need not carry typedValue slots.
+            castTypeChild.isType = true
+          }
         }
         if isnull(castTarget) {
           self.typeError("Unsupported cast target type", expr.location)
           return null(Type)
+        }
+        if !isnull(castSourceType) {
+          castSource = self.resolve(castSourceType!)
+          if self.isStringType(castTarget) &&
+              castSource.type == Type.TypeClass.Array &&
+              !self.hasFreeVars(castSource) && !self.isByteArrayType(castSource) {
+            self.typeError("Only [u8] arrays can be cast to string", expr.location)
+          }
+          if castTarget!.type == Type.TypeClass.Array &&
+              self.isStringType(castSource) && !self.hasFreeVars(castTarget!) &&
+              !self.isByteArrayType(castTarget) {
+            self.typeError("Strings can only be cast to [u8]", expr.location)
+          }
         }
         if self.containsU8x16(castTarget!) {
           self.typeError(

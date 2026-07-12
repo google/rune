@@ -1,0 +1,8 @@
+// The target is deliberately an untyped exemplar parameter. Its type changes
+// per specialization, so <target>value must not reuse the first ground slot.
+func castString(value, target, context) {
+  return <target>value
+}
+
+println castString("AB", [0u8], 0u8)
+println castString("AB", [0u16], 0u16)

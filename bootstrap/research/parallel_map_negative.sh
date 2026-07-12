@@ -8,13 +8,15 @@ fixtures="$repo/bootstrap/research/parallel_map_negative"
 check_rejected() {
   local name=$1
   local diagnostic=$2
-  local log base
+  local log base status
   base="$fixtures/$name"
   rm -f "$base" "$base.c"
   log=$(mktemp)
   trap 'rm -f "$log"' RETURN
+  status=0
   nice -n 15 ionice -c 3 taskset -c 0 \
-    "$compiler" -q "$base.rn" >"$log" 2>&1 || true
+    "$compiler" -q "$base.rn" >"$log" 2>&1 || status=$?
+  test "$status" -ne 0
   grep -Fx "Found 1 type error." "$log" >/dev/null
   grep -F "$diagnostic" "$log" >/dev/null
   test ! -e "$base"

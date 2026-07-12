@@ -4,7 +4,7 @@
 static inline char **rn_argv_array(int argc, const char **argv) {
   char **arr = (char **)array_alloc(sizeof(char *), (size_t)argc);
   for (int i = 0; i < argc; i++) {
-    arr[i] = (char *)argv[i];
+    arr[i] = rn_strfromc(argv[i]);
   }
   return arr;
 }

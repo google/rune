@@ -5,8 +5,7 @@
  */
 static inline void *array_slice(void *arr, uint64_t lo, uint64_t hi) {
   array_t *a = ((array_t *)arr) - 1;
-  assert(a->magic_hdr == ARRAY_MAGIC);
-  assert(a->magic_ftr == ARRAY_MAGIC);
+  assert(a->magic == ARRAY_MAGIC);
   if (lo > a->used) {
     lo = a->used;
   }
