@@ -14,7 +14,7 @@ they do not reproduce published multicore elapsed times.
 
 | Benchmark | Fastest-published local comparator | Current evidence |
 |---|---|---|
-| binary-trees | C++ g++ #7 / TBB | Exact N=10/N=21; region Rune is **1.735x** slower on one core |
+| binary-trees | C++ g++ #7 / TBB | Exact N=10/N=21; GCC region Rune is **1.344x** slower on one core |
 | fannkuch-redux | gcc #6 `-t 1` | Exact official N=12; stable paired Rune loss **1.026x** |
 | mandelbrot | g++ #4 one-worker attribution | Exact N=16000; paired parity/slight Rune win **0.997x** |
 | spectral-norm | gcc #6, `OMP_NUM_THREADS=1` | Exact N=5500; stable Rune win **0.786x** |
@@ -26,8 +26,8 @@ they do not reproduce published multicore elapsed times.
 | pidigits | gcc #2 / GMP | Exact 10,000 digits; best-of-five parity **1.003x**, paired timing pending |
 
 Thus every fastest entry has source and feature attribution. The remaining
-measurement gaps are regex-redux, a stronger paired pidigits series, and
-strict GCC/O0 controls for the new binary-trees region port. FASTA's published
+measurement gaps are regex-redux, a stronger paired pidigits series, and a
+strict O0 control for the new binary-trees region port. FASTA's published
 leader is not a missing artifact: it is a concrete
 structured-concurrency feature gap under the one-core contract.
 
@@ -1787,13 +1787,17 @@ substitutions.
 | region unsafe Rune / naive C++ | 2.001 | 9.782 | 0.2046x | Rune is **4.89x faster** |
 | region unsafe Rune / constrained g++ #7 | 2.053 | 1.184 | 1.735x | residual leader gap |
 | region checked Rune / region unsafe Rune | 2.213 | 1.988 | 1.113x | checked cost is **11.3%** |
+| GCC region unsafe Rune / Clang region unsafe Rune | 1.615 | 1.993 | 0.8101x | GCC is **19.0% faster** |
+| GCC region unsafe Rune / constrained g++ #7 | 1.609 | 1.198 | 1.344x | current best Rune gap |
 
 The corresponding TSV SHA-256 values are, in table order,
 `3f9694b8b98783bba8b1b2b309639ef9d390b9efe8da5439c058eb38bb167ff6`,
 `d84eb8920c560bca3e99dfb295139e8d4f1a6ebbb3ac4acca155d3604c1a8134`,
 `5eaf77690b617687636fd0f86325ad54349c807941cccfbbf4af72a860bd4b23`,
+`f0104f84d9353486dee7cb6f86c4b46a2e060d07b9e9f31e91ac4e309aa55eb5`,
+`3ace2aecb5355a86c1b268110f273bb3302e6f328434ab2596c01208146d2f94`,
 and
-`f0104f84d9353486dee7cb6f86c4b46a2e060d07b9e9f31e91ac4e309aa55eb5`.
+`ff411583773640354e0a927db5815f0088380e8c60145a0262e52dfe2441174d`.
 The artifact manifest, exact GCC reconstruction command, goldens, and strict
 harness are in
 `/tmp/rune-bench/binary-trees-region/candidate-e030311d-73e20e96/`.
@@ -1814,11 +1818,13 @@ redundant zeroing is about 2.8%. Conversely, raising the per-thread cache cap
 from 256 KiB to 64 MiB improves only about 0.9% while increasing observed peak
 RSS by roughly 14 MiB, so the high-RAM cache mode is rejected as a priority.
 
-Strict GCC-versus-Clang, GCC-versus-leader, and O0-versus-O3 series remain
-pending: repeated external CPU spikes correctly aborted them. No diagnostic
-number is substituted. The largest justified next compiler feature is a
-validator-proven compact region-only representation; the existing `--gcc`
-backend should be measured first because it requires no language compromise.
+The strict GCC series confirm the diagnostic direction without reusing its
+numbers: GCC beats Clang in all ten pairs and reduces the constrained-leader
+gap from 1.735x to 1.344x. O0-versus-O3 remains pending after repeated external
+CPU spikes correctly aborted it; no diagnostic number is substituted. The
+largest justified next compiler feature is an opt-in, validator-proven compact
+region-only representation. It must use a distinct internal layout/call graph
+while ordinary objects of the same source class retain their full headers.
 
 ## Historical fixes retained in the current source
 
