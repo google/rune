@@ -14,7 +14,7 @@ they do not reproduce published multicore elapsed times.
 
 | Benchmark | Fastest-published local comparator | Current evidence |
 |---|---|---|
-| binary-trees | C++ g++ #7 / TBB | Exact N=10/N=21; opt-in compact GCC Rune is **1.104x** slower on one core |
+| binary-trees | C++ g++ #7 / TBB | Exact N=10/N=21; one-branch compact GCC Rune is **1.062x** slower on one core |
 | fannkuch-redux | gcc #6 `-t 1` | Exact official N=12; stable paired Rune loss **1.026x** |
 | mandelbrot | g++ #4 one-worker attribution | Exact N=16000; paired parity/slight Rune win **0.997x** |
 | spectral-norm | gcc #6, `OMP_NUM_THREADS=1` | Exact N=5500; stable Rune win **0.786x** |
@@ -1907,6 +1907,62 @@ timing harness are under
 `/tmp/rune-bench/binary-trees-compact/final-6ae73cee-73e20e96/`;
 the manifest SHA-256 is
 `fce46df51b31519c58d45ea69f3b7a91efe499c2f4ee20630ffd02a4191b07de`.
+
+## Stage 3 binary-trees full-tree traversal invariant
+
+`makeTree` initializes both child links to null and writes both recursive
+children together under the single `depth != 0` branch. By induction, every
+node therefore has either two children or none. `Node.check` now tests the left
+link once and, when present, recursively checks both children. It still visits
+and counts every allocated node; this is the same full-tree invariant used by
+the published g++ #7 comparator, not a closed-form checksum or skipped-work
+shortcut. No compiler or language behavior changes in this checkpoint.
+
+The frozen candidate uses compiler executable SHA-256
+`72f5705ef3b591f3e115bf3b7425a81bf9b0d1fa86ee53b51f32b6053970a73b`
+and source SHA-256
+`aacbffa5d4da6fc9d20edd3b17f513d4c2b2b3844fd9adf3c460ff19411cde6f`.
+Its unsafe compact GCC C and executable SHA-256 values are
+`4f2f8ab5a271d1f20448dba66f03ee7c9b19b5ff7b81a878b7f0f50544a58ea4`
+and
+`efb8147d95205d7c756c7acc9cb4a04c28152907e4d9c4c6883fd282bb316773`.
+Candidate, exact prior compact control, and leader all match the N=10 and N=21
+goldens byte-for-byte.
+
+Both comparisons below are independent strict CPU-0 series with one warmup
+per member and ten alternating pairs. Ratios shown are ratios of member
+medians. The candidate/control pair uses the same final compiler, GCC flags,
+compact option, and unsafe option; their generated C differs only in the
+one-branch traversal. One candidate/leader attempt detected CPU 2 at 100%,
+discarded its partial series with status 75, and retried without relaxing a
+threshold.
+
+| Binary-trees N=21 comparison | Left median | Right median | Left/right | Paired evidence |
+|---|---:|---:|---:|---|
+| one-branch compact GCC / two-branch compact GCC | 1.2675 | 1.3515 | 0.9378x | 0.9361x median; candidate won 9/10 |
+| one-branch compact GCC / constrained g++ #7 | 1.3100 | 1.2340 | 1.0616x | 1.0590x median; candidate won 1/10 |
+
+The source invariant lowers elapsed time by 6.2% and reduces the constrained
+one-core leader gap from about 10.4% to about 6.2%. The TSV SHA-256 values are
+`97cd7540890f5ac00f4bdfd2e5f024d0fdbd189c81d61f8de21b74e21556fbb1`
+and
+`451b616ba28be43bcae6c5d3644e21ba35d7a0bccfa5537ba8464f0cc9773266`.
+Frozen inputs, exact commands, outputs, rejected-control audit, and the
+no-build harness are under
+`/tmp/rune-bench/binary-trees-one-branch-final/`. The immutable-input manifest,
+provenance, and harness SHA-256 values are respectively
+`e03cb729bcd29df5c86c3c773388731fc219d87ca3a14ae63af27419a6d76b09`,
+`92eaf7157ad4697870704ddaacc63b777383c6665ccba8b6239783ca439556fc`,
+and
+`7ae02e9aee2dd6a0223ce2108cea2df02585c765b54f42d9a9a804243ceb865a`.
+
+A follow-up assembly audit rejects blanket region-zeroing removal. GCC and
+Clang already coalesce allocator zeroing plus the constructor's two null stores
+into one 16-byte store. Leaves require that store; only internal nodes overwrite
+both fields before use. Removing it generally would expose stale cached-region
+bytes. A safe path-sensitive fresh-object DSE would need a substantially
+stronger escape and definite-initialization proof, so it is not treated as the
+next low-risk optimization.
 
 ## Historical fixes retained in the current source
 

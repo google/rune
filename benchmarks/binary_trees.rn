@@ -20,11 +20,11 @@ class Node(self: Node, allocationTag: u8) {
     sum = 1u32
     left = self.left
     right = self.right
+    // makeTree creates both children together, so one branch proves both
+    // references nonnull while every node is still visited recursively.
     if !isnull(left) {
       sum += left.check()
-    }
-    if !isnull(right) {
-      sum += right.check()
+      sum += right!.check()
     }
     return sum
   }
