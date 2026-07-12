@@ -41,6 +41,10 @@ class Root(self) {
   // builtin.  Generated declarations use this to add arena cleanup without
   // changing ordinary programs or same-spelled user functions.
   self.usesRegions = false
+  // Opt-in compact-region code generation.  Validated monomorphic region
+  // callback graphs are re-emitted with distinct headerless class layouts;
+  // ordinary allocations retain the normal object representation.
+  self.compactRegions = false
   self.generateC = false
   self.outputCFilename = ""
   self.indentDepth = 0u32

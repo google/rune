@@ -1,0 +1,5 @@
+func rn_compact_regionTreeCheck(value: u64) -> u64 {
+  return value
+}
+
+println rn_compact_regionTreeCheck(7u64)

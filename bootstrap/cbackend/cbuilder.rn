@@ -21,6 +21,11 @@ use escapestring
 use int2cstring
 use sym
 
+// Compiler-owned C namespace for representation-specialized region clones.
+// Names derive only from source specialization names, so generated C remains
+// reproducible across runs.
+CompactRegionPrefix = "rn_compact_"
+
 relation HashedClass CurrentScope CIdentifier cascade
 
 class CurrentScope(self) {
@@ -225,6 +230,11 @@ class CBuilder(self, tc: types.TypeChecker) {
   self.parallelMapCounter = 0u64
   // Unique names for call-site-specialized withRegion helpers.
   self.withRegionCounter = 0u64
+  // True only while re-emitting a validator-approved monomorphic callback
+  // graph with distinct headerless class types.
+  self.compactRegionEmission = false
+  self.compactRegionGraphEmitting = false
+  self.compactRegionGraphEmitted = false
   self.insertDependencyStack(DependencyStack())
 
   // Re-run the round for the spec currently being emitted.  Nested
@@ -302,9 +312,86 @@ class CBuilder(self, tc: types.TypeChecker) {
     }
   }
 
+  func hasCompactRegionPrefix(self, name: string) -> bool {
+    return name.length() >= CompactRegionPrefix.length() &&
+        name[0u64:CompactRegionPrefix.length()] == CompactRegionPrefix
+  }
+
+  // The compact clone namespace is compiler-owned. C has only one identifier
+  // namespace for a function body: a Rune local or parameter can therefore
+  // shadow a generated compact function, constructor, or method just as a
+  // top-level declaration can collide with it. Reserve the prefix for every
+  // source identifier, not merely declarations.
+  func validateCompactRegionExprNamespace(self, expr: db.Expr) -> bool {
+    if expr.type == db.ExprType.Ident &&
+        self.hasCompactRegionPrefix(expr.val.symVal.name) {
+      self.typechecker.typeErrorOnce(
+          "--compact-regions reserves the generated C prefix '%s'" %
+          CompactRegionPrefix, expr.location)
+      return false
+    }
+    for child in expr.childExprs() {
+      if !self.validateCompactRegionExprNamespace(child) {
+        return false
+      }
+    }
+    return true
+  }
+
+  func validateCompactRegionBlockNamespace(self, block: db.Block) -> bool {
+    for statement in block.statements() {
+      if !isnull(statement.expr) &&
+          !self.validateCompactRegionExprNamespace(statement.expr!) {
+        return false
+      }
+      if !isnull(statement.subBlock) &&
+          !self.validateCompactRegionBlockNamespace(statement.subBlock!) {
+        return false
+      }
+    }
+    return true
+  }
+
+  func validateCompactRegionNamespace(self) -> bool {
+    if !db.getRoot().compactRegions {
+      return true
+    }
+    for fn in self.functions {
+      if self.hasCompactRegionPrefix(fn.sym.name) {
+        self.typechecker.typeErrorOnce(
+            "--compact-regions reserves the generated C prefix '%s'" %
+            CompactRegionPrefix, fn.location)
+        return false
+      }
+      for variable in fn.variables() {
+        if self.hasCompactRegionPrefix(variable.sym.name) {
+          self.typechecker.typeErrorOnce(
+              "--compact-regions reserves the generated C prefix '%s'" %
+              CompactRegionPrefix, variable.location)
+          return false
+        }
+      }
+      if !self.validateCompactRegionBlockNamespace(fn.subBlock) {
+        return false
+      }
+    }
+    for globalName in self.moduleVarNames {
+      if self.hasCompactRegionPrefix(globalName) {
+        self.typechecker.typeErrorOnce(
+            "--compact-regions reserves the generated C prefix '%s'" %
+            CompactRegionPrefix, null(db.Location))
+        return false
+      }
+    }
+    return true
+  }
+
   func build(self, module: db.Function) -> CProgram {
     self.registerFunctions(module)
     self.registerModuleVariables(module)
+    if !self.validateCompactRegionNamespace() {
+      return self.program
+    }
     self.resolveNestedInstantiations(module)
     // Deferred bodies typecheck under their first concrete instantiation
     // BEFORE any emission: statement rewriting (iterator inlining) must
@@ -403,6 +490,15 @@ class CBuilder(self, tc: types.TypeChecker) {
     for index in range(self.mainFinalSyms.length()) {
       self.program.addStatementToMain(self.buildUnref(module.location,
           self.mainFinalSyms[index], self.mainFinalNames[index]))
+    }
+    // Ordinary emission is also the final demand-materialization discovery
+    // pass. It can reveal withRegion calls inside concrete generic bodies, so
+    // validate that complete tail before the compact graph's one-shot clone
+    // pass. Emitting eagerly at the first call could permanently miss a graph
+    // discovered by a later body.
+    self.typechecker.validatePendingWithRegionCalls()
+    if db.getRoot().compactRegions {
+      self.emitCompactRegionGraph()
     }
     return self.program
   }
@@ -627,13 +723,29 @@ class CBuilder(self, tc: types.TypeChecker) {
       tn = self.typechecker.dropPhantomParams(tn)
     }
     if isnull(tn.params) {
-      return tn.name.name
+      result = tn.name.name
+    } else {
+      spec = tn.specializationString()
+      if spec == "" {
+        result = tn.name.name
+      } else {
+        result = "%s_%s" % (tn.name.name, spec)
+      }
     }
-    spec = tn.specializationString()
-    if spec == "" {
-      return tn.name.name
+    if self.compactRegionEmission {
+      info = self.typechecker.lookupClass(tn.name)
+      if isnull(info) || !info.regionEligible {
+        self.typechecker.typeErrorOnce(
+            "internal: compact region emission reached an unapproved class",
+            null(db.Location))
+      }
+      return CompactRegionPrefix + result
     }
-    return "%s_%s" % (tn.name.name, spec)
+    return result
+  }
+
+  func compactFunctionCName(self, fn: db.Function) -> string {
+    return CompactRegionPrefix + fn.sym.name
   }
 
   // The C name to call a class method by.  Monomorphic methods are named
@@ -1102,7 +1214,8 @@ class CBuilder(self, tc: types.TypeChecker) {
                          refWidth: u32 = 0u32, runeName: string = "",
                          classInfo: types.ClassInfo? = null(types.ClassInfo)) -> CDeclaration {
     return CDeclaration(CClassDeclaration(location, name, fields, toStringMethod,
-                                          refWidth, runeName, classInfo))
+                                          refWidth, runeName, classInfo,
+                                          self.compactRegionEmission))
   }
 
   // Create a function definition whose return type is given directly as a C
@@ -1214,7 +1327,7 @@ class CBuilder(self, tc: types.TypeChecker) {
     newsym = Sym.new(name)
     newsym.typedValue = inst.type
     // Ensure that this new specialized symbol is in identifier scope.
-    ctype = self.typeGenerator.genCType(inst.type)
+    ctype = self.genCType(inst.type)
     self.identifierScope.getIdentifier(newsym, ctype, false, false)
     return newsym
   }
@@ -1318,7 +1431,19 @@ class CBuilder(self, tc: types.TypeChecker) {
     // Pin bare class knots against the active emission frame (see
     // pinKnotsForEmission): null-casts and other C-type compositions
     // otherwise print the bare, ambiguous class name.
-    return self.typeGenerator.genCType(self.pinKnotsForEmission(ty!))
+    pinned = self.pinKnotsForEmission(ty!)
+    if self.compactRegionEmission {
+      if self.typechecker.isClassType(pinned) {
+        return CTypeExpr(CPointerType(
+            CTypeExpr(CDefinedType(self.classCName(pinned)))))
+      }
+      if !self.typechecker.isRegionScalar(pinned) {
+        self.typechecker.typeErrorOnce(
+            "internal: compact region emission reached a non-scalar aggregate",
+            null(db.Location))
+      }
+    }
+    return self.typeGenerator.genCType(pinned)
   }
 
   // specializedType is used when generating specific instances of a
@@ -1330,9 +1455,9 @@ class CBuilder(self, tc: types.TypeChecker) {
       assert !isnull(sym.typedValue)
       ty = self.typechecker.resolve(sym.typedValue!)
       sym.typedValue = ty
-      ctype = self.typeGenerator.genCType(ty)
+      ctype = self.genCType(ty)
     } else {
-      ctype = self.typeGenerator.genCType(specializedType!)
+      ctype = self.genCType(specializedType!)
     }
     if isVar && !isnull(ctype) {
       // var parameters pass by pointer; their references emit as (*name).
@@ -1381,7 +1506,7 @@ class CBuilder(self, tc: types.TypeChecker) {
       // was a stub.  Function-pointer parameters get their fnptr type through
       // cParameter; emitting a function name just needs the identifier.
       if ty.type != types.Type.TypeClass.Function {
-        ctype = self.typeGenerator.genCType(ty)
+        ctype = self.genCType(ty)
         if self.typechecker.isClassType(ty) {
           // Anything referencing a class instance needs its struct typedef.
           self.dependencyStack.append(self.classCName(ty) + "_class")
@@ -1393,7 +1518,7 @@ class CBuilder(self, tc: types.TypeChecker) {
         // declares with its fnptr typedef on its FIRST ASSIGNMENT
         // (reads keep the null ctype — a specialized C function
         // name read through cIdentifier must not declare a local).
-        ctype = self.typeGenerator.genCType(ty)
+        ctype = self.genCType(ty)
       }
     }
     id = self.identifierScope.getIdentifier(symbol, ctype, bindingInstance, false)
@@ -1694,7 +1819,7 @@ class CBuilder(self, tc: types.TypeChecker) {
              relevantType: types.Type? = null(types.Type)) -> CExpr {
     ctype = null(CTypeExpr)
     if !isnull(relevantType) {
-      ctype = self.typeGenerator.genCType(relevantType!)
+      ctype = self.genCType(relevantType!)
     }
     typeswitch fn {
       string => {
@@ -1859,6 +1984,95 @@ class CBuilder(self, tc: types.TypeChecker) {
     self.addDeclaration(CDeclaration(CWithRegionDeclaration(location, name,
         contextCType, resultCType)))
     return name
+  }
+
+  // Re-emit every function proven by the transitive region validator under a
+  // distinct C representation.  Stage 1 is deliberately monomorphic: no
+  // typechecker materialization or AST copying happens in this pass.
+  func emitCompactRegionGraph(self) {
+    if self.compactRegionGraphEmitted || self.compactRegionGraphEmitting {
+      return
+    }
+
+    valid = self.typechecker.regionGraphsReady
+    if !valid {
+      self.typechecker.typeErrorOnce(
+          "internal: compact region graph emitted before validation completed",
+          null(db.Location))
+    }
+    for compactFn in self.functions {
+      if compactFn.regionCompactEligible {
+        compactTy = compactFn.typedValue
+        if isnull(compactTy) ||
+            compactTy!.type != types.Type.TypeClass.Function {
+          self.typechecker.typeErrorOnce(
+              "--compact-regions requires a monomorphic validated callback graph",
+              compactFn.location)
+          valid = false
+        }
+      }
+    }
+    if !valid {
+      return
+    }
+
+    self.compactRegionGraphEmitting = true
+    savedCompactMode = self.compactRegionEmission
+    self.compactRegionEmission = true
+
+    // Class declarations and constructors establish every compact pointer
+    // type before methods and top-level helpers are emitted.
+    for compactCtor in self.functions {
+      if compactCtor.regionCompactEligible &&
+          compactCtor.type == db.FuncType.Constructor {
+        compactInfo = self.typechecker.lookupClass(compactCtor.sym)
+        if isnull(compactInfo) || isnull(compactInfo!.selfType) {
+          self.typechecker.typeErrorOnce(
+              "internal: compact region constructor has no concrete class",
+              compactCtor.location)
+        } else {
+          compactCtor.genCConstructorInstance(self, compactInfo!)
+        }
+      }
+    }
+
+    // Emit only methods reached by the approved graph.  In particular, the
+    // ordinary generated destroy/tostring/show family must never see the
+    // headerless representation.
+    for compactMethod in self.functions {
+      if compactMethod.regionCompactEligible &&
+          compactMethod.type == db.FuncType.Plain &&
+          !isnull(compactMethod.parentFunction) &&
+          compactMethod.parentFunction!.type == db.FuncType.Constructor {
+        compactMethod.genCMethodInstance(self, compactMethod.typedValue!)
+      }
+    }
+
+    // Top-level plain callbacks and their direct helpers come last.  Their
+    // bodies name compact constructors/methods through this saved context.
+    for compactPlain in self.functions {
+      if compactPlain.regionCompactEligible &&
+          compactPlain.type == db.FuncType.Plain &&
+          (isnull(compactPlain.parentFunction) ||
+           compactPlain.parentFunction!.type != db.FuncType.Constructor) {
+        compactPlain.genCPlainFunc(self)
+      }
+    }
+
+    // Compact emission is deliberately one-shot. It must not typecheck or
+    // materialize a previously unseen withRegion call after the validated
+    // graph was frozen: the driver's later diagnostic drain could approve
+    // that call, but its compact clone would already be missing. Fail closed
+    // instead of emitting a partially representation-specialized program.
+    if !self.typechecker.regionGraphsReady {
+      self.typechecker.typeErrorOnce(
+          "internal: compact region emission discovered work after graph closure",
+          null(db.Location))
+    }
+
+    self.compactRegionEmission = savedCompactMode
+    self.compactRegionGraphEmitting = false
+    self.compactRegionGraphEmitted = true
   }
 
   func cTuple(self, location: db.Location, type: types.Type?, elements: CExprList) -> CExpr {

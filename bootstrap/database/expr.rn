@@ -3773,12 +3773,39 @@ class Expr(self, type: ExprType, location: Location) {
         wrContextTy = builder.typechecker.resolve(wrContext.typedValue!)
         wrWorkerTy = builder.typechecker.resolve(wrWorker.typedValue!)
         wrResultTy = builder.typechecker.resolve(wrWorkerTy.function.result!)
+        compactWorker = null(Function)
+        if getRoot().compactRegions {
+          wrSampleCall = wrWorker.firstChildExpr
+          if !isnull(wrSampleCall) {
+            wrSampleCallee = wrSampleCall!.firstChildExpr
+            if !isnull(wrSampleCallee) &&
+                wrSampleCallee!.type == ExprType.Ident {
+              compactWorker = builder.typechecker.findPlainFunction(
+                  wrSampleCallee!.val.symVal.name)
+            }
+          }
+          if isnull(compactWorker) ||
+              !compactWorker!.regionCompactEligible {
+            builder.typechecker.typeErrorOnce(
+                "internal: compact withRegion callback was not validator-approved",
+                wrWorker.location)
+          }
+        }
         wrHelper = builder.ensureWithRegionDeclared(self.location, wrContextTy,
             wrResultTy)
         getRoot().usesRegions = true
         wrArgs = c.CExprList()
-        for wrArg in right.childExprs() {
-          wrArgs.appendCExpr(wrArg.genC(builder))
+        if getRoot().compactRegions && !isnull(compactWorker) {
+          builder.noteDependency(builder.compactFunctionCName(compactWorker!))
+          wrArgs.appendCExpr(wrContext.genC(builder))
+          wrArgs.appendCExpr(c.CExpr(c.CIdentifier(
+              Sym.new(builder.compactFunctionCName(compactWorker!)),
+              null(c.CTypeExpr), false, false, false)))
+          wrArgs.appendCExpr(right.indexChildExpr(2).genC(builder))
+        } else {
+          for wrArg in right.childExprs() {
+            wrArgs.appendCExpr(wrArg.genC(builder))
+          }
         }
         return builder.cCall(self.location, wrHelper, c.CExpr(wrArgs),
                              self.typedValue)
@@ -4476,7 +4503,24 @@ class Expr(self, type: ExprType, location: Location) {
       // the constructor name (phantom parameters kept) to match its definition.
       specializedName = builder.classCtorCName(
           builder.typechecker.resolve(self.typedValue!))
+      if builder.compactRegionEmission {
+        builder.noteDependency(specializedName)
+      }
       cfn = builder.cIdentifier(Sym.new(specializedName), false)
+    } else if builder.compactRegionEmission && left.type == ExprType.Ident {
+      compactCallee = builder.typechecker.findPlainFunction(left.val.symVal.name)
+      if !isnull(compactCallee) {
+        if !compactCallee!.regionCompactEligible {
+          builder.typechecker.typeErrorOnce(
+              "internal: compact callback called an unapproved function",
+              self.location)
+        }
+        compactCalleeName = builder.compactFunctionCName(compactCallee!)
+        builder.noteDependency(compactCalleeName)
+        cfn = builder.cIdentifier(Sym.new(compactCalleeName), false)
+      } else {
+        cfn = left.genC(builder)
+      }
     } else {
       cfn = left.genC(builder)
     }

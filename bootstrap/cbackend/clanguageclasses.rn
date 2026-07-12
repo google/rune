@@ -2568,7 +2568,8 @@ relation OneToOne CClassDeclaration CParamList cascade
 // function itself is emitted separately as a CFunctionDeclaration.
 class CClassDeclaration(self, location: db.Location, name: string, fields: CParamList,
                         toStringMethod: string, refWidth: u32, runeName: string = "",
-                        classInfo: types.ClassInfo? = null(types.ClassInfo)) {
+                        classInfo: types.ClassInfo? = null(types.ClassInfo),
+                        compactRegion: bool = false) {
   self.location = location
   self.name = name
   // The Rune class name (unspecialized, e.g. "Foo" not "Foo_u64"), used
@@ -2583,22 +2584,32 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
   // prove eligibility after this declaration object is built but before the
   // final C text is emitted.
   self.classInfo = classInfo
+  self.compactRegion = compactRegion
   self.insertCParamList(fields)
   self.protoEmitted = false
 
   func emit(self, e: CEmitter, proto: bool) {
     e.include("<stdlib.h>")
-    e.include("<stdio.h>")
-    e.needStringWriter()
-    regionEligible = !isnull(self.classInfo) && self.classInfo!.regionEligible
-    if regionEligible {
+    if !self.compactRegion {
+      e.include("<stdio.h>")
+      e.needStringWriter()
+    }
+    validatedRegionEligible = !isnull(self.classInfo) &&
+        self.classInfo!.regionEligible
+    // With compact-region emission enabled, the ordinary representation is
+    // never allocated from a region.  It retains its normal header and pool,
+    // while a distinct declaration below owns the direct region allocator.
+    regionEligible = validatedRegionEligible && !db.getRoot().compactRegions
+    if regionEligible || self.compactRegion {
       e.needRegion()
     }
 
     if proto {
       if !self.protoEmitted {
         e.writeln("typedef struct %s_t %s_t;" % (self.name, self.name))
-        e.writeln("void tostring_%s_t(%s_t *self);" % (self.name, self.name))
+        if !self.compactRegion {
+          e.writeln("void tostring_%s_t(%s_t *self);" % (self.name, self.name))
+        }
         self.protoEmitted = true
       }
       return
@@ -2611,17 +2622,24 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
       e.write("typedef struct %s_t {" % self.name)
     }
     e.indent()
-    // Objects carry a 1-based per-class id, used when casting a reference
-    // to an integer and printed by destructors.
-    e.newline()
-    e.write("uint32_t rn_id;")
-    // Reference count.  calloc zeroes it; a module-level reference refs
-    // it (so an UNSHARED object sits at 1 and is destroyed on overwrite/
-    // exit), while a relation list also refs it (appendChild's `ref
-    // child`), keeping a SHARED object alive.  destroy() does NOT free
-    // (only clears rn_id), so reading refCount after destroy is safe.
-    e.newline()
-    e.write("uint32_t refCount;")
+    if !self.compactRegion {
+      // Objects carry a 1-based per-class id, used when casting a reference
+      // to an integer and printed by destructors.
+      e.newline()
+      e.write("uint32_t rn_id;")
+      // Reference count.  calloc zeroes it; a module-level reference refs
+      // it (so an UNSHARED object sits at 1 and is destroyed on overwrite/
+      // exit), while a relation list also refs it (appendChild's `ref
+      // child`), keeping a SHARED object alive.  destroy() does NOT free
+      // (only clears rn_id), so reading refCount after destroy is safe.
+      e.newline()
+      e.write("uint32_t refCount;")
+    } else if self.cParamList.countCParameters() == 0 {
+      // ISO C has no empty structs. This byte is compiler-owned padding and
+      // is never exposed through the Rune field model.
+      e.newline()
+      e.write("uint8_t rn_compact_nonempty;")
+    }
     for field in self.cParamList.cParameters() {
       e.newline()
       field.emit(e)
@@ -2632,9 +2650,22 @@ class CClassDeclaration(self, location: db.Location, name: string, fields: CPara
     } else {
       e.writecloseln("} %s_t;" % self.name)
     }
-    if regionEligible {
+    if regionEligible || self.compactRegion {
       e.writeln("_Static_assert(_Alignof(%s_t) <= _Alignof(max_align_t)," % self.name)
       e.writeln("               \"Rune region class alignment exceeds max_align_t\");")
+    }
+    if self.compactRegion {
+      // A compact constructor is reachable only through a validated callback
+      // selected by the synchronous region wrapper.  There is deliberately no
+      // heap fallback: accidental use outside an active region fails closed in
+      // rn_region_alloc_zeroed instead of mixing representations.
+      e.write("static %s_t *%s_alloc_obj(void)" % (self.name, self.name))
+      e.writeopenln(" {")
+      e.writeln("return (%s_t *)rn_region_alloc_zeroed(sizeof(%s_t), _Alignof(%s_t));" %
+          (self.name, self.name, self.name))
+      e.writecloseln("}")
+      e.newline()
+      return
     }
     // Per-class object-id FREE-LIST (pool slot ids).  rn_id is a slot
     // taken from the free-list, reused after the object is destroyed —

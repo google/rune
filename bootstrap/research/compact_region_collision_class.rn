@@ -1,0 +1,6 @@
+class rn_compact_RegionNode(self: rn_compact_RegionNode, value: u64) {
+  self.value = value
+}
+
+node = rn_compact_RegionNode(9u64)
+println isnull(node)

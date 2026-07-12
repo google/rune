@@ -424,6 +424,10 @@ class TypeChecker(self) {
   // their enclosing graph is fully typed.  Deferred retypechecks validate a
   // framed tail while their concrete bindings are still active.
   self.pendingWithRegionCalls = arrayof(db.Expr)
+  // True only after the public whole-program drain has completed. Compact
+  // codegen is one-shot and must never run against a partially discovered
+  // callback graph.
+  self.regionGraphsReady = false
   // Var ids currently bound by an ACTIVE instantiate() frame: a
   // pre-existing binding on one of these belongs to an enclosing frame
   // and must be kept; a pre-existing binding on a NON-active var is a
@@ -4054,6 +4058,7 @@ class TypeChecker(self) {
           self.validateParallelMapCall(expr)
         }
         if !isnull(result) && expr.isWithRegionBuiltin {
+          self.regionGraphsReady = false
           self.pendingWithRegionCalls.append(expr!)
         }
         if !isnull(result) && !isnull(callRec.viaExpr) {
@@ -5591,7 +5596,11 @@ class TypeChecker(self) {
       return t.int.width <= 64u32
     }
     if t.type == Type.TypeClass.AnyInt {
-      return true
+      // AnyInt defaults to 64 bits when emitted on its own, but remains
+      // adaptable when unified with a fixed-width integer. It is therefore
+      // not a concrete ABI type: accepting it can build a u64 region wrapper
+      // around a u8 callback, for example.
+      return false
     }
     if t.type == Type.TypeClass.Float {
       return t.float.width == 32u32 || t.float.width == 64u32
@@ -6046,6 +6055,17 @@ class TypeChecker(self) {
       return
     }
     resultTy = self.resolve(workerTy.function.result!)
+    // Unlike a free variable, AnyInt never resolves to the fixed width it
+    // adapts to: codegen merely defaults it to i64/u64. Reject it before
+    // constructing a call-site wrapper whose function-pointer ABI can differ
+    // from the callback's actual fixed-width parameter or result.
+    if contextTy.type == Type.TypeClass.AnyInt ||
+        resultTy.type == Type.TypeClass.AnyInt {
+      self.typeErrorOnce(
+          "withRegion requires concrete scalar context and result types",
+          call.location)
+      return
+    }
     if contextTy.type == Type.TypeClass.Var ||
         contextTy.type == Type.TypeClass.Choice ||
         resultTy.type == Type.TypeClass.Var ||
@@ -6090,6 +6110,12 @@ class TypeChecker(self) {
       for info in candidateClasses {
         info.regionEligible = true
       }
+      // Publish the function proof only after the complete root graph has
+      // succeeded.  Partial DFS state from a rejected graph must never make a
+      // body eligible for representation-specialized C emission.
+      for approvedFunction in visitedFunctions {
+        approvedFunction.regionCompactEligible = true
+      }
     }
   }
 
@@ -6118,6 +6144,7 @@ class TypeChecker(self) {
 
   func validatePendingWithRegionCalls(self) {
     self.validatePendingWithRegionCallsFrom(0u64)
+    self.regionGraphsReady = true
   }
 
   // Find a top-level plain function by name.  Used during desugaring (before

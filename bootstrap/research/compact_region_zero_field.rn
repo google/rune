@@ -1,0 +1,24 @@
+// Header elision must still produce an ISO C object for a fieldless class.
+class EmptyRegionValue(self: EmptyRegionValue, allocationTag: u8) {
+  // This unsafe-for-region method remains available to ordinary objects. It
+  // is not reachable from the validated callback graph and must not be cloned.
+  func ordinaryAnnouncement(self) -> u64 {
+    println "ordinary empty"
+    return 9u64
+  }
+}
+
+func allocateEmptyRegionValue(value: u64) -> u64 {
+  first = EmptyRegionValue(0u8)
+  second = EmptyRegionValue(0u8)
+  if isnull(first) || isnull(second) || first == second {
+    return 0u64
+  }
+  return value !+ 1u64
+}
+
+ordinaryEmpty = EmptyRegionValue(0u8)
+println withRegion(
+    4u64, &allocateEmptyRegionValue(4u64), 0u64)
+println isnull(ordinaryEmpty)
+println ordinaryEmpty.ordinaryAnnouncement()

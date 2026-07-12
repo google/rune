@@ -1,0 +1,5 @@
+func narrowRegionIdentity(value: u8) -> u8 {
+  return value
+}
+
+println withRegion(7, &narrowRegionIdentity(7), 0u64)

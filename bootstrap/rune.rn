@@ -21,6 +21,7 @@ import cbackend as c
 use sym
 
 gccOption = "--gcc"
+compactRegionsOption = "--compact-regions"
 clangCompilerPath = "clang"
 gccCompilerPath = "gcc"
 
@@ -33,6 +34,7 @@ func usage() {
       "    -O|--optimize: Optimized C build (-O3).\n" +
       "    -N|--native: Target the host CPU; disable FP contraction for reproducibility.\n" +
       "    " + gccOption + ":       Compile generated C with gcc instead of clang.\n" +
+      "    " + compactRegionsOption + ": Use headerless objects inside validated regions.\n" +
       "    --parseTree: Print parse trees of parsed files.\n" +
       "    --funcTree:  Print the tree of functions.\n" +
       "    --hir:       Print HIR output.\n" +
@@ -115,6 +117,9 @@ while xArg < argv.length() && argv[xArg][0] == '-' {
     xArg += 1
   } else if argv[xArg] == gccOption {
     useGcc = true
+    xArg += 1
+  } else if argv[xArg] == compactRegionsOption {
+    root.compactRegions = true
     xArg += 1
   } else if argv[xArg] == "-U" || argv[xArg] == "--unsafe" {
     root.unsafeMode = true

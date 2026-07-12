@@ -107,6 +107,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   // same-signature recursion, this flag blocks differing-signature
   // descent into the same frame).
   self.materializeActive = false
+  // Published only after the complete transitive withRegion graph validates.
+  // The C backend may clone this monomorphic body for compact-region use;
+  // ordinary emission always remains available under its original name.
+  self.regionCompactEligible = false
   if !isnull(parent) {
     parent.appendChildFunction(self)
     Ident(parent!, self, sym, location)
@@ -280,6 +284,21 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       }
     } else {
       /******************* Monomorphic function *************************/
+      emittedSym = self.sym
+      if builder.compactRegionEmission {
+        if !self.regionCompactEligible {
+          builder.typechecker.typeErrorOnce(
+              "internal: compact region emission reached an unapproved function",
+              self.location)
+          return
+        }
+        compactName = builder.compactFunctionCName(self)
+        if !isnull(builder.findDeclaration(compactName)) {
+          return
+        }
+        emittedSym = Sym.new(compactName)
+        emittedSym.typedValue = fntype
+      }
       // open new scope - new parameter bindings are added to the scope
       // automatically
       builder.openScope()
@@ -295,9 +314,11 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       // locals (including loop variables) shadow any same-named module
       // variable instead of sharing the module static.
       monoPrevEmittingFn = builder.currentEmittingFn
+      monoPrevEmittingName = builder.currentEmittingName
       self.usesF64x4 = false
       self.usesU8x16 = false
       builder.currentEmittingFn = self
+      builder.currentEmittingName = emittedSym.name
       builder.openBlock(self.subBlock.location)
       for bodyStatement in self.subBlock.statements() {
         bodyStatement.genC(builder)
@@ -307,9 +328,10 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
       monoUsesF64x4 = self.usesF64x4
       monoUsesU8x16 = self.usesU8x16
       builder.currentEmittingFn = monoPrevEmittingFn
+      builder.currentEmittingName = monoPrevEmittingName
       builder.closeFunctionTryContext(savedTryBase)
       builder.closeScope()
-      fundec = builder.cFunDef(self.location, self.sym, paramList, body,
+      fundec = builder.cFunDef(self.location, emittedSym, paramList, body,
           monoUsesF64x4, monoUsesU8x16)
       // The return type appears in the function prototype before the body can
       // call the tuple constructor. Ensure and depend on its typedef directly;
@@ -1090,6 +1112,12 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   // instantiation of a class.  Must be called with the class's type
   // variables instantiated in the typechecker.
   func genCConstructorInstance(self: Function, builder: c.CBuilder, info: types.ClassInfo) {
+    if builder.compactRegionEmission && !self.regionCompactEligible {
+      builder.typechecker.typeErrorOnce(
+          "internal: compact region constructor was not validator-approved",
+          self.location)
+      return
+    }
     if isnull(info.selfType) {
       return
     }
@@ -1267,7 +1295,7 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
     builder.closeDependencyList()
     builder.addDeclaration(fundec)
 
-    if !structAlready {
+    if !structAlready && !builder.compactRegionEmission {
     // A final() destructor is called from generated cleanup code, never
     // from user calls, so emit it per instantiation like toString below.
     for childfunc in self.childFunctions() {
@@ -1483,6 +1511,12 @@ class Function(self, parent: Function?, type: FuncType, sym: Sym,
   // Generate one specialization of a class method.  fnInstType is the
   // method's resolved function type, including the self parameter.
   func genCMethodInstance(self: Function, builder: c.CBuilder, fnInstType0: types.Type) {
+    if builder.compactRegionEmission && !self.regionCompactEligible {
+      builder.typechecker.typeErrorOnce(
+          "internal: compact region method was not validator-approved",
+          self.location)
+      return
+    }
     if fnInstType0.type != types.Type.TypeClass.Function {
       return
     }

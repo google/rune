@@ -1,0 +1,13 @@
+func regionWorker(value: u64) -> u64 {
+  return value !+ 1u64
+}
+
+// Indexing keeps this wrapper structurally deferred until its concrete array
+// instantiation is materialized by the C backend. Frame-local validation must
+// restore whole-graph readiness before compact emission begins.
+func deferredRegion(values) -> u64 {
+  value = values[0u64]
+  return withRegion(value, &regionWorker(value), 0u64)
+}
+
+println deferredRegion([4u64])

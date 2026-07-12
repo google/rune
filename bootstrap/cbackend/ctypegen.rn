@@ -310,7 +310,7 @@ class CTypeGenerator(self, typechecker: types.TypeChecker) {
     }
     def.cElementType = self.genCType(elementType)!
     def.typeName = "%s_array" % def.cElementType.arrayElemName()
-    def.ctype = CTypeExpr(CArrayType(def.cElementType))
+    def.ctype = CTypeExpr(CArrayType(def.cElementType!))
     self.insertCArrayDefinition(def)
     return self.findCArrayDefinition(def)!
   }

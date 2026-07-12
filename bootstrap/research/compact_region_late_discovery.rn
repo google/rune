@@ -1,0 +1,23 @@
+func earlyWorker(value: u64) -> u64 {
+  return value !+ 1u64
+}
+
+func lateWorker(value: u64) -> u64 {
+  return value !+ 2u64
+}
+
+func emitEarly() -> u64 {
+  return withRegion(1u64, &earlyWorker(1u64), 0u64)
+}
+
+func deferredLate(values) -> u64 {
+  value = values[0u64]
+  return withRegion(value, &lateWorker(value), 0u64)
+}
+
+func outer(values) -> u64 {
+  ignored = values[0u64]
+  return emitEarly() !+ deferredLate(values)
+}
+
+println outer([4u64])

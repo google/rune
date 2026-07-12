@@ -1,0 +1,6 @@
+func addOne(value: u64) -> u64 {
+  rn_compact_addOne = value
+  return rn_compact_addOne !+ 1u64
+}
+
+println addOne(6u64)

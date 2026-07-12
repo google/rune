@@ -1171,7 +1171,7 @@ class Statement(self, block: Block, type: StateType, location: Location) {
   func genCSwitch(self, builder: c.CBuilder) {
     assert !isnull(self.expr)
     assert !isnull(self.subBlock)
-    ctype = builder.typeGenerator.genCType(self.expr.typedValue!)
+    ctype = builder.genCType(self.expr.typedValue!)
     tmpSym = Sym.new("switch_value_%u" % self.location.line)
     tmpRef = builder.declareLocal(tmpSym, ctype)
     assign = c.CExpr(c.CBinaryOperator(self.location, c.CBinaryOperator.Type.Assign,

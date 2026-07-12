@@ -75,6 +75,9 @@ fi
 if ! bash bootstrap/research/region_runtime_sanitizer.sh >/dev/null 2>&1; then
   fail=$((fail+1)); failed="$failed region_runtime_sanitizer"
 fi
+if ! bash bootstrap/research/compact_region_codegen.sh >/dev/null 2>&1; then
+  fail=$((fail+1)); failed="$failed compact_region_codegen"
+fi
 echo "PASS=$pass FAIL=$fail"
 printf 'FAILED:'
 for f in $(echo $failed | tr ' ' '\n' | sort); do printf ' %s' "$f"; done

@@ -98,7 +98,7 @@ now fixed and gf2 matches the golden exactly (suite 198/205):
   are hoisted into temporaries before the shared writer is reset, so a
   call whose body prints no longer clobbers the enclosing line.
 
-## 3. `withRegion` stage 1 — intentionally conservative
+## 3. `withRegion` and `--compact-regions` stage 1 — intentionally conservative
 
 The lexical region builtin accepts concrete by-value scalar context/results
 (integers through 64 bits, f32/f64, bool, and enums) and a
@@ -106,7 +106,9 @@ direct top-level callback. Its complete reachable callback graph must
 currently be monomorphic. Generic callback ASTs share type slots across C
 specializations, so accepting them would require specialization-keyed effect
 validation and ABI recovery; stage 1 rejects them explicitly instead of
-guessing from the first materialization.
+guessing from the first materialization. Adaptable `AnyInt` values are also
+rejected until constrained to a fixed width; their default 64-bit C lowering
+is not a concrete callback ABI.
 
 Region-local objects are likewise limited to monomorphic plain classes with
 the same scalar/plain-class fields and no relations, final/destroy behavior, explicit
@@ -114,6 +116,27 @@ reference width, user operators, or custom `toString`. These are safety
 boundaries, not benchmark recognizers. Nested regions and validated regions
 inside scalar `parallelMap` callbacks are supported; `parallelMap` inside an
 active region is rejected.
+
+`--compact-regions` is a separate, default-off representation option layered
+on this validator. When enabled, the compiler clones each approved monomorphic
+callback graph and its reachable classes into a compiler-owned C namespace.
+Only those clones use headerless, region-only allocation. Ordinary calls and
+ordinary instances of the same source class retain the normal class pool,
+object identity, `rn_id`, and reference count. Without the option, validated
+regions continue to use the ordinary headerful representation.
+
+The compact form removes the two 32-bit object-header fields. Exact `sizeof`
+still depends on field alignment: the binary-trees node is proven by static
+assertions to shrink from 24 to 16 bytes. A fieldless ordinary class is 8
+bytes; its compact ISO C representation contains one compiler-owned dummy byte
+rather than relying on a zero-sized-struct extension.
+
+This trades lower arena memory traffic and less initialization for duplicated
+generated types/functions and potentially larger code. It remains default-off
+while the proof boundary is monomorphic and the representation is
+experimental. Enabling it also reserves source identifiers beginning with
+`rn_compact_`; collisions in functions, classes, globals, parameters, fields,
+or locals are rejected rather than risking C-level shadowing.
 
 ## Not limitations (open fix work, tracked in HANDOFF.md)
 

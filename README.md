@@ -201,16 +201,26 @@ would be 64 bits on a 64-bit machine. In Rune, only the string references are
 cache** during the traversal, improving memory load times, while simultaneously
 improving cache hit rates.
 
-Rune's `binary_trees.rn` currently beats the committed naive C++ oracle. A
-comparison with the fastest published [Benchmark
-Games](https://benchmarksgame-team.pages.debian.net/benchmarksgame/index.html)
-entry has not yet been validated locally. Rune is not yet multi-threaded.
-One relevant published C++ technique uses
-`std::pmr::monotonic_buffer_resource` from the `<memory_resource>` library.
-Not only is Rune's SoA memory layout faster, but its solution is more generic:
-we can create/destroy Node objects arbitrarily, unlike the C++ benchmark based
-on `std::pmr::monotonic_buffer_resource`. When completed, we expect Rune to win most memory-intensive
-benchmarks.
+The self-hosted compiler supports validated lexical regions through
+`withRegion(context, &callback(context), initialBytes)`. Region allocation is
+general compiler/runtime infrastructure, not a binary-trees special case.
+Rune also has bounded scalar `parallelMap`; it does not yet expose general
+shared-memory threading.
+
+Passing `--compact-regions` enables an experimental representation
+specialization for validator-approved region callback graphs. The compiler
+emits distinct internal callback, method, constructor, and class clones whose
+objects omit the ordinary `rn_id` and reference-count header. A binary-trees
+`Node` containing two pointers is therefore 16 bytes instead of 24. The same
+source class used outside the validated graph remains an ordinary headerful
+pool object.
+
+The option is off by default. It reduces region-object memory and header work,
+but duplicates generated types and functions, can increase code size, and
+currently accepts only the conservative subset documented in the
+[bootstrap compiler limitations](bootstrap/research/KNOWN_LIMITATIONS.md).
+See the [benchmark results](benchmarks/results.md) for correctness evidence and
+measurement status.
 
 # Installation
 

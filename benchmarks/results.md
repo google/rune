@@ -14,7 +14,7 @@ they do not reproduce published multicore elapsed times.
 
 | Benchmark | Fastest-published local comparator | Current evidence |
 |---|---|---|
-| binary-trees | C++ g++ #7 / TBB | Exact N=10/N=21; GCC region Rune is **1.344x** slower on one core |
+| binary-trees | C++ g++ #7 / TBB | Exact N=10/N=21; opt-in compact GCC Rune is **1.104x** slower on one core |
 | fannkuch-redux | gcc #6 `-t 1` | Exact official N=12; stable paired Rune loss **1.026x** |
 | mandelbrot | g++ #4 one-worker attribution | Exact N=16000; paired parity/slight Rune win **0.997x** |
 | spectral-norm | gcc #6, `OMP_NUM_THREADS=1` | Exact N=5500; stable Rune win **0.786x** |
@@ -1825,6 +1825,88 @@ CPU spikes correctly aborted it; no diagnostic number is substituted. The
 largest justified next compiler feature is an opt-in, validator-proven compact
 region-only representation. It must use a distinct internal layout/call graph
 while ordinary objects of the same source class retain their full headers.
+
+## Stage 3 opt-in compact region representations
+
+The bootstrap compiler now accepts `--compact-regions`, default off. After
+ordinary code generation and demand materialization reach a fixed point, the
+region validator proves each complete monomorphic callback graph and the C
+backend emits a distinct compact graph. Compact objects omit `rn_id` and
+`refCount` and allocate only from the active lexical region; ordinary objects
+of the same Rune class remain headerful class-pool objects. This is a
+whole-graph representation specialization, not a benchmark-name or runtime
+shape check.
+
+For binary-trees, compile-time layout assertions prove that the two-pointer
+`Node` shrinks from 24 bytes to 16. A separate fieldless-class canary proves 8
+bytes ordinary versus a standards-compliant 1-byte compact object. The option
+saves eight bytes and the associated header work per eligible tree node, at
+the cost of emitting both ordinary and compact types/functions when both
+representations are used.
+
+The focused gate covers same-source ordinary/compact coexistence, recursive
+constructors/functions/methods, nested regions, a region inside `parallelMap`,
+fieldless classes, Clang and GCC C11 `-pedantic-errors`, ASan/UBSan, namespace
+collisions, deferred validation readiness, and a late callback graph discovered
+during generic materialization. Flag-off generated C remains byte-identical.
+The focused script and complete bootstrap gate pass; the latter reports
+`PASS=210 FAIL=0`.
+
+The frozen checked `-O -N --compact-regions` binary-trees candidate was
+generated from benchmark source SHA-256
+`73e20e96c8309cdd4f376458a6d272001e12a1381c91aa666df3384c2394ad43`
+by compiler executable SHA-256
+`6ae73cee1d7357efa3ef35d9857b783026bc030e1a8fa1998be14dba5cdf7fe0`.
+Its generated C SHA-256 is
+`e0e195917df61d4c28bf47b9f99f5cd7e6bf21571b282e61200abdeb55b386a9`
+and executable SHA-256 is
+`972c04b9b9a26032a4982fadf3e67c641a6115e36d93eafd6eabb5b71b5ce7fa`.
+The N=10 output matches the committed golden at SHA-256
+`b7f92c56b5d8aeb0a4d698842d1d87a57b4909865c3c84e5e10313e16663c3cb`;
+the N=21 output matches the validated leader-aligned output at SHA-256
+`341de11a51feab3d8122b4b5d6a68b038a2d14434aa9bc2372f39300bf5f48e1`.
+The focused script SHA-256 is
+`977908feb6cfb5e5c5f55b3d0c3cf482092832f4b98332323111b29aafa69c9d`.
+After the frozen timing build, an adversarial review added an `AnyInt` callback
+ABI rejection, a post-clone graph-closure assertion, an independent
+pre-feature flag-off C hash, and a two-class cross-reference/prototype canary.
+The resulting compiler executable SHA-256 is
+`72f5705ef3b591f3e115bf3b7425a81bf9b0d1fa86ee53b51f32b6053970a73b`;
+it regenerates both measured compact and full-header unsafe C files
+byte-for-byte, so the frozen executable timings remain directly applicable.
+
+Each row below is an independent strict CPU-0 series with one warmup per
+member and ten alternating pairs. The same load and per-CPU fail-closed gates
+described above apply. Ratios shown are ratios of member medians; the paired
+ratio median and pair wins are included separately so no cross-series timing
+is substituted. Full-header, leader, and backend rows use `-U`: N=21 depths,
+iteration counts, and checksums are bounded, and exact checked/unsafe outputs
+are identical. The explicitly named row isolates the cost of retaining
+fixed-width overflow checks.
+
+| Binary-trees N=21 comparison | Left median | Right median | Left/right | Paired evidence |
+|---|---:|---:|---:|---|
+| compact GCC Rune / full-header GCC Rune | 1.2990 | 1.7265 | 0.7524x | 0.7497x median; compact won 10/10 |
+| compact Clang Rune / full-header Clang Rune | 1.5015 | 2.1165 | 0.7094x | 0.7067x median; compact won 10/10 |
+| compact GCC Rune / constrained g++ #7 | 1.3295 | 1.2045 | 1.1038x | 1.0969x median; leader won 10/10 |
+| compact checked Clang Rune / compact unsafe Clang Rune | 1.8120 | 1.4960 | 1.2112x | 1.2047x median; unsafe won 10/10 |
+
+The compact representation therefore lowers Rune elapsed time by 24.8% with
+GCC and 29.1% with Clang in the same-backend comparisons, and reduces the
+constrained-leader gap from 1.344x to about 1.10x. The TSV SHA-256 values are
+`01fb332c721d137b14e642598ae2223706cf7a6e20754bac3dd716fdb5c38fe2`
+for GCC compact/full,
+`c7b1f450085faa03bbc703a296826298012083b47cc4a3a2a0b13abfd3b032f9`
+for Clang compact/full, and
+`299c0bdf049f43e0494d7a1f21c32a79e56897c65b4031ea6f9c8f987a4f61bd`
+for compact/leader. The checked/unsafe TSV SHA-256 is
+`7ce7e226780900eaff7c3495844b341b495a87876280338e7563987b777997a3`;
+checked overflow handling costs 21.1% by ratio of medians in compact mode.
+The frozen provenance, manifest, exact build commands, outputs, and no-build
+timing harness are under
+`/tmp/rune-bench/binary-trees-compact/final-6ae73cee-73e20e96/`;
+the manifest SHA-256 is
+`fce46df51b31519c58d45ea69f3b7a91efe499c2f4ee20630ffd02a4191b07de`.
 
 ## Historical fixes retained in the current source
 

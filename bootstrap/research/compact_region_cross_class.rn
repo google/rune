@@ -1,0 +1,63 @@
+// Compact-region ABI canary: two distinct classes remain type-distinct while
+// class references cross fields, top-level helpers, and method boundaries.
+class CompactLeaf(self: CompactLeaf, allocationTag: u8) {
+  self.value = 0u64
+
+  func read(self) -> u64 {
+    return self.value
+  }
+
+  func select(self, other: CompactLeaf) -> CompactLeaf {
+    // Pin the otherwise bare nominal parameter/result knot to this concrete
+    // constructor specialization; the branch is never executed.
+    if false {
+      return CompactLeaf(0u8)
+    }
+    return other
+  }
+}
+
+class CompactHolder(self: CompactHolder, allocationTag: u8) {
+  self.leaf = CompactLeaf(0u8)
+
+  func replace(self, other: CompactLeaf) -> CompactLeaf {
+    // See CompactLeaf.select: this keeps the canary monomorphic while still
+    // exercising a class-reference method ABI.
+    if false {
+      return CompactLeaf(0u8)
+    }
+    self.leaf = other
+    return self.leaf
+  }
+
+  func readFrom(self, other: CompactLeaf) -> u64 {
+    // Pin the class-reference parameter without changing runtime behavior.
+    if false {
+      other = CompactLeaf(0u8)
+    }
+    return other.read()
+  }
+}
+
+func passCompactLeaf(leaf: CompactLeaf) -> CompactLeaf {
+  // Ground the otherwise bare class knot without changing runtime behavior.
+  if false {
+    return CompactLeaf(0u8)
+  }
+  return leaf
+}
+
+func crossClassRegionWorker(value: u64) -> u64 {
+  first = CompactLeaf(0u8)
+  first.value = value
+  holder = CompactHolder(0u8)
+  holder.leaf = first
+  second = CompactLeaf(0u8)
+  second.value = value !+ 1u64
+  selected = holder.replace(passCompactLeaf(second))
+  echoed = first.select(selected)
+  return holder.readFrom(echoed) !+ holder.leaf.read()
+}
+
+println withRegion(
+    4u64, &crossClassRegionWorker(4u64), 0u64)

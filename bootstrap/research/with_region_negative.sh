@@ -70,6 +70,8 @@ check_rejected destroy_behavior \
   "withRegion cannot allocate class 'ManagedRegionNode' with destroy behavior"
 check_rejected wide_boundary \
   "withRegion stage 1 permits only scalar context and result types"
+check_rejected anyint_boundary \
+  "withRegion requires concrete scalar context and result types"
 check_rejected wide_field \
   "withRegion class 'WideRegionNode' fields must be scalar or region-local classes"
 check_rejected show "withRegion callback cannot call 'show'"

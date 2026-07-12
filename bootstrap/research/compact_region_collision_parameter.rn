@@ -1,0 +1,9 @@
+func helper(value: u64) -> u64 {
+  return value
+}
+
+func worker(rn_compact_helper: u64) -> u64 {
+  return helper(rn_compact_helper)
+}
+
+println withRegion(7u64, &worker(7u64), 0u64)
