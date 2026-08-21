@@ -94,11 +94,19 @@ static int deRead(char *buf, int maxSize) {
       if (c == 0xE2) {
         *p++ = c;
         numChars++;
-        c = getc(deFile);
+        c = deInputString[deInputStringPos++];
+        if (c == '\0') {
+          c = EOF;
+          --deInputStringPos;
+        }
         if (c == 0x80) {
           *p++ = c;
           numChars++;
-          c = getc(deFile);
+          c = deInputString[deInputStringPos++];
+          if (c == '\0') {
+            c = EOF;
+            --deInputStringPos;
+          }
           if ((c >= 0xAA && c <= 0xAE) || c == 0x8B) {
             deerror("Invalid control character");
           }
@@ -106,7 +114,11 @@ static int deRead(char *buf, int maxSize) {
         if (c == 0x81) {
           *p++ = c;
           numChars++;
-          c = getc(deFile);
+          c = deInputString[deInputStringPos++];
+          if (c == '\0') {
+            c = EOF;
+            --deInputStringPos;
+          }
           if (c >= 0xA6 && c <= 0xA9) {
             deerror("Invalid control character");
           }
