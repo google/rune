@@ -5,6 +5,15 @@ on:
     branches: [main]
   pull_request:
 
+# The workflow only builds and runs tests; it never needs write access.
+permissions:
+  contents: read
+
+# Cancel superseded runs for the same branch or pull request.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-test:
     name: ${{ matrix.os }}
@@ -17,9 +26,10 @@ jobs:
     steps:
       # The Makefile expects CTTK and rune to be sibling directories, so check
       # out into a subdirectory of the workspace.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           path: rune
+          persist-credentials: false
 
       - name: Install system dependencies
         run: |
