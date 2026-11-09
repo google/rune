@@ -1,0 +1,8 @@
+.git
+obj
+lib
+rune
+*.ll
+*.o
+*.a
+*.result

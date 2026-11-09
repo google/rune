@@ -475,14 +475,14 @@ static void doubleToString(runtime_array *array, double val) {
 
 // Forward declaration for recursion.
 static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel,
-    const uint8_t *p, const uint8_t *end, va_list ap);
+    const uint8_t *p, const uint8_t *end, va_list *ap);
 
 // Varargs wrapper for appendFormattedElement.
 static const uint8_t *appendFormattedArg(runtime_array *array, bool topLevel,
     const uint8_t *p, const uint8_t *end, ...) {
   va_list ap;
   va_start(ap, end);
-  const uint8_t *result = appendFormattedElement(array, topLevel, p, end, ap);
+  const uint8_t *result = appendFormattedElement(array, topLevel, p, end, &ap);
   va_end(ap);
   return result;
 }
@@ -715,11 +715,11 @@ static uint64_t extendToUpperBits(uint64_t value, bool isSigned, uint32_t width)
 // format specifier, e.g. s for string.  Consume the entire format specifier and
 // return a pointer to the character after the specifier.
 static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel,
-    const uint8_t *p, const uint8_t *end, va_list ap) {
+    const uint8_t *p, const uint8_t *end, va_list *ap) {
   uint8_t c = *p++;
   if (c == 's') {
     uint8_t quote = '"';
-    runtime_array *string = va_arg(ap, runtime_array *);
+    runtime_array *string = va_arg(*ap, runtime_array *);
     if (!topLevel) {
       runtime_appendArrayElement(array, &quote, sizeof(uint8_t), false, false);
     }
@@ -733,7 +733,7 @@ static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel
     // We can't print secrets, so this is a bigint based on size.
     if (width > sizeof(uint64_t) * 8) {
       runtime_array buf = runtime_makeEmptyArray();
-      runtime_array *bigint = va_arg(ap, runtime_array *);
+      runtime_array *bigint = va_arg(*ap, runtime_array *);
       runtime_bigintToString(&buf, bigint, c == 'x' ? 16 : 10);
       runtime_concatArrays(array, &buf, sizeof(uint8_t), false);
       runtime_freeArray(&buf);
@@ -742,9 +742,9 @@ static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel
       runtime_array buf = runtime_makeEmptyArray();
       uint64_t value;
       if (width > sizeof(uint32_t) * 8) {
-        value = va_arg(ap, uint64_t);
+        value = va_arg(*ap, uint64_t);
       } else {
-        value = va_arg(ap, uint32_t);
+        value = va_arg(*ap, uint32_t);
       }
       value = extendToUpperBits(value, c == 'i', width);
       if (width < sizeof(uint64_t) * 8 && isSigned &&
@@ -771,19 +771,19 @@ static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel
         // Suppress the warning.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wvarargs"
-        value = va_arg(ap, float);
+        value = va_arg(*ap, float);
 #pragma clang diagnostic pop
       } else {
         // We pass floats as uint32_t when called from appendFormattedArg.
-        uint32_t floatVal = va_arg(ap, uint32_t);
+        uint32_t floatVal = va_arg(*ap, uint32_t);
         value = *(float*)&floatVal;
       }
     } else if (width == 64) {
       if (topLevel) {
-        value = va_arg(ap, double);
+        value = va_arg(*ap, double);
       } else {
         // We pass doubles as uint64_t when called from appendFormattedArg.
-        uint64_t floatVal = va_arg(ap, uint64_t);
+        uint64_t floatVal = va_arg(*ap, uint64_t);
         value = *(double*)&floatVal;
       }
     } else {
@@ -800,20 +800,20 @@ static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel
       }
     }
   } else if (c == 'b') {
-    bool boolVal = va_arg(ap, int);
+    bool boolVal = va_arg(*ap, int);
     char *boolText = boolVal ? "true" : "false";
     uint64_t numElements = boolVal ? 4 : 5;
     runtime_array string = {(uint64_t *)boolText, numElements};
     runtime_concatArrays(array, &string, sizeof(uint8_t), false);
   } else if (c == '[') {
     runtime_array buf = runtime_makeEmptyArray();
-    runtime_array *arrayArg = va_arg(ap, runtime_array *);
+    runtime_array *arrayArg = va_arg(*ap, runtime_array *);
     p = printArray(&buf, p, end, arrayArg);
     runtime_concatArrays(array, &buf, sizeof(uint8_t), false);
     runtime_freeArray(&buf);
   } else if (c == '(') {
     runtime_array buf = runtime_makeEmptyArray();
-    uint8_t *tuplePtr = va_arg(ap, uint8_t *);
+    uint8_t *tuplePtr = va_arg(*ap, uint8_t *);
     p = printTuple(&buf, p, end, tuplePtr);
     runtime_concatArrays(array, &buf, sizeof(uint8_t), false);
     runtime_freeArray(&buf);
@@ -842,6 +842,14 @@ void runtime_vsprintf(runtime_array *array, const runtime_array *format, va_list
   if (array->numElements != 0) {
     runtime_freeArray(array);
   }
+  // Work on a local copy of the va_list.  appendFormattedElement advances the
+  // list through a pointer so that the position is shared across calls; this
+  // is required on ABIs where va_list is a struct passed by value (e.g.
+  // AArch64).  We cannot simply pass &ap: on x86_64 va_list is an array type
+  // and a va_list parameter has decayed to a pointer, so &ap would have the
+  // wrong type.  A local va_list has the correct type on every ABI.
+  va_list args;
+  va_copy(args, ap);
   const uint8_t *p = (const uint8_t*)format->data;
   const uint8_t *end = p + format->numElements;
   while (p != end) {
@@ -874,11 +882,12 @@ void runtime_vsprintf(runtime_array *array, const runtime_array *format, va_list
       }
       runtime_appendArrayElement(array, &c, sizeof(uint8_t), false, false);
     } else if (c == '%') {
-      p = appendFormattedElement(array, true, p, end, ap);
+      p = appendFormattedElement(array, true, p, end, &args);
     } else {
       runtime_appendArrayElement(array, &c, sizeof(uint8_t), false, false);
     }
   }
+  va_end(args);
 }
 
 // Like sprintf, but with Rune's data types.
