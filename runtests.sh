@@ -34,9 +34,9 @@ for outFile in tests/*.stdout; do
   else
     ./rune "$args" "$test" && "./$executable"  > "$resFile"
   fi
-  sed 's/\r$//' -i "$outFile"
-  sed 's/\r$//' -i "$resFile"
-  if cmp -s "$outFile" "$resFile"; then
+  # Compare ignoring Windows line endings.  Avoid "sed -i", whose syntax
+  # differs between GNU and BSD sed.
+  if cmp -s <(sed 's/\r$//' "$outFile") <(sed 's/\r$//' "$resFile"); then
     echo "$test passed"
     numPassed=$((numPassed + 1))
   else
@@ -62,3 +62,7 @@ done
 
 echo "Passed: $numPassed"
 echo "Failed: $numFailed"
+
+if [ "$numFailed" -ne 0 ]; then
+  exit 1
+fi

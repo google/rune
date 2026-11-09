@@ -18,6 +18,9 @@
 #include <ctype.h>
 #include <math.h>
 #include <setjmp.h>
+#ifdef __APPLE__
+#include <AvailabilityMacros.h>  // For __MAC_OS_X_VERSION_MIN_REQUIRED.
+#endif
 
 #define LL_TMPVARS_STRING ".tmpvars."
 
@@ -4604,8 +4607,31 @@ static void generateBlockAssemblyCode(deBlock block, deSignature signature) {
 
 // Print header info.  Declare all the Rune runtime functions.
 static void printHeader(void) {
+  // The triple and data layout are those clang itself emits for the host the
+  // Rune compiler was built on.  Clang overrides them (with a warning) if they
+  // do not match the host it is run on, so these only need to be right for the
+  // common case.
 #ifdef _WIN32
   char *triple = "target triple = \"x86_64-w64-windows-gnu\"";
+  char *datalayout = "target datalayout = \"e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128\"";
+#elif defined(__APPLE__)
+  // Clang's default triple on macOS includes the OS version, e.g.
+  // arm64-apple-macosx15.0.0, and warns if the module's triple differs.  Use
+  // the deployment target this compiler was built for, which defaults to the
+  // host OS version.
+  uint32 macosVersion = __MAC_OS_X_VERSION_MIN_REQUIRED;
+#ifdef __aarch64__
+  char *arch = "arm64";
+  char *datalayout = "target datalayout = \"e-m:o-i64:64-i128:128-n32:64-S128\"";
+#else
+  char *arch = "x86_64";
+  char *datalayout = "target datalayout = \"e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128\"";
+#endif
+  char *triple = utSprintf("target triple = \"%s-apple-macosx%u.%u.0\"", arch,
+      macosVersion / 10000, (macosVersion / 100) % 100);
+#elif defined(__aarch64__)
+  char *triple = "target triple = \"aarch64-unknown-linux-gnu\"";
+  char *datalayout = "target datalayout = \"e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128\"";
 #else
 #ifdef MAKEFILE_BUILD
   // This is generated on my workstation by clang.
@@ -4614,13 +4640,14 @@ static void printHeader(void) {
   // This is expected when using Blaze.
   char *triple = "target triple = \"x86_64-grtev4-linux-gnu\"";
 #endif
+  char *datalayout = "target datalayout = \"e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128\"";
 #endif
   fprintf(llAsmFile, "; ModuleID = '%s'\n", llModuleName);
   fprintf(llAsmFile,
-      "target datalayout = \"e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128\"\n"
+      "%s\n"
       "%s\n\n"
       "%%struct.runtime_array = type {i64*, i64}\n",
-      triple);
+      datalayout, triple);
   fputs("%struct.runtime_bool = type { i32 }\n", llAsmFile);
   fputs("%struct.__jmp_buf_tag = type { [8 x i64], i32, %struct.__sigset_t }\n", llAsmFile);
   fputs("%struct.__sigset_t = type { [16 x i64] }\n", llAsmFile);

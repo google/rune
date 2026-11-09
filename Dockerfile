@@ -1,4 +1,4 @@
-FROM ubuntu:23.04
+FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
     LC_ALL=C.UTF-8 LANG=C.UTF-8 LANGUAGE=C.UTF-8
@@ -11,32 +11,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     bison \
     build-essential \
     ca-certificates \
-    clang-14 \
+    clang \
     flex \
     git \
     libgmp-dev \
-    && update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 100 \
-    && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 100
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /tmp
 
 # Build and install DataDraw
-RUN git clone https://github.com/waywardgeek/datadraw.git \
+RUN git clone --depth 1 https://github.com/waywardgeek/datadraw.git \
     && cd datadraw \
     && ./autogen.sh \
     && ./configure \
     && make \
     && make install
 
-# Build and install Rune
-RUN git clone https://github.com/google/rune.git \
-    && git clone https://github.com/pornin/CTTK.git \
-    && cp CTTK/inc/cttk.h CTTK \
-    && cd rune \
+# Fetch CTTK.  The Rune Makefile expects it in ../CTTK relative to the rune
+# source directory.
+RUN git clone --depth 1 https://github.com/pornin/CTTK.git \
+    && cp CTTK/inc/cttk.h CTTK
+
+# Build, test, and install Rune from this checkout.  Run `docker build .` from
+# the root of the repository.
+COPY . /tmp/rune
+RUN cd rune \
     && make \
-    # Some of these tests are expected to fail, that's OK
-    && ./runtests.sh \
-    # Will install under /usr/local/rune
+    # tests/getenv_test.rn expects USER to be set, which it is not in Docker.
+    && USER=root ./runtests.sh \
+    # Will install under /usr/local
     && make install
 
 # Test that rune is working

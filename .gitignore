@@ -34,3 +34,6 @@
 #/crypto_class/
 #!/crypto_class/*.rn
 #!/crypto_class/*.stdout
+
+# macOS debug symbol bundles produced by clang -g
+*.dSYM/
