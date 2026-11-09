@@ -62,3 +62,7 @@ done
 
 echo "Passed: $numPassed"
 echo "Failed: $numFailed"
+
+if [ "$numFailed" -ne 0 ]; then
+  exit 1
+fi

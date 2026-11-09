@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # x86_64 and arm64 Linux.
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    steps:
+      # The Makefile expects CTTK and rune to be sibling directories, so check
+      # out into a subdirectory of the workspace.
+      - uses: actions/checkout@v4
+        with:
+          path: rune
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            automake autotools-dev bison build-essential clang flex libgmp-dev
+
+      - name: Build and install DataDraw
+        run: |
+          git clone --depth 1 https://github.com/waywardgeek/datadraw.git
+          cd datadraw
+          ./autogen.sh
+          ./configure
+          make -j"$(nproc)"
+          sudo make install
+
+      - name: Fetch CTTK
+        run: |
+          git clone --depth 1 https://github.com/pornin/CTTK.git
+          cp CTTK/inc/cttk.h CTTK
+
+      - name: Build Rune
+        working-directory: rune
+        run: make -j"$(nproc)" rune
+
+      - name: Run tests
+        working-directory: rune
+        run: ./runtests.sh

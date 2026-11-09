@@ -2,6 +2,8 @@
 
 _A faster, safer, and more productive systems programming language_
 
+[![CI](https://github.com/google/rune/actions/workflows/ci.yml/badge.svg)](https://github.com/google/rune/actions/workflows/ci.yml)
+
 This is not an officially supported Google product.
 
 **NOTE: Rune is an unfinished language. Feel free to kick tires and evaluate the
@@ -220,13 +222,13 @@ You'll need 6 dependencies installed to compile Rune:
 -   Bison (parser generator)
 -   Flex (lexer generator)
 -   GNU multi-precision package gmp
--   Clang version 10
+-   Clang (a recent version; 14, 16, and 18 are known to work)
 -   Datadraw, an SoA data-structure generator for C
 -   CTTK, a constant-time big integer arithmetic library
     The first four can be installed with one command:
 
 ```sh
-$ sudo apt-get install bison flex libgmp-dev clang clang-14
+$ sudo apt-get install bison flex libgmp-dev clang
 ```
 
 Installing Datadraw requires cloning [the source from
@@ -262,7 +264,8 @@ If `make` succeeds, test the Rune compiler in the rune directory with:
 $ ./runtests.sh
 ```
 
-Some tests are currently expected to fail, but most should pass. To install
+All tests are expected to pass on x86_64 and arm64 Linux; both are checked
+by [CI](https://github.com/google/rune/actions/workflows/ci.yml). To install
 rune under /usr/local/rune:
 
 ```sh
@@ -281,6 +284,16 @@ You can debug your binary executable with gdb:
 
 ```sh
 $ gdb ./hello
+```
+
+## Using Docker
+
+If you would rather not install the dependencies, the included `Dockerfile`
+builds DataDraw, CTTK, and Rune from your checkout and runs the test suite:
+
+```sh
+$ docker build -t rune .
+$ docker run --rm -it rune
 ```
 
 TODO: add instructions on how to debug the compiler itself, especially the datadraw debug functionality.
