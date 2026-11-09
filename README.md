@@ -264,9 +264,9 @@ If `make` succeeds, test the Rune compiler in the rune directory with:
 $ ./runtests.sh
 ```
 
-All tests are expected to pass on x86_64 and arm64 Linux; both are checked
-by [CI](https://github.com/google/rune/actions/workflows/ci.yml). To install
-rune under /usr/local/rune:
+All tests are expected to pass on x86_64 Linux, arm64 Linux, and macOS; all
+three are checked by [CI](https://github.com/google/rune/actions/workflows/ci.yml).
+To install rune under /usr/local/rune:
 
 ```sh
 $ sudo make install
@@ -284,6 +284,40 @@ You can debug your binary executable with gdb:
 
 ```sh
 $ gdb ./hello
+```
+
+## Building on macOS
+
+Rune builds natively on macOS, including Apple Silicon. Install the
+dependencies with Homebrew. Apple's bundled bison (2.3) is too old, so the
+Makefile uses Homebrew's bison automatically.
+
+```sh
+$ brew install bison flex gmp automake autoconf libtool
+```
+
+Build DataDraw into the Homebrew prefix so the Rune Makefile can find its
+headers and libraries without `sudo`:
+
+```sh
+$ git clone https://github.com/waywardgeek/datadraw.git
+$ cd datadraw
+$ export PATH="$(brew --prefix bison)/bin:$PATH"
+$ ./autogen.sh
+$ ./configure --prefix="$(brew --prefix)"
+$ make && make install
+$ cd ..
+```
+
+Then fetch CTTK and build Rune exactly as on Linux:
+
+```sh
+$ git clone https://github.com/google/rune.git
+$ git clone https://github.com/pornin/CTTK.git
+$ cp CTTK/inc/cttk.h CTTK
+$ cd rune
+$ make
+$ ./runtests.sh
 ```
 
 ## Using Docker

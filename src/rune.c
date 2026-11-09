@@ -16,12 +16,16 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 // Hack to enable readlink in unistd.h.
 #define __USE_XOPEN2K 1
 #include <unistd.h>
 
 #ifdef _WIN32
 #include <windows.h>
+#endif
+#ifdef __APPLE__
+#include <mach-o/dyld.h>  // For _NSGetExecutablePath.
 #endif
 
 #define DE_MAX_PATH (1 << 16)
@@ -50,6 +54,19 @@ void deStart(char *fileName) {
   deExeName = utNewA(char, DE_MAX_PATH);
 #ifdef _WIN32
   GetModuleFileNameA(NULL, deExeName, DE_MAX_PATH);
+#elif defined(__APPLE__)
+  uint32_t size = DE_MAX_PATH;
+  if (_NSGetExecutablePath(deExeName, &size) != 0) {
+    utExit("Unable to find executable path");
+  }
+  // The path may be relative or contain symlinks; resolve it.
+  char *resolved = realpath(deExeName, NULL);
+  if (resolved == NULL) {
+    utExit("Unable to find executable path");
+  }
+  strncpy(deExeName, resolved, DE_MAX_PATH - 1);
+  deExeName[DE_MAX_PATH - 1] = '\0';
+  free(resolved);
 #else
   size_t len = readlink("/proc/self/exe", deExeName, DE_MAX_PATH);
   if (len >= DE_MAX_PATH - 1 || len < 1) {

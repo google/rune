@@ -58,3 +58,40 @@ jobs:
       - name: Run tests
         working-directory: rune
         run: ./runtests.sh
+
+  build-and-test-macos:
+    name: macos-latest
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: rune
+          persist-credentials: false
+
+      - name: Install system dependencies
+        run: brew install bison flex gmp automake autoconf libtool
+
+      # Install into the Homebrew prefix so the Rune Makefile finds DataDraw
+      # without sudo.  Apple's bundled bison is too old for DataDraw's grammar.
+      - name: Build and install DataDraw
+        run: |
+          git clone --depth 1 https://github.com/waywardgeek/datadraw.git
+          cd datadraw
+          export PATH="$(brew --prefix bison)/bin:$PATH"
+          ./autogen.sh
+          ./configure --prefix="$(brew --prefix)"
+          make
+          make install
+
+      - name: Fetch CTTK
+        run: |
+          git clone --depth 1 https://github.com/pornin/CTTK.git
+          cp CTTK/inc/cttk.h CTTK
+
+      - name: Build Rune
+        working-directory: rune
+        run: make -j"$(sysctl -n hw.ncpu)" rune
+
+      - name: Run tests
+        working-directory: rune
+        run: ./runtests.sh

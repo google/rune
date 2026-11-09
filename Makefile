@@ -12,12 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-CFLAGS=-Wall -g -std=c11 -Wno-unused-function -Wno-varargs -DMAKEFILE_BUILD -DDD_DEBUG -Iinclude -I../CTTK -Iruntime -no-pie
+CFLAGS=-Wall -g -std=c11 -Wno-unused-function -Wno-varargs -DMAKEFILE_BUILD -DDD_DEBUG -Iinclude -I../CTTK -Iruntime
 LIBS=lib/librune.a lib/libcttk.a
 LIBS_EXTRA=-lgmp -lm -lddutil-dbg
 #CFLAGS=-Wall -O3 -std=c11 -Wno-unused-function -Wno-varargs -DMAKEFILE_BUILD -Iinclude -I../CTTK -Iruntime
 #LIBS=lib/librune.a lib/libcttk.a
 #LIBS_EXTRA=-lgmp -lm -lddutil
+
+UNAME_S:=$(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+  # Homebrew installs gmp, bison, and DataDraw (when configured with
+  # --prefix=$$(brew --prefix)) outside the default search paths.  Apple's
+  # bundled bison is 2.3, which is too old for parse/deparse.y.
+  BREW_PREFIX:=$(shell brew --prefix 2>/dev/null || echo /usr/local)
+  CFLAGS+=-I$(BREW_PREFIX)/include
+  LDFLAGS+=-L$(BREW_PREFIX)/lib
+  BISON=$(BREW_PREFIX)/opt/bison/bin/bison
+else
+  CFLAGS+=-no-pie
+  BISON=bison
+endif
 
 PREFIX="/usr/local"
 
@@ -73,7 +87,7 @@ CC=gcc
 OBJS=$(patsubst %.c,obj/%.o,$(SRC))
 
 rune: $(OBJS) $(LIBS)
-	$(CC) $(CFLAGS) -o rune $(OBJS) lib/libcttk.a $(LIBS) $(LIBS_EXTRA)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o rune $(OBJS) $(LIBS) $(LIBS_EXTRA)
 
 $(OBJS): obj
 
@@ -111,10 +125,16 @@ rpc/rpcdatabase.c: rpc/rpcdatabase.h
 rpc/rpcdatabase.h: rpc/Rpc.dd include/dedatabase.h
 	datadraw -I database rpc/Rpc.dd
 
+# Cancel make's built-in yacc and lex rules so it never tries to regenerate
+# deparse.c or descan.c with the system yacc; the explicit rules below are the
+# only way to build them.
+%.c: %.y
+%.c: %.l
+
 parse/deparse.c: parse/deparse.h
 
 parse/deparse.h: parse/deparse.y
-	bison -d -Dapi.prefix="{de}" -o parse/deparse.c parse/deparse.y
+	$(BISON) -d -Dapi.prefix="{de}" -o parse/deparse.c parse/deparse.y
 
 parse/descan.c: parse/descan.l parse/deparse.h
 	flex -o parse/descan.c parse/descan.l
@@ -140,7 +160,7 @@ install: rune
 
 clean:
 	rm -rf obj lib rune */*database.[ch] *.ps parse/descan.c parse/deparse.[ch] rune.log tests/*.ll tests/*.result crypto_class/*.ll crypto_class/*.result errortests/*.ll test_data
-	for file in tests/*.rn crypto_class/*.rn errortests/*.rn; do exeFile=$$(echo "$$file" | sed 's/.rn$$//'); rm -f "$$exeFile"; done
+	for file in tests/*.rn crypto_class/*.rn errortests/*.rn; do exeFile=$$(echo "$$file" | sed 's/.rn$$//'); rm -rf "$$exeFile" "$$exeFile.dSYM"; done
 	cd runtime ; make clean
 	cd bootstrap/database ; make clean
 

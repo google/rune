@@ -803,7 +803,7 @@ static const uint8_t *appendFormattedElement(runtime_array *array, bool topLevel
     bool boolVal = va_arg(*ap, int);
     char *boolText = boolVal ? "true" : "false";
     uint64_t numElements = boolVal ? 4 : 5;
-    runtime_array string = {(uint64_t *)boolText, numElements};
+    runtime_array string = {(void *)boolText, numElements};
     runtime_concatArrays(array, &string, sizeof(uint8_t), false);
   } else if (c == '[') {
     runtime_array buf = runtime_makeEmptyArray();
@@ -903,7 +903,7 @@ void runtime_printf(const char *format, ...) {
   runtime_array array = runtime_makeEmptyArray();
   runtime_array formatArray = runtime_makeEmptyArray();
   // Build it like a constant array, outside of the heap.
-  formatArray.data = (uint64_t*)format;
+  formatArray.data = (void *)format;
   formatArray.numElements = strlen(format);
   va_list ap;
   va_start(ap, format);

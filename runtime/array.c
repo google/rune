@@ -20,6 +20,8 @@
 #include <stdlib.h>  // For calloc, realloc, and free.
 #ifdef _WIN32
 #include <windows.h>  // To find total RAM available.
+#elif defined(__APPLE__)
+#include <sys/sysctl.h>  // To find total RAM available.
 #else
 #include <sys/sysinfo.h>  // To find total RAM available.
 #endif
@@ -322,6 +324,15 @@ void runtime_arrayStart(void) {
   statex.dwLength = sizeof (statex);
   GlobalMemoryStatusEx (&statex);
   runtime_totalRam = statex.ullTotalPhys;
+#elif defined(__APPLE__)
+  int64_t memsize = 0;
+  size_t memsizeLen = sizeof(memsize);
+  int mib[2] = {CTL_HW, HW_MEMSIZE};
+  if (sysctl(mib, 2, &memsize, &memsizeLen, NULL, 0) != 0 || memsize <= 0) {
+    runtime_raiseExceptionCstr("Internal", __FILE__, __LINE__,
+        "Unable to determine total RAM");
+  }
+  runtime_totalRam = memsize;
 #else
   struct sysinfo info;
   sysinfo(&info);

@@ -99,13 +99,13 @@ void runtime_initArrayOfStringsFromCUTF8(runtime_array *array, const uint8_t **v
 void runtime_allocArray(runtime_array *array, size_t numElements, size_t elementSize,
     bool hasSubArrays);
 void runtime_arrayInitCstr(runtime_array *array, const char *text);
-void runtime_resizeArray(runtime_array *array, uint64_t numElements, size_t elementSize,
+void runtime_resizeArray(runtime_array *array, size_t numElements, size_t elementSize,
     bool hasSubArrays);
 void runtime_copyArray(runtime_array *dest, runtime_array *source, size_t elementSize,
     bool hasSubArrays);
 void runtime_moveArray(runtime_array *dest, runtime_array *source);
-void runtime_sliceArray(runtime_array *dest, runtime_array *source, uint64_t lower,
-    uint64_t upper, size_t elementSize, bool hasSubArrays);
+void runtime_sliceArray(runtime_array *dest, runtime_array *source, size_t lower,
+    size_t upper, size_t elementSize, bool hasSubArrays);
 void runtime_freeArray(runtime_array *array);
 void runtime_foreachArrayObject(runtime_array *array, void *callback, uint32_t refWidth,
     uint32_t depth);
@@ -176,8 +176,8 @@ void runtime_generateTrueRandomBytes(uint8_t *dest, uint64_t numBytes);
 // Small integer exponentiation, with overflow checking.
 
 // Zero memory securely.
-static inline void runtime_zeroMemory(uint64_t *p, uint64_t numWords) {
-  volatile uint64_t *q = p;
+static inline void runtime_zeroMemory(size_t *p, size_t numWords) {
+  volatile size_t *q = p;
   while (numWords--) {
     *q++ = 0;
   }
